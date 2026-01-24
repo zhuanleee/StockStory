@@ -344,6 +344,34 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"News error: {str(e)}")
 
+            elif text.lower() == '/tam':
+                # TAM rankings
+                try:
+                    from tam_estimator import rank_themes_by_opportunity, format_theme_rankings
+                    send_telegram_message("⏳ Calculating TAM rankings...")
+                    rankings = rank_themes_by_opportunity()
+                    msg = format_theme_rankings(rankings)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"TAM error: {str(e)}")
+
+            elif text.lower().startswith('/tam '):
+                # TAM for specific theme
+                theme = text[5:].strip().upper().replace(' ', '_')
+                try:
+                    from tam_estimator import analyze_theme_tam, format_tam_analysis, TAM_DATABASE
+                    if theme in TAM_DATABASE:
+                        send_telegram_message(f"⏳ Analyzing {theme}...")
+                        analysis = analyze_theme_tam(theme)
+                        if analysis:
+                            msg = format_tam_analysis(analysis)
+                            send_telegram_message(msg)
+                    else:
+                        themes = ', '.join(list(TAM_DATABASE.keys())[:10])
+                        send_telegram_message(f"Theme not found. Available: {themes}...")
+                except Exception as e:
+                    send_telegram_message(f"TAM error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
                 msg += "*Analysis:*\n"
@@ -351,7 +379,9 @@ def main():
                 msg += "• `/top` → Top 10 stocks\n"
                 msg += "• `/mtf` → Multi-timeframe confluence\n"
                 msg += "• `/sectors` → Sector rotation\n"
-                msg += "• `/news` → News sentiment\n\n"
+                msg += "• `/news` → News sentiment\n"
+                msg += "• `/tam` → TAM growth rankings\n"
+                msg += "• `/tam AI_Infrastructure` → Specific theme TAM\n\n"
                 msg += "_Bot checks every 15 min during market hours_"
                 send_telegram_message(msg)
 
