@@ -101,7 +101,10 @@ def generate_chart(ticker):
         # Ensure proper column names for mplfinance
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
 
-        # Calculate moving averages
+        # Slice to last 60 days first
+        df = df.iloc[-60:].copy()
+
+        # Calculate moving averages on sliced data
         sma_20 = df['Close'].rolling(20).mean()
         sma_50 = df['Close'].rolling(50).mean()
 
@@ -140,7 +143,7 @@ def generate_chart(ticker):
         buf = io.BytesIO()
 
         fig, axes = mpf.plot(
-            df.iloc[-60:],  # Last 60 days
+            df,  # Already sliced to last 60 days
             type='candle',
             style=style,
             volume=True,
