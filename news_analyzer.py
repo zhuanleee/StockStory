@@ -444,11 +444,14 @@ def aggregate_news_sources(ticker):
 
     for source_name, scraper in sources:
         try:
+            print(f"Fetching {source_name} for {ticker}...")
             headlines = scraper(ticker)
+            print(f"  Got {len(headlines)} headlines from {source_name}")
             for h in headlines:
                 if h.get('title'):
                     all_headlines.append(h)
-        except:
+        except Exception as e:
+            print(f"  Error from {source_name}: {e}")
             continue
 
     # Deduplicate by similarity
@@ -478,11 +481,23 @@ def aggregate_social_sentiment(ticker):
     """
     Aggregate social media sentiment from StockTwits and Reddit.
     """
-    # StockTwits
-    stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
+    print(f"Fetching social sentiment for {ticker}...")
 
-    # Reddit
-    reddit_posts = scrape_reddit_sentiment(ticker)
+    # StockTwits
+    try:
+        stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
+        print(f"  StockTwits: {len(stocktwits_posts)} posts")
+    except Exception as e:
+        print(f"  StockTwits error: {e}")
+        stocktwits_posts, stocktwits_stats = [], None
+
+    # Reddit - skip if it times out
+    try:
+        reddit_posts = scrape_reddit_sentiment(ticker)
+        print(f"  Reddit: {len(reddit_posts)} posts")
+    except Exception as e:
+        print(f"  Reddit error: {e}")
+        reddit_posts = []
 
     return {
         'stocktwits': {
@@ -631,8 +646,11 @@ Be concise. Focus on actionable insights. Note any divergence between news senti
 
 def analyze_ticker_news(ticker, use_ai=True):
     """Full news + social analysis for a ticker using AI."""
+    print(f"\n=== Analyzing {ticker} ===")
+
     # Get news from multiple sources
     headlines = aggregate_news_sources(ticker)
+    print(f"Total headlines: {len(headlines)}")
 
     # Get social sentiment
     social_data = aggregate_social_sentiment(ticker)

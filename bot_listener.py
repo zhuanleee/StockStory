@@ -339,13 +339,16 @@ def main():
                 # News for top stocks
                 try:
                     from news_analyzer import scan_news_sentiment, format_news_scan_results
-                    send_telegram_message("⏳ Scanning news...")
+                    send_telegram_message("⏳ Scanning news + social sentiment...")
                     tickers = ['NVDA', 'AMD', 'AAPL', 'TSLA', 'META']
                     results = scan_news_sentiment(tickers)
                     msg = format_news_scan_results(results)
                     send_telegram_message(msg)
                 except Exception as e:
-                    send_telegram_message(f"News error: {str(e)}")
+                    import traceback
+                    error_details = traceback.format_exc()
+                    print(f"News error details: {error_details}")
+                    send_telegram_message(f"News error: {str(e)}\n\nCheck logs for details.")
 
             elif text.lower() == '/tam':
                 # TAM rankings
