@@ -397,11 +397,44 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"Story error: {str(e)}")
 
+            elif text.lower() == '/learned':
+                # View all learned themes
+                try:
+                    from story_detector import get_all_learned_themes
+                    learned = get_all_learned_themes()
+
+                    msg = "🧠 *LEARNED THEMES*\n\n"
+
+                    if learned['promoted']:
+                        msg += "*✅ PROMOTED (confirmed themes):*\n"
+                        for t in learned['promoted'][:5]:
+                            msg += f"• *{t['name']}*\n"
+                            if t['primary_plays']:
+                                msg += f"  Primary: `{'`, `'.join(t['primary_plays'][:4])}`\n"
+                        msg += "\n"
+
+                    if learned['emerging']:
+                        msg += "*📈 EMERGING (being tracked):*\n"
+                        for t in learned['emerging'][:5]:
+                            msg += f"• *{t['name']}* ({t['total_mentions']} mentions, {t['days_tracked']} days)\n"
+                            if t['top_stocks']:
+                                msg += f"  Stocks: `{'`, `'.join(t['top_stocks'][:4])}`\n"
+                        msg += "\n"
+
+                    if not learned['promoted'] and not learned['emerging']:
+                        msg += "_No themes learned yet. Run /stories to start learning._\n"
+
+                    msg += "_Themes auto-promote after 3+ days of sustained mentions_"
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Learned error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
                 msg += "*Story Detection:*\n"
                 msg += "• `/stories` → Stories in play + emerging themes\n"
-                msg += "• `/story AI` → Deep dive on specific story\n\n"
+                msg += "• `/story AI` → Deep dive on specific story\n"
+                msg += "• `/learned` → View auto-learned themes\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• Send ticker (e.g., `NVDA`) → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
