@@ -880,6 +880,151 @@ def format_learned_themes_summary(learned_analysis):
 
 
 # ============================================================
+# WEEKLY DIGEST
+# ============================================================
+
+WEEKLY_STATS_FILE = 'weekly_stats.json'
+
+
+def load_weekly_stats():
+    """Load weekly statistics."""
+    if Path(WEEKLY_STATS_FILE).exists():
+        with open(WEEKLY_STATS_FILE, 'r') as f:
+            return json.load(f)
+    return {'scans': [], 'week_start': None}
+
+
+def save_weekly_stats(stats):
+    """Save weekly statistics."""
+    with open(WEEKLY_STATS_FILE, 'w') as f:
+        json.dump(stats, f, indent=2)
+
+
+def update_weekly_stats(df_results, themes, supply_plays):
+    """Add today's scan to weekly stats."""
+    stats = load_weekly_stats()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Reset if new week (Monday)
+    if datetime.now().weekday() == 0 and stats.get('week_start') != today:
+        stats = {'scans': [], 'week_start': today}
+
+    # Add today's data
+    top_10 = df_results.head(10)[['ticker', 'composite_score', 'rs_composite']].to_dict('records')
+
+    stats['scans'].append({
+        'date': today,
+        'top_10': top_10,
+        'breakouts': df_results[df_results['breakout_up'] == True]['ticker'].tolist(),
+        'top_themes': [t['theme'] for t in themes[:5]] if themes else [],
+        'supply_plays': [f"{p['driver']}->{p['beneficiary']}" for p in supply_plays[:3]],
+        'market_breadth': {
+            'above_50': int((df_results['above_50'] == True).sum()),
+            'above_200': int((df_results['above_200'] == True).sum()),
+            'total': len(df_results),
+        }
+    })
+
+    save_weekly_stats(stats)
+    return stats
+
+
+def generate_weekly_digest():
+    """Generate weekly performance digest."""
+    stats = load_weekly_stats()
+    learned = load_learned_themes()
+
+    if not stats.get('scans'):
+        return None
+
+    msg = "📊 *WEEKLY DIGEST*\n"
+    msg += f"_{stats.get('week_start', 'This Week')}_\n\n"
+
+    # Count appearances in top 10 across all scans
+    ticker_counts = {}
+    all_breakouts = []
+    theme_counts = {}
+
+    for scan in stats['scans']:
+        for stock in scan.get('top_10', []):
+            ticker = stock['ticker']
+            ticker_counts[ticker] = ticker_counts.get(ticker, 0) + 1
+
+        all_breakouts.extend(scan.get('breakouts', []))
+
+        for theme in scan.get('top_themes', []):
+            theme_counts[theme] = theme_counts.get(theme, 0) + 1
+
+    # Most consistent leaders
+    msg += "*🏆 WEEKLY LEADERS (Most Consistent):*\n"
+    sorted_tickers = sorted(ticker_counts.items(), key=lambda x: x[1], reverse=True)
+    for ticker, count in sorted_tickers[:10]:
+        bars = "█" * count
+        msg += f"`{ticker:5}` {bars} ({count}x in top 10)\n"
+
+    # Most breakouts
+    breakout_counts = {}
+    for b in all_breakouts:
+        breakout_counts[b] = breakout_counts.get(b, 0) + 1
+
+    if breakout_counts:
+        msg += "\n*🚀 MOST BREAKOUTS THIS WEEK:*\n"
+        sorted_breakouts = sorted(breakout_counts.items(), key=lambda x: x[1], reverse=True)
+        for ticker, count in sorted_breakouts[:5]:
+            msg += f"• `{ticker}` - {count}x breakout\n"
+
+    # Hottest themes
+    if theme_counts:
+        msg += "\n*🔥 HOTTEST THEMES:*\n"
+        sorted_themes = sorted(theme_counts.items(), key=lambda x: x[1], reverse=True)
+        for theme, count in sorted_themes[:5]:
+            msg += f"• {theme} ({count}x)\n"
+
+    # Breadth trend
+    if len(stats['scans']) >= 2:
+        first_breadth = stats['scans'][0].get('market_breadth', {})
+        last_breadth = stats['scans'][-1].get('market_breadth', {})
+
+        if first_breadth and last_breadth:
+            first_pct = first_breadth.get('above_50', 0) / max(first_breadth.get('total', 1), 1) * 100
+            last_pct = last_breadth.get('above_50', 0) / max(last_breadth.get('total', 1), 1) * 100
+            change = last_pct - first_pct
+
+            trend = "📈 Improving" if change > 5 else ("📉 Weakening" if change < -5 else "➡️ Stable")
+            msg += f"\n*📊 BREADTH TREND:* {trend}\n"
+            msg += f"Start: {first_pct:.0f}% above 50 SMA\n"
+            msg += f"End: {last_pct:.0f}% above 50 SMA\n"
+
+    # Learned themes progress
+    if learned:
+        msg += f"\n*📚 LEARNED THEMES:* {len(learned)} tracked\n"
+        emerging = [t for t in learned.values() if t.get('status') == 'EMERGING']
+        if emerging:
+            msg += f"• {len(emerging)} emerging (needs review)\n"
+
+    msg += "\n_Have a great trading week!_ 📈"
+
+    return msg
+
+
+def is_sunday():
+    """Check if today is Sunday."""
+    return datetime.now().weekday() == 6
+
+
+def run_weekly_digest():
+    """Run and send weekly digest if it's Sunday."""
+    if is_sunday():
+        print("\n📊 Generating weekly digest (Sunday)...")
+        digest = generate_weekly_digest()
+        if digest:
+            send_telegram_message(digest)
+            print("  Weekly digest sent!")
+            return True
+    return False
+
+
+# ============================================================
 # MAIN EXECUTION
 # ============================================================
 
@@ -968,6 +1113,16 @@ def main():
 
     # Save current state
     save_current_state(df_results)
+
+    # ============================================================
+    # WEEKLY STATS & DIGEST
+    # ============================================================
+    print("\nUpdating weekly stats...")
+    update_weekly_stats(df_results, themes, supply_plays)
+
+    # Send weekly digest on Sunday
+    if run_weekly_digest():
+        print("  📊 Weekly digest sent!")
 
     print(f"\nCompleted: {datetime.now()}")
     print(f"Sent {len(new_alerts)} new breakout alerts")

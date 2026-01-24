@@ -47,5 +47,6 @@ jobs:
           git add scanner_state.json || true
           git add cluster_history.json || true
           git add learned_themes.json || true
+          git add weekly_stats.json || true
           git commit -m "Update scanner state and learned themes" || true
           git push || true
