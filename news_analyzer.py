@@ -673,7 +673,14 @@ def analyze_ticker_news(ticker, use_ai=True):
     # Try comprehensive AI analysis
     ai_analysis = None
     if use_ai and DEEPSEEK_API_KEY:
+        print(f"Calling DeepSeek AI for {ticker}...")
         ai_analysis = analyze_with_deepseek_comprehensive(ticker, headlines, social_data)
+        if ai_analysis:
+            print(f"  AI analysis: {ai_analysis.get('overall_sentiment', 'Unknown')}")
+        else:
+            print(f"  AI analysis failed, using fallback")
+    else:
+        print(f"No API key or AI disabled, using keyword analysis")
 
     if ai_analysis:
         # Count sources
@@ -878,11 +885,19 @@ def format_news_analysis(ticker, analysis):
 
 def scan_news_sentiment(tickers):
     """Scan multiple tickers for news sentiment."""
+    print(f"\n=== Starting news scan for {len(tickers)} tickers ===")
     results = []
 
     for ticker in tickers:
-        analysis = analyze_ticker_news(ticker)
-        results.append(analysis)
+        try:
+            analysis = analyze_ticker_news(ticker)
+            results.append(analysis)
+            print(f"  {ticker}: {analysis.get('overall_sentiment', 'Unknown')} ({analysis.get('headline_count', 0)} headlines)")
+        except Exception as e:
+            print(f"  {ticker}: Error - {e}")
+            results.append({'ticker': ticker, 'overall_sentiment': 'ERROR', 'headline_count': 0})
+
+    print(f"=== Scan complete: {len(results)} results ===")
 
     # Sort by sentiment strength
     def sentiment_score(a):
@@ -902,7 +917,9 @@ def scan_news_sentiment(tickers):
 
 def format_news_scan_results(results):
     """Format news scan results for Telegram."""
+    print(f"\nFormatting {len(results)} results for Telegram...")
     ai_powered = any(r.get('ai_powered') for r in results)
+    print(f"  AI powered: {ai_powered}")
 
     msg = "📰 *NEWS + SOCIAL SENTIMENT*"
     if ai_powered:
