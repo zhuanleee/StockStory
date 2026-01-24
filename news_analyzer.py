@@ -888,6 +888,54 @@ def scan_news_sentiment(tickers):
         return 0
 
     results.sort(key=sentiment_score, reverse=True)
+
+    # Auto-learn from news events
+    try:
+        from self_learning import record_news_event
+        import yfinance as yf
+
+        for result in results:
+            ticker = result.get('ticker')
+            sentiment = result.get('overall_sentiment', 'NEUTRAL')
+            headlines = result.get('key_headlines', [])
+
+            if ticker and headlines:
+                # Get current price
+                try:
+                    stock = yf.Ticker(ticker)
+                    price = stock.fast_info.get('lastPrice', 0)
+                except:
+                    price = 0
+
+                # Determine news type from headlines
+                news_type = 'general'
+                for h in headlines[:3]:
+                    title = h.get('title', '').lower()
+                    if any(w in title for w in ['earnings', 'revenue', 'profit', 'eps']):
+                        news_type = 'earnings'
+                        break
+                    elif any(w in title for w in ['merger', 'acquisition', 'deal', 'buyout']):
+                        news_type = 'merger'
+                        break
+                    elif any(w in title for w in ['launch', 'product', 'release', 'announce']):
+                        news_type = 'product_launch'
+                        break
+                    elif any(w in title for w in ['upgrade', 'downgrade', 'analyst', 'rating']):
+                        news_type = 'analyst'
+                        break
+
+                # Record the first significant headline
+                if headlines:
+                    record_news_event(
+                        ticker=ticker,
+                        news_type=news_type,
+                        headline=headlines[0].get('title', '')[:100],
+                        price_at_news=price,
+                        sentiment=sentiment.lower().replace('strong_', '')
+                    )
+    except Exception as e:
+        pass  # Silent fail - don't break news scan if learning fails
+
     return results
 
 

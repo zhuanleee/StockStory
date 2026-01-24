@@ -1794,6 +1794,75 @@ def main():
     except Exception as e:
         print(f"  News scan error: {e}")
 
+    # ============================================================
+    # COMPREHENSIVE SELF-LEARNING
+    # ============================================================
+    print("\nRunning comprehensive self-learning...")
+    try:
+        from self_learning import (
+            auto_learn_from_scan,
+            auto_learn_stock_profile,
+            detect_market_regime,
+            record_regime_change,
+            track_theme_lifecycle,
+        )
+
+        # Get SPY data for regime detection
+        spy_df = get_ticker_df(price_data, 'SPY')
+
+        # 1. Learn from scan results (alert accuracy, entries)
+        auto_learn_from_scan(df_results, spy_df)
+        print("  Recorded alerts for accuracy tracking")
+
+        # 2. Detect and record market regime
+        if spy_df is not None and len(spy_df) >= 50:
+            regime = detect_market_regime(spy_df)
+            spy_price = float(spy_df['Close'].iloc[-1])
+            record_regime_change(regime, spy_price)
+            print(f"  Market regime: {regime}")
+
+        # 3. Learn stock personalities for top movers
+        top_movers = df_results.head(20)['ticker'].tolist()
+        profiles_updated = 0
+        for ticker in top_movers:
+            try:
+                ticker_df = get_ticker_df(price_data, ticker)
+                if ticker_df is not None and len(ticker_df) >= 50:
+                    auto_learn_stock_profile(ticker, ticker_df)
+                    profiles_updated += 1
+            except:
+                pass
+        print(f"  Updated {profiles_updated} stock personality profiles")
+
+        # 4. Track theme lifecycles
+        for theme in themes[:10]:
+            theme_name = theme['theme']
+            if theme['avg_rs'] > 5:
+                status = 'rising'
+            elif theme['avg_rs'] > 0:
+                status = 'stable'
+            elif theme['avg_rs'] > -3:
+                status = 'fading'
+            else:
+                status = 'dead'
+
+            # Get top stocks for this theme
+            theme_data = NICHE_THEMES.get(theme_name, {})
+            top_stocks = theme_data.get('tickers', [])[:5]
+
+            track_theme_lifecycle(
+                theme_name,
+                status=status,
+                top_stocks=top_stocks,
+                momentum_score=theme['avg_rs']
+            )
+        print(f"  Tracked lifecycle for {min(len(themes), 10)} themes")
+
+        print("  Self-learning complete!")
+
+    except Exception as e:
+        print(f"  Self-learning error: {e}")
+
     print(f"\nCompleted: {datetime.now()}")
     print(f"Sent {len(new_alerts)} new breakout alerts")
     print(f"Themes analyzed: {len(themes)}")

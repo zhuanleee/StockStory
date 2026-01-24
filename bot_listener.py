@@ -496,6 +496,158 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"Insights error: {str(e)}")
 
+            elif text.lower() == '/learning':
+                # Comprehensive self-learning insights
+                try:
+                    from self_learning import format_learning_summary
+                    msg = format_learning_summary()
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Learning error: {str(e)}")
+
+            elif text.lower().startswith('/profile '):
+                # Stock personality profile
+                ticker = text[9:].strip().upper()
+                try:
+                    from self_learning import get_stock_profile, auto_learn_stock_profile
+                    import yfinance as yf
+
+                    send_telegram_message(f"⏳ Analyzing {ticker} personality...")
+
+                    # Get price data and analyze
+                    df = yf.download(ticker, period='6mo', progress=False)
+                    if len(df) >= 50:
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.get_level_values(0)
+
+                        profile = auto_learn_stock_profile(ticker, df)
+
+                        if profile:
+                            msg = f"🎭 *{ticker} PERSONALITY*\n\n"
+                            msg += f"*Type:* {profile.get('type', 'unknown').replace('_', ' ').title()}\n"
+                            msg += f"*Momentum Score:* {profile.get('momentum_score', 0):.0f}%\n"
+                            msg += f"*Mean Reversion:* {profile.get('mean_reversion_score', 0):.0f}%\n"
+                            msg += f"*Volume Responsive:* {'Yes' if profile.get('volume_responsive') else 'No'}\n"
+                            msg += f"*Avg Trend Length:* {profile.get('avg_trend_length', 0):.1f} days\n\n"
+                            msg += f"*Recommended Strategy:*\n"
+                            msg += f"→ {profile.get('recommended_strategy', 'unknown').replace('_', ' ').title()}"
+                        else:
+                            msg = f"Not enough data to profile {ticker}"
+                    else:
+                        msg = f"Not enough price history for {ticker}"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Profile error: {str(e)}")
+
+            elif text.lower() == '/regime':
+                # Market regime and best strategies
+                try:
+                    from self_learning import detect_market_regime, get_best_strategies_for_regime, record_regime_change
+                    import yfinance as yf
+
+                    send_telegram_message("⏳ Analyzing market regime...")
+
+                    spy = yf.download('SPY', period='3mo', progress=False)
+                    if isinstance(spy.columns, pd.MultiIndex):
+                        spy.columns = spy.columns.get_level_values(0)
+
+                    regime = detect_market_regime(spy)
+                    spy_price = float(spy['Close'].iloc[-1])
+                    record_regime_change(regime, spy_price)
+
+                    strategies = get_best_strategies_for_regime(regime)
+
+                    msg = f"🌍 *MARKET REGIME*\n\n"
+                    msg += f"*Current:* {regime.replace('_', ' ').title()}\n"
+                    msg += f"*SPY:* ${spy_price:.2f}\n\n"
+
+                    if strategies.get('strategies'):
+                        msg += "*Best Strategies:*\n"
+                        for s in strategies['strategies'][:3]:
+                            msg += f"• {s['strategy'].replace('_', ' ')}: {s['win_rate']:.0f}% win\n"
+                        msg += "\n"
+
+                    if strategies.get('avoid'):
+                        msg += "*Avoid:*\n"
+                        for s in strategies['avoid']:
+                            msg += f"• {s['strategy'].replace('_', ' ')}: {s['win_rate']:.0f}% win\n"
+
+                    if not strategies.get('strategies') and not strategies.get('avoid'):
+                        msg += "_Not enough data yet. System learns as you trade._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Regime error: {str(e)}")
+
+            elif text.lower() == '/alerts':
+                # Alert accuracy insights
+                try:
+                    from self_learning import get_alert_accuracy_insights
+                    insights = get_alert_accuracy_insights()
+
+                    msg = "📊 *ALERT ACCURACY*\n\n"
+
+                    if insights.get('best_alert_types'):
+                        msg += "*Best Alert Types:*\n"
+                        for a in insights['best_alert_types']:
+                            msg += f"• {a['type'].replace('_', ' ')}: {a['win_rate']:.0f}% ({a['total_alerts']} alerts)\n"
+                        msg += "\n"
+
+                    if insights.get('worst_alert_types'):
+                        worst = [w for w in insights['worst_alert_types'] if w['win_rate'] < 50]
+                        if worst:
+                            msg += "*Underperforming:*\n"
+                            for a in worst[:2]:
+                                msg += f"• {a['type'].replace('_', ' ')}: {a['win_rate']:.0f}%\n"
+                            msg += "\n"
+
+                    if insights.get('recommendations'):
+                        msg += "*Recommendations:*\n"
+                        for r in insights['recommendations']:
+                            msg += f"→ {r}\n"
+
+                    if not insights.get('best_alert_types'):
+                        msg += "_No alert data yet. System learns from scans._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Alerts error: {str(e)}")
+
+            elif text.lower() == '/timing':
+                # News timing insights
+                try:
+                    from self_learning import get_news_impact_insights
+                    insights = get_news_impact_insights()
+
+                    msg = "📰 *NEWS TIMING*\n\n"
+
+                    if insights.get('by_news_type'):
+                        msg += "*How Fast News Gets Priced In:*\n"
+                        for ntype, data in insights['by_news_type'].items():
+                            days = data['avg_days_to_price_in']
+                            move = data['avg_move_1d']
+                            msg += f"• {ntype}: ~{days:.1f} days (avg {move:.1f}% move)\n"
+                        msg += "\n"
+
+                    if insights.get('fast_pricing_tickers'):
+                        msg += "*Fast Movers (act quickly):*\n"
+                        for t in insights['fast_pricing_tickers'][:3]:
+                            msg += f"• {t['ticker']}: priced in {t['avg_pricing_days']:.1f}d\n"
+                        msg += "\n"
+
+                    if insights.get('slow_pricing_tickers'):
+                        msg += "*Slow Movers (time to position):*\n"
+                        for t in insights['slow_pricing_tickers'][:3]:
+                            msg += f"• {t['ticker']}: takes {t['avg_pricing_days']:.1f}d\n"
+
+                    if not insights.get('by_news_type'):
+                        msg += "_No timing data yet. System learns from news events._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Timing error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
                 msg += "*Story Detection:*\n"
@@ -506,7 +658,13 @@ def main():
                 msg += "*Fact Checking:*\n"
                 msg += "• `/factcheck` → Verify recent claims\n"
                 msg += "• `/accuracy` → Source trust scores\n"
-                msg += "• `/insights` → Learned source patterns\n\n"
+                msg += "• `/insights` → Source reliability patterns\n\n"
+                msg += "*Self-Learning:*\n"
+                msg += "• `/learning` → All learning insights\n"
+                msg += "• `/profile NVDA` → Stock personality\n"
+                msg += "• `/regime` → Market regime + strategies\n"
+                msg += "• `/alerts` → Alert type accuracy\n"
+                msg += "• `/timing` → News pricing speed\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• `NVDA` → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
@@ -514,7 +672,7 @@ def main():
                 msg += "• `/sectors` → Sector rotation\n"
                 msg += "• `/mtf` → Multi-timeframe\n"
                 msg += "• `/tam` → TAM rankings\n\n"
-                msg += "_All sources start equal (50/100). Trust earned by accuracy._"
+                msg += "_System learns from every scan, alert, and trade._"
                 send_telegram_message(msg)
 
             elif text.startswith('/'):

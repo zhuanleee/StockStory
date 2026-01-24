@@ -829,6 +829,40 @@ def run_story_detection(tickers=None):
     detected['headline_count'] = len(headlines)
     detected['tickers_scanned'] = len(set(h['ticker'] for h in headlines))
 
+    # 8b. Track theme lifecycles in comprehensive self-learning system
+    try:
+        from self_learning import track_theme_lifecycle
+
+        for theme in detected.get('themes', []):
+            theme_name = theme['name'].upper().replace(' ', '_')
+            heat = theme.get('heat', 'WARM')
+            primary_plays = theme.get('primary_plays', [])
+
+            # Determine status from heat level
+            if heat in ['HOT', 'VERY_HOT']:
+                status = 'rising'
+            elif heat == 'WARM':
+                status = 'stable'
+            elif heat == 'COOLING':
+                status = 'fading'
+            elif theme.get('is_learned'):
+                status = 'emerging'
+            else:
+                status = 'stable'
+
+            # Estimate momentum score from mention count or RS
+            mention_count = theme.get('mention_count', 0)
+            momentum_score = min(10, mention_count / 2) if mention_count else 5
+
+            track_theme_lifecycle(
+                theme_name=theme_name,
+                status=status,
+                top_stocks=primary_plays[:5],
+                momentum_score=momentum_score
+            )
+    except Exception as e:
+        pass  # Silent fail - don't break detection if learning fails
+
     # 9. Add alternative sources (podcasts, newsletters)
     if ALT_SOURCES_AVAILABLE:
         try:
