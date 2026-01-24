@@ -460,13 +460,41 @@ def main():
             elif text.lower() == '/accuracy':
                 # Source accuracy leaderboard
                 try:
-                    from story_detector import get_source_accuracy
-                    from signal_ranker import format_source_leaderboard
-                    leaderboard = get_source_accuracy()
-                    msg = format_source_leaderboard(leaderboard)
+                    from fact_checker import format_source_trust_report
+                    msg = format_source_trust_report()
                     send_telegram_message(msg)
                 except Exception as e:
                     send_telegram_message(f"Accuracy error: {str(e)}")
+
+            elif text.lower() == '/factcheck':
+                # Run fact check on recent news
+                try:
+                    from news_analyzer import aggregate_news_sources
+                    from fact_checker import run_fact_check, format_fact_check_report
+                    send_telegram_message("⏳ Fact-checking recent claims...")
+
+                    # Get headlines from multiple tickers
+                    all_headlines = []
+                    for ticker in ['NVDA', 'AAPL', 'TSLA', 'META', 'AMD']:
+                        headlines = aggregate_news_sources(ticker)
+                        for h in headlines[:5]:
+                            h['ticker'] = ticker
+                            all_headlines.append(h)
+
+                    result = run_fact_check(all_headlines)
+                    msg = format_fact_check_report(result)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Fact check error: {str(e)}")
+
+            elif text.lower() == '/insights':
+                # Show learned insights
+                try:
+                    from fact_checker import format_learning_insights
+                    msg = format_learning_insights()
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Insights error: {str(e)}")
 
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
@@ -474,8 +502,11 @@ def main():
                 msg += "• `/stories` → Stories in play + emerging\n"
                 msg += "• `/ranked` → Signals ranked by quality\n"
                 msg += "• `/podcasts` → Podcast & newsletter intel\n"
-                msg += "• `/learned` → Auto-learned themes\n"
-                msg += "• `/accuracy` → Source accuracy stats\n\n"
+                msg += "• `/learned` → Auto-learned themes\n\n"
+                msg += "*Fact Checking:*\n"
+                msg += "• `/factcheck` → Verify recent claims\n"
+                msg += "• `/accuracy` → Source trust scores\n"
+                msg += "• `/insights` → Learned source patterns\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• `NVDA` → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
@@ -483,7 +514,7 @@ def main():
                 msg += "• `/sectors` → Sector rotation\n"
                 msg += "• `/mtf` → Multi-timeframe\n"
                 msg += "• `/tam` → TAM rankings\n\n"
-                msg += "_Bot checks every 15 min during market hours_"
+                msg += "_All sources start equal (50/100). Trust earned by accuracy._"
                 send_telegram_message(msg)
 
             elif text.startswith('/'):

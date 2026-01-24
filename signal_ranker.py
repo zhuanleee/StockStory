@@ -21,47 +21,48 @@ import yfinance as yf
 # CONFIGURATION
 # ============================================================
 
-# Source tier definitions (base trust scores)
-SOURCE_TIERS = {
-    # Tier 1: Institutional / Expert Analysis (80-100)
-    'SemiAnalysis': {'tier': 1, 'base_score': 90, 'type': 'newsletter', 'specialty': 'semiconductors'},
-    'Stratechery': {'tier': 1, 'base_score': 88, 'type': 'newsletter', 'specialty': 'tech_strategy'},
-    'Doomberg': {'tier': 1, 'base_score': 85, 'type': 'newsletter', 'specialty': 'energy'},
-    'The Diff': {'tier': 1, 'base_score': 82, 'type': 'newsletter', 'specialty': 'finance'},
-    'Platformer': {'tier': 1, 'base_score': 80, 'type': 'newsletter', 'specialty': 'tech'},
+# ALL SOURCES START EQUAL - Trust is earned through accuracy
+# No preset tiers - the system learns which sources are reliable
+INITIAL_TRUST_SCORE = 50  # Everyone starts at 50/100
 
-    # Tier 2: Quality Podcasts / Investors (60-80)
-    'All-In Podcast': {'tier': 2, 'base_score': 78, 'type': 'podcast', 'specialty': 'tech_investing'},
-    'Acquired': {'tier': 2, 'base_score': 76, 'type': 'podcast', 'specialty': 'business'},
-    'Invest Like the Best': {'tier': 2, 'base_score': 75, 'type': 'podcast', 'specialty': 'investing'},
-    'Not Boring': {'tier': 2, 'base_score': 72, 'type': 'newsletter', 'specialty': 'tech'},
-    'The Generalist': {'tier': 2, 'base_score': 70, 'type': 'newsletter', 'specialty': 'tech'},
-    'Bankless': {'tier': 2, 'base_score': 68, 'type': 'podcast', 'specialty': 'crypto'},
-    'My First Million': {'tier': 2, 'base_score': 65, 'type': 'podcast', 'specialty': 'business'},
-    'The Prof G Pod': {'tier': 2, 'base_score': 65, 'type': 'podcast', 'specialty': 'business'},
-    'Lex Fridman': {'tier': 2, 'base_score': 62, 'type': 'podcast', 'specialty': 'tech'},
-    'Patrick Boyle': {'tier': 2, 'base_score': 70, 'type': 'podcast', 'specialty': 'finance'},
+# Source metadata (for display only, not scoring)
+SOURCE_METADATA = {
+    # Newsletters
+    'SemiAnalysis': {'type': 'newsletter', 'specialty': 'semiconductors'},
+    'Stratechery': {'type': 'newsletter', 'specialty': 'tech_strategy'},
+    'Doomberg': {'type': 'newsletter', 'specialty': 'energy'},
+    'The Diff': {'type': 'newsletter', 'specialty': 'finance'},
+    'Platformer': {'type': 'newsletter', 'specialty': 'tech'},
+    'Not Boring': {'type': 'newsletter', 'specialty': 'tech'},
+    'The Generalist': {'type': 'newsletter', 'specialty': 'tech'},
 
-    # Tier 3: General Finance News (40-60)
-    'Finviz': {'tier': 3, 'base_score': 55, 'type': 'news', 'specialty': 'general'},
-    'Google News': {'tier': 3, 'base_score': 50, 'type': 'news', 'specialty': 'general'},
-    'Yahoo Finance': {'tier': 3, 'base_score': 52, 'type': 'news', 'specialty': 'general'},
-    'MarketWatch': {'tier': 3, 'base_score': 48, 'type': 'news', 'specialty': 'general'},
-    'Bloomberg': {'tier': 3, 'base_score': 58, 'type': 'news', 'specialty': 'general'},
-    'CNBC': {'tier': 3, 'base_score': 45, 'type': 'news', 'specialty': 'general'},
-    'Reuters': {'tier': 3, 'base_score': 55, 'type': 'news', 'specialty': 'general'},
+    # Podcasts
+    'All-In Podcast': {'type': 'podcast', 'specialty': 'tech_investing'},
+    'Acquired': {'type': 'podcast', 'specialty': 'business'},
+    'Invest Like the Best': {'type': 'podcast', 'specialty': 'investing'},
+    'Bankless': {'type': 'podcast', 'specialty': 'crypto'},
+    'My First Million': {'type': 'podcast', 'specialty': 'business'},
+    'The Prof G Pod': {'type': 'podcast', 'specialty': 'business'},
+    'Lex Fridman': {'type': 'podcast', 'specialty': 'tech'},
+    'Patrick Boyle': {'type': 'podcast', 'specialty': 'finance'},
 
-    # Tier 4: Social / Retail (20-40)
-    'StockTwits': {'tier': 4, 'base_score': 35, 'type': 'social', 'specialty': 'retail'},
-    'Reddit': {'tier': 4, 'base_score': 32, 'type': 'social', 'specialty': 'retail'},
-    'Twitter': {'tier': 4, 'base_score': 38, 'type': 'social', 'specialty': 'mixed'},
-    'r/wallstreetbets': {'tier': 4, 'base_score': 25, 'type': 'social', 'specialty': 'retail'},
-    'r/stocks': {'tier': 4, 'base_score': 35, 'type': 'social', 'specialty': 'retail'},
-    'r/investing': {'tier': 4, 'base_score': 38, 'type': 'social', 'specialty': 'retail'},
+    # News
+    'Finviz': {'type': 'news', 'specialty': 'general'},
+    'Google News': {'type': 'news', 'specialty': 'general'},
+    'Yahoo Finance': {'type': 'news', 'specialty': 'general'},
+    'MarketWatch': {'type': 'news', 'specialty': 'general'},
+    'Bloomberg': {'type': 'news', 'specialty': 'general'},
+    'CNBC': {'type': 'news', 'specialty': 'general'},
+    'Reuters': {'type': 'news', 'specialty': 'general'},
+
+    # Social
+    'StockTwits': {'type': 'social', 'specialty': 'retail'},
+    'Reddit': {'type': 'social', 'specialty': 'retail'},
+    'Twitter': {'type': 'social', 'specialty': 'mixed'},
+    'r/wallstreetbets': {'type': 'social', 'specialty': 'retail'},
+    'r/stocks': {'type': 'social', 'specialty': 'retail'},
+    'r/investing': {'type': 'social', 'specialty': 'retail'},
 }
-
-# Default score for unknown sources
-DEFAULT_SOURCE_SCORE = 40
 
 # File to store accuracy tracking
 ACCURACY_FILE = Path('source_accuracy.json')
@@ -94,30 +95,30 @@ def save_accuracy_data(data):
 def get_source_trust_score(source_name):
     """
     Get trust score for a source.
-    Combines base tier score with historical accuracy adjustment.
+    ALL sources start at 50 - trust is earned through accuracy.
     """
-    # Get base score
-    source_info = SOURCE_TIERS.get(source_name, {})
-    base_score = source_info.get('base_score', DEFAULT_SOURCE_SCORE)
+    # Try to get from fact_checker's trust system first
+    try:
+        from fact_checker import get_source_trust
+        return get_source_trust(source_name)
+    except ImportError:
+        pass
 
-    # Load accuracy adjustments
+    # Fallback: Use local accuracy data
     accuracy_data = load_accuracy_data()
     source_accuracy = accuracy_data.get('source_accuracy', {}).get(source_name, {})
 
-    if source_accuracy.get('total', 0) >= 5:  # Need at least 5 signals to adjust
+    if source_accuracy.get('total', 0) >= 3:
         accuracy_rate = source_accuracy['correct'] / source_accuracy['total']
-        # Adjust score by up to +/- 15 based on accuracy
-        adjustment = (accuracy_rate - 0.5) * 30  # -15 to +15
-        base_score = min(100, max(0, base_score + adjustment))
+        # Score = 50 + (accuracy - 0.5) * 100
+        return min(100, max(0, 50 + (accuracy_rate - 0.5) * 100))
 
-    return base_score
+    return INITIAL_TRUST_SCORE  # New sources start at 50
 
 
-def get_source_tier(source_name):
-    """Get tier info for a source."""
-    return SOURCE_TIERS.get(source_name, {
-        'tier': 4,
-        'base_score': DEFAULT_SOURCE_SCORE,
+def get_source_metadata(source_name):
+    """Get metadata (type, specialty) for a source."""
+    return SOURCE_METADATA.get(source_name, {
         'type': 'unknown',
         'specialty': 'general'
     })
