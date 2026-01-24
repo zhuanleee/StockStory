@@ -441,21 +441,48 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"Podcasts error: {str(e)}")
 
+            elif text.lower() == '/ranked':
+                # Ranked signals with quality scores
+                try:
+                    from story_detector import run_ranked_detection
+                    from signal_ranker import format_ranked_signals
+                    send_telegram_message("⏳ Analyzing & ranking signals...")
+                    result = run_ranked_detection()
+                    ranked = result.get('ranked_signals', [])
+                    if ranked:
+                        msg = format_ranked_signals(ranked)
+                    else:
+                        msg = "No signals to rank. Try /stories first."
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Ranking error: {str(e)}")
+
+            elif text.lower() == '/accuracy':
+                # Source accuracy leaderboard
+                try:
+                    from story_detector import get_source_accuracy
+                    from signal_ranker import format_source_leaderboard
+                    leaderboard = get_source_accuracy()
+                    msg = format_source_leaderboard(leaderboard)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Accuracy error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
                 msg += "*Story Detection:*\n"
-                msg += "• `/stories` → Stories in play + emerging themes\n"
-                msg += "• `/story AI` → Deep dive on specific story\n"
-                msg += "• `/learned` → View auto-learned themes\n"
-                msg += "• `/podcasts` → Podcast & newsletter intel\n\n"
+                msg += "• `/stories` → Stories in play + emerging\n"
+                msg += "• `/ranked` → Signals ranked by quality\n"
+                msg += "• `/podcasts` → Podcast & newsletter intel\n"
+                msg += "• `/learned` → Auto-learned themes\n"
+                msg += "• `/accuracy` → Source accuracy stats\n\n"
                 msg += "*Analysis:*\n"
-                msg += "• Send ticker (e.g., `NVDA`) → Full analysis + chart\n"
+                msg += "• `NVDA` → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
-                msg += "• `/mtf` → Multi-timeframe confluence\n"
-                msg += "• `/sectors` → Sector rotation\n"
                 msg += "• `/news` → News + social sentiment\n"
-                msg += "• `/tam` → TAM growth rankings\n"
-                msg += "• `/tam AI_Infrastructure` → Specific theme TAM\n\n"
+                msg += "• `/sectors` → Sector rotation\n"
+                msg += "• `/mtf` → Multi-timeframe\n"
+                msg += "• `/tam` → TAM rankings\n\n"
                 msg += "_Bot checks every 15 min during market hours_"
                 send_telegram_message(msg)
 

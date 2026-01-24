@@ -23,31 +23,105 @@ from collections import defaultdict
 
 # Popular finance podcasts (YouTube channels)
 PODCAST_YOUTUBE = {
+    # Tech/VC Investing
     'All-In Podcast': 'UCESLZhusAkFfsNsApnjF_Cg',
-    'Bankless': 'UCAl9Ld79qaZxp9JzEOwd3aA',
     'Lex Fridman': 'UCSHZKyawb77ixDdsGog4iWA',
     'Patrick Boyle': 'UCASM0cgfkJxQ1ICmRcdqXSQ',
+    'The Compound': 'UC66rQ0kNBUbGwYiJhwESrJA',
+    'Odd Lots Bloomberg': 'UCIALMKvObZNtJ6AmdCLP7Lg',
+
+    # Crypto
+    'Bankless': 'UCAl9Ld79qaZxp9JzEOwd3aA',
+    'Real Vision': 'UCKMXV-VqgVsVXOgo5vPTxuQ',
+    'The Pomp Podcast': 'UCnzTeMXpYNyABqAMQCDlHbQ',
+
+    # Macro/Economics
+    'Wealthion': 'UCie_J2xi2RoYBR0lBNIbNfQ',
+    'Kitco NEWS': 'UCECOl04AVzs3DCWT4I_8qzw',
+    'Peter Schiff': 'UCw9awFTR92VWNfh4ZPjO_RA',
 }
 
 # Substack newsletters (RSS feeds)
 SUBSTACK_FEEDS = [
+    # Tech Strategy (Tier 1)
     ('Stratechery', 'https://stratechery.com/feed/'),
+    ('SemiAnalysis', 'https://semianalysis.com/feed/'),
+    ('Platformer', 'https://www.platformer.news/feed'),
+
+    # Finance/Investing (Tier 1-2)
     ('The Diff', 'https://diff.substack.com/feed'),
     ('Doomberg', 'https://doomberg.substack.com/feed'),
-    ('Platformer', 'https://www.platformer.news/feed'),
-    ('SemiAnalysis', 'https://semianalysis.com/feed/'),
-    ('Lenny Newsletter', 'https://www.lennysnewsletter.com/feed'),
+    ('Net Interest', 'https://netinterest.substack.com/feed'),
+    ('The Pomp Letter', 'https://pomp.substack.com/feed'),
+    ('Kyla Scanlon', 'https://kylascanlon.substack.com/feed'),
+
+    # Tech/Startup
     ('Not Boring', 'https://www.notboring.co/feed'),
     ('The Generalist', 'https://www.readthegeneralist.com/feed'),
+    ('Lenny Newsletter', 'https://www.lennysnewsletter.com/feed'),
+
+    # Macro/Economics
+    ('The Macro Compass', 'https://themacrocompass.substack.com/feed'),
+    ('Apricitas Economics', 'https://www.apricitas.io/feed'),
+
+    # AI/Tech Deep Dives
+    ('AI Snake Oil', 'https://aisnakeoil.substack.com/feed'),
+    ('The Batch', 'https://www.deeplearning.ai/the-batch/feed'),
+    ('Import AI', 'https://importai.substack.com/feed'),
+
+    # Energy/Commodities
+    ('Energy Flux', 'https://energyflux.substack.com/feed'),
+    ('Goehring & Rozencwajg', 'https://blog.gorozen.com/feed'),
+
+    # China/Asia
+    ('ChinaTalk', 'https://chinatalk.substack.com/feed'),
+    ('Sinocism', 'https://sinocism.com/feed'),
 ]
 
 # Podcast RSS feeds (for show notes)
 PODCAST_RSS = [
+    # Tech/VC
     ('All-In Podcast', 'https://feeds.megaphone.fm/all-in-with-chamath-jason-sacks-friedberg'),
-    ('Invest Like the Best', 'https://feeds.simplecast.com/JGE3yC0V'),
     ('Acquired', 'https://feeds.simplecast.com/i2F5rPab'),
-    ('My First Million', 'https://feeds.megaphone.fm/HSW2674591386'),
+    ('20VC', 'https://feeds.megaphone.fm/the-twenty-minute-vc-venture-capital'),
+
+    # Investing
+    ('Invest Like the Best', 'https://feeds.simplecast.com/JGE3yC0V'),
     ('The Prof G Pod', 'https://feeds.megaphone.fm/profgpod'),
+    ('Motley Fool Money', 'https://feeds.megaphone.fm/motleyfoolmoney'),
+    ('Odd Lots', 'https://feeds.bloomberg.com/BLM6611713481'),
+    ('Macro Voices', 'https://www.macrovoices.com/feed'),
+
+    # Business/Entrepreneurship
+    ('My First Million', 'https://feeds.megaphone.fm/HSW2674591386'),
+    ('How I Built This', 'https://feeds.npr.org/510313/podcast.xml'),
+    ('Founders', 'https://feeds.transistor.fm/founders'),
+
+    # Markets/Trading
+    ('Chat With Traders', 'https://feeds.megaphone.fm/chatwithtraders'),
+    ('Top Traders Unplugged', 'https://feeds.megaphone.fm/TTU'),
+    ('Market Huddle', 'https://feeds.libsyn.com/418831/rss'),
+
+    # Crypto
+    ('Bankless', 'https://feeds.simplecast.com/lGK0X2cY'),
+    ('Unchained', 'https://unchainedpodcast.com/feed/'),
+
+    # Real Estate
+    ('BiggerPockets', 'https://www.omnycontent.com/d/playlist/06e8a6a6-19a7-4e21-8e3f-acf10032f176/a87a82d2-5ca5-4f2e-b72d-adf7014cc2c7/83aa4c6b-ccaa-4f62-96a2-adf7014cc2dd/podcast.rss'),
+]
+
+# Finance influencers (Twitter handles)
+FINANCE_INFLUENCERS = [
+    # All-In crew
+    'chamath', 'Jason', 'friedberg', 'DavidSacks',
+    # Macro
+    'LynAldenContact', 'DiMartinoBooth', 'JeffSnider_AIP',
+    # Tech/VC
+    'benedictevans', 'pmarca', 'balaborr',
+    # Trading
+    'OptionsHawk', 'traborr', 'VolatilityGuy',
+    # Crypto
+    'APompliano', 'RyanSAdams', 'TrustlessState',
 ]
 
 # Finance influencers (Twitter handles to check via Nitter)

@@ -34,6 +34,17 @@ try:
 except ImportError:
     ALT_SOURCES_AVAILABLE = False
 
+# Import signal ranker
+try:
+    from signal_ranker import (
+        rank_signals, calculate_overall_score, record_signal,
+        check_signal_accuracy, format_ranked_signals,
+        get_source_leaderboard, format_source_leaderboard
+    )
+    RANKER_AVAILABLE = True
+except ImportError:
+    RANKER_AVAILABLE = False
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -839,6 +850,83 @@ def run_alt_sources_scan():
     content = aggregate_alt_sources()
     analysis = extract_themes_from_alt_sources(content)
     return analysis
+
+
+def run_ranked_detection():
+    """
+    Run story detection with smart ranking.
+    Returns signals ranked by quality score.
+    """
+    # Run standard detection
+    result = run_story_detection()
+
+    if not RANKER_AVAILABLE:
+        return result
+
+    # Prepare signals for ranking
+    signals_to_rank = []
+
+    for theme in result.get('themes', []):
+        # Build signal data for ranker
+        signal_data = {
+            'theme': theme.get('name', 'Unknown'),
+            'sources': theme.get('sources', []),
+            'tickers_mentioned': (
+                theme.get('primary_plays', []) +
+                theme.get('secondary_plays', []) +
+                theme.get('learned_stocks', [])
+            ),
+            'catalyst': theme.get('catalyst', ''),
+            'mention_count': theme.get('mention_count', 1),
+            'smart_money_sentiment': theme.get('heat', 'NEUTRAL'),
+            'retail_sentiment': 'NEUTRAL',  # Could enhance with StockTwits data
+        }
+
+        # Determine sources from where theme was detected
+        if theme.get('is_learned'):
+            signal_data['sources'] = ['AI Detection']
+        elif not signal_data['sources']:
+            # Infer sources from alt_sources if available
+            alt = result.get('alt_sources', {})
+            alt_themes = alt.get('themes', {})
+            theme_key = theme.get('name', '').lower()
+            if theme_key in alt_themes:
+                signal_data['sources'] = [m['source'] for m in alt_themes[theme_key]]
+
+        signals_to_rank.append(signal_data)
+
+    # Rank signals
+    ranked = rank_signals(signals_to_rank)
+
+    # Record signals for accuracy tracking
+    for signal in ranked[:5]:  # Track top 5
+        try:
+            record_signal(
+                signal['theme'],
+                signal.get('sources', []),
+                signal.get('tickers_mentioned', [])[:5],
+                signal.get('catalyst', '')
+            )
+        except:
+            pass
+
+    # Check past signal accuracy
+    try:
+        check_signal_accuracy()
+    except:
+        pass
+
+    result['ranked_signals'] = ranked
+
+    return result
+
+
+def get_source_accuracy():
+    """Get source accuracy leaderboard."""
+    if not RANKER_AVAILABLE:
+        return []
+
+    return get_source_leaderboard()
 
 
 # ============================================================
