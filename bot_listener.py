@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""
+Lightweight bot listener - checks for Telegram commands and responds.
+Runs every 15 minutes via GitHub Actions.
+"""
+
+import os
+import io
+import json
+import requests
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from datetime import datetime
+from pathlib import Path
+import warnings
+warnings.filterwarnings('ignore')
+
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+
+def send_telegram_message(message, parse_mode='Markdown'):
+    """Send message via Telegram bot."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print(message)
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'text': message,
+        'parse_mode': parse_mode,
+        'disable_web_page_preview': True,
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Telegram error: {e}")
+        return False
+
+
+def send_telegram_photo(photo_buffer, caption=''):
+    """Send a photo via Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    try:
+        files = {'photo': ('chart.png', photo_buffer, 'image/png')}
+        data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'caption': caption,
+            'parse_mode': 'Markdown',
+        }
+        response = requests.post(url, files=files, data=data, timeout=30)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Telegram photo error: {e}")
+        return False
+
+
+def get_telegram_updates(offset=None):
+    """Get updates from Telegram bot."""
+    if not TELEGRAM_BOT_TOKEN:
+        return []
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    params = {'timeout': 1}
+    if offset:
+        params['offset'] = offset
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            return response.json().get('result', [])
+    except:
+        pass
+    return []
+
+
+def generate_chart(ticker):
+    """Generate a chart image for a ticker."""
+    try:
+        df = yf.download(ticker, period='3mo', progress=False)
+
+        if len(df) < 20:
+            return None
+
+        df['SMA_20'] = df['Close'].rolling(20).mean()
+        df['SMA_50'] = df['Close'].rolling(50).mean()
+
+        # Bollinger Bands
+        df['BB_mid'] = df['Close'].rolling(20).mean()
+        df['BB_std'] = df['Close'].rolling(20).std()
+        df['BB_upper'] = df['BB_mid'] + 2 * df['BB_std']
+        df['BB_lower'] = df['BB_mid'] - 2 * df['BB_std']
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
+                                        gridspec_kw={'height_ratios': [3, 1]})
+
+        ax1.plot(df.index, df['Close'], 'b-', linewidth=1.5, label='Price')
+        ax1.plot(df.index, df['SMA_20'], 'orange', linewidth=1, label='20 SMA')
+        ax1.plot(df.index, df['SMA_50'], 'purple', linewidth=1, label='50 SMA')
+        ax1.fill_between(df.index, df['BB_lower'], df['BB_upper'],
+                         alpha=0.1, color='blue', label='BB')
+
+        ax1.set_title(f'{ticker} - Daily Chart', fontsize=14, fontweight='bold')
+        ax1.legend(loc='upper left', fontsize=8)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_ylabel('Price ($)')
+
+        colors = ['g' if df['Close'].iloc[i] >= df['Close'].iloc[i-1] else 'r'
+                  for i in range(1, len(df))]
+        colors = ['g'] + colors
+        ax2.bar(df.index, df['Volume'], color=colors, alpha=0.7)
+        ax2.set_ylabel('Volume')
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        plt.close(fig)
+
+        return buf
+    except Exception as e:
+        print(f"Chart error for {ticker}: {e}")
+        return None
+
+
+def analyze_ticker(ticker):
+    """Quick analysis of a single ticker."""
+    try:
+        ticker = ticker.upper().strip()
+
+        # Fetch data
+        df = yf.download(ticker, period='1y', progress=False)
+        spy = yf.download('SPY', period='1y', progress=False)
+
+        if len(df) < 50:
+            return f"❌ Not enough data for `{ticker}`"
+
+        close = df['Close']
+        current_price = close.iloc[-1]
+
+        # MAs
+        sma_20 = close.rolling(20).mean().iloc[-1]
+        sma_50 = close.rolling(50).mean().iloc[-1]
+        sma_200 = close.rolling(200).mean().iloc[-1] if len(df) >= 200 else None
+
+        above_20 = current_price > sma_20
+        above_50 = current_price > sma_50
+        above_200 = current_price > sma_200 if sma_200 else None
+
+        # RS
+        stock_ret = (close.iloc[-1] / close.iloc[-20] - 1) * 100
+        spy_ret = (spy['Close'].iloc[-1] / spy['Close'].iloc[-20] - 1) * 100
+        rs = stock_ret - spy_ret
+
+        # Bollinger squeeze
+        bb_std = close.rolling(20).std()
+        bb_width = (bb_std / close.rolling(20).mean()).iloc[-1]
+        width_pct = (close.rolling(20).std().iloc[-100:] / close.rolling(20).mean().iloc[-100:] <= bb_width).mean() * 100
+        in_squeeze = width_pct <= 20
+
+        upper_bb = sma_20 + 2 * bb_std.iloc[-1]
+        breakout = current_price > upper_bb
+
+        # Volume
+        vol_ratio = df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean()
+
+        # ATR
+        tr = pd.concat([
+            df['High'] - df['Low'],
+            abs(df['High'] - close.shift(1)),
+            abs(df['Low'] - close.shift(1))
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean().iloc[-1]
+
+        # Build message
+        msg = f"📊 *{ticker} ANALYSIS*\n\n"
+        msg += f"*Price:* ${current_price:.2f}\n"
+        msg += f"*RS vs SPY (20d):* {rs:+.2f}%\n\n"
+
+        msg += "*Trend:*\n"
+        msg += f"• Above 20 SMA: {'✅' if above_20 else '❌'}\n"
+        msg += f"• Above 50 SMA: {'✅' if above_50 else '❌'}\n"
+        if above_200 is not None:
+            msg += f"• Above 200 SMA: {'✅' if above_200 else '❌'}\n"
+
+        if in_squeeze:
+            msg += "\n⏳ *IN SQUEEZE* - Volatility contracting\n"
+        if breakout:
+            msg += "🚀 *BREAKOUT* - Above upper Bollinger\n"
+
+        msg += f"\n*Volume:* {vol_ratio:.1f}x average"
+        if vol_ratio > 2:
+            msg += " 🔥"
+
+        msg += f"\n\n*Entry Ideas:*\n"
+        msg += f"• Current: ${current_price:.2f}\n"
+        msg += f"• Stop (2 ATR): ${current_price - 2*atr:.2f}\n"
+        msg += f"• Target (3 ATR): ${current_price + 3*atr:.2f}\n"
+
+        return msg
+
+    except Exception as e:
+        return f"❌ Error analyzing `{ticker}`: {str(e)}"
+
+
+def load_latest_scan():
+    """Load latest scan results if available."""
+    import glob
+    scan_files = glob.glob('scan_*.csv')
+    if scan_files:
+        latest = max(scan_files)
+        return pd.read_csv(latest)
+    return None
+
+
+def main():
+    """Check for Telegram commands and respond."""
+    print(f"Bot listener started: {datetime.now()}")
+
+    # Load offset
+    offset_file = Path('telegram_offset.json')
+    last_offset = 0
+    if offset_file.exists():
+        with open(offset_file, 'r') as f:
+            last_offset = json.load(f).get('offset', 0)
+
+    updates = get_telegram_updates(offset=last_offset + 1)
+    print(f"Found {len(updates)} new messages")
+
+    df_results = load_latest_scan()
+
+    for update in updates:
+        update_id = update.get('update_id', 0)
+        message = update.get('message', {})
+        text = message.get('text', '').strip()
+        chat_id = message.get('chat', {}).get('id')
+
+        print(f"Processing: {text}")
+
+        if text:
+            # Ticker query (1-5 letters)
+            if len(text) <= 5 and text.replace('.', '').isalpha():
+                ticker = text.upper()
+                send_telegram_message(f"⏳ Analyzing {ticker}...")
+
+                response = analyze_ticker(ticker)
+                send_telegram_message(response)
+
+                # Send chart
+                chart = generate_chart(ticker)
+                if chart:
+                    send_telegram_photo(chart, caption=f"{ticker} Chart")
+
+            elif text.lower() == '/top':
+                if df_results is not None:
+                    msg = "🏆 *TOP 10 STOCKS*\n\n"
+                    for _, row in df_results.head(10).iterrows():
+                        msg += f"`{row['ticker']:5}` | Score: {row['composite_score']:.0f} | RS: {row['rs_composite']:+.1f}%\n"
+                    send_telegram_message(msg)
+                else:
+                    send_telegram_message("No scan data available. Wait for next scheduled scan.")
+
+            elif text.lower() == '/help':
+                msg = "🤖 *BOT COMMANDS*\n\n"
+                msg += "• Send any ticker (e.g., `NVDA`) for analysis + chart\n"
+                msg += "• `/top` - Show top 10 stocks from last scan\n"
+                msg += "• `/help` - Show this help\n\n"
+                msg += "_Bot checks every 15 min during market hours_"
+                send_telegram_message(msg)
+
+            elif text.startswith('/'):
+                send_telegram_message(f"Unknown command. Send `/help` for options.")
+
+        # Update offset
+        with open(offset_file, 'w') as f:
+            json.dump({'offset': update_id}, f)
+
+    print(f"Bot listener done: {datetime.now()}")
+
+
+if __name__ == '__main__':
+    main()

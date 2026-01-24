@@ -1,0 +1,40 @@
+name: Bot Listener
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9 AM - 5 PM EST, Mon-Fri)
+    - cron: '*/15 13-22 * * 1-5'  # UTC times
+
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  listen:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install yfinance pandas numpy requests matplotlib
+
+      - name: Check for commands
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python bot_listener.py
+
+      - name: Commit offset
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add telegram_offset.json || true
+          git commit -m "Update bot offset" || true
+          git push || true
