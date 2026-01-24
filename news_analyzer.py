@@ -3,9 +3,10 @@
 AI News Analyzer
 
 Fetches and analyzes news for stocks/sectors.
-Uses keyword analysis + optional LLM integration.
+Uses DeepSeek AI for intelligent sentiment analysis.
 """
 
+import os
 import requests
 import re
 from datetime import datetime, timedelta
@@ -13,6 +14,10 @@ from collections import Counter
 import json
 import warnings
 warnings.filterwarnings('ignore')
+
+# DeepSeek API Configuration (set via environment variable for security)
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 
 # Sentiment keywords with weights
@@ -56,6 +61,148 @@ CATALYST_KEYWORDS = {
     'partnership': 'PARTNERSHIP',
     'launch': 'PRODUCT_LAUNCH',
 }
+
+
+# ============================================================
+# DEEPSEEK AI ANALYSIS
+# ============================================================
+
+def analyze_with_deepseek(ticker, headlines):
+    """
+    Use DeepSeek AI for intelligent news analysis.
+    Returns sentiment, key insights, and trading implications.
+    """
+    if not headlines:
+        return None
+
+    headlines_text = "\n".join([f"- {h['title']}" for h in headlines[:10]])
+
+    prompt = f"""Analyze these news headlines for {ticker} stock and provide a trading-focused analysis.
+
+Headlines:
+{headlines_text}
+
+Respond in this exact JSON format:
+{{
+    "sentiment": "STRONG_BULLISH" or "BULLISH" or "NEUTRAL" or "BEARISH" or "STRONG_BEARISH",
+    "confidence": 1-100,
+    "key_catalyst": "main driver (e.g., earnings beat, FDA approval, etc.)",
+    "summary": "1-2 sentence summary of news sentiment",
+    "trading_implication": "buy/hold/sell recommendation with brief reason",
+    "risk_factors": ["risk 1", "risk 2"]
+}}
+
+Be concise. Focus on actionable trading insights."""
+
+    try:
+        response = requests.post(
+            DEEPSEEK_API_URL,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": "You are a financial analyst specializing in stock news analysis. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 500
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+
+            # Parse JSON from response
+            # Handle potential markdown code blocks
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            analysis = json.loads(content.strip())
+            return analysis
+        else:
+            print(f"DeepSeek API error: {response.status_code}")
+            return None
+
+    except Exception as e:
+        print(f"DeepSeek analysis error: {e}")
+        return None
+
+
+def analyze_sector_news_ai(sector, tickers):
+    """
+    AI-powered sector news analysis.
+    Aggregates news from multiple tickers in a sector.
+    """
+    all_headlines = []
+
+    for ticker in tickers[:5]:  # Limit to avoid rate limits
+        headlines = scrape_finviz_news(ticker)
+        for h in headlines[:3]:
+            h['ticker'] = ticker
+            all_headlines.append(h)
+
+    if not all_headlines:
+        return None
+
+    headlines_text = "\n".join([f"- [{h.get('ticker', '')}] {h['title']}" for h in all_headlines])
+
+    prompt = f"""Analyze these news headlines for the {sector} sector and identify themes.
+
+Headlines:
+{headlines_text}
+
+Respond in this exact JSON format:
+{{
+    "sector_sentiment": "STRONG_BULLISH" or "BULLISH" or "NEUTRAL" or "BEARISH" or "STRONG_BEARISH",
+    "confidence": 1-100,
+    "main_theme": "key theme driving the sector",
+    "best_positioned": ["ticker1", "ticker2"],
+    "worst_positioned": ["ticker1"],
+    "sector_catalyst": "what's driving sector movement",
+    "outlook": "1-2 sentence sector outlook"
+}}"""
+
+    try:
+        response = requests.post(
+            DEEPSEEK_API_URL,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": "You are a sector analyst. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 500
+            },
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            return json.loads(content.strip())
+        return None
+
+    except Exception as e:
+        print(f"Sector analysis error: {e}")
+        return None
 
 
 def scrape_finviz_news(ticker):
@@ -124,8 +271,8 @@ def analyze_headline_sentiment(headline):
     }
 
 
-def analyze_ticker_news(ticker):
-    """Full news analysis for a ticker."""
+def analyze_ticker_news(ticker, use_ai=True):
+    """Full news analysis for a ticker using AI."""
     headlines = scrape_finviz_news(ticker)
 
     if not headlines:
@@ -136,6 +283,27 @@ def analyze_ticker_news(ticker):
             'headlines': [],
         }
 
+    # Try AI analysis first
+    ai_analysis = None
+    if use_ai and DEEPSEEK_API_KEY:
+        ai_analysis = analyze_with_deepseek(ticker, headlines)
+
+    if ai_analysis:
+        # Use AI analysis
+        return {
+            'ticker': ticker,
+            'headline_count': len(headlines),
+            'overall_sentiment': ai_analysis.get('sentiment', 'NEUTRAL'),
+            'confidence': ai_analysis.get('confidence', 0),
+            'key_catalyst': ai_analysis.get('key_catalyst', ''),
+            'summary': ai_analysis.get('summary', ''),
+            'trading_implication': ai_analysis.get('trading_implication', ''),
+            'risk_factors': ai_analysis.get('risk_factors', []),
+            'headlines': [{'title': h['title'], 'sentiment': 'AI_ANALYZED'} for h in headlines[:5]],
+            'ai_powered': True,
+        }
+
+    # Fallback to keyword analysis
     analyzed_headlines = []
     total_bullish = 0
     total_bearish = 0
@@ -176,6 +344,7 @@ def analyze_ticker_news(ticker):
         'bearish_score': total_bearish,
         'top_catalysts': catalyst_counts.most_common(3),
         'headlines': analyzed_headlines[:5],
+        'ai_powered': False,
     }
 
 
@@ -233,21 +402,46 @@ def format_news_analysis(ticker, analysis):
         'NO_DATA': '⚪',
     }
 
-    msg = f"📰 *{ticker} NEWS ANALYSIS*\n\n"
+    msg = f"📰 *{ticker} NEWS ANALYSIS*"
+    if analysis.get('ai_powered'):
+        msg += " 🤖\n\n"
+    else:
+        msg += "\n\n"
 
     sentiment = analysis['overall_sentiment']
-    msg += f"*Sentiment:* {sentiment_emoji.get(sentiment, '')} {sentiment}\n"
+    msg += f"*Sentiment:* {sentiment_emoji.get(sentiment, '')} {sentiment}"
+
+    if analysis.get('confidence'):
+        msg += f" ({analysis['confidence']}% confidence)"
+    msg += "\n"
+
     msg += f"Headlines: {analysis['headline_count']}\n"
 
-    if analysis.get('top_catalysts'):
-        cats = ', '.join([f"{c[0]}({c[1]})" for c in analysis['top_catalysts']])
-        msg += f"Catalysts: {cats}\n"
+    # AI-powered insights
+    if analysis.get('ai_powered'):
+        if analysis.get('key_catalyst'):
+            msg += f"\n*Catalyst:* {analysis['key_catalyst']}\n"
 
-    msg += "\n*Recent Headlines:*\n"
-    for h in analysis.get('headlines', [])[:4]:
-        emoji = '📈' if h['sentiment'] == 'BULLISH' else ('📉' if h['sentiment'] == 'BEARISH' else '📄')
-        title = h['title'][:60] + '...' if len(h['title']) > 60 else h['title']
-        msg += f"{emoji} _{title}_\n"
+        if analysis.get('summary'):
+            msg += f"\n*Summary:*\n_{analysis['summary']}_\n"
+
+        if analysis.get('trading_implication'):
+            msg += f"\n*Trading:* {analysis['trading_implication']}\n"
+
+        if analysis.get('risk_factors'):
+            risks = ', '.join(analysis['risk_factors'][:2])
+            msg += f"\n*Risks:* {risks}\n"
+    else:
+        # Keyword-based analysis
+        if analysis.get('top_catalysts'):
+            cats = ', '.join([f"{c[0]}({c[1]})" for c in analysis['top_catalysts']])
+            msg += f"Catalysts: {cats}\n"
+
+        msg += "\n*Recent Headlines:*\n"
+        for h in analysis.get('headlines', [])[:4]:
+            emoji = '📈' if h.get('sentiment') == 'BULLISH' else ('📉' if h.get('sentiment') == 'BEARISH' else '📄')
+            title = h['title'][:60] + '...' if len(h['title']) > 60 else h['title']
+            msg += f"{emoji} _{title}_\n"
 
     return msg
 
@@ -278,25 +472,48 @@ def scan_news_sentiment(tickers):
 
 def format_news_scan_results(results):
     """Format news scan results for Telegram."""
-    msg = "📰 *NEWS SENTIMENT SCAN*\n\n"
+    ai_powered = any(r.get('ai_powered') for r in results)
+
+    msg = "📰 *NEWS SENTIMENT SCAN*"
+    if ai_powered:
+        msg += " 🤖"
+    msg += "\n\n"
 
     # Bullish
-    bullish = [r for r in results if 'BULLISH' in r['overall_sentiment']]
+    bullish = [r for r in results if 'BULLISH' in r.get('overall_sentiment', '')]
     if bullish:
         msg += "*🟢 BULLISH NEWS:*\n"
         for r in bullish[:5]:
-            cats = ', '.join([c[0] for c in r.get('top_catalysts', [])[:2]])
             msg += f"• `{r['ticker']}` - {r['overall_sentiment']}"
-            if cats:
-                msg += f" ({cats})"
+            if r.get('confidence'):
+                msg += f" ({r['confidence']}%)"
+            if r.get('key_catalyst'):
+                msg += f"\n  _{r['key_catalyst']}_"
+            elif r.get('top_catalysts'):
+                cats = ', '.join([c[0] for c in r['top_catalysts'][:2]])
+                if cats:
+                    msg += f" ({cats})"
             msg += "\n"
 
     # Bearish
-    bearish = [r for r in results if 'BEARISH' in r['overall_sentiment']]
+    bearish = [r for r in results if 'BEARISH' in r.get('overall_sentiment', '')]
     if bearish:
         msg += "\n*🔴 BEARISH NEWS:*\n"
         for r in bearish[:5]:
-            msg += f"• `{r['ticker']}` - {r['overall_sentiment']}\n"
+            msg += f"• `{r['ticker']}` - {r['overall_sentiment']}"
+            if r.get('key_catalyst'):
+                msg += f"\n  _{r['key_catalyst']}_"
+            msg += "\n"
+
+    # Neutral
+    neutral = [r for r in results if r.get('overall_sentiment') == 'NEUTRAL']
+    if neutral and len(bullish) + len(bearish) < 3:
+        msg += "\n*🟡 NEUTRAL:*\n"
+        for r in neutral[:3]:
+            msg += f"• `{r['ticker']}`\n"
+
+    if not bullish and not bearish and not neutral:
+        msg += "_No significant news sentiment detected_"
 
     return msg
 
