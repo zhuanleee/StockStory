@@ -461,6 +461,219 @@ def generate_daily_summary(df_results):
     }
 
 
+# ============================================================
+# NICHE THEME DETECTION (Embedded)
+# ============================================================
+
+SUPPLY_CHAIN = {
+    'NVDA': {
+        'theme': 'AI_Infrastructure',
+        'suppliers': ['MU', 'TSM', 'AVGO', 'MRVL', 'AMAT', 'LRCX', 'KLAC', 'ASML'],
+        'sub_themes': {
+            'HBM': ['MU'],
+            'CoWoS_Packaging': ['TSM', 'ASX'],
+            'Networking': ['AVGO', 'MRVL'],
+            'Power_Cooling': ['VRT', 'DELL'],
+        },
+    },
+    'AMD': {
+        'theme': 'AI_Infrastructure',
+        'suppliers': ['MU', 'TSM', 'AVGO', 'AMAT', 'LRCX'],
+        'sub_themes': {'HBM': ['MU'], 'Foundry': ['TSM']},
+    },
+    'LLY': {
+        'theme': 'GLP1_Obesity',
+        'suppliers': ['TMO', 'DHR', 'WST', 'CRL'],
+        'sub_themes': {'Drug_Delivery': ['WST', 'BDX'], 'CDMO': ['CRL']},
+    },
+    'NVO': {
+        'theme': 'GLP1_Obesity',
+        'suppliers': ['TMO', 'DHR', 'WST'],
+        'sub_themes': {'Drug_Delivery': ['WST', 'BDX']},
+    },
+    'TSLA': {
+        'theme': 'EV_Ecosystem',
+        'suppliers': ['ALB', 'SQM'],
+        'sub_themes': {'Lithium': ['ALB', 'SQM'], 'Auto_Semis': ['ON', 'NXPI']},
+    },
+    'CEG': {
+        'theme': 'Nuclear_Renaissance',
+        'suppliers': ['CCJ', 'UEC', 'LEU'],
+        'sub_themes': {'Uranium': ['CCJ', 'UEC', 'DNN'], 'SMR': ['SMR', 'OKLO']},
+    },
+    'MSFT': {
+        'theme': 'Cloud_Infrastructure',
+        'suppliers': ['NVDA', 'AMD'],
+        'sub_themes': {
+            'Servers': ['DELL', 'HPE', 'SMCI'],
+            'Power': ['VRT', 'ETN', 'PWR'],
+            'REITs': ['EQIX', 'DLR'],
+        },
+    },
+    'MSTR': {
+        'theme': 'Bitcoin',
+        'suppliers': [],
+        'sub_themes': {'Miners': ['MARA', 'RIOT', 'CLSK'], 'Exchange': ['COIN']},
+    },
+}
+
+NICHE_THEMES = {
+    'HBM_Memory': {'tickers': ['MU', 'WDC', 'STX'], 'drivers': ['NVDA', 'AMD']},
+    'AI_Networking': {'tickers': ['AVGO', 'MRVL', 'ANET'], 'drivers': ['NVDA', 'MSFT']},
+    'AI_Power_Cooling': {'tickers': ['VRT', 'ETN', 'PWR'], 'drivers': ['NVDA', 'MSFT']},
+    'Uranium_Nuclear': {'tickers': ['CCJ', 'UEC', 'DNN', 'LEU'], 'drivers': ['CEG', 'VST']},
+    'SMR_Nuclear': {'tickers': ['SMR', 'OKLO', 'BWX'], 'drivers': ['CEG', 'MSFT']},
+    'GLP1_Delivery': {'tickers': ['WST', 'BDX', 'BAX'], 'drivers': ['LLY', 'NVO']},
+    'Bitcoin_Miners': {'tickers': ['MARA', 'RIOT', 'CLSK', 'HUT'], 'drivers': ['MSTR', 'COIN']},
+    'Quantum_Computing': {'tickers': ['IONQ', 'RGTI', 'QBTS'], 'drivers': ['IBM', 'GOOGL']},
+    'Humanoid_Robots': {'tickers': ['ISRG', 'ROK', 'TER'], 'drivers': ['TSLA']},
+    'Space_Launch': {'tickers': ['RKLB', 'LUNR', 'ASTS'], 'drivers': []},
+    'Copper_Grid': {'tickers': ['FCX', 'SCCO', 'TECK'], 'drivers': []},
+    'Lithium_Battery': {'tickers': ['ALB', 'SQM', 'LAC'], 'drivers': ['TSLA']},
+}
+
+
+def detect_supply_chain_plays(df_results, hot_threshold=70):
+    """Find supply chain opportunities when a driver is hot."""
+    plays = []
+    hot_stocks = df_results[df_results['composite_score'] >= hot_threshold]['ticker'].tolist()
+
+    for ticker in hot_stocks:
+        if ticker in SUPPLY_CHAIN:
+            chain = SUPPLY_CHAIN[ticker]
+            driver_score = df_results[df_results['ticker'] == ticker]['composite_score'].values[0]
+
+            for supplier in chain.get('suppliers', []):
+                supplier_data = df_results[df_results['ticker'] == supplier]
+                if len(supplier_data) > 0:
+                    supplier_score = supplier_data['composite_score'].values[0]
+                    if supplier_score < driver_score - 10:  # Lagging by 10+ points
+                        plays.append({
+                            'driver': ticker,
+                            'beneficiary': supplier,
+                            'theme': chain['theme'],
+                            'gap': driver_score - supplier_score,
+                            'in_squeeze': supplier_data['in_squeeze'].values[0],
+                        })
+
+    return sorted(plays, key=lambda x: x['gap'], reverse=True)
+
+
+def analyze_themes(df_results):
+    """Score each niche theme."""
+    theme_scores = []
+
+    for theme_name, theme_data in NICHE_THEMES.items():
+        tickers = theme_data.get('tickers', [])
+        drivers = theme_data.get('drivers', [])
+
+        theme_stocks = df_results[df_results['ticker'].isin(tickers)]
+        driver_stocks = df_results[df_results['ticker'].isin(drivers)]
+
+        if len(theme_stocks) == 0:
+            continue
+
+        avg_score = theme_stocks['composite_score'].mean()
+        avg_rs = theme_stocks['rs_composite'].mean()
+        breakouts = theme_stocks['breakout_up'].sum()
+        driver_score = driver_stocks['composite_score'].mean() if len(driver_stocks) > 0 else 0
+
+        theme_scores.append({
+            'theme': theme_name,
+            'avg_score': avg_score,
+            'avg_rs': avg_rs,
+            'breakouts': int(breakouts),
+            'driver_score': driver_score,
+            'opportunity': max(0, driver_score - avg_score) if driver_score > 0 else avg_score,
+        })
+
+    return sorted(theme_scores, key=lambda x: x['opportunity'], reverse=True)
+
+
+def detect_unknown_clusters(price_data, df_results, min_size=3, corr_threshold=0.7):
+    """Auto-detect unknown themes via correlation clustering."""
+    try:
+        strong_tickers = df_results[df_results['composite_score'] >= 50]['ticker'].tolist()[:80]
+
+        returns_data = {}
+        for ticker in strong_tickers:
+            try:
+                if isinstance(price_data.columns, pd.MultiIndex):
+                    df = price_data[ticker]['Close']
+                else:
+                    df = price_data['Close']
+                if len(df) >= 20:
+                    returns_data[ticker] = df.pct_change().iloc[-20:]
+            except:
+                continue
+
+        if len(returns_data) < 5:
+            return []
+
+        returns_df = pd.DataFrame(returns_data).dropna()
+        if len(returns_df) < 10:
+            return []
+
+        corr_matrix = returns_df.corr()
+        clusters = []
+        used = set()
+
+        for ticker in corr_matrix.columns:
+            if ticker in used:
+                continue
+            correlated = corr_matrix[ticker][corr_matrix[ticker] >= corr_threshold].index.tolist()
+
+            if len(correlated) >= min_size:
+                # Check if NOT a known theme
+                is_known = False
+                for theme_data in NICHE_THEMES.values():
+                    if len(set(correlated) & set(theme_data.get('tickers', []))) >= len(correlated) * 0.5:
+                        is_known = True
+                        break
+
+                if not is_known:
+                    cluster_data = df_results[df_results['ticker'].isin(correlated)]
+                    clusters.append({
+                        'tickers': correlated[:6],
+                        'avg_rs': cluster_data['rs_composite'].mean(),
+                        'breakouts': int(cluster_data['breakout_up'].sum()),
+                    })
+                    used.update(correlated)
+
+        return sorted(clusters, key=lambda x: x['breakouts'], reverse=True)[:3]
+    except:
+        return []
+
+
+def format_theme_alert(themes, supply_plays, unknown_clusters):
+    """Format theme analysis for Telegram."""
+    msg = "🎯 *THEME ANALYSIS*\n\n"
+
+    # Top themes
+    msg += "*Hot Themes:*\n"
+    for t in themes[:5]:
+        emoji = "🔥" if t['avg_rs'] > 3 else ("📈" if t['avg_rs'] > 0 else "📉")
+        msg += f"{emoji} `{t['theme']}` | RS: {t['avg_rs']:+.1f}%"
+        if t['breakouts'] > 0:
+            msg += f" | {t['breakouts']} breakouts"
+        msg += "\n"
+
+    # Supply chain plays
+    if supply_plays:
+        msg += "\n*Supply Chain Plays:*\n"
+        for p in supply_plays[:3]:
+            squeeze = " [SQUEEZE]" if p['in_squeeze'] else ""
+            msg += f"• {p['driver']} hot → `{p['beneficiary']}` (gap: {p['gap']:.0f}){squeeze}\n"
+
+    # Unknown clusters
+    if unknown_clusters:
+        msg += "\n*⚠️ Unknown Themes Detected:*\n"
+        for c in unknown_clusters:
+            msg += f"• {', '.join(c['tickers'][:4])} (RS: {c['avg_rs']:+.1f}%)\n"
+
+    return msg
+
+
 def load_previous_state():
     """Load previous scan state for comparison."""
     state_file = Path('scanner_state.json')
@@ -510,7 +723,31 @@ def main():
     summary_msg = format_alert_message('DAILY_SUMMARY', summary)
     send_telegram_message(summary_msg)
 
-    # Detect and send alerts
+    # ============================================================
+    # THEME DETECTION
+    # ============================================================
+    print("\nRunning theme detection...")
+
+    # Detect supply chain plays
+    supply_plays = detect_supply_chain_plays(df_results)
+    print(f"  Found {len(supply_plays)} supply chain opportunities")
+
+    # Analyze themes
+    themes = analyze_themes(df_results)
+    print(f"  Analyzed {len(themes)} themes")
+
+    # Detect unknown clusters
+    unknown_clusters = detect_unknown_clusters(price_data, df_results)
+    print(f"  Found {len(unknown_clusters)} unknown clusters")
+
+    # Send theme alert
+    if themes or supply_plays or unknown_clusters:
+        theme_msg = format_theme_alert(themes, supply_plays, unknown_clusters)
+        send_telegram_message(theme_msg)
+
+    # ============================================================
+    # BREAKOUT ALERTS
+    # ============================================================
     alerts = detect_alerts(df_results, prev_state)
 
     # Only send new breakout alerts (not already in previous state)
@@ -526,7 +763,8 @@ def main():
     save_current_state(df_results)
 
     print(f"\nCompleted: {datetime.now()}")
-    print(f"Sent {len(new_alerts)} new alerts")
+    print(f"Sent {len(new_alerts)} new breakout alerts")
+    print(f"Themes analyzed: {len(themes)}")
 
     return df_results
 
