@@ -375,14 +375,39 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"TAM error: {str(e)}")
 
+            elif text.lower() == '/stories':
+                # Story/Theme detection
+                try:
+                    from story_detector import run_story_detection, format_stories_report
+                    send_telegram_message("⏳ Detecting market stories...")
+                    result = run_story_detection()
+                    msg = format_stories_report(result)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Stories error: {str(e)}")
+
+            elif text.lower().startswith('/story '):
+                # Detailed info on specific story
+                story_name = text[7:].strip()
+                try:
+                    from story_detector import format_single_story
+                    send_telegram_message(f"⏳ Analyzing {story_name}...")
+                    msg = format_single_story(story_name)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Story error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
+                msg += "*Story Detection:*\n"
+                msg += "• `/stories` → Stories in play + emerging themes\n"
+                msg += "• `/story AI` → Deep dive on specific story\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• Send ticker (e.g., `NVDA`) → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
                 msg += "• `/mtf` → Multi-timeframe confluence\n"
                 msg += "• `/sectors` → Sector rotation\n"
-                msg += "• `/news` → News sentiment\n"
+                msg += "• `/news` → News + social sentiment\n"
                 msg += "• `/tam` → TAM growth rankings\n"
                 msg += "• `/tam AI_Infrastructure` → Specific theme TAM\n\n"
                 msg += "_Bot checks every 15 min during market hours_"
