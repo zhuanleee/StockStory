@@ -872,6 +872,22 @@ def process_message(message):
     if text_lower in ['/help', '/start']:
         handle_help(chat_id)
 
+    # Subscribe / Chat ID
+    elif text_lower == '/subscribe':
+        msg = "🔔 *AUTO ALERTS SETUP*\n\n"
+        msg += f"Your Chat ID: `{chat_id}`\n\n"
+        msg += "*To enable auto alerts:*\n"
+        msg += "1. Go to GitHub repo Settings\n"
+        msg += "2. Secrets → Actions\n"
+        msg += f"3. Add `TELEGRAM_CHAT_ID` = `{chat_id}`\n\n"
+        msg += "*You'll receive:*\n"
+        msg += "• 🚨 New emerging themes\n"
+        msg += "• 🔥 Themes heating up\n"
+        msg += "• 📈 Price alerts\n"
+        msg += "• 📅 Earnings warnings\n\n"
+        msg += "_Alerts run every 30 min during market hours_"
+        send_message(chat_id, msg)
+
     # Analysis
     elif text_lower == '/scan':
         handle_scan(chat_id)
