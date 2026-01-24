@@ -93,22 +93,30 @@ def generate_chart(ticker):
         if len(df) < 20:
             return None
 
-        df['SMA_20'] = df['Close'].rolling(20).mean()
-        df['SMA_50'] = df['Close'].rolling(50).mean()
+        # Flatten columns if MultiIndex
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        close = df['Close'].values
+        volume = df['Volume'].values
+        dates = df.index
+
+        sma_20 = pd.Series(close).rolling(20).mean().values
+        sma_50 = pd.Series(close).rolling(50).mean().values
 
         # Bollinger Bands
-        df['BB_mid'] = df['Close'].rolling(20).mean()
-        df['BB_std'] = df['Close'].rolling(20).std()
-        df['BB_upper'] = df['BB_mid'] + 2 * df['BB_std']
-        df['BB_lower'] = df['BB_mid'] - 2 * df['BB_std']
+        bb_mid = pd.Series(close).rolling(20).mean().values
+        bb_std = pd.Series(close).rolling(20).std().values
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
                                         gridspec_kw={'height_ratios': [3, 1]})
 
-        ax1.plot(df.index, df['Close'], 'b-', linewidth=1.5, label='Price')
-        ax1.plot(df.index, df['SMA_20'], 'orange', linewidth=1, label='20 SMA')
-        ax1.plot(df.index, df['SMA_50'], 'purple', linewidth=1, label='50 SMA')
-        ax1.fill_between(df.index, df['BB_lower'], df['BB_upper'],
+        ax1.plot(dates, close, 'b-', linewidth=1.5, label='Price')
+        ax1.plot(dates, sma_20, 'orange', linewidth=1, label='20 SMA')
+        ax1.plot(dates, sma_50, 'purple', linewidth=1, label='50 SMA')
+        ax1.fill_between(dates, bb_lower, bb_upper,
                          alpha=0.1, color='blue', label='BB')
 
         ax1.set_title(f'{ticker} - Daily Chart', fontsize=14, fontweight='bold')
@@ -116,10 +124,10 @@ def generate_chart(ticker):
         ax1.grid(True, alpha=0.3)
         ax1.set_ylabel('Price ($)')
 
-        colors = ['g' if df['Close'].iloc[i] >= df['Close'].iloc[i-1] else 'r'
-                  for i in range(1, len(df))]
+        colors = ['g' if close[i] >= close[i-1] else 'r'
+                  for i in range(1, len(close))]
         colors = ['g'] + colors
-        ax2.bar(df.index, df['Volume'], color=colors, alpha=0.7)
+        ax2.bar(dates, volume, color=colors, alpha=0.7)
         ax2.set_ylabel('Volume')
         ax2.grid(True, alpha=0.3)
 
@@ -148,42 +156,51 @@ def analyze_ticker(ticker):
         if len(df) < 50:
             return f"❌ Not enough data for `{ticker}`"
 
+        # Flatten columns if MultiIndex
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if isinstance(spy.columns, pd.MultiIndex):
+            spy.columns = spy.columns.get_level_values(0)
+
         close = df['Close']
-        current_price = close.iloc[-1]
+        current_price = float(close.iloc[-1])
 
         # MAs
-        sma_20 = close.rolling(20).mean().iloc[-1]
-        sma_50 = close.rolling(50).mean().iloc[-1]
-        sma_200 = close.rolling(200).mean().iloc[-1] if len(df) >= 200 else None
+        sma_20 = float(close.rolling(20).mean().iloc[-1])
+        sma_50 = float(close.rolling(50).mean().iloc[-1])
+        sma_200 = float(close.rolling(200).mean().iloc[-1]) if len(df) >= 200 else None
 
         above_20 = current_price > sma_20
         above_50 = current_price > sma_50
         above_200 = current_price > sma_200 if sma_200 else None
 
         # RS
-        stock_ret = (close.iloc[-1] / close.iloc[-20] - 1) * 100
-        spy_ret = (spy['Close'].iloc[-1] / spy['Close'].iloc[-20] - 1) * 100
+        stock_ret = (float(close.iloc[-1]) / float(close.iloc[-20]) - 1) * 100
+        spy_ret = (float(spy['Close'].iloc[-1]) / float(spy['Close'].iloc[-20]) - 1) * 100
         rs = stock_ret - spy_ret
 
         # Bollinger squeeze
         bb_std = close.rolling(20).std()
-        bb_width = (bb_std / close.rolling(20).mean()).iloc[-1]
-        width_pct = (close.rolling(20).std().iloc[-100:] / close.rolling(20).mean().iloc[-100:] <= bb_width).mean() * 100
+        bb_mean = close.rolling(20).mean()
+        bb_width = float((bb_std / bb_mean).iloc[-1])
+        width_series = bb_std.iloc[-100:] / bb_mean.iloc[-100:]
+        width_pct = float((width_series <= bb_width).mean() * 100)
         in_squeeze = width_pct <= 20
 
-        upper_bb = sma_20 + 2 * bb_std.iloc[-1]
+        upper_bb = sma_20 + 2 * float(bb_std.iloc[-1])
         breakout = current_price > upper_bb
 
         # Volume
-        vol_ratio = df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean()
+        vol_ratio = float(df['Volume'].iloc[-1]) / float(df['Volume'].iloc[-20:].mean())
 
         # ATR
-        tr = pd.concat([
-            df['High'] - df['Low'],
-            abs(df['High'] - close.shift(1)),
-            abs(df['Low'] - close.shift(1))
-        ], axis=1).max(axis=1)
-        atr = tr.rolling(14).mean().iloc[-1]
+        high = df['High']
+        low = df['Low']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = float(tr.rolling(14).mean().iloc[-1])
 
         # Build message
         msg = f"📊 *{ticker} ANALYSIS*\n\n"
