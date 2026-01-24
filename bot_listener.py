@@ -429,12 +429,25 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"Learned error: {str(e)}")
 
+            elif text.lower() == '/podcasts':
+                # Podcast & Newsletter intel
+                try:
+                    from alt_sources import aggregate_alt_sources, extract_themes_from_alt_sources, format_alt_sources_report
+                    send_telegram_message("⏳ Scanning podcasts & newsletters...")
+                    content = aggregate_alt_sources()
+                    analysis = extract_themes_from_alt_sources(content)
+                    msg = format_alt_sources_report(analysis)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Podcasts error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
                 msg += "*Story Detection:*\n"
                 msg += "• `/stories` → Stories in play + emerging themes\n"
                 msg += "• `/story AI` → Deep dive on specific story\n"
-                msg += "• `/learned` → View auto-learned themes\n\n"
+                msg += "• `/learned` → View auto-learned themes\n"
+                msg += "• `/podcasts` → Podcast & newsletter intel\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• Send ticker (e.g., `NVDA`) → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"

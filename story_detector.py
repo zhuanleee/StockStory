@@ -27,6 +27,13 @@ from news_analyzer import (
     DEEPSEEK_API_URL
 )
 
+# Import alternative sources (podcasts, newsletters)
+try:
+    from alt_sources import aggregate_alt_sources, extract_themes_from_alt_sources
+    ALT_SOURCES_AVAILABLE = True
+except ImportError:
+    ALT_SOURCES_AVAILABLE = False
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -811,7 +818,27 @@ def run_story_detection(tickers=None):
     detected['headline_count'] = len(headlines)
     detected['tickers_scanned'] = len(set(h['ticker'] for h in headlines))
 
+    # 9. Add alternative sources (podcasts, newsletters)
+    if ALT_SOURCES_AVAILABLE:
+        try:
+            alt_content = aggregate_alt_sources()
+            alt_analysis = extract_themes_from_alt_sources(alt_content)
+            detected['alt_sources'] = alt_analysis
+            detected['alt_source_count'] = alt_analysis.get('total_items', 0)
+        except:
+            pass
+
     return detected
+
+
+def run_alt_sources_scan():
+    """Run standalone alternative sources scan."""
+    if not ALT_SOURCES_AVAILABLE:
+        return {'error': 'Alternative sources module not available'}
+
+    content = aggregate_alt_sources()
+    analysis = extract_themes_from_alt_sources(content)
+    return analysis
 
 
 # ============================================================
@@ -914,6 +941,19 @@ def format_stories_report(result):
                     msg += f"  _{signal['signal']}_\n"
                 if watch:
                     msg += f"  Stocks: `{'`, `'.join(watch[:4])}`\n"
+            msg += "\n"
+
+    # Alt sources summary (podcasts/newsletters)
+    alt_count = result.get('alt_source_count', 0)
+    if alt_count > 0:
+        alt = result.get('alt_sources', {})
+        alt_themes = alt.get('themes', {})
+        if alt_themes:
+            top_alt_themes = sorted(alt_themes.items(), key=lambda x: -len(x[1]))[:3]
+            msg += "*📻 PODCAST/NEWSLETTER BUZZ:*\n"
+            for theme, mentions in top_alt_themes:
+                sources = list(set(m['source'] for m in mentions))[:2]
+                msg += f"• {theme.upper()} ({len(mentions)}x) - _{', '.join(sources)}_\n"
             msg += "\n"
 
     # Market narrative
