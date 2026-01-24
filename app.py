@@ -75,6 +75,7 @@ def webhook():
             if text.lower() in ['/start', '/help']:
                 msg = "🤖 *INSTANT BOT*\n\n"
                 msg += "• Send ticker (NVDA) → Quick analysis\n"
+                msg += "• /stories → Hot themes & momentum\n"
                 msg += "• /top → Top stocks\n"
                 msg += "• /help → This message\n\n"
                 msg += "_Instant responses!_"
@@ -84,6 +85,16 @@ def webhook():
                 msg = "🏆 *TOP STOCKS*\n\n"
                 msg += "Run /scan in GitHub Actions first to generate data."
                 send_message(chat_id, msg)
+
+            elif text.lower() == '/stories':
+                send_message(chat_id, "⏳ Detecting stories...")
+                try:
+                    from fast_stories import run_fast_story_detection, format_fast_stories_report
+                    result = run_fast_story_detection(use_cache=True)
+                    msg = format_fast_stories_report(result)
+                    send_message(chat_id, msg)
+                except Exception as e:
+                    send_message(chat_id, f"Stories error: {str(e)}")
 
             elif len(text) <= 5 and text.isalpha():
                 # Ticker query
