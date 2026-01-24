@@ -444,14 +444,11 @@ def aggregate_news_sources(ticker):
 
     for source_name, scraper in sources:
         try:
-            print(f"Fetching {source_name} for {ticker}...")
             headlines = scraper(ticker)
-            print(f"  Got {len(headlines)} headlines from {source_name}")
             for h in headlines:
                 if h.get('title'):
                     all_headlines.append(h)
-        except Exception as e:
-            print(f"  Error from {source_name}: {e}")
+        except:
             continue
 
     # Deduplicate by similarity
@@ -481,22 +478,16 @@ def aggregate_social_sentiment(ticker):
     """
     Aggregate social media sentiment from StockTwits and Reddit.
     """
-    print(f"Fetching social sentiment for {ticker}...")
-
     # StockTwits
     try:
         stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
-        print(f"  StockTwits: {len(stocktwits_posts)} posts")
-    except Exception as e:
-        print(f"  StockTwits error: {e}")
+    except:
         stocktwits_posts, stocktwits_stats = [], None
 
-    # Reddit - skip if it times out
+    # Reddit
     try:
         reddit_posts = scrape_reddit_sentiment(ticker)
-        print(f"  Reddit: {len(reddit_posts)} posts")
-    except Exception as e:
-        print(f"  Reddit error: {e}")
+    except:
         reddit_posts = []
 
     return {
@@ -646,11 +637,8 @@ Be concise. Focus on actionable insights. Note any divergence between news senti
 
 def analyze_ticker_news(ticker, use_ai=True):
     """Full news + social analysis for a ticker using AI."""
-    print(f"\n=== Analyzing {ticker} ===")
-
     # Get news from multiple sources
     headlines = aggregate_news_sources(ticker)
-    print(f"Total headlines: {len(headlines)}")
 
     # Get social sentiment
     social_data = aggregate_social_sentiment(ticker)
@@ -673,14 +661,7 @@ def analyze_ticker_news(ticker, use_ai=True):
     # Try comprehensive AI analysis
     ai_analysis = None
     if use_ai and DEEPSEEK_API_KEY:
-        print(f"Calling DeepSeek AI for {ticker}...")
         ai_analysis = analyze_with_deepseek_comprehensive(ticker, headlines, social_data)
-        if ai_analysis:
-            print(f"  AI analysis: {ai_analysis.get('overall_sentiment', 'Unknown')}")
-        else:
-            print(f"  AI analysis failed, using fallback")
-    else:
-        print(f"No API key or AI disabled, using keyword analysis")
 
     if ai_analysis:
         # Count sources
@@ -885,19 +866,14 @@ def format_news_analysis(ticker, analysis):
 
 def scan_news_sentiment(tickers):
     """Scan multiple tickers for news sentiment."""
-    print(f"\n=== Starting news scan for {len(tickers)} tickers ===")
     results = []
 
     for ticker in tickers:
         try:
             analysis = analyze_ticker_news(ticker)
             results.append(analysis)
-            print(f"  {ticker}: {analysis.get('overall_sentiment', 'Unknown')} ({analysis.get('headline_count', 0)} headlines)")
         except Exception as e:
-            print(f"  {ticker}: Error - {e}")
             results.append({'ticker': ticker, 'overall_sentiment': 'ERROR', 'headline_count': 0})
-
-    print(f"=== Scan complete: {len(results)} results ===")
 
     # Sort by sentiment strength
     def sentiment_score(a):
@@ -917,9 +893,7 @@ def scan_news_sentiment(tickers):
 
 def format_news_scan_results(results):
     """Format news scan results for Telegram."""
-    print(f"\nFormatting {len(results)} results for Telegram...")
     ai_powered = any(r.get('ai_powered') for r in results)
-    print(f"  AI powered: {ai_powered}")
 
     msg = "📰 *NEWS + SOCIAL SENTIMENT*"
     if ai_powered:
