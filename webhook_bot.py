@@ -480,13 +480,13 @@ def handle_trade(chat_id, args):
 
 
 def handle_stories(chat_id):
-    """Handle /stories command."""
+    """Handle /stories command - Fast version with caching."""
     send_message(chat_id, "⏳ Detecting stories...")
 
     try:
-        from story_detector import run_story_detection, format_stories_report
-        result = run_story_detection()
-        msg = format_stories_report(result)
+        from fast_stories import run_fast_story_detection, format_fast_stories_report
+        result = run_fast_story_detection(use_cache=True)
+        msg = format_fast_stories_report(result)
         send_message(chat_id, msg)
     except Exception as e:
         send_message(chat_id, f"Stories error: {str(e)}")

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+learning_data/
+ai_learning_data/
+*.json
+!render.yaml
+!package.json
