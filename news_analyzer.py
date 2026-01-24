@@ -68,15 +68,15 @@ def scrape_finviz_news(ticker):
         if response.status_code != 200:
             return []
 
-        # Extract news headlines
-        news_pattern = r'<a[^>]*href="([^"]*)"[^>]*class="tab-link-news"[^>]*>([^<]+)</a>'
+        # Extract news headlines - class comes before href in HTML
+        news_pattern = r'class="tab-link-news"[^>]*>([^<]+)<'
         matches = re.findall(news_pattern, response.text)
 
         headlines = []
-        for url, title in matches[:10]:
+        for title in matches[:10]:
             headlines.append({
                 'title': title.strip(),
-                'url': url,
+                'url': '',
                 'source': 'finviz',
             })
 
