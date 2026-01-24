@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """
-AI News Analyzer
+AI News Analyzer - Multi-Source Edition
 
-Fetches and analyzes news for stocks/sectors.
-Uses DeepSeek AI for intelligent sentiment analysis.
+Fetches news from multiple sources and uses DeepSeek AI for analysis:
+- Yahoo Finance (via yfinance)
+- Finviz
+- Google News RSS
+- MarketWatch
+
+Provides comprehensive sentiment analysis and trading insights.
 """
 
 import os
 import requests
 import re
+import yfinance as yf
 from datetime import datetime, timedelta
 from collections import Counter
 import json
+import xml.etree.ElementTree as ET
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -205,6 +212,10 @@ Respond in this exact JSON format:
         return None
 
 
+# ============================================================
+# NEWS SOURCE SCRAPERS
+# ============================================================
+
 def scrape_finviz_news(ticker):
     """Scrape news from Finviz."""
     try:
@@ -224,12 +235,264 @@ def scrape_finviz_news(ticker):
             headlines.append({
                 'title': title.strip(),
                 'url': '',
-                'source': 'finviz',
+                'source': 'Finviz',
             })
 
         return headlines
     except Exception as e:
         return []
+
+
+def scrape_yahoo_news(ticker):
+    """Get news from Yahoo Finance via yfinance."""
+    try:
+        stock = yf.Ticker(ticker)
+        news = stock.news
+
+        if not news:
+            return []
+
+        headlines = []
+        for item in news[:10]:
+            title = item.get('title', '')
+            publisher = item.get('publisher', 'Yahoo')
+            if title:
+                headlines.append({
+                    'title': title,
+                    'url': item.get('link', ''),
+                    'source': publisher,
+                    'timestamp': item.get('providerPublishTime', 0),
+                })
+
+        return headlines
+    except Exception as e:
+        return []
+
+
+def scrape_google_news(ticker):
+    """Get news from Google News RSS."""
+    try:
+        # Search for stock ticker news
+        url = f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return []
+
+        # Parse RSS
+        root = ET.fromstring(response.content)
+        items = root.findall('.//item')
+
+        headlines = []
+        for item in items[:10]:
+            title = item.find('title')
+            source = item.find('source')
+            if title is not None:
+                headlines.append({
+                    'title': title.text,
+                    'url': '',
+                    'source': source.text if source is not None else 'Google News',
+                })
+
+        return headlines
+    except Exception as e:
+        return []
+
+
+def scrape_marketwatch_news(ticker):
+    """Scrape news from MarketWatch."""
+    try:
+        url = f"https://www.marketwatch.com/investing/stock/{ticker.lower()}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return []
+
+        # Extract headlines
+        pattern = r'class="article__headline"[^>]*>([^<]+)<'
+        matches = re.findall(pattern, response.text)
+
+        # Alternative pattern
+        if not matches:
+            pattern = r'<a[^>]*class="[^"]*link[^"]*"[^>]*>([^<]{20,100})</a>'
+            matches = re.findall(pattern, response.text)
+
+        headlines = []
+        for title in matches[:8]:
+            clean_title = title.strip()
+            if len(clean_title) > 20 and ticker.upper() in clean_title.upper():
+                headlines.append({
+                    'title': clean_title,
+                    'url': '',
+                    'source': 'MarketWatch',
+                })
+
+        return headlines
+    except Exception as e:
+        return []
+
+
+def scrape_stocktwits(ticker):
+    """Get sentiment from StockTwits (X/Twitter-like for stocks)."""
+    try:
+        url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return [], None
+
+        data = response.json()
+        messages = data.get('messages', [])
+
+        posts = []
+        bullish_count = 0
+        bearish_count = 0
+
+        for msg in messages[:20]:
+            body = msg.get('body', '')
+            sentiment = msg.get('entities', {}).get('sentiment', {})
+            sent_label = sentiment.get('basic', 'Neutral') if sentiment else 'Neutral'
+
+            if sent_label == 'Bullish':
+                bullish_count += 1
+            elif sent_label == 'Bearish':
+                bearish_count += 1
+
+            posts.append({
+                'text': body[:150],
+                'sentiment': sent_label,
+                'source': 'StockTwits',
+            })
+
+        # Calculate overall sentiment
+        total = bullish_count + bearish_count
+        if total > 0:
+            bullish_pct = bullish_count / total * 100
+            if bullish_pct >= 70:
+                overall = 'STRONG_BULLISH'
+            elif bullish_pct >= 55:
+                overall = 'BULLISH'
+            elif bullish_pct <= 30:
+                overall = 'STRONG_BEARISH'
+            elif bullish_pct <= 45:
+                overall = 'BEARISH'
+            else:
+                overall = 'NEUTRAL'
+        else:
+            overall = 'NEUTRAL'
+
+        social_stats = {
+            'bullish_count': bullish_count,
+            'bearish_count': bearish_count,
+            'total_posts': len(messages),
+            'bullish_pct': bullish_count / total * 100 if total > 0 else 50,
+            'sentiment': overall,
+        }
+
+        return posts[:10], social_stats
+    except Exception as e:
+        return [], None
+
+
+def scrape_reddit_sentiment(ticker):
+    """Get sentiment from Reddit (wallstreetbets, stocks, investing)."""
+    try:
+        subreddits = ['wallstreetbets', 'stocks', 'investing']
+        all_posts = []
+
+        for sub in subreddits:
+            url = f"https://www.reddit.com/r/{sub}/search.json?q={ticker}&sort=new&t=week&limit=10"
+            headers = {'User-Agent': 'StockScanner/1.0'}
+            response = requests.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                posts = data.get('data', {}).get('children', [])
+
+                for post in posts[:5]:
+                    post_data = post.get('data', {})
+                    title = post_data.get('title', '')
+                    score = post_data.get('score', 0)
+                    if title and ticker.upper() in title.upper():
+                        all_posts.append({
+                            'text': title[:150],
+                            'score': score,
+                            'source': f'r/{sub}',
+                        })
+
+        return all_posts[:10]
+    except Exception as e:
+        return []
+
+
+def aggregate_news_sources(ticker):
+    """
+    Aggregate news from all sources.
+    Deduplicates and sorts by recency.
+    """
+    all_headlines = []
+
+    # Fetch from all sources
+    sources = [
+        ('Yahoo Finance', scrape_yahoo_news),
+        ('Finviz', scrape_finviz_news),
+        ('Google News', scrape_google_news),
+    ]
+
+    for source_name, scraper in sources:
+        try:
+            headlines = scraper(ticker)
+            for h in headlines:
+                if h.get('title'):
+                    all_headlines.append(h)
+        except:
+            continue
+
+    # Deduplicate by similarity
+    unique_headlines = []
+    seen_titles = set()
+
+    for h in all_headlines:
+        title_lower = h['title'].lower()
+        # Simple dedup - check if key words match
+        title_words = set(title_lower.split()[:5])
+
+        is_dupe = False
+        for seen in seen_titles:
+            seen_words = set(seen.split()[:5])
+            if len(title_words & seen_words) >= 3:
+                is_dupe = True
+                break
+
+        if not is_dupe:
+            seen_titles.add(title_lower)
+            unique_headlines.append(h)
+
+    return unique_headlines[:15]  # Limit to 15 headlines
+
+
+def aggregate_social_sentiment(ticker):
+    """
+    Aggregate social media sentiment from StockTwits and Reddit.
+    """
+    # StockTwits
+    stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
+
+    # Reddit
+    reddit_posts = scrape_reddit_sentiment(ticker)
+
+    return {
+        'stocktwits': {
+            'posts': stocktwits_posts,
+            'stats': stocktwits_stats,
+        },
+        'reddit': {
+            'posts': reddit_posts,
+        }
+    }
 
 
 def analyze_headline_sentiment(headline):
@@ -271,11 +534,117 @@ def analyze_headline_sentiment(headline):
     }
 
 
-def analyze_ticker_news(ticker, use_ai=True):
-    """Full news analysis for a ticker using AI."""
-    headlines = scrape_finviz_news(ticker)
+def analyze_with_deepseek_comprehensive(ticker, headlines, social_data):
+    """
+    Comprehensive AI analysis of news AND social sentiment.
+    """
+    if not headlines and not social_data:
+        return None
 
-    if not headlines:
+    # Build news section
+    news_text = ""
+    if headlines:
+        news_text = "NEWS HEADLINES:\n"
+        for h in headlines[:12]:
+            source = h.get('source', 'Unknown')
+            news_text += f"- [{source}] {h['title']}\n"
+
+    # Build social section
+    social_text = ""
+    stocktwits = social_data.get('stocktwits', {})
+    reddit = social_data.get('reddit', {})
+
+    if stocktwits.get('stats'):
+        stats = stocktwits['stats']
+        social_text += f"\nSTOCKTWITS SENTIMENT:\n"
+        social_text += f"- Bullish: {stats['bullish_count']}, Bearish: {stats['bearish_count']}\n"
+        social_text += f"- Bullish %: {stats['bullish_pct']:.0f}%\n"
+
+        if stocktwits.get('posts'):
+            social_text += "Top posts:\n"
+            for p in stocktwits['posts'][:5]:
+                social_text += f"- [{p['sentiment']}] {p['text'][:100]}\n"
+
+    if reddit.get('posts'):
+        social_text += f"\nREDDIT MENTIONS:\n"
+        for p in reddit['posts'][:5]:
+            social_text += f"- [r/{p['source'].split('/')[-1]}] {p['text'][:100]}\n"
+
+    prompt = f"""Analyze ALL the following data for {ticker} stock and provide comprehensive trading insights.
+
+{news_text}
+{social_text}
+
+Respond in this exact JSON format:
+{{
+    "news_sentiment": "STRONG_BULLISH/BULLISH/NEUTRAL/BEARISH/STRONG_BEARISH",
+    "social_sentiment": "STRONG_BULLISH/BULLISH/NEUTRAL/BEARISH/STRONG_BEARISH",
+    "overall_sentiment": "STRONG_BULLISH/BULLISH/NEUTRAL/BEARISH/STRONG_BEARISH",
+    "confidence": 1-100,
+    "key_catalyst": "main driver from news",
+    "social_buzz": "what retail traders are saying/feeling",
+    "summary": "2-3 sentence comprehensive summary combining news and social",
+    "trading_signal": "BUY/HOLD/SELL with brief reason",
+    "risk_factors": ["risk 1", "risk 2"],
+    "contrarian_view": "if social and news disagree, explain"
+}}
+
+Be concise. Focus on actionable insights. Note any divergence between news sentiment and social sentiment."""
+
+    try:
+        response = requests.post(
+            DEEPSEEK_API_URL,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": "You are an expert stock analyst who combines traditional news analysis with social sentiment from retail traders. Always respond with valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 600
+            },
+            timeout=45
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            return json.loads(content.strip())
+        else:
+            print(f"DeepSeek API error: {response.status_code}")
+            return None
+
+    except Exception as e:
+        print(f"DeepSeek comprehensive analysis error: {e}")
+        return None
+
+
+def analyze_ticker_news(ticker, use_ai=True):
+    """Full news + social analysis for a ticker using AI."""
+    # Get news from multiple sources
+    headlines = aggregate_news_sources(ticker)
+
+    # Get social sentiment
+    social_data = aggregate_social_sentiment(ticker)
+
+    # Check if we have any data
+    has_news = len(headlines) > 0
+    has_social = (
+        social_data.get('stocktwits', {}).get('stats') or
+        social_data.get('reddit', {}).get('posts')
+    )
+
+    if not has_news and not has_social:
         return {
             'ticker': ticker,
             'headline_count': 0,
@@ -283,23 +652,31 @@ def analyze_ticker_news(ticker, use_ai=True):
             'headlines': [],
         }
 
-    # Try AI analysis first
+    # Try comprehensive AI analysis
     ai_analysis = None
     if use_ai and DEEPSEEK_API_KEY:
-        ai_analysis = analyze_with_deepseek(ticker, headlines)
+        ai_analysis = analyze_with_deepseek_comprehensive(ticker, headlines, social_data)
 
     if ai_analysis:
-        # Use AI analysis
+        # Count sources
+        sources = set(h.get('source', 'Unknown') for h in headlines)
+
         return {
             'ticker': ticker,
             'headline_count': len(headlines),
-            'overall_sentiment': ai_analysis.get('sentiment', 'NEUTRAL'),
+            'sources': list(sources),
+            'overall_sentiment': ai_analysis.get('overall_sentiment', 'NEUTRAL'),
+            'news_sentiment': ai_analysis.get('news_sentiment', 'NEUTRAL'),
+            'social_sentiment': ai_analysis.get('social_sentiment', 'NEUTRAL'),
             'confidence': ai_analysis.get('confidence', 0),
             'key_catalyst': ai_analysis.get('key_catalyst', ''),
+            'social_buzz': ai_analysis.get('social_buzz', ''),
             'summary': ai_analysis.get('summary', ''),
-            'trading_implication': ai_analysis.get('trading_implication', ''),
+            'trading_signal': ai_analysis.get('trading_signal', ''),
             'risk_factors': ai_analysis.get('risk_factors', []),
-            'headlines': [{'title': h['title'], 'sentiment': 'AI_ANALYZED'} for h in headlines[:5]],
+            'contrarian_view': ai_analysis.get('contrarian_view', ''),
+            'headlines': [{'title': h['title'], 'source': h.get('source', '')} for h in headlines[:5]],
+            'stocktwits_stats': social_data.get('stocktwits', {}).get('stats'),
             'ai_powered': True,
         }
 
@@ -317,9 +694,19 @@ def analyze_ticker_news(ticker, use_ai=True):
 
         analyzed_headlines.append({
             'title': h['title'],
+            'source': h.get('source', ''),
             'sentiment': analysis['sentiment'],
             'catalysts': analysis['catalysts'],
         })
+
+    # Add StockTwits sentiment
+    stocktwits_stats = social_data.get('stocktwits', {}).get('stats')
+    if stocktwits_stats:
+        # Weight social sentiment
+        if stocktwits_stats['bullish_pct'] > 60:
+            total_bullish += 3
+        elif stocktwits_stats['bullish_pct'] < 40:
+            total_bearish += 3
 
     # Overall sentiment
     if total_bullish > total_bearish * 1.5:
@@ -339,11 +726,13 @@ def analyze_ticker_news(ticker, use_ai=True):
     return {
         'ticker': ticker,
         'headline_count': len(headlines),
+        'sources': list(set(h.get('source', '') for h in headlines)),
         'overall_sentiment': overall,
         'bullish_score': total_bullish,
         'bearish_score': total_bearish,
         'top_catalysts': catalyst_counts.most_common(3),
         'headlines': analyzed_headlines[:5],
+        'stocktwits_stats': stocktwits_stats,
         'ai_powered': False,
     }
 
@@ -402,31 +791,53 @@ def format_news_analysis(ticker, analysis):
         'NO_DATA': '⚪',
     }
 
-    msg = f"📰 *{ticker} NEWS ANALYSIS*"
+    msg = f"📰 *{ticker} SENTIMENT ANALYSIS*"
     if analysis.get('ai_powered'):
         msg += " 🤖\n\n"
     else:
         msg += "\n\n"
 
+    # Overall sentiment
     sentiment = analysis['overall_sentiment']
-    msg += f"*Sentiment:* {sentiment_emoji.get(sentiment, '')} {sentiment}"
-
+    msg += f"*Overall:* {sentiment_emoji.get(sentiment, '')} {sentiment}"
     if analysis.get('confidence'):
         msg += f" ({analysis['confidence']}% confidence)"
     msg += "\n"
 
-    msg += f"Headlines: {analysis['headline_count']}\n"
+    # News vs Social sentiment (if available)
+    if analysis.get('news_sentiment') and analysis.get('social_sentiment'):
+        news_sent = analysis['news_sentiment']
+        social_sent = analysis['social_sentiment']
+        msg += f"• News: {sentiment_emoji.get(news_sent, '')} {news_sent}\n"
+        msg += f"• Social: {sentiment_emoji.get(social_sent, '')} {social_sent}\n"
+
+    # Sources info
+    sources = analysis.get('sources', [])
+    msg += f"\n📊 *Sources:* {len(sources)} ({', '.join(sources[:3])})\n"
+    msg += f"Headlines analyzed: {analysis['headline_count']}\n"
+
+    # StockTwits stats
+    st_stats = analysis.get('stocktwits_stats')
+    if st_stats:
+        msg += f"\n🐦 *StockTwits:* {st_stats['bullish_pct']:.0f}% bullish "
+        msg += f"({st_stats['bullish_count']}🟢 / {st_stats['bearish_count']}🔴)\n"
 
     # AI-powered insights
     if analysis.get('ai_powered'):
         if analysis.get('key_catalyst'):
-            msg += f"\n*Catalyst:* {analysis['key_catalyst']}\n"
+            msg += f"\n*📌 Catalyst:* {analysis['key_catalyst']}\n"
+
+        if analysis.get('social_buzz'):
+            msg += f"\n*💬 Social Buzz:* {analysis['social_buzz']}\n"
 
         if analysis.get('summary'):
-            msg += f"\n*Summary:*\n_{analysis['summary']}_\n"
+            msg += f"\n*📝 Summary:*\n_{analysis['summary']}_\n"
 
-        if analysis.get('trading_implication'):
-            msg += f"\n*Trading:* {analysis['trading_implication']}\n"
+        if analysis.get('trading_signal'):
+            msg += f"\n*🎯 Signal:* {analysis['trading_signal']}\n"
+
+        if analysis.get('contrarian_view'):
+            msg += f"\n*⚠️ Contrarian:* {analysis['contrarian_view']}\n"
 
         if analysis.get('risk_factors'):
             risks = ', '.join(analysis['risk_factors'][:2])
@@ -435,13 +846,14 @@ def format_news_analysis(ticker, analysis):
         # Keyword-based analysis
         if analysis.get('top_catalysts'):
             cats = ', '.join([f"{c[0]}({c[1]})" for c in analysis['top_catalysts']])
-            msg += f"Catalysts: {cats}\n"
+            msg += f"\nCatalysts: {cats}\n"
 
         msg += "\n*Recent Headlines:*\n"
         for h in analysis.get('headlines', [])[:4]:
             emoji = '📈' if h.get('sentiment') == 'BULLISH' else ('📉' if h.get('sentiment') == 'BEARISH' else '📄')
-            title = h['title'][:60] + '...' if len(h['title']) > 60 else h['title']
-            msg += f"{emoji} _{title}_\n"
+            title = h['title'][:55] + '...' if len(h['title']) > 55 else h['title']
+            source = h.get('source', '')[:10]
+            msg += f"{emoji} `{source}` _{title}_\n"
 
     return msg
 
@@ -474,7 +886,7 @@ def format_news_scan_results(results):
     """Format news scan results for Telegram."""
     ai_powered = any(r.get('ai_powered') for r in results)
 
-    msg = "📰 *NEWS SENTIMENT SCAN*"
+    msg = "📰 *NEWS + SOCIAL SENTIMENT*"
     if ai_powered:
         msg += " 🤖"
     msg += "\n\n"
@@ -482,38 +894,70 @@ def format_news_scan_results(results):
     # Bullish
     bullish = [r for r in results if 'BULLISH' in r.get('overall_sentiment', '')]
     if bullish:
-        msg += "*🟢 BULLISH NEWS:*\n"
+        msg += "*🟢 BULLISH:*\n"
         for r in bullish[:5]:
-            msg += f"• `{r['ticker']}` - {r['overall_sentiment']}"
+            msg += f"• `{r['ticker']}` {r['overall_sentiment']}"
             if r.get('confidence'):
                 msg += f" ({r['confidence']}%)"
+
+            # Show news vs social
+            if r.get('news_sentiment') and r.get('social_sentiment'):
+                if r['news_sentiment'] != r['social_sentiment']:
+                    msg += f"\n  📰{r['news_sentiment'][:4]} vs 💬{r['social_sentiment'][:4]}"
+
+            # Show StockTwits stats
+            st = r.get('stocktwits_stats')
+            if st:
+                msg += f" | ST: {st['bullish_pct']:.0f}%🟢"
+
             if r.get('key_catalyst'):
-                msg += f"\n  _{r['key_catalyst']}_"
-            elif r.get('top_catalysts'):
-                cats = ', '.join([c[0] for c in r['top_catalysts'][:2]])
-                if cats:
-                    msg += f" ({cats})"
+                msg += f"\n  _{r['key_catalyst'][:60]}_"
+            elif r.get('trading_signal'):
+                msg += f"\n  _{r['trading_signal'][:60]}_"
             msg += "\n"
 
     # Bearish
     bearish = [r for r in results if 'BEARISH' in r.get('overall_sentiment', '')]
     if bearish:
-        msg += "\n*🔴 BEARISH NEWS:*\n"
+        msg += "\n*🔴 BEARISH:*\n"
         for r in bearish[:5]:
-            msg += f"• `{r['ticker']}` - {r['overall_sentiment']}"
+            msg += f"• `{r['ticker']}` {r['overall_sentiment']}"
+
+            st = r.get('stocktwits_stats')
+            if st:
+                msg += f" | ST: {st['bullish_pct']:.0f}%🟢"
+
             if r.get('key_catalyst'):
-                msg += f"\n  _{r['key_catalyst']}_"
+                msg += f"\n  _{r['key_catalyst'][:60]}_"
             msg += "\n"
+
+    # Divergence alert (news vs social disagree)
+    divergent = [r for r in results if r.get('contrarian_view')]
+    if divergent:
+        msg += "\n*⚠️ DIVERGENCE ALERT:*\n"
+        for r in divergent[:2]:
+            msg += f"• `{r['ticker']}`: _{r['contrarian_view'][:70]}_\n"
 
     # Neutral
     neutral = [r for r in results if r.get('overall_sentiment') == 'NEUTRAL']
     if neutral and len(bullish) + len(bearish) < 3:
         msg += "\n*🟡 NEUTRAL:*\n"
         for r in neutral[:3]:
-            msg += f"• `{r['ticker']}`\n"
+            msg += f"• `{r['ticker']}`"
+            st = r.get('stocktwits_stats')
+            if st:
+                msg += f" (ST: {st['bullish_pct']:.0f}%)"
+            msg += "\n"
 
     if not bullish and not bearish and not neutral:
-        msg += "_No significant news sentiment detected_"
+        msg += "_No significant sentiment detected_"
+
+    # Source summary
+    all_sources = set()
+    for r in results:
+        all_sources.update(r.get('sources', []))
+    if all_sources:
+        msg += f"\n_Sources: {', '.join(list(all_sources)[:4])}_"
 
     return msg
 
