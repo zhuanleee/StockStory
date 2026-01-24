@@ -696,6 +696,190 @@ def save_current_state(df_results):
 
 
 # ============================================================
+# SELF-LEARNING SYSTEM
+# ============================================================
+
+LEARNED_THEMES_FILE = 'learned_themes.json'
+CLUSTER_HISTORY_FILE = 'cluster_history.json'
+PROMOTION_THRESHOLD = 3  # Appearances needed to promote to "emerging theme"
+
+
+def load_cluster_history():
+    """Load history of detected clusters."""
+    if Path(CLUSTER_HISTORY_FILE).exists():
+        with open(CLUSTER_HISTORY_FILE, 'r') as f:
+            return json.load(f)
+    return {'clusters': [], 'promoted': []}
+
+
+def save_cluster_history(history):
+    """Save cluster history."""
+    with open(CLUSTER_HISTORY_FILE, 'w') as f:
+        json.dump(history, f, indent=2)
+
+
+def load_learned_themes():
+    """Load themes that were auto-learned."""
+    if Path(LEARNED_THEMES_FILE).exists():
+        with open(LEARNED_THEMES_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+
+def save_learned_themes(themes):
+    """Save learned themes."""
+    with open(LEARNED_THEMES_FILE, 'w') as f:
+        json.dump(themes, f, indent=2)
+
+
+def cluster_signature(tickers):
+    """Create a unique signature for a cluster (sorted tickers)."""
+    return '|'.join(sorted(tickers[:6]))
+
+
+def cluster_overlap(tickers1, tickers2, threshold=0.5):
+    """Check if two clusters have significant overlap."""
+    set1, set2 = set(tickers1), set(tickers2)
+    if len(set1) == 0 or len(set2) == 0:
+        return False
+    overlap = len(set1 & set2) / min(len(set1), len(set2))
+    return overlap >= threshold
+
+
+def track_unknown_clusters(new_clusters, df_results):
+    """
+    Track unknown clusters over time.
+    Promote to "emerging theme" if seen repeatedly.
+    """
+    history = load_cluster_history()
+    learned = load_learned_themes()
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    new_emerging = []
+
+    for cluster in new_clusters:
+        tickers = cluster['tickers']
+        sig = cluster_signature(tickers)
+
+        # Check if this cluster matches any existing tracked cluster
+        matched = False
+        for existing in history['clusters']:
+            if cluster_overlap(tickers, existing['tickers']):
+                # Update existing cluster
+                existing['appearances'] += 1
+                existing['last_seen'] = today
+                existing['avg_rs'] = (existing['avg_rs'] + cluster['avg_rs']) / 2
+                matched = True
+
+                # Check for promotion
+                if existing['appearances'] >= PROMOTION_THRESHOLD and sig not in history['promoted']:
+                    # Promote to emerging theme!
+                    theme_id = f"AUTO_{len(learned) + 1}"
+
+                    # Try to identify common sector
+                    cluster_data = df_results[df_results['ticker'].isin(tickers)]
+                    sectors = cluster_data['sector'].value_counts()
+                    common_sector = sectors.index[0] if len(sectors) > 0 else 'Unknown'
+
+                    learned[theme_id] = {
+                        'tickers': existing['tickers'],
+                        'discovered': existing['first_seen'],
+                        'appearances': existing['appearances'],
+                        'sector': common_sector,
+                        'avg_rs': round(existing['avg_rs'], 2),
+                        'status': 'EMERGING',
+                        'user_name': None,  # User can name it later
+                    }
+
+                    history['promoted'].append(sig)
+                    new_emerging.append({
+                        'id': theme_id,
+                        'tickers': existing['tickers'],
+                        'sector': common_sector,
+                        'appearances': existing['appearances'],
+                    })
+
+                    print(f"  🎓 PROMOTED: {sig} → {theme_id} (seen {existing['appearances']} times)")
+                break
+
+        if not matched:
+            # New cluster - start tracking
+            history['clusters'].append({
+                'tickers': tickers,
+                'signature': sig,
+                'first_seen': today,
+                'last_seen': today,
+                'appearances': 1,
+                'avg_rs': cluster['avg_rs'],
+            })
+            print(f"  📝 NEW CLUSTER: {', '.join(tickers[:4])} (tracking started)")
+
+    # Clean up old clusters (not seen in 14 days)
+    cutoff = (datetime.now() - timedelta(days=14)).strftime('%Y-%m-%d')
+    history['clusters'] = [c for c in history['clusters'] if c['last_seen'] >= cutoff]
+
+    save_cluster_history(history)
+    save_learned_themes(learned)
+
+    return new_emerging, learned
+
+
+def analyze_learned_themes(df_results, learned_themes):
+    """Analyze performance of learned themes."""
+    results = []
+
+    for theme_id, theme_data in learned_themes.items():
+        tickers = theme_data['tickers']
+        theme_stocks = df_results[df_results['ticker'].isin(tickers)]
+
+        if len(theme_stocks) == 0:
+            continue
+
+        results.append({
+            'id': theme_id,
+            'user_name': theme_data.get('user_name') or theme_id,
+            'tickers': tickers,
+            'avg_score': theme_stocks['composite_score'].mean(),
+            'avg_rs': theme_stocks['rs_composite'].mean(),
+            'breakouts': int(theme_stocks['breakout_up'].sum()),
+            'status': theme_data['status'],
+        })
+
+    return sorted(results, key=lambda x: x['avg_rs'], reverse=True)
+
+
+def format_emerging_theme_alert(new_emerging):
+    """Format alert for newly promoted themes."""
+    msg = "🎓 *NEW EMERGING THEME DETECTED*\n\n"
+    msg += "_The system detected a recurring pattern:_\n\n"
+
+    for theme in new_emerging:
+        msg += f"*{theme['id']}* ({theme['sector']})\n"
+        msg += f"Tickers: `{', '.join(theme['tickers'][:6])}`\n"
+        msg += f"Seen {theme['appearances']} times\n\n"
+
+    msg += "_Reply with a name for this theme to track it!_"
+    return msg
+
+
+def format_learned_themes_summary(learned_analysis):
+    """Format summary of learned themes."""
+    if not learned_analysis:
+        return None
+
+    msg = "📚 *LEARNED THEMES UPDATE*\n\n"
+
+    for t in learned_analysis[:5]:
+        emoji = "🔥" if t['avg_rs'] > 3 else ("📈" if t['avg_rs'] > 0 else "📉")
+        name = t['user_name'] if t['user_name'] else t['id']
+        msg += f"{emoji} *{name}*\n"
+        msg += f"   `{', '.join(t['tickers'][:4])}`\n"
+        msg += f"   RS: {t['avg_rs']:+.1f}% | Breakouts: {t['breakouts']}\n\n"
+
+    return msg
+
+
+# ============================================================
 # MAIN EXECUTION
 # ============================================================
 
@@ -744,6 +928,29 @@ def main():
     if themes or supply_plays or unknown_clusters:
         theme_msg = format_theme_alert(themes, supply_plays, unknown_clusters)
         send_telegram_message(theme_msg)
+
+    # ============================================================
+    # SELF-LEARNING SYSTEM
+    # ============================================================
+    print("\nRunning self-learning system...")
+
+    # Track unknown clusters and check for promotions
+    new_emerging, learned_themes = track_unknown_clusters(unknown_clusters, df_results)
+
+    # Alert on newly promoted themes
+    if new_emerging:
+        emerging_msg = format_emerging_theme_alert(new_emerging)
+        send_telegram_message(emerging_msg)
+        print(f"  🎓 Promoted {len(new_emerging)} new emerging themes!")
+
+    # Analyze and report on learned themes
+    if learned_themes:
+        learned_analysis = analyze_learned_themes(df_results, learned_themes)
+        if learned_analysis:
+            learned_msg = format_learned_themes_summary(learned_analysis)
+            if learned_msg:
+                send_telegram_message(learned_msg)
+        print(f"  📚 Tracking {len(learned_themes)} learned themes")
 
     # ============================================================
     # BREAKOUT ALERTS

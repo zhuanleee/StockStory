@@ -40,10 +40,12 @@ jobs:
           path: scan_*.csv
           retention-days: 30
 
-      - name: Commit state file
+      - name: Commit state and learned data
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add scanner_state.json || true
-          git commit -m "Update scanner state" || true
+          git add cluster_history.json || true
+          git add learned_themes.json || true
+          git commit -m "Update scanner state and learned themes" || true
           git push || true
