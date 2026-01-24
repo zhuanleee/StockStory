@@ -20,8 +20,13 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 import yfinance as yf
 import pandas as pd
+import threading
 
 app = Flask(__name__)
+
+# Track processed updates to prevent duplicates
+processed_updates = set()
+MAX_PROCESSED = 1000  # Limit memory usage
 
 # Configuration
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN') or os.environ.get('BOT_TOKEN', '')
@@ -975,10 +980,46 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle incoming Telegram webhook."""
+    global processed_updates
+
     try:
         data = request.get_json()
-        if data and 'message' in data:
-            process_message(data['message'])
+
+        if not data:
+            return jsonify({'ok': True})
+
+        # Deduplicate by update_id to prevent retries
+        update_id = data.get('update_id')
+        if update_id:
+            if update_id in processed_updates:
+                print(f"Skipping duplicate update {update_id}")
+                return jsonify({'ok': True})
+
+            processed_updates.add(update_id)
+
+            # Limit memory usage
+            if len(processed_updates) > MAX_PROCESSED:
+                processed_updates = set(list(processed_updates)[-500:])
+
+        if 'message' in data:
+            message = data['message']
+            text = message.get('text', '').strip().lower()
+
+            # List of slow commands that need background processing
+            slow_commands = ['/news', '/sectors', '/stories', '/scan', '/regime',
+                          '/earnings', '/briefing', '/coach', '/top', '/learning']
+
+            # Check if this is a slow command
+            is_slow = any(text.startswith(cmd) for cmd in slow_commands)
+
+            if is_slow:
+                # Process in background thread to prevent Telegram timeout
+                thread = threading.Thread(target=process_message, args=(message,))
+                thread.start()
+            else:
+                # Fast commands can run synchronously
+                process_message(message)
+
         return jsonify({'ok': True})
     except Exception as e:
         print(f"Webhook error: {e}")
