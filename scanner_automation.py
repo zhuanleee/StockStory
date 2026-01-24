@@ -1748,6 +1748,52 @@ def main():
     print("\nChecking for interactive commands...")
     handle_interactive_commands(price_data, df_results)
 
+    # ============================================================
+    # SECTOR ROTATION ANALYSIS
+    # ============================================================
+    print("\nRunning sector rotation analysis...")
+    try:
+        from sector_rotation import run_sector_rotation_analysis, format_sector_rotation_report
+        rotation_results = run_sector_rotation_analysis()
+        rotation_msg = format_sector_rotation_report(
+            rotation_results['ranked'],
+            rotation_results['rotations'],
+            rotation_results['cycle']
+        )
+        send_telegram_message(rotation_msg)
+        print("  Sector rotation report sent!")
+    except Exception as e:
+        print(f"  Sector rotation error: {e}")
+
+    # ============================================================
+    # MULTI-TIMEFRAME CONFLUENCE (Top 5)
+    # ============================================================
+    print("\nRunning multi-timeframe analysis...")
+    try:
+        from multi_timeframe import scan_mtf_confluence, format_mtf_scan_results
+        top_tickers = df_results.head(20)['ticker'].tolist()
+        mtf_results = scan_mtf_confluence(top_tickers, min_score=6)
+        if mtf_results:
+            mtf_msg = format_mtf_scan_results(mtf_results)
+            send_telegram_message(mtf_msg)
+            print(f"  Found {len(mtf_results)} stocks with MTF confluence")
+    except Exception as e:
+        print(f"  MTF analysis error: {e}")
+
+    # ============================================================
+    # NEWS SENTIMENT SCAN
+    # ============================================================
+    print("\nScanning news sentiment...")
+    try:
+        from news_analyzer import scan_news_sentiment, format_news_scan_results
+        top_10 = df_results.head(10)['ticker'].tolist()
+        news_results = scan_news_sentiment(top_10)
+        news_msg = format_news_scan_results(news_results)
+        send_telegram_message(news_msg)
+        print("  News sentiment scan sent!")
+    except Exception as e:
+        print(f"  News scan error: {e}")
+
     print(f"\nCompleted: {datetime.now()}")
     print(f"Sent {len(new_alerts)} new breakout alerts")
     print(f"Themes analyzed: {len(themes)}")

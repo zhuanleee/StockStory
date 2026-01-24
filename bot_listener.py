@@ -309,11 +309,49 @@ def main():
                 else:
                     send_telegram_message("No scan data available. Wait for next scheduled scan.")
 
+            elif text.lower() == '/mtf':
+                # Multi-timeframe for top stocks
+                try:
+                    from multi_timeframe import scan_mtf_confluence, format_mtf_scan_results
+                    send_telegram_message("⏳ Running MTF analysis...")
+                    tickers = ['NVDA', 'AMD', 'AAPL', 'MSFT', 'GOOGL', 'META', 'TSLA', 'AMZN', 'AVGO', 'CRM']
+                    results = scan_mtf_confluence(tickers, min_score=4)
+                    msg = format_mtf_scan_results(results)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"MTF error: {str(e)}")
+
+            elif text.lower() == '/sectors':
+                # Sector rotation
+                try:
+                    from sector_rotation import run_sector_rotation_analysis, format_sector_rotation_report
+                    send_telegram_message("⏳ Analyzing sectors...")
+                    results = run_sector_rotation_analysis()
+                    msg = format_sector_rotation_report(results['ranked'], results['rotations'], results['cycle'])
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Sector error: {str(e)}")
+
+            elif text.lower() == '/news':
+                # News for top stocks
+                try:
+                    from news_analyzer import scan_news_sentiment, format_news_scan_results
+                    send_telegram_message("⏳ Scanning news...")
+                    tickers = ['NVDA', 'AMD', 'AAPL', 'TSLA', 'META']
+                    results = scan_news_sentiment(tickers)
+                    msg = format_news_scan_results(results)
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"News error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
-                msg += "• Send any ticker (e.g., `NVDA`) for analysis + chart\n"
-                msg += "• `/top` - Show top 10 stocks from last scan\n"
-                msg += "• `/help` - Show this help\n\n"
+                msg += "*Analysis:*\n"
+                msg += "• Send ticker (e.g., `NVDA`) → Full analysis + chart\n"
+                msg += "• `/top` → Top 10 stocks\n"
+                msg += "• `/mtf` → Multi-timeframe confluence\n"
+                msg += "• `/sectors` → Sector rotation\n"
+                msg += "• `/news` → News sentiment\n\n"
                 msg += "_Bot checks every 15 min during market hours_"
                 send_telegram_message(msg)
 
