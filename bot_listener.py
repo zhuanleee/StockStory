@@ -14,6 +14,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import mplfinance as mpf
 from datetime import datetime
 from pathlib import Path
 import warnings
@@ -86,7 +87,7 @@ def get_telegram_updates(offset=None):
 
 
 def generate_chart(ticker):
-    """Generate a chart image for a ticker."""
+    """Generate a candlestick chart image for a ticker."""
     try:
         df = yf.download(ticker, period='3mo', progress=False)
 
@@ -97,44 +98,62 @@ def generate_chart(ticker):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        close = df['Close'].values
-        volume = df['Volume'].values
-        dates = df.index
+        # Ensure proper column names for mplfinance
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
 
-        sma_20 = pd.Series(close).rolling(20).mean().values
-        sma_50 = pd.Series(close).rolling(50).mean().values
+        # Calculate moving averages
+        sma_20 = df['Close'].rolling(20).mean()
+        sma_50 = df['Close'].rolling(50).mean()
 
         # Bollinger Bands
-        bb_mid = pd.Series(close).rolling(20).mean().values
-        bb_std = pd.Series(close).rolling(20).std().values
+        bb_mid = df['Close'].rolling(20).mean()
+        bb_std = df['Close'].rolling(20).std()
         bb_upper = bb_mid + 2 * bb_std
         bb_lower = bb_mid - 2 * bb_std
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
-                                        gridspec_kw={'height_ratios': [3, 1]})
+        # Create additional plots
+        add_plots = [
+            mpf.make_addplot(sma_20, color='orange', width=1, label='20 SMA'),
+            mpf.make_addplot(sma_50, color='purple', width=1, label='50 SMA'),
+            mpf.make_addplot(bb_upper, color='blue', width=0.7, linestyle='--', alpha=0.5),
+            mpf.make_addplot(bb_lower, color='blue', width=0.7, linestyle='--', alpha=0.5),
+        ]
 
-        ax1.plot(dates, close, 'b-', linewidth=1.5, label='Price')
-        ax1.plot(dates, sma_20, 'orange', linewidth=1, label='20 SMA')
-        ax1.plot(dates, sma_50, 'purple', linewidth=1, label='50 SMA')
-        ax1.fill_between(dates, bb_lower, bb_upper,
-                         alpha=0.1, color='blue', label='BB')
+        # Custom style
+        mc = mpf.make_marketcolors(
+            up='#00b894',      # Green for up
+            down='#d63031',    # Red for down
+            edge='inherit',
+            wick='inherit',
+            volume='inherit',
+        )
 
-        ax1.set_title(f'{ticker} - Daily Chart', fontsize=14, fontweight='bold')
-        ax1.legend(loc='upper left', fontsize=8)
-        ax1.grid(True, alpha=0.3)
-        ax1.set_ylabel('Price ($)')
+        style = mpf.make_mpf_style(
+            base_mpf_style='nightclouds',
+            marketcolors=mc,
+            gridstyle='-',
+            gridcolor='#2d3436',
+            facecolor='#0d1117',
+        )
 
-        colors = ['g' if close[i] >= close[i-1] else 'r'
-                  for i in range(1, len(close))]
-        colors = ['g'] + colors
-        ax2.bar(dates, volume, color=colors, alpha=0.7)
-        ax2.set_ylabel('Volume')
-        ax2.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-
+        # Generate chart
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+
+        fig, axes = mpf.plot(
+            df.iloc[-60:],  # Last 60 days
+            type='candle',
+            style=style,
+            volume=True,
+            addplot=add_plots,
+            title=f'\n{ticker} - Daily Candlestick',
+            ylabel='Price ($)',
+            ylabel_lower='Volume',
+            figsize=(12, 8),
+            returnfig=True,
+        )
+
+        fig.savefig(buf, format='png', dpi=100, bbox_inches='tight',
+                    facecolor='#0d1117', edgecolor='none')
         buf.seek(0)
         plt.close(fig)
 

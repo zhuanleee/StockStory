@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
+import mplfinance as mpf
 from datetime import datetime, timedelta
 from pathlib import Path
 import warnings
@@ -1282,7 +1283,7 @@ def calculate_entry_signals(df, ticker_data):
 # ============================================================
 
 def generate_chart(ticker, price_data):
-    """Generate a chart image for a ticker."""
+    """Generate a candlestick chart image for a ticker."""
     try:
         if isinstance(price_data.columns, pd.MultiIndex):
             df = price_data[ticker].copy()
@@ -1294,46 +1295,62 @@ def generate_chart(ticker, price_data):
         if len(df) < 20:
             return None
 
-        # Calculate indicators
-        df['SMA_20'] = df['Close'].rolling(20).mean()
-        df['SMA_50'] = df['Close'].rolling(50).mean()
+        # Ensure proper column names
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+
+        # Calculate moving averages
+        sma_20 = df['Close'].rolling(20).mean()
+        sma_50 = df['Close'].rolling(50).mean()
 
         # Bollinger Bands
-        df['BB_mid'] = df['Close'].rolling(20).mean()
-        df['BB_std'] = df['Close'].rolling(20).std()
-        df['BB_upper'] = df['BB_mid'] + 2 * df['BB_std']
-        df['BB_lower'] = df['BB_mid'] - 2 * df['BB_std']
+        bb_mid = df['Close'].rolling(20).mean()
+        bb_std = df['Close'].rolling(20).std()
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
 
-        # Create figure
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
-                                        gridspec_kw={'height_ratios': [3, 1]})
+        # Create additional plots
+        add_plots = [
+            mpf.make_addplot(sma_20, color='orange', width=1),
+            mpf.make_addplot(sma_50, color='purple', width=1),
+            mpf.make_addplot(bb_upper, color='blue', width=0.7, linestyle='--', alpha=0.5),
+            mpf.make_addplot(bb_lower, color='blue', width=0.7, linestyle='--', alpha=0.5),
+        ]
 
-        # Price chart
-        ax1.plot(df.index, df['Close'], 'b-', linewidth=1.5, label='Price')
-        ax1.plot(df.index, df['SMA_20'], 'orange', linewidth=1, label='20 SMA')
-        ax1.plot(df.index, df['SMA_50'], 'purple', linewidth=1, label='50 SMA')
-        ax1.fill_between(df.index, df['BB_lower'], df['BB_upper'],
-                         alpha=0.1, color='blue', label='BB')
+        # Custom style
+        mc = mpf.make_marketcolors(
+            up='#00b894',
+            down='#d63031',
+            edge='inherit',
+            wick='inherit',
+            volume='inherit',
+        )
 
-        ax1.set_title(f'{ticker} - Daily Chart', fontsize=14, fontweight='bold')
-        ax1.legend(loc='upper left', fontsize=8)
-        ax1.grid(True, alpha=0.3)
-        ax1.set_ylabel('Price ($)')
+        style = mpf.make_mpf_style(
+            base_mpf_style='nightclouds',
+            marketcolors=mc,
+            gridstyle='-',
+            gridcolor='#2d3436',
+            facecolor='#0d1117',
+        )
 
-        # Volume chart
-        colors = ['g' if df['Close'].iloc[i] >= df['Close'].iloc[i-1] else 'r'
-                  for i in range(1, len(df))]
-        colors = ['g'] + colors
-        ax2.bar(df.index, df['Volume'], color=colors, alpha=0.7)
-        ax2.set_ylabel('Volume')
-        ax2.grid(True, alpha=0.3)
-
-        # Format
-        plt.tight_layout()
-
-        # Save to bytes
+        # Generate chart
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+
+        fig, axes = mpf.plot(
+            df,
+            type='candle',
+            style=style,
+            volume=True,
+            addplot=add_plots,
+            title=f'\n{ticker} - Daily Candlestick',
+            ylabel='Price ($)',
+            ylabel_lower='Volume',
+            figsize=(12, 8),
+            returnfig=True,
+        )
+
+        fig.savefig(buf, format='png', dpi=100, bbox_inches='tight',
+                    facecolor='#0d1117', edgecolor='none')
         buf.seek(0)
         plt.close(fig)
 
