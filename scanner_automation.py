@@ -12,11 +12,15 @@ Set up as GitHub Action or local cron job.
 """
 
 import os
+import io
 import json
 import requests
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pathlib import Path
 import warnings
@@ -1025,6 +1029,562 @@ def run_weekly_digest():
 
 
 # ============================================================
+# 1. NEWS/SENTIMENT SCANNER
+# ============================================================
+
+def scrape_finviz_news(ticker):
+    """Scrape recent news headlines from Finviz."""
+    try:
+        url = f"https://finviz.com/quote.ashx?t={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return []
+
+        # Simple regex-based extraction of news headlines
+        import re
+        html = response.text
+
+        # Find news table
+        news_pattern = r'<a[^>]*class="tab-link-news"[^>]*>([^<]+)</a>'
+        headlines = re.findall(news_pattern, html)
+
+        return headlines[:5]  # Return top 5 headlines
+    except Exception as e:
+        return []
+
+
+def analyze_sentiment(headlines):
+    """Simple keyword-based sentiment analysis."""
+    bullish_keywords = [
+        'upgrade', 'buy', 'outperform', 'beat', 'raises', 'higher', 'surge',
+        'soar', 'jump', 'rally', 'breakthrough', 'approval', 'strong', 'record',
+        'insider buy', 'bullish', 'growth', 'exceed', 'positive'
+    ]
+    bearish_keywords = [
+        'downgrade', 'sell', 'underperform', 'miss', 'cut', 'lower', 'drop',
+        'fall', 'decline', 'weak', 'warning', 'concern', 'risk', 'lawsuit',
+        'investigation', 'recall', 'bearish', 'negative', 'disappointing'
+    ]
+
+    bullish_count = 0
+    bearish_count = 0
+    key_headlines = []
+
+    for headline in headlines:
+        headline_lower = headline.lower()
+
+        for word in bullish_keywords:
+            if word in headline_lower:
+                bullish_count += 1
+                key_headlines.append(('📈', headline[:60]))
+                break
+
+        for word in bearish_keywords:
+            if word in headline_lower:
+                bearish_count += 1
+                key_headlines.append(('📉', headline[:60]))
+                break
+
+    if bullish_count > bearish_count:
+        sentiment = 'BULLISH'
+    elif bearish_count > bullish_count:
+        sentiment = 'BEARISH'
+    else:
+        sentiment = 'NEUTRAL'
+
+    return {
+        'sentiment': sentiment,
+        'bullish': bullish_count,
+        'bearish': bearish_count,
+        'key_headlines': key_headlines[:3],
+    }
+
+
+# ============================================================
+# 2. INSIDER BUYING ALERTS
+# ============================================================
+
+def scrape_insider_activity(ticker):
+    """Scrape insider trading data from Finviz."""
+    try:
+        url = f"https://finviz.com/quote.ashx?t={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return None
+
+        import re
+        html = response.text
+
+        # Look for insider trading info
+        # Finviz shows insider ownership and recent transactions
+        insider_own_match = re.search(r'Insider Own</td><td[^>]*>([^<]+)', html)
+        insider_trans_match = re.search(r'Insider Trans</td><td[^>]*>([^<]+)', html)
+
+        insider_own = insider_own_match.group(1) if insider_own_match else 'N/A'
+        insider_trans = insider_trans_match.group(1) if insider_trans_match else 'N/A'
+
+        # Parse transaction percentage
+        trans_pct = 0
+        if insider_trans != 'N/A':
+            try:
+                trans_pct = float(insider_trans.replace('%', '').replace('+', ''))
+            except:
+                pass
+
+        return {
+            'ownership': insider_own,
+            'recent_trans': insider_trans,
+            'trans_pct': trans_pct,
+            'is_buying': trans_pct > 0,
+        }
+    except:
+        return None
+
+
+def detect_insider_buying(tickers, min_buy_pct=1.0):
+    """Find stocks with significant insider buying."""
+    insider_buys = []
+
+    for ticker in tickers[:50]:  # Limit to top 50 to avoid rate limiting
+        activity = scrape_insider_activity(ticker)
+        if activity and activity['is_buying'] and activity['trans_pct'] >= min_buy_pct:
+            insider_buys.append({
+                'ticker': ticker,
+                'ownership': activity['ownership'],
+                'recent_trans': activity['recent_trans'],
+            })
+
+    return insider_buys
+
+
+# ============================================================
+# 3. OPTIONS FLOW (Simplified - uses Finviz data)
+# ============================================================
+
+def scrape_options_data(ticker):
+    """Get options-related metrics from Finviz."""
+    try:
+        url = f"https://finviz.com/quote.ashx?t={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return None
+
+        import re
+        html = response.text
+
+        # Extract short float and option metrics
+        short_float_match = re.search(r'Short Float</td><td[^>]*>([^<]+)', html)
+        short_ratio_match = re.search(r'Short Ratio</td><td[^>]*>([^<]+)', html)
+
+        short_float = short_float_match.group(1) if short_float_match else 'N/A'
+        short_ratio = short_ratio_match.group(1) if short_ratio_match else 'N/A'
+
+        # Parse values
+        short_float_pct = 0
+        if short_float != 'N/A':
+            try:
+                short_float_pct = float(short_float.replace('%', ''))
+            except:
+                pass
+
+        return {
+            'short_float': short_float,
+            'short_ratio': short_ratio,
+            'short_float_pct': short_float_pct,
+            'high_short': short_float_pct > 15,  # >15% short is notable
+        }
+    except:
+        return None
+
+
+# ============================================================
+# 4. ENTRY SIGNALS
+# ============================================================
+
+def calculate_entry_signals(df, ticker_data):
+    """Calculate suggested entry points, stops, and targets."""
+    if df is None or len(df) < 50:
+        return None
+
+    close = df['Close']
+    high = df['High']
+    low = df['Low']
+
+    current_price = close.iloc[-1]
+
+    # Moving averages
+    sma_20 = close.rolling(20).mean().iloc[-1]
+    sma_50 = close.rolling(50).mean().iloc[-1]
+
+    # ATR for stop calculation
+    tr = pd.concat([
+        high - low,
+        abs(high - close.shift(1)),
+        abs(low - close.shift(1))
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(14).mean().iloc[-1]
+
+    # Recent swing low (for stop)
+    recent_low = low.iloc[-10:].min()
+
+    # Resistance levels (recent highs)
+    recent_high = high.iloc[-20:].max()
+
+    # Entry strategies
+    entries = []
+
+    # Strategy 1: Pullback to 20 SMA
+    if current_price > sma_20 * 1.02:  # Price is 2%+ above 20 SMA
+        entries.append({
+            'type': 'PULLBACK_20SMA',
+            'entry': round(sma_20, 2),
+            'stop': round(sma_20 - 1.5 * atr, 2),
+            'target': round(current_price + 2 * atr, 2),
+        })
+
+    # Strategy 2: Breakout retest
+    if ticker_data.get('breakout_up'):
+        entries.append({
+            'type': 'BREAKOUT_RETEST',
+            'entry': round(current_price, 2),
+            'stop': round(recent_low, 2),
+            'target': round(current_price + 3 * atr, 2),
+        })
+
+    # Strategy 3: ATR-based stop
+    entries.append({
+        'type': 'ATR_STOP',
+        'entry': round(current_price, 2),
+        'stop': round(current_price - 2 * atr, 2),
+        'target': round(current_price + 3 * atr, 2),
+        'risk_reward': '1:1.5',
+    })
+
+    return {
+        'current_price': round(current_price, 2),
+        'sma_20': round(sma_20, 2),
+        'sma_50': round(sma_50, 2),
+        'atr': round(atr, 2),
+        'recent_low': round(recent_low, 2),
+        'recent_high': round(recent_high, 2),
+        'entries': entries,
+    }
+
+
+# ============================================================
+# 8. CHARTS IN TELEGRAM
+# ============================================================
+
+def generate_chart(ticker, price_data):
+    """Generate a chart image for a ticker."""
+    try:
+        if isinstance(price_data.columns, pd.MultiIndex):
+            df = price_data[ticker].copy()
+        else:
+            df = price_data.copy()
+
+        df = df.dropna().iloc[-60:]  # Last 60 days
+
+        if len(df) < 20:
+            return None
+
+        # Calculate indicators
+        df['SMA_20'] = df['Close'].rolling(20).mean()
+        df['SMA_50'] = df['Close'].rolling(50).mean()
+
+        # Bollinger Bands
+        df['BB_mid'] = df['Close'].rolling(20).mean()
+        df['BB_std'] = df['Close'].rolling(20).std()
+        df['BB_upper'] = df['BB_mid'] + 2 * df['BB_std']
+        df['BB_lower'] = df['BB_mid'] - 2 * df['BB_std']
+
+        # Create figure
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8),
+                                        gridspec_kw={'height_ratios': [3, 1]})
+
+        # Price chart
+        ax1.plot(df.index, df['Close'], 'b-', linewidth=1.5, label='Price')
+        ax1.plot(df.index, df['SMA_20'], 'orange', linewidth=1, label='20 SMA')
+        ax1.plot(df.index, df['SMA_50'], 'purple', linewidth=1, label='50 SMA')
+        ax1.fill_between(df.index, df['BB_lower'], df['BB_upper'],
+                         alpha=0.1, color='blue', label='BB')
+
+        ax1.set_title(f'{ticker} - Daily Chart', fontsize=14, fontweight='bold')
+        ax1.legend(loc='upper left', fontsize=8)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_ylabel('Price ($)')
+
+        # Volume chart
+        colors = ['g' if df['Close'].iloc[i] >= df['Close'].iloc[i-1] else 'r'
+                  for i in range(1, len(df))]
+        colors = ['g'] + colors
+        ax2.bar(df.index, df['Volume'], color=colors, alpha=0.7)
+        ax2.set_ylabel('Volume')
+        ax2.grid(True, alpha=0.3)
+
+        # Format
+        plt.tight_layout()
+
+        # Save to bytes
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        plt.close(fig)
+
+        return buf
+    except Exception as e:
+        print(f"Chart error for {ticker}: {e}")
+        return None
+
+
+def send_telegram_photo(photo_buffer, caption=''):
+    """Send a photo via Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    try:
+        files = {'photo': ('chart.png', photo_buffer, 'image/png')}
+        data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'caption': caption,
+            'parse_mode': 'Markdown',
+        }
+        response = requests.post(url, files=files, data=data, timeout=30)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Telegram photo error: {e}")
+        return False
+
+
+# ============================================================
+# CORRELATION MATRIX
+# ============================================================
+
+def calculate_correlation_matrix(price_data, tickers, period=20):
+    """Calculate correlation matrix for given tickers."""
+    returns_data = {}
+
+    for ticker in tickers:
+        try:
+            if isinstance(price_data.columns, pd.MultiIndex):
+                df = price_data[ticker]['Close']
+            else:
+                df = price_data['Close']
+
+            if len(df) >= period:
+                returns_data[ticker] = df.pct_change().iloc[-period:]
+        except:
+            continue
+
+    if len(returns_data) < 2:
+        return None
+
+    returns_df = pd.DataFrame(returns_data).dropna()
+    corr_matrix = returns_df.corr()
+
+    return corr_matrix
+
+
+def detect_high_correlation(corr_matrix, threshold=0.8):
+    """Find highly correlated pairs."""
+    high_corr_pairs = []
+
+    tickers = corr_matrix.columns.tolist()
+
+    for i, t1 in enumerate(tickers):
+        for j, t2 in enumerate(tickers):
+            if i < j:  # Avoid duplicates
+                corr = corr_matrix.loc[t1, t2]
+                if abs(corr) >= threshold:
+                    high_corr_pairs.append({
+                        'pair': (t1, t2),
+                        'correlation': round(corr, 3),
+                    })
+
+    return sorted(high_corr_pairs, key=lambda x: abs(x['correlation']), reverse=True)
+
+
+def format_correlation_alert(high_corr_pairs, top_n=10):
+    """Format correlation alert message."""
+    if not high_corr_pairs:
+        return None
+
+    msg = "🔗 *CORRELATION ALERT*\n\n"
+    msg += "_Highly correlated stocks (>80%):_\n"
+    msg += "_Avoid overconcentration!_\n\n"
+
+    for pair in high_corr_pairs[:top_n]:
+        t1, t2 = pair['pair']
+        corr = pair['correlation']
+        msg += f"• `{t1}` ↔ `{t2}`: {corr:.0%}\n"
+
+    return msg
+
+
+# ============================================================
+# 5. INTERACTIVE TELEGRAM BOT
+# ============================================================
+
+def get_telegram_updates(offset=None):
+    """Get updates from Telegram bot."""
+    if not TELEGRAM_BOT_TOKEN:
+        return []
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    params = {'timeout': 1}
+    if offset:
+        params['offset'] = offset
+
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        if response.status_code == 200:
+            return response.json().get('result', [])
+    except:
+        pass
+    return []
+
+
+def process_ticker_query(ticker, price_data, df_results):
+    """Process a ticker query and return analysis."""
+    ticker = ticker.upper().strip()
+
+    # Get data
+    ticker_row = df_results[df_results['ticker'] == ticker]
+    if len(ticker_row) == 0:
+        return f"❌ Ticker `{ticker}` not found in scan results."
+
+    row = ticker_row.iloc[0]
+
+    # Basic info
+    msg = f"📊 *{ticker} ANALYSIS*\n\n"
+    msg += f"*Score:* {row['composite_score']:.0f}/100 (Rank #{int(row['rank'])})\n"
+    msg += f"*RS vs SPY:* {row['rs_composite']:+.2f}%\n"
+    msg += f"*Price:* ${row['price']:.2f}\n\n"
+
+    # Trend
+    msg += "*Trend:*\n"
+    msg += f"• Above 20 SMA: {'✅' if row['above_20'] else '❌'}\n"
+    msg += f"• Above 50 SMA: {'✅' if row['above_50'] else '❌'}\n"
+    msg += f"• Above 200 SMA: {'✅' if row['above_200'] else '❌'}\n"
+    msg += f"• MAs Aligned: {'✅' if row['ma_aligned'] else '❌'}\n\n"
+
+    # Squeeze/Breakout
+    if row['in_squeeze']:
+        msg += "⏳ *IN SQUEEZE* - Volatility contracting\n"
+    if row['breakout_up']:
+        msg += "🚀 *BREAKOUT* - Price above upper BB\n"
+
+    # Volume
+    msg += f"\n*Volume:* {row['vol_ratio']:.1f}x average"
+    if row['vol_ratio'] > 2:
+        msg += " 🔥"
+    msg += "\n"
+
+    # Entry signals
+    try:
+        if isinstance(price_data.columns, pd.MultiIndex):
+            df = price_data[ticker].copy()
+        else:
+            df = price_data.copy()
+
+        entry_signals = calculate_entry_signals(df, row.to_dict())
+        if entry_signals:
+            msg += f"\n*Entry Ideas:*\n"
+            msg += f"• ATR: ${entry_signals['atr']:.2f}\n"
+            msg += f"• Stop: ${entry_signals['entries'][0]['stop']:.2f}\n"
+            msg += f"• Target: ${entry_signals['entries'][0]['target']:.2f}\n"
+    except:
+        pass
+
+    # News sentiment
+    headlines = scrape_finviz_news(ticker)
+    if headlines:
+        sentiment = analyze_sentiment(headlines)
+        msg += f"\n*Sentiment:* {sentiment['sentiment']}"
+        if sentiment['key_headlines']:
+            msg += "\n"
+            for emoji, headline in sentiment['key_headlines'][:2]:
+                msg += f"{emoji} _{headline}_\n"
+
+    # Insider activity
+    insider = scrape_insider_activity(ticker)
+    if insider:
+        msg += f"\n*Insider:* {insider['recent_trans']}"
+        if insider['is_buying']:
+            msg += " 🟢"
+
+    return msg
+
+
+def handle_interactive_commands(price_data, df_results):
+    """Check for and handle Telegram commands."""
+    try:
+        # Load last processed update ID
+        offset_file = Path('telegram_offset.json')
+        last_offset = 0
+        if offset_file.exists():
+            with open(offset_file, 'r') as f:
+                last_offset = json.load(f).get('offset', 0)
+
+        updates = get_telegram_updates(offset=last_offset + 1)
+
+        for update in updates:
+            update_id = update.get('update_id', 0)
+            message = update.get('message', {})
+            text = message.get('text', '').strip()
+
+            if text:
+                # Check if it's a ticker query (1-5 uppercase letters)
+                if len(text) <= 5 and text.isalpha():
+                    response = process_ticker_query(text, price_data, df_results)
+                    send_telegram_message(response)
+
+                    # Send chart
+                    chart = generate_chart(text.upper(), price_data)
+                    if chart:
+                        send_telegram_photo(chart, caption=f"{text.upper()} Chart")
+
+                elif text.lower() == '/top':
+                    # Show top 10
+                    msg = "🏆 *TOP 10 STOCKS*\n\n"
+                    for _, row in df_results.head(10).iterrows():
+                        msg += f"`{row['ticker']:5}` | Score: {row['composite_score']:.0f} | RS: {row['rs_composite']:+.1f}%\n"
+                    send_telegram_message(msg)
+
+                elif text.lower() == '/themes':
+                    # Show hot themes
+                    themes = analyze_themes(df_results)
+                    msg = "🎯 *HOT THEMES*\n\n"
+                    for t in themes[:10]:
+                        emoji = "🔥" if t['avg_rs'] > 3 else "📈"
+                        msg += f"{emoji} `{t['theme']}` | RS: {t['avg_rs']:+.1f}%\n"
+                    send_telegram_message(msg)
+
+                elif text.lower() == '/help':
+                    msg = "🤖 *BOT COMMANDS*\n\n"
+                    msg += "• Send any ticker (e.g., `NVDA`) for analysis\n"
+                    msg += "• `/top` - Show top 10 stocks\n"
+                    msg += "• `/themes` - Show hot themes\n"
+                    msg += "• `/help` - Show this help\n"
+                    send_telegram_message(msg)
+
+            # Update offset
+            with open(offset_file, 'w') as f:
+                json.dump({'offset': update_id}, f)
+
+    except Exception as e:
+        print(f"Interactive bot error: {e}")
+
+
+# ============================================================
 # MAIN EXECUTION
 # ============================================================
 
@@ -1123,6 +1683,53 @@ def main():
     # Send weekly digest on Sunday
     if run_weekly_digest():
         print("  📊 Weekly digest sent!")
+
+    # ============================================================
+    # INSIDER BUYING DETECTION
+    # ============================================================
+    print("\nChecking insider activity...")
+    top_tickers = df_results.head(30)['ticker'].tolist()
+    insider_buys = detect_insider_buying(top_tickers)
+
+    if insider_buys:
+        msg = "🟢 *INSIDER BUYING DETECTED*\n\n"
+        for ib in insider_buys[:5]:
+            msg += f"• `{ib['ticker']}` - {ib['recent_trans']} (Own: {ib['ownership']})\n"
+        send_telegram_message(msg)
+        print(f"  Found {len(insider_buys)} stocks with insider buying")
+
+    # ============================================================
+    # CORRELATION MATRIX
+    # ============================================================
+    print("\nCalculating correlations...")
+    top_20 = df_results.head(20)['ticker'].tolist()
+    corr_matrix = calculate_correlation_matrix(price_data, top_20)
+
+    if corr_matrix is not None:
+        high_corr = detect_high_correlation(corr_matrix, threshold=0.8)
+        if high_corr:
+            corr_msg = format_correlation_alert(high_corr)
+            if corr_msg:
+                send_telegram_message(corr_msg)
+            print(f"  Found {len(high_corr)} highly correlated pairs")
+
+    # ============================================================
+    # SEND CHARTS FOR TOP 3
+    # ============================================================
+    print("\nGenerating charts for top stocks...")
+    for ticker in df_results.head(3)['ticker'].tolist():
+        chart = generate_chart(ticker, price_data)
+        if chart:
+            row = df_results[df_results['ticker'] == ticker].iloc[0]
+            caption = f"*{ticker}* | Score: {row['composite_score']:.0f} | RS: {row['rs_composite']:+.1f}%"
+            send_telegram_photo(chart, caption=caption)
+            print(f"  📈 Chart sent: {ticker}")
+
+    # ============================================================
+    # PROCESS INTERACTIVE COMMANDS
+    # ============================================================
+    print("\nChecking for interactive commands...")
+    handle_interactive_commands(price_data, df_results)
 
     print(f"\nCompleted: {datetime.now()}")
     print(f"Sent {len(new_alerts)} new breakout alerts")

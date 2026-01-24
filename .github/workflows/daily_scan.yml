@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance pandas numpy requests
+          pip install yfinance pandas numpy requests matplotlib
 
       - name: Run scanner
         env:
@@ -32,6 +32,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python scanner_automation.py
+
+      - name: Generate dashboard
+        run: |
+          python dashboard.py
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
@@ -48,5 +52,7 @@ jobs:
           git add cluster_history.json || true
           git add learned_themes.json || true
           git add weekly_stats.json || true
-          git commit -m "Update scanner state and learned themes" || true
+          git add telegram_offset.json || true
+          git add docs/ || true
+          git commit -m "Update scanner state and dashboard" || true
           git push || true
