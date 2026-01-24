@@ -648,31 +648,367 @@ def main():
                 except Exception as e:
                     send_telegram_message(f"Timing error: {str(e)}")
 
+            # ============================================================
+            # AI-POWERED COMMANDS
+            # ============================================================
+
+            elif text.lower() == '/ai':
+                # Full AI insights dashboard
+                try:
+                    from ai_learning import format_ai_insights
+                    msg = format_ai_insights()
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"AI insights error: {str(e)}")
+
+            elif text.lower() == '/briefing':
+                # AI market narrative
+                try:
+                    from ai_learning import get_daily_briefing
+                    send_telegram_message("🤖 Generating AI market briefing...")
+
+                    briefing = get_daily_briefing()
+                    if briefing and not briefing.get('error'):
+                        msg = "🎯 *AI MARKET BRIEFING*\n\n"
+                        msg += f"*{briefing.get('headline', 'Market Update')}*\n\n"
+                        msg += f"*Mood:* {briefing.get('market_mood', 'N/A').upper()}\n\n"
+                        msg += f"_{briefing.get('main_narrative', '')}_\n\n"
+
+                        opp = briefing.get('key_opportunity', {})
+                        if opp:
+                            msg += f"*Key Opportunity:*\n"
+                            msg += f"{opp.get('description', 'N/A')}\n"
+                            if opp.get('tickers'):
+                                msg += f"Tickers: `{'`, `'.join(opp['tickers'][:4])}`\n"
+                            msg += "\n"
+
+                        risk = briefing.get('key_risk', {})
+                        if risk:
+                            msg += f"*Key Risk:* {risk.get('description', 'N/A')}\n\n"
+
+                        if briefing.get('contrarian_take'):
+                            msg += f"*Contrarian View:*\n_{briefing['contrarian_take']}_\n"
+                    else:
+                        msg = f"Could not generate briefing: {briefing.get('error', 'Unknown error')}"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Briefing error: {str(e)}")
+
+            elif text.lower().startswith('/predict '):
+                # AI prediction for a ticker
+                ticker = text[9:].strip().upper()
+                try:
+                    from ai_learning import predict_trade_outcome
+                    import yfinance as yf
+                    send_telegram_message(f"🤖 AI predicting {ticker}...")
+
+                    # Get current data
+                    df = yf.download(ticker, period='3mo', progress=False)
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+
+                    # Build signal summary
+                    close = df['Close']
+                    current = float(close.iloc[-1])
+                    sma_20 = float(close.rolling(20).mean().iloc[-1])
+                    sma_50 = float(close.rolling(50).mean().iloc[-1])
+                    vol_ratio = float(df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean())
+
+                    signals = {
+                        'above_20sma': current > sma_20,
+                        'above_50sma': current > sma_50,
+                        'volume_spike': vol_ratio > 1.5,
+                        'uptrend': sma_20 > sma_50,
+                    }
+
+                    prediction = predict_trade_outcome(ticker, signals, price_data=df)
+
+                    if prediction and not prediction.get('error'):
+                        prob = prediction.get('success_probability', 50)
+                        emoji = "🟢" if prob >= 60 else ("🟡" if prob >= 40 else "🔴")
+
+                        msg = f"🎲 *AI PREDICTION: {ticker}*\n\n"
+                        msg += f"{emoji} *Success Probability:* {prob}%\n"
+                        msg += f"*Confidence:* {prediction.get('confidence_level', 'N/A')}\n"
+                        msg += f"*Expected Move:* {prediction.get('expected_move', 'N/A')}\n"
+                        msg += f"*Recommendation:* {prediction.get('recommendation', 'N/A').upper()}\n\n"
+
+                        msg += "*Bullish Factors:*\n"
+                        for f in prediction.get('key_bullish_factors', [])[:3]:
+                            msg += f"• {f}\n"
+
+                        msg += "\n*Risk Factors:*\n"
+                        for f in prediction.get('key_risk_factors', [])[:3]:
+                            msg += f"• {f}\n"
+
+                        msg += f"\n*Stop:* {prediction.get('stop_loss_suggestion', 'N/A')}\n"
+                        msg += f"*Target:* {prediction.get('target_suggestion', 'N/A')}\n"
+                    else:
+                        msg = f"Could not generate prediction for {ticker}"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Prediction error: {str(e)}")
+
+            elif text.lower() == '/patterns':
+                # Best signal patterns
+                try:
+                    from ai_learning import get_best_patterns
+                    patterns = get_best_patterns()
+
+                    msg = "📊 *BEST SIGNAL PATTERNS*\n\n"
+
+                    if patterns:
+                        msg += "_Patterns ranked by win rate:_\n\n"
+                        for i, p in enumerate(patterns[:10], 1):
+                            emoji = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else "•"))
+                            msg += f"{emoji} *{p['pattern']}*\n"
+                            msg += f"   Win rate: {p['win_rate']:.0f}% ({p['total_trades']} trades)\n"
+                    else:
+                        msg += "_No pattern data yet. AI learns from trade outcomes._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Patterns error: {str(e)}")
+
+            elif text.lower() == '/coach':
+                # AI performance coaching
+                try:
+                    from ai_learning import get_weekly_coaching, load_trade_journal
+                    from self_learning import load_alert_history
+
+                    send_telegram_message("🤖 AI coach analyzing your performance...")
+
+                    journal = load_trade_journal()
+                    alerts = load_alert_history()
+
+                    # Calculate accuracy
+                    recent_trades = journal.get('trades', [])[-20:]
+                    if recent_trades:
+                        wins = len([t for t in recent_trades if t.get('outcome') == 'win'])
+                        accuracy = wins / len(recent_trades) * 100
+                    else:
+                        accuracy = 50
+
+                    coaching = get_weekly_coaching(
+                        recent_trades,
+                        alerts.get('alerts', [])[-30:],
+                        accuracy
+                    )
+
+                    if coaching and not coaching.get('error'):
+                        msg = "🏋️ *AI PERFORMANCE COACH*\n\n"
+                        msg += f"*Grade:* {coaching.get('overall_grade', 'N/A')}\n"
+                        msg += f"_{coaching.get('grade_explanation', '')}_\n\n"
+
+                        # Strengths
+                        strengths = coaching.get('strengths', [])
+                        if strengths:
+                            msg += "*Strengths:*\n"
+                            for s in strengths[:2]:
+                                msg += f"✅ {s.get('strength', 'N/A')}\n"
+                            msg += "\n"
+
+                        # Weaknesses
+                        weaknesses = coaching.get('weaknesses', [])
+                        if weaknesses:
+                            msg += "*Areas to Improve:*\n"
+                            for w in weaknesses[:2]:
+                                msg += f"⚠️ {w.get('weakness', 'N/A')}\n"
+                                msg += f"   → {w.get('specific_fix', '')}\n"
+                            msg += "\n"
+
+                        # Weekly focus
+                        focus = coaching.get('weekly_focus', {})
+                        if focus:
+                            msg += f"*This Week's Focus:*\n"
+                            msg += f"🎯 {focus.get('primary_goal', 'Keep improving')}\n"
+
+                        # Rules
+                        rules = coaching.get('specific_rules', [])
+                        if rules:
+                            msg += f"\n*New Rules:*\n"
+                            for r in rules[:2]:
+                                msg += f"📋 {r}\n"
+
+                        msg += f"\n_{coaching.get('encouragement', 'Keep learning!')}_"
+                    else:
+                        msg = "_Need more trade data for coaching. Record trades with /trade._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Coach error: {str(e)}")
+
+            elif text.lower().startswith('/trade '):
+                # Record a trade: /trade NVDA 150 165 win
+                parts = text[7:].strip().split()
+                try:
+                    if len(parts) >= 4:
+                        from ai_learning import record_trade
+
+                        ticker = parts[0].upper()
+                        entry = float(parts[1])
+                        exit_price = float(parts[2])
+                        # outcome is computed from prices
+
+                        signals = {'manual_entry': True}  # Could enhance this
+
+                        trade_id, analysis = record_trade(
+                            ticker=ticker,
+                            entry_price=entry,
+                            exit_price=exit_price,
+                            entry_date=datetime.now().strftime('%Y-%m-%d'),
+                            exit_date=datetime.now().strftime('%Y-%m-%d'),
+                            signals_at_entry=signals
+                        )
+
+                        pnl = (exit_price - entry) / entry * 100
+                        emoji = "✅" if pnl > 0 else "❌"
+
+                        msg = f"{emoji} *TRADE RECORDED*\n\n"
+                        msg += f"*{ticker}*: ${entry} → ${exit_price} ({pnl:+.1f}%)\n\n"
+
+                        if analysis:
+                            msg += f"*AI Analysis:*\n"
+                            msg += f"_{analysis.get('primary_reason', 'Analyzing...')}_\n\n"
+                            msg += f"*Lesson:* {analysis.get('lesson_learned', 'N/A')}"
+                    else:
+                        msg = "Usage: `/trade NVDA 150 165`\n(ticker entry_price exit_price)"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Trade record error: {str(e)}")
+
+            elif text.lower() == '/experts':
+                # Expert accuracy leaderboard
+                try:
+                    from ai_learning import get_expert_leaderboard
+
+                    experts = get_expert_leaderboard()
+
+                    msg = "🎯 *EXPERT ACCURACY LEADERBOARD*\n\n"
+
+                    if experts:
+                        for i, e in enumerate(experts[:10], 1):
+                            emoji = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"{i}."))
+                            msg += f"{emoji} *{e['expert']}*: {e['accuracy']:.0f}%\n"
+                            msg += f"   {e['correct']}/{e['total_predictions']} correct\n"
+                    else:
+                        msg += "_No expert predictions tracked yet._\n"
+                        msg += "_AI extracts predictions from podcasts/newsletters._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Experts error: {str(e)}")
+
+            elif text.lower() == '/anomalies':
+                # Recent anomalies
+                try:
+                    from ai_learning import load_anomaly_history
+
+                    history = load_anomaly_history()
+                    recent = history.get('anomalies', [])[-5:]
+
+                    msg = "⚠️ *RECENT ANOMALIES*\n\n"
+
+                    if recent:
+                        for a in reversed(recent):
+                            ticker = a.get('ticker', 'N/A')
+                            analysis = a.get('analysis', {})
+
+                            msg += f"*{ticker}*\n"
+                            for anomaly in analysis.get('anomalies_detected', [])[:2]:
+                                msg += f"• {anomaly.get('description', 'N/A')}\n"
+                            msg += f"_{analysis.get('trading_implication', 'N/A')}_\n\n"
+                    else:
+                        msg += "_No significant anomalies detected recently._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Anomalies error: {str(e)}")
+
+            elif text.lower() == '/strategy':
+                # AI strategy advice
+                try:
+                    from ai_learning import get_strategy_advice
+                    from self_learning import get_alert_accuracy_insights, get_best_strategies_for_regime
+
+                    send_telegram_message("🤖 AI analyzing strategy...")
+
+                    # Get performance data
+                    alerts = get_alert_accuracy_insights()
+                    regime = get_best_strategies_for_regime()
+
+                    performance = {
+                        'best_alerts': alerts.get('best_alert_types', []),
+                        'regime': regime.get('regime', 'unknown'),
+                    }
+
+                    weights = {'trend': 0.30, 'squeeze': 0.20, 'rs': 0.20, 'volume': 0.15, 'sentiment': 0.15}
+
+                    advice = get_strategy_advice(performance, weights, regime.get('regime', 'unknown'))
+
+                    if advice and not advice.get('error'):
+                        msg = "📈 *AI STRATEGY ADVICE*\n\n"
+                        msg += f"_{advice.get('overall_assessment', 'Analyzing...')}_\n\n"
+
+                        # Weight changes
+                        changes = advice.get('weight_adjustments', {})
+                        if changes:
+                            msg += "*Weight Adjustments:*\n"
+                            for signal, data in changes.items():
+                                if isinstance(data, dict) and data.get('recommended') != data.get('current'):
+                                    msg += f"• {signal}: {data.get('current', '?')} → {data.get('recommended', '?')}\n"
+                            msg += "\n"
+
+                        # Focus areas
+                        focus = advice.get('focus_areas', [])
+                        if focus:
+                            msg += "*Focus On:*\n"
+                            for f in focus[:3]:
+                                msg += f"✅ {f}\n"
+
+                        avoid = advice.get('avoid_areas', [])
+                        if avoid:
+                            msg += "\n*Avoid:*\n"
+                            for a in avoid[:2]:
+                                msg += f"❌ {a}\n"
+
+                        msg += f"\n*Risk:* {advice.get('risk_adjustment', 'maintain').upper()}"
+                    else:
+                        msg = "_Need more data for strategy advice._"
+
+                    send_telegram_message(msg)
+                except Exception as e:
+                    send_telegram_message(f"Strategy error: {str(e)}")
+
             elif text.lower() == '/help':
                 msg = "🤖 *BOT COMMANDS*\n\n"
+                msg += "*AI Intelligence:*\n"
+                msg += "• `/ai` → AI learning dashboard\n"
+                msg += "• `/briefing` → AI market narrative\n"
+                msg += "• `/predict NVDA` → AI trade prediction\n"
+                msg += "• `/coach` → AI performance coaching\n"
+                msg += "• `/strategy` → AI strategy advice\n"
+                msg += "• `/patterns` → Best signal patterns\n"
+                msg += "• `/experts` → Expert accuracy ranking\n"
+                msg += "• `/trade NVDA 150 165` → Record trade\n\n"
                 msg += "*Story Detection:*\n"
-                msg += "• `/stories` → Stories in play + emerging\n"
+                msg += "• `/stories` → Stories in play\n"
                 msg += "• `/ranked` → Signals ranked by quality\n"
-                msg += "• `/podcasts` → Podcast & newsletter intel\n"
-                msg += "• `/learned` → Auto-learned themes\n\n"
-                msg += "*Fact Checking:*\n"
-                msg += "• `/factcheck` → Verify recent claims\n"
-                msg += "• `/accuracy` → Source trust scores\n"
-                msg += "• `/insights` → Source reliability patterns\n\n"
+                msg += "• `/podcasts` → Podcast/newsletter intel\n\n"
                 msg += "*Self-Learning:*\n"
-                msg += "• `/learning` → All learning insights\n"
+                msg += "• `/learning` → Learning insights\n"
                 msg += "• `/profile NVDA` → Stock personality\n"
-                msg += "• `/regime` → Market regime + strategies\n"
-                msg += "• `/alerts` → Alert type accuracy\n"
+                msg += "• `/regime` → Market regime\n"
                 msg += "• `/timing` → News pricing speed\n\n"
                 msg += "*Analysis:*\n"
                 msg += "• `NVDA` → Full analysis + chart\n"
                 msg += "• `/top` → Top 10 stocks\n"
-                msg += "• `/news` → News + social sentiment\n"
-                msg += "• `/sectors` → Sector rotation\n"
-                msg += "• `/mtf` → Multi-timeframe\n"
-                msg += "• `/tam` → TAM rankings\n\n"
-                msg += "_System learns from every scan, alert, and trade._"
+                msg += "• `/news` → News + sentiment\n"
+                msg += "• `/sectors` → Sector rotation\n\n"
+                msg += "_AI learns from every action you take._"
                 send_telegram_message(msg)
 
             elif text.startswith('/'):

@@ -1863,6 +1863,98 @@ def main():
     except Exception as e:
         print(f"  Self-learning error: {e}")
 
+    # ============================================================
+    # AI-POWERED ANALYSIS
+    # ============================================================
+    print("\nRunning AI-powered analysis...")
+    try:
+        from ai_learning import (
+            generate_market_narrative,
+            analyze_signal_pattern,
+            scan_for_anomalies,
+            get_best_patterns,
+        )
+
+        # 1. Generate AI Market Narrative
+        narrative = generate_market_narrative(
+            themes=themes[:5],
+            sectors=[{'name': s, 'rs': rs} for s, rs in
+                    df_results.groupby('sector')['rs_composite'].mean().sort_values(ascending=False).head(5).items()],
+            top_stocks=df_results.head(10).to_dict('records'),
+            news_highlights=[],
+        )
+
+        if narrative and not narrative.get('error'):
+            msg = "🤖 *AI MARKET BRIEFING*\n\n"
+            msg += f"*{narrative.get('headline', 'Market Update')}*\n\n"
+            msg += f"_{narrative.get('main_narrative', '')}_\n\n"
+
+            opp = narrative.get('key_opportunity', {})
+            if opp and opp.get('description'):
+                msg += f"*Opportunity:* {opp['description']}\n"
+                if opp.get('tickers'):
+                    msg += f"Watch: `{'`, `'.join(opp['tickers'][:4])}`\n"
+
+            risk = narrative.get('key_risk', {})
+            if risk and risk.get('description'):
+                msg += f"\n*Risk:* {risk['description']}"
+
+            send_telegram_message(msg)
+            print("  AI market narrative sent!")
+
+        # 2. Learn patterns from top alerts
+        for _, row in df_results.head(5).iterrows():
+            try:
+                signals = {
+                    'above_20sma': row.get('above_20', False),
+                    'above_50sma': row.get('above_50', False),
+                    'above_200sma': row.get('above_200', False),
+                    'ma_aligned': row.get('ma_aligned', False),
+                    'in_squeeze': row.get('in_squeeze', False),
+                    'breakout': row.get('breakout_up', False),
+                    'volume_spike': row.get('vol_ratio', 1) > 1.5,
+                    'rs_positive': row.get('rs_composite', 0) > 0,
+                    'rs_strong': row.get('rs_composite', 0) > 5,
+                }
+                analyze_signal_pattern(signals)
+            except:
+                pass
+        print("  Recorded signal patterns for AI learning")
+
+        # 3. Scan for anomalies in top movers
+        anomaly_data = {}
+        for _, row in df_results.head(20).iterrows():
+            ticker = row['ticker']
+            anomaly_data[ticker] = {
+                'vol_ratio': row.get('vol_ratio', 1),
+                'daily_change': row.get('rs_composite', 0) / 5,  # Rough approximation
+                'score': row.get('composite_score', 0),
+            }
+
+        # Only flag extreme anomalies
+        extreme = {t: d for t, d in anomaly_data.items()
+                  if d['vol_ratio'] > 3 or abs(d.get('daily_change', 0)) > 5}
+
+        if extreme:
+            print(f"  Detected {len(extreme)} potential anomalies for AI review")
+
+        # 4. Report best patterns if we have enough data
+        patterns = get_best_patterns()
+        if patterns and len(patterns) >= 3:
+            best = patterns[0]
+            if best['win_rate'] >= 65:
+                msg = f"🎯 *AI PATTERN INSIGHT*\n\n"
+                msg += f"Best pattern: *{best['pattern']}*\n"
+                msg += f"Win rate: {best['win_rate']:.0f}% ({best['total_trades']} trades)\n"
+                msg += f"\n_Focus on setups with these signals._"
+                send_telegram_message(msg)
+                print(f"  Best pattern: {best['pattern']} ({best['win_rate']:.0f}%)")
+
+        print("  AI analysis complete!")
+
+    except Exception as e:
+        print(f"  AI analysis error: {e}")
+
     print(f"\nCompleted: {datetime.now()}")
     print(f"Sent {len(new_alerts)} new breakout alerts")
     print(f"Themes analyzed: {len(themes)}")
