@@ -935,7 +935,7 @@ def api_briefing():
 
 @app.route('/api/health')
 def api_health():
-    """Get market health (breadth + fear/greed) - cached."""
+    """Get market health - uses fast lite version to avoid timeouts."""
     cache_key = 'health'
 
     # Check cache first
@@ -944,31 +944,20 @@ def api_health():
         cached_data['cached'] = True
         return jsonify(cached_data)
 
-    # Return stale cache if computation in progress
-    if _endpoint_cache.is_computing(cache_key):
-        if cached_data:
-            cached_data['cached'] = True
-            cached_data['computing'] = True
-            return jsonify(cached_data)
-        return jsonify({'ok': True, 'score': 50, 'label': 'Computing...', 'cached': False, 'computing': True})
-
     try:
-        _endpoint_cache.start_computing(cache_key)
-        from market_health import get_market_health
-        health = get_market_health()
+        # Use lite version (fast, just VIX-based) to avoid timeouts
+        from market_health import get_market_health_lite
+        health = get_market_health_lite()
         response = {
             'ok': True,
             'cached': False,
-            'timestamp': datetime.now().isoformat(),
             **health
         }
         _endpoint_cache.set(cache_key, response)
         return jsonify(response)
     except Exception as e:
         logger.error(f"Health endpoint error: {e}")
-        return jsonify({'ok': False, 'error': str(e)})
-    finally:
-        _endpoint_cache.stop_computing(cache_key)
+        return jsonify({'ok': False, 'error': str(e), 'score': 50, 'label': 'Error'})
 
 
 @app.route('/api/data-providers')

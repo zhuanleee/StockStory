@@ -674,6 +674,51 @@ def calculate_fear_greed_index():
         }
 
 
+def get_market_health_lite():
+    """
+    Fast market health using only VIX (for free tier / quick responses).
+    """
+    try:
+        vix = yf.download('^VIX', period='5d', progress=False)
+        vix_val = get_last_close(vix, '^VIX')
+
+        if vix_val is None:
+            return {'score': 50, 'label': 'Neutral', 'color': '#eab308', 'lite': True}
+
+        # VIX-based score: VIX 12 = 100 (greed), VIX 35 = 0 (fear)
+        if vix_val <= 12:
+            score = 100
+        elif vix_val >= 35:
+            score = 0
+        else:
+            score = 100 - ((vix_val - 12) / 23 * 100)
+
+        score = round(max(0, min(100, score)), 1)
+
+        if score >= 80:
+            label, color = 'Extreme Greed', '#22c55e'
+        elif score >= 60:
+            label, color = 'Greed', '#84cc16'
+        elif score >= 40:
+            label, color = 'Neutral', '#eab308'
+        elif score >= 20:
+            label, color = 'Fear', '#f97316'
+        else:
+            label, color = 'Extreme Fear', '#ef4444'
+
+        return {
+            'score': score,
+            'label': label,
+            'color': color,
+            'vix': round(vix_val, 1),
+            'lite': True,
+            'timestamp': datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Lite health check error: {e}")
+        return {'score': 50, 'label': 'Neutral', 'color': '#eab308', 'lite': True, 'error': str(e)}
+
+
 def get_market_health():
     """
     Get complete market health data.
