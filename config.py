@@ -87,16 +87,26 @@ class CacheConfig:
 @dataclass(frozen=True)
 class ScannerConfig:
     """Stock scanner configuration."""
-    # Scoring weights
-    weight_trend: float = 0.30
-    weight_squeeze: float = 0.20
-    weight_rs: float = 0.20
-    weight_sentiment: float = 0.15
-    weight_volume: float = 0.15
+    # STORY-FIRST WEIGHTS (75% story, 25% technical)
+    # Story components
+    weight_theme_heat: float = 0.25      # Is stock part of a hot theme?
+    weight_catalyst: float = 0.20        # Upcoming earnings, FDA, launches?
+    weight_news_momentum: float = 0.15   # Is news coverage accelerating?
+    weight_sentiment: float = 0.15       # Bullish/bearish news tone
+
+    # Technical confirmation (secondary)
+    weight_technical: float = 0.25       # RS, trend, volume combined
+
+    # Legacy weights (kept for backward compatibility)
+    weight_trend: float = 0.10
+    weight_squeeze: float = 0.05
+    weight_rs: float = 0.10
+    weight_volume: float = 0.05
 
     # Alert thresholds
-    min_composite_score: int = field(default_factory=lambda: _get_env_int('MIN_COMPOSITE_SCORE', 70))
-    min_rs: int = field(default_factory=lambda: _get_env_int('MIN_RS', 5))
+    min_composite_score: int = field(default_factory=lambda: _get_env_int('MIN_COMPOSITE_SCORE', 60))
+    min_story_score: int = field(default_factory=lambda: _get_env_int('MIN_STORY_SCORE', 50))
+    min_rs: int = field(default_factory=lambda: _get_env_int('MIN_RS', 3))
     volume_spike_threshold: float = field(default_factory=lambda: _get_env_float('VOLUME_SPIKE', 2.0))
 
     # Processing
@@ -107,6 +117,10 @@ class ScannerConfig:
     rs_weight_5d: float = 0.5
     rs_weight_10d: float = 0.3
     rs_weight_20d: float = 0.2
+
+    # Story scanning
+    prioritize_early_stage: bool = True  # Boost early-stage themes for alpha
+    include_non_theme_stocks: bool = True  # Also scan stocks without themes
 
 
 @dataclass(frozen=True)

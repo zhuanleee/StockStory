@@ -816,7 +816,7 @@ def api_stories():
 
 @app.route('/api/scan')
 def api_scan():
-    """Get scan results (cached)."""
+    """Get STORY-FIRST scan results (cached)."""
     cache_key = 'scan'
 
     # Check cache first
@@ -835,13 +835,70 @@ def api_scan():
 
     try:
         _endpoint_cache.start_computing(cache_key)
-        from screener import screen_stocks
-        filters = {'rs': '>0', 'above_20sma': True}
-        results = screen_stocks(filters)
+
+        # Use story-first scanner
+        from story_scorer import scan_for_stories, get_all_theme_tickers, THEMES
+
+        # Get theme tickers + top S&P 500 stocks
+        theme_tickers = get_all_theme_tickers()
+        extra_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'JPM', 'V', 'JNJ', 'PG', 'HD', 'WMT']
+        scan_tickers = list(set(theme_tickers + extra_tickers))[:100]  # Limit for performance
+
+        # Run story-first scan
+        results = scan_for_stories(scan_tickers, max_workers=15)
+
+        # Format for dashboard
+        stocks = []
+        for r in results[:20]:
+            stocks.append({
+                'ticker': r['ticker'],
+                'score': r['story_score'],
+                'story_strength': r['story_strength'],
+                'theme': r['hottest_theme'],
+                'theme_role': r['theme_role'],
+                'stage': r['story_stage'],
+                'catalyst': r['next_catalyst']['type'] if r['next_catalyst'] else None,
+                'news_trend': r['news_trend'],
+                'sentiment': r['sentiment_label'],
+                'trend': r['technical']['trend'],
+                'rs': r['technical']['rs'],
+                'vol_ratio': r['technical']['volume'],
+                'above_20sma': r['technical'].get('above_20sma', False),
+                'price': 0,  # Would need separate fetch
+                # Social data
+                'social_buzz': r.get('social_buzz', 0),
+                'is_trending': r.get('is_trending', False),
+                'reddit_mentions': r.get('reddit_mentions', 0),
+                'stocktwits_volume': r.get('stocktwits_volume', 0),
+                'has_8k_filing': r.get('has_8k_filing', False),
+            })
+
+        # Theme summary
+        active_themes = []
+        for theme_id, theme in THEMES.items():
+            theme_stocks = [r for r in results if r['hottest_theme'] == theme['name']]
+            if theme_stocks:
+                avg_score = sum(s['story_score'] for s in theme_stocks) / len(theme_stocks)
+                active_themes.append({
+                    'name': theme['name'],
+                    'stage': theme.get('stage', 'unknown'),
+                    'stock_count': len(theme_stocks),
+                    'avg_score': round(avg_score, 1),
+                })
+
+        active_themes.sort(key=lambda x: x['avg_score'], reverse=True)
+
         response = {
             'ok': True,
-            'stocks': results[:20],
+            'mode': 'story_first',
+            'stocks': stocks,
             'total': len(results),
+            'themes': active_themes[:10],
+            'stats': {
+                'with_theme': sum(1 for r in results if r['has_theme']),
+                'with_catalyst': sum(1 for r in results if r['has_catalyst']),
+                'early_stage': sum(1 for r in results if r['is_early_stage']),
+            },
             'timestamp': datetime.now().isoformat(),
             'cached': False
         }
@@ -849,7 +906,23 @@ def api_scan():
         return jsonify(response)
     except Exception as e:
         logger.error(f"Scan endpoint error: {e}")
-        return jsonify({'ok': False, 'error': str(e)})
+        # Fallback to legacy screener
+        try:
+            from screener import screen_stocks
+            filters = {'rs': '>0', 'above_20sma': True}
+            results = screen_stocks(filters)
+            response = {
+                'ok': True,
+                'mode': 'legacy_fallback',
+                'stocks': results[:20],
+                'total': len(results),
+                'timestamp': datetime.now().isoformat(),
+                'cached': False
+            }
+            _endpoint_cache.set(cache_key, response)
+            return jsonify(response)
+        except Exception as e2:
+            return jsonify({'ok': False, 'error': f"Primary: {e}, Fallback: {e2}"})
     finally:
         _endpoint_cache.stop_computing(cache_key)
 

@@ -38,13 +38,22 @@ logger = get_logger(__name__)
 # CONFIGURATION
 # ============================================================
 
-# Scoring weights (from config)
+# Scoring weights (from config) - LEGACY (kept for backward compatibility)
 WEIGHTS = {
     'trend': config.scanner.weight_trend,
     'squeeze': config.scanner.weight_squeeze,
     'rs': config.scanner.weight_rs,
     'sentiment': config.scanner.weight_sentiment,
     'volume': config.scanner.weight_volume,
+}
+
+# STORY-FIRST WEIGHTS (new primary scoring)
+STORY_WEIGHTS = {
+    'theme_heat': config.scanner.weight_theme_heat,
+    'catalyst': config.scanner.weight_catalyst,
+    'news_momentum': config.scanner.weight_news_momentum,
+    'sentiment': config.scanner.weight_sentiment,
+    'technical': config.scanner.weight_technical,
 }
 
 # Ticker lists (embedded for reliability)
@@ -294,9 +303,16 @@ def get_sector(ticker):
         return 'Unknown'
 
 
-def run_scan():
-    """Run the full scan."""
-    logger.info(f"Starting scan at {datetime.now()}")
+def run_scan(use_story_first=True):
+    """
+    Run the full scan with STORY-FIRST approach.
+
+    Story-first means:
+    1. Prioritize stocks in active themes
+    2. Score based on story strength (theme, catalyst, news momentum)
+    3. Use technical analysis only for confirmation
+    """
+    logger.info(f"Starting {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {datetime.now()}")
 
     # Get unique tickers
     all_tickers = list(set(SP500_TICKERS + NASDAQ100_TICKERS))
@@ -309,11 +325,32 @@ def run_scan():
     # Get SPY data using cached utility
     spy_df, spy_returns = get_spy_data_cached(period='1y', force_refresh=True)
 
+    # Import story scorer for story-first approach
+    if use_story_first:
+        try:
+            from story_scorer import (
+                calculate_story_score, get_theme_membership,
+                get_all_theme_tickers, THEMES
+            )
+            logger.info("Story scorer loaded - using story-first approach")
+        except ImportError as e:
+            logger.warning(f"Story scorer not available: {e}, falling back to legacy")
+            use_story_first = False
+
     # Scan each ticker
     results = []
     sector_cache = {}
 
-    for ticker in all_tickers:
+    # If story-first, prioritize theme stocks
+    if use_story_first:
+        theme_tickers = get_all_theme_tickers()
+        # Scan theme stocks first, then others
+        prioritized_tickers = list(set(theme_tickers)) + [t for t in all_tickers if t not in theme_tickers]
+        logger.info(f"Story-first: {len(theme_tickers)} theme stocks prioritized")
+    else:
+        prioritized_tickers = all_tickers
+
+    for ticker in prioritized_tickers:
         df = get_ticker_df(price_data, ticker)
         if df is None:
             continue
@@ -334,29 +371,75 @@ def run_scan():
             'sector': sector_cache[ticker],
             **indicators,
             **rs,
-            'sentiment_score': 1,  # Placeholder
         }
 
-        # Calculate composite score
-        trend_norm = (result['trend_score'] / 4) * 100
-        squeeze_norm = (result['squeeze_score'] / 3) * 100
-        rs_norm = (result['rs_score'] / 3) * 100
-        vol_norm = (result['volume_score'] / 3) * 100
-        sent_norm = (result['sentiment_score'] / 3) * 100
+        # STORY-FIRST SCORING
+        if use_story_first:
+            story = calculate_story_score(ticker, price_data=df)
 
-        result['composite_score'] = (
-            trend_norm * WEIGHTS['trend'] +
-            squeeze_norm * WEIGHTS['squeeze'] +
-            rs_norm * WEIGHTS['rs'] +
-            vol_norm * WEIGHTS['volume'] +
-            sent_norm * WEIGHTS['sentiment']
-        )
+            # Add story data to result
+            result['story_score'] = story['story_score']
+            result['story_strength'] = story['story_strength']
+            result['story_stage'] = story['story_stage']
+            result['hottest_theme'] = story['hottest_theme']
+            result['theme_role'] = story['theme_role']
+            result['has_theme'] = story['has_theme']
+            result['has_catalyst'] = story['has_catalyst']
+            result['is_early_stage'] = story['is_early_stage']
+            result['next_catalyst'] = story['next_catalyst']['type'] if story['next_catalyst'] else None
+            result['news_trend'] = story['news_trend']
+            result['sentiment_label'] = story['sentiment_label']
+
+            # Story component scores
+            result['theme_heat_score'] = story['theme']['score']
+            result['catalyst_score'] = story['catalyst']['score']
+            result['news_momentum_score'] = story['news_momentum']['score']
+            result['sentiment_score'] = story['sentiment']['score']
+            result['technical_score'] = story['technical']['score']
+
+            # PRIMARY SCORE = Story Score (story-first!)
+            result['composite_score'] = story['story_score']
+
+            # Boost for early-stage themes (alpha opportunity)
+            if config.scanner.prioritize_early_stage and story['is_early_stage']:
+                result['composite_score'] = min(100, result['composite_score'] * 1.15)
+
+        else:
+            # LEGACY SCORING (technical-first)
+            result['sentiment_score'] = 1  # Placeholder
+
+            trend_norm = (result['trend_score'] / 4) * 100
+            squeeze_norm = (result['squeeze_score'] / 3) * 100
+            rs_norm = (result['rs_score'] / 3) * 100
+            vol_norm = (result['volume_score'] / 3) * 100
+            sent_norm = (result['sentiment_score'] / 3) * 100
+
+            result['composite_score'] = (
+                trend_norm * WEIGHTS['trend'] +
+                squeeze_norm * WEIGHTS['squeeze'] +
+                rs_norm * WEIGHTS['rs'] +
+                vol_norm * WEIGHTS['volume'] +
+                sent_norm * WEIGHTS['sentiment']
+            )
+
+            # Add empty story fields for compatibility
+            result['story_score'] = 0
+            result['story_strength'] = 'N/A'
+            result['hottest_theme'] = None
+            result['has_theme'] = False
 
         results.append(result)
 
     df_results = pd.DataFrame(results)
     df_results['rank'] = df_results['composite_score'].rank(ascending=False).astype(int)
     df_results = df_results.sort_values('composite_score', ascending=False)
+
+    # Log story stats
+    if use_story_first:
+        theme_count = df_results['has_theme'].sum()
+        catalyst_count = df_results['has_catalyst'].sum()
+        early_count = df_results['is_early_stage'].sum()
+        logger.info(f"Story scan complete: {theme_count} in themes, {catalyst_count} with catalysts, {early_count} early-stage")
 
     logger.info(f"Scan complete. {len(df_results)} tickers analyzed.")
 
