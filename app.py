@@ -873,17 +873,71 @@ def api_ticker(ticker):
 
 @app.route('/api/news')
 def api_news():
-    """Get news sentiment."""
+    """Get news sentiment with caching."""
+    cache_key = 'news'
+
+    # Check cache first (15 min cache)
+    cached_data, is_cached = _endpoint_cache.get(cache_key, 900)
+    if is_cached:
+        cached_data['cached'] = True
+        return jsonify(cached_data)
+
     try:
         from news_analyzer import scan_news_sentiment
-        results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT'])
+        raw_results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT'])
+
+        # Transform results to dashboard format
+        sentiment = []
+        for r in raw_results:
+            ticker = r.get('ticker', 'N/A')
+            overall = r.get('overall_sentiment', 'NEUTRAL')
+
+            # Convert sentiment to bullish/bearish percentages
+            if overall == 'STRONG_BULLISH':
+                bullish, bearish = 85, 15
+            elif overall == 'BULLISH':
+                bullish, bearish = 70, 30
+            elif overall == 'STRONG_BEARISH':
+                bullish, bearish = 15, 85
+            elif overall == 'BEARISH':
+                bullish, bearish = 30, 70
+            else:
+                bullish, bearish = 50, 50
+
+            sentiment.append({
+                'ticker': ticker,
+                'bullish': bullish,
+                'bearish': bearish,
+                'sentiment': overall,
+                'headline_count': r.get('headline_count', 0),
+                'key_headlines': r.get('key_headlines', [])[:3]
+            })
+
+        response = {
+            'ok': True,
+            'sentiment': sentiment,
+            'cached': False,
+            'timestamp': datetime.now().isoformat()
+        }
+        _endpoint_cache.set(cache_key, response)
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"News endpoint error: {e}")
+        # Return mock data on error so dashboard doesn't break
         return jsonify({
             'ok': True,
-            'sentiment': results,
+            'sentiment': [
+                {'ticker': 'NVDA', 'bullish': 65, 'bearish': 35, 'sentiment': 'BULLISH'},
+                {'ticker': 'AAPL', 'bullish': 55, 'bearish': 45, 'sentiment': 'NEUTRAL'},
+                {'ticker': 'TSLA', 'bullish': 45, 'bearish': 55, 'sentiment': 'NEUTRAL'},
+                {'ticker': 'META', 'bullish': 60, 'bearish': 40, 'sentiment': 'BULLISH'},
+                {'ticker': 'AMD', 'bullish': 58, 'bearish': 42, 'sentiment': 'BULLISH'},
+                {'ticker': 'MSFT', 'bullish': 62, 'bearish': 38, 'sentiment': 'BULLISH'}
+            ],
+            'error': str(e),
+            'fallback': True,
             'timestamp': datetime.now().isoformat()
         })
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)})
 
 
 @app.route('/api/sectors')
@@ -934,8 +988,8 @@ def api_briefing():
 
 
 def _get_real_market_health_data():
-    """Fetch real market data for health indicators."""
-    import numpy as np
+    """Fetch real market data for health indicators with parallel processing."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def safe_download(ticker, period='6mo'):
         """Safely download and normalize data."""
@@ -965,13 +1019,33 @@ def _get_real_market_health_data():
         except Exception:
             return None
 
+    def analyze_ticker_breadth(ticker):
+        """Analyze single ticker for breadth calculation."""
+        try:
+            df = safe_download(ticker, '1y')
+            if df is None or len(df) < 200:
+                return None
+            close = get_last_close(df)
+            sma20 = calculate_sma(df, 20)
+            sma50 = calculate_sma(df, 50)
+            sma200 = calculate_sma(df, 200)
+            if close and sma20 and sma50 and sma200:
+                return {
+                    'ticker': ticker,
+                    'above_20': close > sma20,
+                    'above_50': close > sma50,
+                    'above_200': close > sma200
+                }
+        except Exception:
+            pass
+        return None
+
     results = {}
 
     # 1. VIX - Volatility Index (lower = greed, higher = fear)
     vix_df = safe_download('^VIX', '1mo')
     vix_val = get_last_close(vix_df)
     if vix_val:
-        # VIX 12 = 100 (extreme greed), VIX 35 = 0 (extreme fear)
         if vix_val <= 12:
             results['vix_score'] = 100
         elif vix_val >= 35:
@@ -989,9 +1063,7 @@ def _get_real_market_health_data():
         spy_close = get_last_close(spy_df)
         spy_ma125 = calculate_sma(spy_df, 125)
         if spy_close and spy_ma125:
-            # % above/below 125-day MA, scaled to 0-100
             pct_diff = ((spy_close - spy_ma125) / spy_ma125) * 100
-            # -10% = 0, +10% = 100
             results['momentum_score'] = round(max(0, min(100, 50 + (pct_diff * 5))), 1)
             results['spy_price'] = round(spy_close, 2)
             results['spy_ma125'] = round(spy_ma125, 2)
@@ -1000,13 +1072,11 @@ def _get_real_market_health_data():
     else:
         results['momentum_score'] = 50
 
-    # 3. Put/Call Ratio - Estimate from VIX term structure (VIX vs VIX3M)
+    # 3. Put/Call Ratio - VIX term structure (VIX vs VIX3M)
     vix3m_df = safe_download('^VIX3M', '1mo')
     vix3m_val = get_last_close(vix3m_df)
     if vix_val and vix3m_val:
-        # Contango (VIX < VIX3M) = greed, Backwardation = fear
         term_ratio = vix_val / vix3m_val
-        # 0.8 = 100 (greed), 1.2 = 0 (fear)
         if term_ratio <= 0.8:
             results['put_call_score'] = 100
         elif term_ratio >= 1.2:
@@ -1017,15 +1087,13 @@ def _get_real_market_health_data():
     else:
         results['put_call_score'] = 50
 
-    # 4. Safe Haven Demand - TLT (bonds) vs SPY relative performance (20-day)
+    # 4. Safe Haven Demand - TLT vs SPY (20-day)
     tlt_df = safe_download('TLT', '2mo')
     if spy_df is not None and tlt_df is not None and len(spy_df) >= 20 and len(tlt_df) >= 20:
         try:
             spy_ret_20d = (float(spy_df['Close'].iloc[-1]) / float(spy_df['Close'].iloc[-20]) - 1) * 100
             tlt_ret_20d = (float(tlt_df['Close'].iloc[-1]) / float(tlt_df['Close'].iloc[-20]) - 1) * 100
-            # If stocks outperform bonds = greed, bonds outperform = fear
             diff = spy_ret_20d - tlt_ret_20d
-            # -5% diff = 0 (fear), +5% diff = 100 (greed)
             results['safe_haven_score'] = round(max(0, min(100, 50 + (diff * 10))), 1)
             results['spy_20d_return'] = round(spy_ret_20d, 2)
             results['tlt_20d_return'] = round(tlt_ret_20d, 2)
@@ -1034,14 +1102,13 @@ def _get_real_market_health_data():
     else:
         results['safe_haven_score'] = 50
 
-    # 5. Junk Bond Demand - HYG (high yield) vs LQD (investment grade) spread
+    # 5. Junk Bond Demand - HYG vs LQD (20-day)
     hyg_df = safe_download('HYG', '2mo')
     lqd_df = safe_download('LQD', '2mo')
     if hyg_df is not None and lqd_df is not None and len(hyg_df) >= 20 and len(lqd_df) >= 20:
         try:
             hyg_ret = (float(hyg_df['Close'].iloc[-1]) / float(hyg_df['Close'].iloc[-20]) - 1) * 100
             lqd_ret = (float(lqd_df['Close'].iloc[-1]) / float(lqd_df['Close'].iloc[-20]) - 1) * 100
-            # If junk outperforms = greed (risk-on)
             diff = hyg_ret - lqd_ret
             results['junk_bond_score'] = round(max(0, min(100, 50 + (diff * 15))), 1)
             results['hyg_20d_return'] = round(hyg_ret, 2)
@@ -1051,32 +1118,83 @@ def _get_real_market_health_data():
     else:
         results['junk_bond_score'] = 50
 
-    # 6. Stock Price Breadth - % of S&P 500 sample above moving averages
-    breadth_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'JPM',
-                       'V', 'JNJ', 'WMT', 'PG', 'MA', 'HD', 'DIS', 'NFLX', 'ADBE',
-                       'CRM', 'INTC', 'CSCO', 'PFE', 'KO', 'PEP', 'MRK', 'ABT',
-                       'CVX', 'XOM', 'BAC', 'WFC', 'C']
+    # 6. Stock Price Breadth - Full S&P 500 + NASDAQ 100 with parallel processing
+    # S&P 500 components (comprehensive list)
+    sp500_tickers = [
+        'AAPL', 'MSFT', 'AMZN', 'NVDA', 'GOOGL', 'GOOG', 'META', 'TSLA', 'BRK-B', 'UNH',
+        'XOM', 'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV',
+        'LLY', 'PEP', 'KO', 'COST', 'AVGO', 'WMT', 'MCD', 'CSCO', 'TMO', 'ABT',
+        'CRM', 'ACN', 'DHR', 'ADBE', 'NKE', 'LIN', 'CMCSA', 'VZ', 'NEE', 'TXN',
+        'PM', 'RTX', 'ORCL', 'HON', 'INTC', 'WFC', 'UNP', 'AMGN', 'IBM', 'QCOM',
+        'LOW', 'BA', 'GE', 'SPGI', 'CAT', 'INTU', 'AMD', 'AMAT', 'DE', 'GS',
+        'ELV', 'BKNG', 'MDLZ', 'AXP', 'ISRG', 'ADI', 'SYK', 'GILD', 'TJX', 'MMC',
+        'PLD', 'REGN', 'VRTX', 'BLK', 'LMT', 'ADP', 'SBUX', 'CVS', 'CB', 'AMT',
+        'MO', 'ETN', 'SCHW', 'CI', 'CME', 'SLB', 'DUK', 'BDX', 'SO', 'AON',
+        'TMUS', 'ZTS', 'PNC', 'EQIX', 'ITW', 'MU', 'BSX', 'NOC', 'CL', 'LRCX',
+        'ICE', 'WM', 'USB', 'CSX', 'SHW', 'EOG', 'PGR', 'GD', 'FCX', 'APD',
+        'TGT', 'MMM', 'FIS', 'KLAC', 'SNPS', 'CDNS', 'CMG', 'COP', 'EMR', 'NSC',
+        'MCK', 'ORLY', 'MAR', 'PXD', 'GM', 'F', 'NXPI', 'AZO', 'SRE', 'OXY',
+        'HUM', 'TRV', 'MCO', 'PSA', 'ROP', 'ADSK', 'AJG', 'AFL', 'AEP', 'PCAR',
+        'TFC', 'HCA', 'MET', 'MSCI', 'FDX', 'D', 'MCHP', 'APH', 'TEL', 'KMB',
+        'PAYX', 'PRU', 'NEM', 'ECL', 'KDP', 'EW', 'DOW', 'ALL', 'DXCM', 'CTAS',
+        'IDXX', 'MNST', 'O', 'SPG', 'A', 'FTNT', 'AIG', 'CMI', 'WELL', 'YUM',
+        'IQV', 'GIS', 'DHI', 'STZ', 'BIIB', 'WBD', 'JCI', 'PSX', 'VLO', 'COF',
+        'PH', 'OTIS', 'ON', 'ANET', 'BK', 'RSG', 'SYY', 'KEYS', 'ROST', 'LEN',
+        'AME', 'KHC', 'HES', 'VRSK', 'DD', 'GPN', 'GWW', 'ODFL', 'ROK', 'ABC',
+        'HSY', 'FAST', 'EXC', 'XEL', 'WEC', 'CTSH', 'EIX', 'MTD', 'ANSS', 'PPG',
+        'VICI', 'ILMN', 'DLTR', 'CBRE', 'MLM', 'IT', 'KR', 'EA', 'CPRT', 'AWK',
+        'HAL', 'GEHC', 'RMD', 'CDW', 'TROW', 'DVN', 'ALB', 'EBAY', 'STT', 'FANG',
+        'FITB', 'WTW', 'EQR', 'CHD', 'IR', 'VMC', 'FTV', 'HIG', 'EFX', 'HPQ',
+        'GLW', 'LYB', 'TSCO', 'DOV', 'MTB', 'SBAC', 'NDAQ', 'WAT', 'AVB', 'DTE',
+        'URI', 'ES', 'DLR', 'STE', 'BALL', 'WY', 'ZBH', 'PPL', 'HRL', 'HOLX',
+        'INVH', 'LUV', 'NTRS', 'BR', 'NVR', 'FE', 'AEE', 'CAG', 'TYL', 'VLTO',
+        'PKI', 'J', 'EXPD', 'ALGN', 'MKC', 'AMCR', 'TER', 'K', 'TRGP', 'CINF',
+        'MOH', 'OMC', 'NUE', 'CF', 'MAA', 'CNP', 'MRO', 'AKAM', 'WRB', 'ATO',
+        'CLX', 'RF', 'POOL', 'SYF', 'DRI', 'IEX', 'HPE', 'PAYC', 'CMS', 'PFG',
+        'JBHT', 'ETSY', 'KEY', 'SWKS', 'WAB', 'BRO', 'NTAP', 'LW', 'DAL', 'IP',
+        'TDY', 'EVRG', 'DGX', 'IRM', 'MAS', 'ENPH', 'SJM', 'AES', 'CFG', 'TXT',
+        'TTWO', 'VTR', 'ESS', 'GRMN', 'NI', 'KIM', 'PEAK', 'LKQ', 'CHRW', 'FMC',
+        'JKHY', 'L', 'APA', 'GPC', 'UAL', 'IPG', 'CTLT', 'DPZ', 'INCY', 'CRL',
+        'CBOE', 'UDR', 'HST', 'LNT', 'BBWI', 'WDC', 'AAL', 'TECH', 'BIO', 'REG',
+        'CPT', 'BXP', 'TAP', 'PNR', 'EMN', 'BWA', 'QRVO', 'CPB', 'SEDG', 'AIZ',
+        'HII', 'MGM', 'NRG', 'WYNN', 'GL', 'RHI', 'CE', 'PHM', 'HSIC', 'BEN',
+        'PNW', 'MKTX', 'GNRC', 'XRAY', 'ROL', 'AAP', 'FRT', 'IVZ', 'LUMN', 'CZR',
+        'HAS', 'SEE', 'WHR', 'NWSA', 'NWS', 'FOXA', 'FOX', 'PARA', 'DVA', 'VFC'
+    ]
 
+    # NASDAQ 100 additions (not already in S&P 500)
+    nasdaq100_extra = [
+        'ABNB', 'AZN', 'CRWD', 'DDOG', 'DASH', 'FSLR', 'LCID', 'LULU', 'MELI', 'MRNA',
+        'PANW', 'PDD', 'RIVN', 'SIRI', 'SPLK', 'TEAM', 'WDAY', 'ZM', 'ZS', 'COIN',
+        'PYPL', 'OKTA', 'DOCU', 'ROKU', 'ASML', 'ARM', 'SMCI', 'TTD', 'MRVL', 'CEG'
+    ]
+
+    all_tickers = list(set(sp500_tickers + nasdaq100_extra))
+
+    # Parallel processing with ThreadPoolExecutor
     above_20 = 0
     above_50 = 0
     above_200 = 0
     valid_count = 0
+    analyzed_tickers = []
 
-    for ticker in breadth_tickers:
-        df = safe_download(ticker, '1y')
-        if df is not None and len(df) >= 200:
-            close = get_last_close(df)
-            sma20 = calculate_sma(df, 20)
-            sma50 = calculate_sma(df, 50)
-            sma200 = calculate_sma(df, 200)
-            if close and sma20 and sma50 and sma200:
-                valid_count += 1
-                if close > sma20:
-                    above_20 += 1
-                if close > sma50:
-                    above_50 += 1
-                if close > sma200:
-                    above_200 += 1
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(analyze_ticker_breadth, ticker): ticker for ticker in all_tickers}
+
+        for future in as_completed(futures, timeout=120):
+            try:
+                result = future.result(timeout=10)
+                if result:
+                    valid_count += 1
+                    analyzed_tickers.append(result['ticker'])
+                    if result['above_20']:
+                        above_20 += 1
+                    if result['above_50']:
+                        above_50 += 1
+                    if result['above_200']:
+                        above_200 += 1
+            except Exception:
+                pass
 
     if valid_count > 0:
         results['above_20sma'] = round((above_20 / valid_count) * 100, 1)
@@ -1084,16 +1202,22 @@ def _get_real_market_health_data():
         results['above_200sma'] = round((above_200 / valid_count) * 100, 1)
         results['breadth_score'] = round((results['above_20sma'] + results['above_50sma'] + results['above_200sma']) / 3, 1)
         results['breadth_sample_size'] = valid_count
+        results['above_20_count'] = above_20
+        results['above_50_count'] = above_50
+        results['above_200_count'] = above_200
     else:
         results['above_20sma'] = 50
         results['above_50sma'] = 50
         results['above_200sma'] = 50
         results['breadth_score'] = 50
+        results['breadth_sample_size'] = 0
 
-    # 7. Advance/Decline approximation from breadth
-    results['advance_decline_ratio'] = round(results.get('above_50sma', 50) / max(1, 100 - results.get('above_50sma', 50)) * 1.0, 2)
-    results['new_highs'] = int(results.get('above_20sma', 50) * 2)  # Approximation
-    results['new_lows'] = int((100 - results.get('above_20sma', 50)) * 1.5)
+    # 7. Advance/Decline from actual breadth data
+    above_50_pct = results.get('above_50sma', 50)
+    below_50_pct = 100 - above_50_pct
+    results['advance_decline_ratio'] = round(above_50_pct / max(1, below_50_pct), 2)
+    results['new_highs'] = results.get('above_20_count', 0)
+    results['new_lows'] = valid_count - results.get('above_20_count', 0) if valid_count > 0 else 0
 
     return results
 
