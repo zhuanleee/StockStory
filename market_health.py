@@ -115,7 +115,11 @@ def get_stock_data(ticker, period='3mo'):
 
 def safe_get_series(df, column, ticker=None):
     """Safely extract a column from yfinance dataframe."""
-    if df is None or len(df) == 0:
+    if df is None:
+        return None
+    if not hasattr(df, 'columns'):
+        return None
+    if len(df) == 0:
         return None
     if isinstance(df.columns, pd.MultiIndex):
         try:
@@ -133,7 +137,11 @@ def safe_get_series(df, column, ticker=None):
 
 def get_last_close(df, ticker=None):
     """Get the last closing price from a yfinance dataframe."""
-    if df is None or len(df) == 0:
+    if df is None:
+        return None
+    if not hasattr(df, 'columns'):
+        return None
+    if len(df) == 0:
         return None
     try:
         if isinstance(df.columns, pd.MultiIndex):
@@ -160,28 +168,24 @@ def get_last_close(df, ticker=None):
 
 def get_real_put_call_ratio():
     """
-    Get real Put/Call ratio from CBOE data.
-    Falls back to VIX-based estimate if unavailable.
+    Get Put/Call ratio estimate based on VIX.
+
+    Note: ^PCALL and ^CPCE symbols are no longer available on Yahoo Finance.
+    We use VIX-based estimation instead.
     """
     try:
-        # Try CBOE total put/call ratio
-        pcr = yf.download('^PCALL', period='5d', progress=False)
-        if pcr is not None and len(pcr) > 0:
-            val = get_last_close(pcr, '^PCALL')
-            if val and 0.5 < val < 2.0:
-                return val, 'CBOE'
+        # Use VIX to estimate put/call ratio
+        # Higher VIX = more puts = higher P/C ratio
+        vix = yf.download('^VIX', period='5d', progress=False)
+        if vix is not None and len(vix) > 0:
+            vix_val = get_last_close(vix, '^VIX')
+            if vix_val:
+                # Estimate P/C ratio from VIX
+                # VIX 12 -> P/C ~0.7, VIX 20 -> P/C ~0.9, VIX 30 -> P/C ~1.1
+                estimated_pcr = 0.5 + (vix_val / 50)
+                return round(estimated_pcr, 2), 'VIX_ESTIMATE'
     except Exception as e:
-        logger.error(f"Error fetching CBOE put/call ratio: {e}")
-
-    try:
-        # Try equity put/call ratio
-        pcr = yf.download('^CPCE', period='5d', progress=False)
-        if pcr is not None and len(pcr) > 0:
-            val = get_last_close(pcr, '^CPCE')
-            if val and 0.3 < val < 1.5:
-                return val, 'CPCE'
-    except Exception as e:
-        logger.error(f"Error fetching equity put/call ratio: {e}")
+        logger.error(f"Error estimating put/call ratio from VIX: {e}")
 
     return None, None
 
@@ -190,19 +194,28 @@ def get_nyse_highs_lows():
     """
     Get NYSE New Highs and New Lows data.
     Returns (new_highs, new_lows) or (None, None) if unavailable.
+
+    Note: ^HIGN and ^LOWN may not be available on Yahoo Finance.
+    Returns None if data unavailable.
     """
     try:
         # NYSE New Highs
         highs = yf.download('^HIGN', period='5d', progress=False)
         lows = yf.download('^LOWN', period='5d', progress=False)
 
-        nh = get_last_close(highs, '^HIGN') if highs is not None and len(highs) > 0 else None
-        nl = get_last_close(lows, '^LOWN') if lows is not None and len(lows) > 0 else None
+        # Check if we got valid DataFrames
+        if highs is None or not hasattr(highs, 'columns') or len(highs) == 0:
+            return None, None
+        if lows is None or not hasattr(lows, 'columns') or len(lows) == 0:
+            return None, None
+
+        nh = get_last_close(highs, '^HIGN')
+        nl = get_last_close(lows, '^LOWN')
 
         if nh is not None and nl is not None:
             return int(nh), int(nl)
     except Exception as e:
-        logger.error(f"Error fetching NYSE highs/lows: {e}")
+        logger.debug(f"NYSE highs/lows not available: {e}")
 
     return None, None
 
@@ -428,7 +441,7 @@ def calculate_fear_greed_index():
 
         # 2. Market Momentum (20%) - SPY vs 125-day MA
         try:
-            spy = get_spy_data_cached(period='6mo')
+            spy, _ = get_spy_data_cached(period='6mo')
             spy_close = safe_get_series(spy, 'Close', 'SPY')
             if spy_close is None or len(spy_close) < 125:
                 raise ValueError("Not enough SPY data")
