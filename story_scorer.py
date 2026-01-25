@@ -300,6 +300,29 @@ THEMES = {
         'picks_shovels': ['MRVL', 'ARM', 'CDNS', 'SNPS', 'ASML', 'KLAC', 'LRCX', 'AMAT'],
         'keywords': ['ai', 'artificial intelligence', 'gpu', 'data center', 'nvidia', 'chip'],
         'stage': 'middle',  # early, middle, late
+
+        # Sub-themes for deeper ecosystem mapping
+        'sub_themes': {
+            'HBM_Memory': {
+                'tickers': ['MU'],
+                'driver_correlation': 0.87,
+            },
+            'CoWoS_Packaging': {
+                'tickers': ['TSM'],
+                'driver_correlation': 0.82,
+            },
+            'AI_Networking': {
+                'tickers': ['AVGO', 'MRVL', 'ANET'],
+                'driver_correlation': 0.79,
+            },
+            'AI_Power_Cooling': {
+                'tickers': ['VRT', 'ETN', 'PWR'],
+                'driver_correlation': 0.71,
+            },
+        },
+
+        # Infrastructure enablers
+        'infrastructure': ['EQIX', 'DLR', 'AMT'],
     },
     'ai_software': {
         'name': 'AI Software & Applications',
@@ -903,13 +926,24 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
     else:
         social = {'buzz_score': 0, 'trending': False, 'stocktwits': {}, 'reddit': {}, 'sec': {}}
 
+    # Calculate ecosystem score
+    try:
+        from ecosystem_intelligence import calculate_ecosystem_score
+        ecosystem_data = calculate_ecosystem_score(ticker)
+        ecosystem_score = ecosystem_data.get('score', 50)
+    except Exception:
+        ecosystem_data = {'score': 50, 'breakdown': {}, 'in_ecosystem': False}
+        ecosystem_score = 50
+
     # Weighted composite score (story-first: 75% story, 25% technical)
+    # Updated to include ecosystem score (10%)
     composite = (
-        theme['score'] * 0.20 +
-        catalyst['score'] * 0.20 +
-        social['buzz_score'] * 0.15 +
+        theme['score'] * 0.18 +
+        catalyst['score'] * 0.18 +
+        social['buzz_score'] * 0.12 +
         news_momentum['score'] * 0.10 +
-        sentiment['score'] * 0.10 +
+        sentiment['score'] * 0.07 +
+        ecosystem_score * 0.10 +  # Ecosystem strength
         technical['score'] * 0.25
     )
 
@@ -956,6 +990,7 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
         'news_momentum': news_momentum,
         'sentiment': sentiment,
         'technical': technical,
+        'ecosystem': ecosystem_data,
 
         # Quick summary
         'hottest_theme': theme.get('hottest_theme'),
@@ -971,6 +1006,11 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
         'reddit_mentions': social.get('reddit', {}).get('mention_count', 0),
         'stocktwits_volume': social.get('stocktwits', {}).get('message_volume', 0),
         'has_8k_filing': social.get('sec', {}).get('has_8k', False),
+
+        # Ecosystem summary
+        'ecosystem_score': ecosystem_score,
+        'in_ecosystem': ecosystem_data.get('in_ecosystem', False),
+        'ecosystem_themes': ecosystem_data.get('themes', []),
 
         # For sorting/filtering
         'has_theme': len(theme.get('themes', [])) > 0,

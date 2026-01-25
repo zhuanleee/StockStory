@@ -649,6 +649,191 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             font-size: 1.1rem;
             font-weight: 600;
         }
+
+        /* Ecosystem-specific styles */
+        .ecosystem-supplier { color: #60a5fa; }
+        .ecosystem-customer { color: #34d399; }
+        .ecosystem-competitor { color: #f472b6; }
+        .ecosystem-infrastructure { color: #a78bfa; }
+
+        .gap-hot { color: #ef4444; }
+        .gap-warm { color: #f59e0b; }
+        .gap-cool { color: #22c55e; }
+
+        .opportunity-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .opportunity-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--blue);
+        }
+
+        .opportunity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .opportunity-ticker {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--blue);
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .opportunity-gap {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .opportunity-detail {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            margin: 4px 0;
+        }
+
+        .subtheme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .subtheme-card {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .subtheme-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .subtheme-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .subtheme-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .status-hot { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status-warm { background: rgba(249, 115, 22, 0.2); color: #f97316; }
+        .status-early { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+
+        .subtheme-tickers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .subtheme-ticker {
+            background: var(--bg-card);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .inplay-bar {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 8px 0;
+        }
+
+        .inplay-card {
+            min-width: 120px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .inplay-ticker {
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+            margin-bottom: 4px;
+        }
+
+        .inplay-score {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .inplay-theme {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        .inplay-eco {
+            font-size: 0.75rem;
+            color: var(--blue);
+            margin-top: 4px;
+        }
+
+        .wave-tier {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-left: 3px solid var(--border);
+            margin-bottom: 8px;
+        }
+
+        .wave-tier.complete { border-color: var(--green); }
+        .wave-tier.in-progress { border-color: var(--blue); }
+        .wave-tier.pending { border-color: var(--text-dim); }
+
+        .wave-tier-num {
+            font-size: 1.2rem;
+            font-weight: 700;
+            width: 32px;
+        }
+
+        .wave-tier-info {
+            flex: 1;
+        }
+
+        .wave-tier-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .wave-tier-tickers {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .wave-tier-status {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
     </style>
 </head>
 <body>
@@ -831,6 +1016,76 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                 <div class="health-metric">
                                     <span class="metric-label">New Lows</span>
                                     <span class="metric-value" id="new-lows">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ecosystem Intelligence Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="ecosystem-section">
+                <!-- In-Play Watchlist -->
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">👁️</span>
+                                In Play Now
+                            </div>
+                            <button class="action-btn" onclick="fetchInPlay()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="inplay-bar" id="inplay-bar">
+                                <div class="inplay-card">
+                                    <div class="inplay-ticker">--</div>
+                                    <div class="inplay-score">--</div>
+                                    <div class="inplay-theme">Loading...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ecosystem Opportunities -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Ecosystem Opportunities
+                            </div>
+                            <span class="card-badge">Lagging Plays</span>
+                        </div>
+                        <div class="card-body" id="opportunities-list">
+                            <div class="opportunity-card">
+                                <div class="opportunity-header">
+                                    <span class="opportunity-ticker">Loading...</span>
+                                    <span class="opportunity-gap">--</span>
+                                </div>
+                                <div class="opportunity-detail">Fetching ecosystem data...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-Themes Grid -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Active Sub-Themes
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="subtheme-grid" id="subtheme-grid">
+                                <div class="subtheme-card">
+                                    <div class="subtheme-header">
+                                        <span class="subtheme-name">Loading...</span>
+                                        <span class="subtheme-status status-warm">--</span>
+                                    </div>
+                                    <div class="subtheme-tickers"></div>
                                 </div>
                             </div>
                         </div>
@@ -1182,6 +1437,158 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // Fetch stocks in play
+        async function fetchInPlay() {
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/in-play?min_score=70`);
+                const data = await res.json();
+
+                if (data.ok && data.in_play) {
+                    const container = document.getElementById('inplay-bar');
+                    container.innerHTML = data.in_play.slice(0, 10).map(stock => {
+                        const scoreColor = stock.score >= 80 ? 'var(--green)' : (stock.score >= 70 ? 'var(--yellow)' : 'var(--text)');
+                        const themes = stock.themes || [];
+                        const theme = themes[0] || 'N/A';
+
+                        return `<div class="inplay-card" onclick="fetchEcosystem('${stock.ticker}')">
+                            <div class="inplay-ticker">${stock.ticker}</div>
+                            <div class="inplay-score" style="color: ${scoreColor};">${stock.score.toFixed(0)}</div>
+                            <div class="inplay-theme">${theme}</div>
+                            <div class="inplay-eco">Eco: ${stock.ecosystem_strength || '--'}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('In-play error:', e);
+            }
+        }
+
+        // Fetch ecosystem opportunities
+        async function fetchOpportunities() {
+            try {
+                const res = await fetch(`${API_BASE}/ecosystem/opportunities?min_gap=10`);
+                const data = await res.json();
+
+                if (data.ok && data.opportunities) {
+                    const container = document.getElementById('opportunities-list');
+
+                    if (data.opportunities.length === 0) {
+                        container.innerHTML = `<div class="opportunity-card">
+                            <div class="opportunity-header">
+                                <span class="opportunity-ticker">No opportunities</span>
+                            </div>
+                            <div class="opportunity-detail">No lagging suppliers found with gap > 10</div>
+                        </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.opportunities.slice(0, 5).map((opp, i) => {
+                        const gapClass = opp.gap >= 25 ? 'gap-hot' : (opp.gap >= 15 ? 'gap-warm' : 'gap-cool');
+                        return `<div class="opportunity-card">
+                            <div class="opportunity-header">
+                                <span class="opportunity-ticker">#${i+1} ${opp.ticker}</span>
+                                <span class="opportunity-gap">GAP: ${opp.gap.toFixed(0)}</span>
+                            </div>
+                            <div class="opportunity-detail">Driver: ${opp.driver} (${opp.driver_score || '--'})</div>
+                            <div class="opportunity-detail">${opp.sub_theme || 'Ecosystem'} | ${opp.relationship || 'Supplier'}</div>
+                            <div class="opportunity-detail" style="color: var(--text); margin-top: 6px;">${opp.message || opp.signal || ''}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Opportunities error:', e);
+                document.getElementById('opportunities-list').innerHTML = `<div class="opportunity-card">
+                    <div class="opportunity-detail">Error loading opportunities</div>
+                </div>`;
+            }
+        }
+
+        // Fetch themes lifecycle and sub-themes
+        async function fetchThemesLifecycle() {
+            try {
+                const res = await fetch(`${API_BASE}/themes/lifecycle`);
+                const data = await res.json();
+
+                if (data.ok && data.sub_themes) {
+                    const container = document.getElementById('subtheme-grid');
+
+                    if (data.sub_themes.length === 0) {
+                        container.innerHTML = `<div class="subtheme-card">
+                            <div class="subtheme-name">No active sub-themes</div>
+                        </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.sub_themes.slice(0, 6).map(st => {
+                        const status = st.is_emerging ? 'hot' : (st.avg_score > 70 ? 'warm' : 'early');
+                        const statusText = status === 'hot' ? 'HOT' : (status === 'warm' ? 'WARM' : 'EARLY');
+                        const tickers = st.tickers || [];
+
+                        return `<div class="subtheme-card">
+                            <div class="subtheme-header">
+                                <span class="subtheme-name">${st.name || 'Unknown'}</span>
+                                <span class="subtheme-status status-${status}">${statusText}</span>
+                            </div>
+                            <div class="subtheme-tickers">
+                                ${tickers.slice(0, 4).map(t => `<span class="subtheme-ticker">${t}</span>`).join('')}
+                            </div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem; margin-top: 6px;">
+                                Momentum: ${st.momentum >= 0 ? '+' : ''}${(st.momentum || 0).toFixed(1)}
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Themes lifecycle error:', e);
+            }
+        }
+
+        // Fetch ecosystem for a specific ticker
+        async function fetchEcosystem(ticker) {
+            try {
+                const res = await fetch(`${API_BASE}/ecosystem/${ticker}?depth=2`);
+                const data = await res.json();
+
+                if (data.ok && data.ecosystem) {
+                    const eco = data.ecosystem;
+                    const content = document.getElementById('modal-content');
+                    const modal = document.getElementById('ticker-modal');
+
+                    modal.style.display = 'flex';
+
+                    const suppliersHtml = (eco.suppliers || []).slice(0, 5).map(s =>
+                        `<span class="subtheme-ticker ecosystem-supplier">${s.ticker}</span>`
+                    ).join('');
+
+                    const competitorsHtml = (eco.competitors || []).slice(0, 5).map(c =>
+                        `<span class="subtheme-ticker ecosystem-competitor">${c.ticker}</span>`
+                    ).join('');
+
+                    content.innerHTML = `
+                        <h2 style="margin-bottom: 20px;">🔗 ${ticker} Ecosystem</h2>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">SUPPLIERS</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${suppliersHtml || 'None found'}</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">COMPETITORS</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${competitorsHtml || 'None found'}</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">SUB-THEMES</div>
+                            <div>${Object.keys(eco.sub_themes || {}).join(', ') || 'None'}</div>
+                        </div>
+                        <div style="color: var(--text-dim); font-size: 0.85rem;">
+                            Network: ${eco.node_count || 0} stocks, ${eco.edge_count || 0} relationships
+                        </div>
+                        <button onclick="closeModal()" class="action-btn" style="margin-top: 20px;">Close</button>
+                    `;
+                }
+            } catch (e) {
+                console.error('Ecosystem error:', e);
+            }
+        }
+
         // Fetch market health (Fear & Greed + Breadth)
         async function fetchHealth() {
             try {
@@ -1399,7 +1806,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     fetchWithTimeout(fetchStories),
                     fetchWithTimeout(fetchScan),
                     fetchWithTimeout(fetchNews),
-                    fetchWithTimeout(fetchBriefing)
+                    fetchWithTimeout(fetchBriefing),
+                    fetchWithTimeout(fetchInPlay),
+                    fetchWithTimeout(fetchOpportunities),
+                    fetchWithTimeout(fetchThemesLifecycle)
                 ]);
 
                 lastUpdate.textContent = new Date().toLocaleTimeString();

@@ -590,10 +590,50 @@ NICHE_THEMES = {
 
 
 def detect_supply_chain_plays(df_results, hot_threshold=70):
-    """Find supply chain opportunities when a driver is hot."""
+    """Find supply chain opportunities when a driver is hot.
+
+    Uses dynamic ecosystem graph when available, falls back to static SUPPLY_CHAIN.
+    """
     plays = []
     hot_stocks = df_results[df_results['composite_score'] >= hot_threshold]['ticker'].tolist()
 
+    # Try to use dynamic ecosystem intelligence
+    try:
+        from ecosystem_intelligence import detect_lagging_suppliers, get_ecosystem
+
+        scores_dict = df_results.set_index('ticker')['composite_score'].to_dict()
+
+        for ticker in hot_stocks:
+            driver_score = scores_dict.get(ticker, 0)
+            opportunities = detect_lagging_suppliers(
+                ticker,
+                driver_score=driver_score,
+                scores_dict=scores_dict,
+                min_gap=10,
+            )
+
+            for opp in opportunities:
+                supplier_data = df_results[df_results['ticker'] == opp['ticker']]
+                in_squeeze = supplier_data['in_squeeze'].values[0] if len(supplier_data) > 0 else False
+
+                plays.append({
+                    'driver': ticker,
+                    'beneficiary': opp['ticker'],
+                    'theme': opp.get('sub_theme') or 'Ecosystem',
+                    'gap': opp['gap'],
+                    'relationship': opp['relationship'],
+                    'strength': opp.get('strength', 0.7),
+                    'in_squeeze': in_squeeze,
+                    'signal': opp.get('signal', ''),
+                })
+
+        if plays:
+            return sorted(plays, key=lambda x: x['gap'], reverse=True)
+
+    except Exception as e:
+        logger.debug(f"Ecosystem intelligence not available, falling back to static: {e}")
+
+    # Fallback to static SUPPLY_CHAIN
     for ticker in hot_stocks:
         if ticker in SUPPLY_CHAIN:
             chain = SUPPLY_CHAIN[ticker]

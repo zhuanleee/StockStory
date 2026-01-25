@@ -1520,5 +1520,262 @@ def api_predict(ticker):
         return jsonify({'ok': False, 'error': str(e)})
 
 
+# =============================================================================
+# ECOSYSTEM API ENDPOINTS
+# =============================================================================
+
+
+@app.route('/api/ecosystem/<ticker>')
+def api_ecosystem(ticker):
+    """Get ecosystem for a stock."""
+    try:
+        from ecosystem_intelligence import get_ecosystem
+
+        ticker = ticker.upper()
+        depth = request.args.get('depth', 2, type=int)
+
+        ecosystem = get_ecosystem(ticker, depth=min(depth, 3))
+
+        return jsonify({
+            'ok': True,
+            'ecosystem': ecosystem,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Ecosystem endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/ecosystem/opportunities')
+def api_ecosystem_opportunities():
+    """Get ecosystem opportunities (lagging plays)."""
+    try:
+        from ecosystem_intelligence import generate_ecosystem_alerts, get_stocks_in_play
+
+        min_gap = request.args.get('min_gap', 10, type=int)
+
+        # Get current scores
+        scores_dict = {}
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                df = pd.read_csv(scan_files[0])
+                scores_dict = df.set_index('ticker')['composite_score'].to_dict()
+        except Exception:
+            pass
+
+        # Get in-play stocks
+        in_play = get_stocks_in_play(min_score=70, scores_dict=scores_dict)
+
+        # Generate alerts
+        alerts = generate_ecosystem_alerts(
+            drivers=[s['ticker'] for s in in_play[:10]],
+            scores_dict=scores_dict,
+        )
+
+        # Filter by min_gap for lagging supplier alerts
+        opportunities = [
+            a for a in alerts
+            if a.get('type') == 'LAGGING_SUPPLIER' and a.get('gap', 0) >= min_gap
+        ]
+
+        return jsonify({
+            'ok': True,
+            'opportunities': opportunities,
+            'in_play': in_play[:10],
+            'total_alerts': len(alerts),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Opportunities endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/ecosystem/wave/<ticker>')
+def api_ecosystem_wave(ticker):
+    """Get wave propagation tracking for a driver."""
+    try:
+        from ecosystem_intelligence import calculate_wave_propagation, get_active_waves
+
+        ticker = ticker.upper()
+        event = request.args.get('event', 'catalyst')
+        move_pct = request.args.get('move', 5.0, type=float)
+
+        # Get scores
+        scores_dict = {}
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                df = pd.read_csv(scan_files[0])
+                scores_dict = df.set_index('ticker')['composite_score'].to_dict()
+        except Exception:
+            pass
+
+        wave = calculate_wave_propagation(
+            ticker,
+            event=event,
+            origin_move_pct=move_pct,
+            scores_dict=scores_dict,
+        )
+
+        return jsonify({
+            'ok': True,
+            'wave': wave,
+            'active_waves': get_active_waves(),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Wave endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/themes/lifecycle')
+def api_themes_lifecycle():
+    """Get theme lifecycle status."""
+    try:
+        from ecosystem_intelligence import (
+            get_theme_lifecycle, detect_emerging_subthemes, detect_rotation_signals
+        )
+        from story_scorer import THEMES
+
+        # Get scores
+        scores_dict = {}
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                df = pd.read_csv(scan_files[0])
+                scores_dict = df.set_index('ticker')['composite_score'].to_dict()
+        except Exception:
+            pass
+
+        themes_status = []
+        for theme_id, theme in THEMES.items():
+            # Get theme stocks scores
+            all_tickers = (
+                theme.get('drivers', []) +
+                theme.get('beneficiaries', []) +
+                theme.get('picks_shovels', [])
+            )
+            theme_scores = [scores_dict.get(t, 0) for t in all_tickers if t in scores_dict]
+            avg_score = sum(theme_scores) / len(theme_scores) if theme_scores else 0
+
+            themes_status.append({
+                'theme_id': theme_id,
+                'name': theme['name'],
+                'stage': theme.get('stage', 'unknown'),
+                'avg_score': round(avg_score, 1),
+                'stock_count': len(all_tickers),
+                'sub_themes': list(theme.get('sub_themes', {}).keys()),
+            })
+
+        themes_status.sort(key=lambda x: -x['avg_score'])
+
+        # Get sub-theme details for top theme
+        sub_themes = []
+        if themes_status:
+            top_theme = themes_status[0]['theme_id']
+            sub_themes = detect_emerging_subthemes(top_theme, scores_dict=scores_dict)
+
+        # Get rotation signals
+        rotations = detect_rotation_signals()
+
+        return jsonify({
+            'ok': True,
+            'themes': themes_status,
+            'sub_themes': sub_themes,
+            'rotations': rotations,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Themes lifecycle endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/watchlist/in-play')
+def api_watchlist_in_play():
+    """Get stocks currently in play."""
+    try:
+        from ecosystem_intelligence import get_stocks_in_play, calculate_ecosystem_score
+
+        min_score = request.args.get('min_score', 70, type=int)
+
+        # Get current scores
+        scores_dict = {}
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                df = pd.read_csv(scan_files[0])
+                scores_dict = df.set_index('ticker')['composite_score'].to_dict()
+        except Exception:
+            pass
+
+        in_play = get_stocks_in_play(min_score=min_score, scores_dict=scores_dict)
+
+        # Enrich with ecosystem scores
+        for stock in in_play:
+            try:
+                eco_score = calculate_ecosystem_score(stock['ticker'], scores_dict=scores_dict)
+                stock['ecosystem_strength'] = eco_score.get('score', 50)
+                stock['network_size'] = eco_score.get('network_size', 0)
+            except Exception:
+                stock['ecosystem_strength'] = 50
+                stock['network_size'] = 0
+
+        return jsonify({
+            'ok': True,
+            'in_play': in_play,
+            'count': len(in_play),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"In-play endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/ecosystem/refresh', methods=['POST'])
+def api_ecosystem_refresh():
+    """Trigger ecosystem refresh (internal)."""
+    try:
+        from ai_ecosystem_generator import refresh_single_ticker, refresh_hot_stocks
+
+        data = request.get_json() or {}
+
+        if data.get('ticker'):
+            # Refresh single ticker
+            ticker = data['ticker'].upper()
+            result = refresh_single_ticker(ticker)
+            return jsonify(result)
+
+        elif data.get('all'):
+            # Refresh all hot stocks
+            scores_dict = {}
+            try:
+                import glob
+                scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+                if scan_files:
+                    df = pd.read_csv(scan_files[0])
+                    scores_dict = df.set_index('ticker')['composite_score'].to_dict()
+            except Exception:
+                pass
+
+            result = refresh_hot_stocks(min_score=80, scores_dict=scores_dict)
+            return jsonify({
+                'ok': True,
+                'refreshed': result.get('success', []),
+                'failed': result.get('failed', []),
+            })
+
+        else:
+            return jsonify({'ok': False, 'error': 'Specify ticker or all=true'})
+
+    except Exception as e:
+        logger.error(f"Ecosystem refresh error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=config.port, debug=config.debug)
