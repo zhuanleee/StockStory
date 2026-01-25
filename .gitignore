@@ -44,6 +44,7 @@ credentials.json
 
 # Data directories
 learning_data/
+!learning_data/ecosystem_graph.json
 ai_learning_data/
 user_data/
 cache/
