@@ -1,27 +1,26 @@
 # Web Framework
-flask==3.0.0
-gunicorn==21.2.0
-Werkzeug==3.0.1
+flask>=3.0.0
+gunicorn>=21.2.0
+Werkzeug>=3.0.1
 
 # HTTP Client
-requests==2.31.0
-urllib3==2.1.0
+requests>=2.31.0
+urllib3>=2.0.0
 
 # Data & Finance
-yfinance==0.2.33
-pandas==2.1.4
-numpy==1.26.2
+yfinance>=0.2.33
+pandas>=2.0.0
+numpy>=1.24.0
 
 # Visualization
-matplotlib==3.8.2
-mplfinance==0.12.10b0
+matplotlib>=3.8.0
+mplfinance>=0.12.9b7
 
 # News Parsing
-feedparser==6.0.10
+feedparser>=6.0.10
 
-# Testing (install with: pip install -r requirements.txt -r requirements-dev.txt)
-# Or include these for full development setup:
-pytest==7.4.3
-pytest-cov==4.1.0
-pytest-mock==3.12.0
-responses==0.24.1
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+responses>=0.24.0
