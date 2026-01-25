@@ -689,6 +689,201 @@ def set_webhook():
     return jsonify(response.json())
 
 
+# =============================================================================
+# DASHBOARD API ENDPOINTS
+# =============================================================================
+
+def add_cors_headers(response):
+    """Add CORS headers to response."""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+
+@app.after_request
+def after_request(response):
+    """Add CORS headers to all responses."""
+    return add_cors_headers(response)
+
+
+@app.route('/api/stories')
+def api_stories():
+    """Get current hot stories/themes."""
+    try:
+        from fast_stories import run_fast_story_detection
+        result = run_fast_story_detection(use_cache=True)
+        return jsonify({
+            'ok': True,
+            'themes': result.get('themes', []),
+            'momentum_stocks': result.get('momentum_stocks', []),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/scan')
+def api_scan():
+    """Get scan results."""
+    try:
+        from screener import screen_stocks
+        filters = {'rs': '>0', 'above_20sma': True}
+        results = screen_stocks(filters)
+        return jsonify({
+            'ok': True,
+            'stocks': results[:20],
+            'total': len(results),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/ticker/<ticker>')
+def api_ticker(ticker):
+    """Get ticker analysis."""
+    try:
+        ticker = ticker.upper()
+        df = yf.download(ticker, period='3mo', progress=False)
+
+        if len(df) < 20:
+            return jsonify({'ok': False, 'error': 'No data'})
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        close = df['Close']
+        current = float(close.iloc[-1])
+        sma_20 = float(close.rolling(20).mean().iloc[-1])
+        sma_50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
+
+        # RS calculation
+        spy = yf.download('SPY', period='1mo', progress=False)
+        if isinstance(spy.columns, pd.MultiIndex):
+            spy.columns = spy.columns.get_level_values(0)
+
+        stock_ret = (current / float(close.iloc[-20]) - 1) * 100
+        spy_ret = (float(spy['Close'].iloc[-1]) / float(spy['Close'].iloc[-20]) - 1) * 100
+        rs = stock_ret - spy_ret
+
+        vol_ratio = float(df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean())
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'price': current,
+            'sma_20': sma_20,
+            'sma_50': sma_50,
+            'rs': rs,
+            'vol_ratio': vol_ratio,
+            'above_20sma': current > sma_20,
+            'above_50sma': current > sma_50,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/news')
+def api_news():
+    """Get news sentiment."""
+    try:
+        from news_analyzer import scan_news_sentiment
+        results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT'])
+        return jsonify({
+            'ok': True,
+            'sentiment': results,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sectors')
+def api_sectors():
+    """Get sector rotation data."""
+    try:
+        from sector_rotation import run_sector_rotation_analysis
+        result = run_sector_rotation_analysis()
+        return jsonify({
+            'ok': True,
+            'sectors': result.get('ranked', []),
+            'rotations': result.get('rotations', []),
+            'cycle': result.get('cycle', 'Unknown'),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/earnings')
+def api_earnings():
+    """Get upcoming earnings."""
+    try:
+        from earnings import get_upcoming_earnings
+        earnings = get_upcoming_earnings()
+        return jsonify({
+            'ok': True,
+            'earnings': earnings,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/briefing')
+def api_briefing():
+    """Get AI market briefing."""
+    try:
+        from ai_learning import get_daily_briefing
+        briefing = get_daily_briefing()
+        return jsonify({
+            'ok': True,
+            'briefing': briefing,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/predict/<ticker>')
+def api_predict(ticker):
+    """Get AI prediction for ticker."""
+    try:
+        from ai_learning import predict_trade_outcome
+
+        ticker = ticker.upper()
+        df = yf.download(ticker, period='3mo', progress=False)
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        close = df['Close']
+        current = float(close.iloc[-1])
+        sma_20 = float(close.rolling(20).mean().iloc[-1])
+        sma_50 = float(close.rolling(50).mean().iloc[-1])
+        vol_ratio = float(df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean())
+
+        signals = {
+            'above_20sma': current > sma_20,
+            'above_50sma': current > sma_50,
+            'volume_spike': vol_ratio > 1.5,
+            'uptrend': sma_20 > sma_50,
+        }
+
+        prediction = predict_trade_outcome(ticker, signals, price_data=df)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'prediction': prediction,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)

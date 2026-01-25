@@ -578,7 +578,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="stats-bar">
                 <div class="stat-card">
                     <div class="stat-label">Stocks Scanned</div>
-                    <div class="stat-value blue">{{TOTAL_SCANNED}}</div>
+                    <div class="stat-value blue" id="total-scanned">{{TOTAL_SCANNED}}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Active Breakouts</div>
@@ -595,8 +595,14 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Hot Themes</div>
-                    <div class="stat-value orange">{{HOT_THEMES}}</div>
+                    <div class="stat-value orange" id="hot-themes-count">{{HOT_THEMES}}</div>
                 </div>
+            </div>
+
+            <!-- Refresh Bar -->
+            <div class="refresh-bar">
+                <span style="color: var(--text-dim); font-size: 0.875rem;">Last refresh: <span id="last-update">--:--</span></span>
+                <button id="refresh-btn" class="action-btn" onclick="refreshAll()">🔄 Refresh Data</button>
             </div>
 
             <div class="grid">
@@ -622,7 +628,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                     <th>Signal</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="stocks-table">
                                 {{TOP_STOCKS_ROWS}}
                             </tbody>
                         </table>
@@ -706,7 +712,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             <span class="card-badge">Auto-detected</span>
                         </div>
                         <div class="card-body">
-                            <div class="themes-container">
+                            <div class="themes-container" id="themes-content">
                                 {{THEMES_HTML}}
                             </div>
                         </div>
@@ -726,7 +732,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                 News Sentiment
                             </div>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body" id="sentiment-content">
                             {{SENTIMENT_HTML}}
                         </div>
                     </div>
@@ -739,8 +745,9 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                 <span class="card-title-icon">🤖</span>
                                 AI Insights
                             </div>
+                            <button class="action-btn" onclick="fetchBriefing()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh AI</button>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body" id="ai-content">
                             {{AI_INSIGHTS_HTML}}
                         </div>
                     </div>
@@ -817,6 +824,264 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     </footer>
 
     <script>
+        const API_BASE = 'https://stock-scanner-bot-xgqi.onrender.com/api';
+
+        // Loading state helper
+        function setLoading(elementId, loading) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                if (loading) {
+                    el.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-dim);"><div class="spinner"></div>Loading...</div>';
+                }
+            }
+        }
+
+        // Fetch stories/themes
+        async function fetchStories() {
+            try {
+                setLoading('themes-content', true);
+                const res = await fetch(`${API_BASE}/stories`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    const container = document.getElementById('themes-content');
+                    if (data.themes.length === 0) {
+                        container.innerHTML = '<span class="theme-tag theme-neutral">No themes detected</span>';
+                        return;
+                    }
+
+                    container.innerHTML = data.themes.slice(0, 12).map(t => {
+                        const heat = t.heat || 'WARM';
+                        const heatClass = heat === 'HOT' ? 'theme-hot' : (heat === 'WARM' ? 'theme-warm' : 'theme-neutral');
+                        const icon = heat === 'HOT' ? '🔥' : '📈';
+                        return `<div class="theme-tag ${heatClass}">
+                            <span>${icon} ${t.name}</span>
+                            <span class="theme-count">${t.mention_count || 0}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Update hot themes count
+                    const hotCount = data.themes.filter(t => t.heat === 'HOT').length;
+                    document.getElementById('hot-themes-count').textContent = hotCount || data.themes.length;
+                }
+            } catch (e) {
+                console.error('Stories error:', e);
+            }
+        }
+
+        // Fetch scan results
+        async function fetchScan() {
+            try {
+                setLoading('stocks-table', true);
+                const res = await fetch(`${API_BASE}/scan`);
+                const data = await res.json();
+
+                if (data.ok && data.stocks) {
+                    const tbody = document.getElementById('stocks-table');
+                    document.getElementById('total-scanned').textContent = data.total;
+
+                    if (data.stocks.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-dim);">No stocks found</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = data.stocks.slice(0, 10).map((s, i) => {
+                        const rs = s.rs || 0;
+                        const rsClass = rs > 0 ? 'positive' : 'negative';
+                        const vol = s.vol_ratio || 1;
+                        const score = s.score || 50;
+
+                        return `<tr>
+                            <td>${i + 1}</td>
+                            <td class="ticker" style="cursor: pointer;" onclick="analyzeTicker('${s.ticker}')">${s.ticker}</td>
+                            <td>$${(s.price || 0).toFixed(2)}</td>
+                            <td class="${rsClass}">${rs > 0 ? '+' : ''}${rs.toFixed(1)}%</td>
+                            <td>${vol.toFixed(1)}x</td>
+                            <td>
+                                <div class="score-container">
+                                    <span>${score.toFixed(0)}</span>
+                                    <div class="score-bar">
+                                        <div class="score-fill" style="width: ${Math.min(score, 100)}%;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>${s.above_20sma ? '✅' : '❌'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Scan error:', e);
+            }
+        }
+
+        // Fetch news sentiment
+        async function fetchNews() {
+            try {
+                setLoading('sentiment-content', true);
+                const res = await fetch(`${API_BASE}/news`);
+                const data = await res.json();
+
+                if (data.ok && data.sentiment) {
+                    const container = document.getElementById('sentiment-content');
+
+                    container.innerHTML = data.sentiment.slice(0, 6).map(s => {
+                        const bullish = s.bullish || 0;
+                        const bearish = s.bearish || 0;
+                        const total = bullish + bearish || 1;
+                        const bullPct = Math.round((bullish / total) * 100);
+                        const bearPct = 100 - bullPct;
+
+                        const labelClass = bullPct > 60 ? 'bullish' : (bullPct < 40 ? 'bearish' : 'neutral');
+                        const labelText = bullPct > 60 ? 'Bullish' : (bullPct < 40 ? 'Bearish' : 'Neutral');
+
+                        return `<div class="sentiment-row">
+                            <span class="sentiment-ticker">${s.ticker}</span>
+                            <div class="sentiment-bar-container">
+                                <div class="sentiment-bullish" style="width: ${bullPct}%;">${bullPct}%</div>
+                                <div class="sentiment-bearish" style="width: ${bearPct}%;">${bearPct}%</div>
+                            </div>
+                            <span class="sentiment-label ${labelClass}">${labelText}</span>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('News error:', e);
+            }
+        }
+
+        // Fetch AI briefing
+        async function fetchBriefing() {
+            try {
+                setLoading('ai-content', true);
+                const res = await fetch(`${API_BASE}/briefing`);
+                const data = await res.json();
+
+                if (data.ok && data.briefing) {
+                    const b = data.briefing;
+                    const container = document.getElementById('ai-content');
+
+                    container.innerHTML = `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">📊 ${b.headline || 'Market Update'}</div>
+                            <div class="ai-insight-text">${b.main_narrative || 'No narrative available'}</div>
+                        </div>
+                        ${b.key_opportunity ? `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">💡 Opportunity</div>
+                            <div class="ai-insight-text">${b.key_opportunity.description || ''}</div>
+                        </div>` : ''}
+                    `;
+                }
+            } catch (e) {
+                document.getElementById('ai-content').innerHTML = `
+                    <div class="ai-insight">
+                        <div class="ai-insight-header">💡 Getting Started</div>
+                        <div class="ai-insight-text">Click "Refresh AI" or use /briefing in Telegram.</div>
+                    </div>`;
+            }
+        }
+
+        // Analyze single ticker
+        async function analyzeTicker(ticker) {
+            const modal = document.getElementById('ticker-modal');
+            const content = document.getElementById('modal-content');
+
+            modal.style.display = 'flex';
+            content.innerHTML = '<div style="text-align: center; padding: 40px;">Loading...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/ticker/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const rsClass = data.rs > 0 ? 'positive' : 'negative';
+                    content.innerHTML = `
+                        <h2 style="margin-bottom: 20px;">${data.ticker}</h2>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                            <div class="stat-card">
+                                <div class="stat-label">Price</div>
+                                <div class="stat-value">$${data.price.toFixed(2)}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">RS vs SPY</div>
+                                <div class="stat-value ${rsClass}">${data.rs > 0 ? '+' : ''}${data.rs.toFixed(1)}%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Volume</div>
+                                <div class="stat-value">${data.vol_ratio.toFixed(1)}x</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Trend</div>
+                                <div class="stat-value">${data.above_20sma ? '✅ Above SMA' : '❌ Below SMA'}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 20px; display: flex; gap: 10px;">
+                            <button onclick="getPrediction('${ticker}')" class="action-btn">🤖 AI Predict</button>
+                            <button onclick="closeModal()" class="action-btn secondary">Close</button>
+                        </div>
+                        <div id="prediction-result" style="margin-top: 20px;"></div>
+                    `;
+                } else {
+                    content.innerHTML = `<p>Error: ${data.error}</p><button onclick="closeModal()" class="action-btn">Close</button>`;
+                }
+            } catch (e) {
+                content.innerHTML = `<p>Error loading data</p><button onclick="closeModal()" class="action-btn">Close</button>`;
+            }
+        }
+
+        // Get AI prediction
+        async function getPrediction(ticker) {
+            const resultDiv = document.getElementById('prediction-result');
+            resultDiv.innerHTML = '<div style="text-align: center;">🤖 Analyzing...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/predict/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.prediction) {
+                    const p = data.prediction;
+                    const prob = p.success_probability || 50;
+                    const color = prob >= 60 ? 'var(--green)' : (prob >= 40 ? 'var(--yellow)' : 'var(--red)');
+
+                    resultDiv.innerHTML = `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">🎯 AI Prediction: ${prob}% Success</div>
+                            <div class="ai-insight-text">
+                                <strong>Recommendation:</strong> ${p.recommendation || 'N/A'}<br><br>
+                                ${(p.key_bullish_factors || []).slice(0, 2).map(f => `✅ ${f}`).join('<br>')}
+                                ${(p.key_risk_factors || []).slice(0, 2).map(f => `<br>⚠️ ${f}`).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<p style="color: var(--text-dim);">Prediction unavailable</p>';
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<p style="color: var(--red);">Error getting prediction</p>';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('ticker-modal').style.display = 'none';
+        }
+
+        // Refresh all data
+        async function refreshAll() {
+            document.getElementById('refresh-btn').disabled = true;
+            document.getElementById('refresh-btn').textContent = '⏳ Refreshing...';
+
+            await Promise.all([
+                fetchStories(),
+                fetchScan(),
+                fetchNews(),
+                fetchBriefing()
+            ]);
+
+            document.getElementById('refresh-btn').disabled = false;
+            document.getElementById('refresh-btn').textContent = '🔄 Refresh Data';
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+
         // Smooth scroll for nav links
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', function(e) {
@@ -846,7 +1111,95 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 link.classList.toggle('active', link.getAttribute('href') === '#' + current);
             });
         });
+
+        // Close modal on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial load is from static HTML, user can refresh for live data
+        });
     </script>
+
+    <style>
+        /* Additional styles for interactive elements */
+        .action-btn {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .action-btn.secondary {
+            background: var(--bg-accent);
+        }
+
+        #ticker-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-bar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+    </style>
+
+    <!-- Ticker Modal -->
+    <div id="ticker-modal" onclick="if(event.target === this) closeModal()">
+        <div id="modal-content"></div>
+    </div>
 </body>
 </html>
 '''
