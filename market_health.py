@@ -184,21 +184,25 @@ def calculate_fear_greed_index():
                 vix.columns = vix.columns.get_level_values(0)
             vix_current = float(vix['Close'].iloc[-1])
 
-            # VIX scoring: <12 = 100 (extreme greed), >40 = 0 (extreme fear)
-            if vix_current <= 12:
+            # VIX scoring: <15 = 100 (extreme greed), >30 = 0 (extreme fear)
+            # Normal VIX range is 12-25
+            if vix_current <= 15:
                 vix_score = 100
-            elif vix_current >= 40:
+            elif vix_current >= 30:
                 vix_score = 0
             else:
-                vix_score = 100 - ((vix_current - 12) / 28 * 100)
+                vix_score = 100 - ((vix_current - 15) / 15 * 100)
+
+            vix_score = max(0, min(100, vix_score))
 
             components['vix'] = {
                 'value': round(vix_current, 1),
                 'score': round(vix_score, 1),
                 'weight': 0.25,
-                'label': 'VIX Level'
+                'label': f'VIX ({vix_current:.1f})'
             }
-        except:
+        except Exception as e:
+            print(f"VIX error: {e}")
             components['vix'] = {'value': 20, 'score': 50, 'weight': 0.25, 'label': 'VIX Level'}
 
         # 2. Market Momentum (20%) - SPY vs 125-day MA
@@ -260,27 +264,31 @@ def calculate_fear_greed_index():
             if isinstance(tlt.columns, pd.MultiIndex):
                 tlt.columns = tlt.columns.get_level_values(0)
 
-            spy_ret_20d = (float(spy_close.iloc[-1]) / float(spy_close.iloc[-20]) - 1) * 100
-            tlt_ret_20d = (float(tlt['Close'].iloc[-1]) / float(tlt['Close'].iloc[-20]) - 1) * 100
+            # Use 10-day return for more responsiveness
+            spy_ret = (float(spy_close.iloc[-1]) / float(spy_close.iloc[-10]) - 1) * 100
+            tlt_ret = (float(tlt['Close'].iloc[-1]) / float(tlt['Close'].iloc[-10]) - 1) * 100
 
             # If stocks outperform bonds = greed
-            safe_haven_diff = spy_ret_20d - tlt_ret_20d
+            safe_haven_diff = spy_ret - tlt_ret
 
-            if safe_haven_diff >= 5:
+            if safe_haven_diff >= 3:
                 sh_score = 100
-            elif safe_haven_diff <= -5:
+            elif safe_haven_diff <= -3:
                 sh_score = 0
             else:
-                sh_score = 50 + (safe_haven_diff / 5 * 50)
+                sh_score = 50 + (safe_haven_diff / 3 * 50)
+
+            sh_score = max(0, min(100, sh_score))
 
             components['safe_haven'] = {
                 'value': round(safe_haven_diff, 1),
                 'score': round(sh_score, 1),
                 'weight': 0.15,
-                'label': 'Safe Haven Demand'
+                'label': f'Safe Haven ({safe_haven_diff:+.1f}%)'
             }
-        except:
-            components['safe_haven'] = {'value': 0, 'score': 50, 'weight': 0.15, 'label': 'Safe Haven Demand'}
+        except Exception as e:
+            print(f"Safe haven error: {e}")
+            components['safe_haven'] = {'value': 0, 'score': 50, 'weight': 0.15, 'label': 'Safe Haven'}
 
         # 5. Junk Bond Demand (10%) - HYG vs LQD
         try:
@@ -292,27 +300,31 @@ def calculate_fear_greed_index():
             if isinstance(lqd.columns, pd.MultiIndex):
                 lqd.columns = lqd.columns.get_level_values(0)
 
-            hyg_ret = (float(hyg['Close'].iloc[-1]) / float(hyg['Close'].iloc[-20]) - 1) * 100
-            lqd_ret = (float(lqd['Close'].iloc[-1]) / float(lqd['Close'].iloc[-20]) - 1) * 100
+            # Use 10-day return
+            hyg_ret = (float(hyg['Close'].iloc[-1]) / float(hyg['Close'].iloc[-10]) - 1) * 100
+            lqd_ret = (float(lqd['Close'].iloc[-1]) / float(lqd['Close'].iloc[-10]) - 1) * 100
 
             # If junk outperforms investment grade = greed
             junk_diff = hyg_ret - lqd_ret
 
-            if junk_diff >= 2:
+            if junk_diff >= 1.5:
                 junk_score = 100
-            elif junk_diff <= -2:
+            elif junk_diff <= -1.5:
                 junk_score = 0
             else:
-                junk_score = 50 + (junk_diff / 2 * 50)
+                junk_score = 50 + (junk_diff / 1.5 * 50)
+
+            junk_score = max(0, min(100, junk_score))
 
             components['junk_bond'] = {
                 'value': round(junk_diff, 1),
                 'score': round(junk_score, 1),
                 'weight': 0.10,
-                'label': 'Junk Bond Demand'
+                'label': f'Junk Bonds ({junk_diff:+.1f}%)'
             }
-        except:
-            components['junk_bond'] = {'value': 0, 'score': 50, 'weight': 0.10, 'label': 'Junk Bond Demand'}
+        except Exception as e:
+            print(f"Junk bond error: {e}")
+            components['junk_bond'] = {'value': 0, 'score': 50, 'weight': 0.10, 'label': 'Junk Bonds'}
 
         # 6. Market Volatility (10%) - SPY ATR
         try:
@@ -329,22 +341,25 @@ def calculate_fear_greed_index():
             atr_14 = float(tr.rolling(14).mean().iloc[-1])
             atr_pct = atr_14 / float(close.iloc[-1]) * 100
 
-            # Lower volatility = greed
-            if atr_pct <= 0.8:
+            # Lower volatility = greed (normal ATR% is 0.8-1.5)
+            if atr_pct <= 0.7:
                 vol_score = 100
-            elif atr_pct >= 2.5:
+            elif atr_pct >= 2.0:
                 vol_score = 0
             else:
-                vol_score = 100 - ((atr_pct - 0.8) / 1.7 * 100)
+                vol_score = 100 - ((atr_pct - 0.7) / 1.3 * 100)
+
+            vol_score = max(0, min(100, vol_score))
 
             components['volatility'] = {
                 'value': round(atr_pct, 2),
                 'score': round(vol_score, 1),
                 'weight': 0.10,
-                'label': 'Market Volatility'
+                'label': f'Volatility ({atr_pct:.1f}%)'
             }
-        except:
-            components['volatility'] = {'value': 1.5, 'score': 50, 'weight': 0.10, 'label': 'Market Volatility'}
+        except Exception as e:
+            print(f"Volatility error: {e}")
+            components['volatility'] = {'value': 1.5, 'score': 50, 'weight': 0.10, 'label': 'Volatility'}
 
         # Calculate weighted score
         total_score = 0
