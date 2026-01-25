@@ -11,9 +11,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 # Storage directory
-STORAGE_DIR = Path('user_data')
-STORAGE_DIR.mkdir(exist_ok=True)
+STORAGE_DIR = config.storage.user_data_dir
 
 def _get_user_file(chat_id, data_type):
     """Get user-specific data file path."""
@@ -28,7 +32,8 @@ def _load_data(chat_id, data_type, default=None):
         try:
             with open(filepath, 'r') as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            logger.warning(f"Failed to load {data_type} for {chat_id}: {e}")
             pass
     return default if default is not None else {}
 
@@ -56,7 +61,7 @@ def add_to_watchlist(chat_id, ticker):
     ticker = ticker.upper()
     if ticker not in tickers:
         tickers.append(ticker)
-        data['tickers'] = tickers[:20]  # Max 20 tickers
+        data['tickers'] = tickers[:config.storage.max_watchlist_size]  # Max watchlist size
         data['updated'] = datetime.now().isoformat()
         _save_data(chat_id, 'watchlist', data)
         return True
@@ -104,7 +109,7 @@ def add_alert(chat_id, ticker, price, direction='above'):
     }
 
     alerts.append(alert)
-    data['alerts'] = alerts[:50]  # Max 50 alerts
+    data['alerts'] = alerts[:config.storage.max_alerts_per_user]  # Max alerts per user
     _save_data(chat_id, 'alerts', data)
     return alert
 
@@ -149,7 +154,8 @@ def get_all_active_alerts():
                                 if not alert.get('triggered'):
                                     alert['chat_id'] = int(user_dir.name)
                                     all_alerts.append(alert)
-                    except:
+                    except (json.JSONDecodeError, IOError, OSError, ValueError) as e:
+                        logger.warning(f"Failed to load alerts from {alerts_file}: {e}")
                         pass
 
     return all_alerts
@@ -226,7 +232,7 @@ def close_position(chat_id, ticker, exit_price):
             positions = [pos for pos in positions if pos['ticker'] != ticker]
 
             data['positions'] = positions
-            data['closed_trades'] = closed[-100:]  # Keep last 100
+            data['closed_trades'] = closed[-config.storage.max_closed_trades:]  # Keep last N trades
             _save_data(chat_id, 'portfolio', data)
             return closed_trade
 

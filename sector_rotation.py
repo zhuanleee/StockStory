@@ -19,6 +19,14 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
 
 # Sector ETFs
 SECTOR_ETFS = {
@@ -108,10 +116,8 @@ def calculate_sector_metrics(period='6mo'):
     """Calculate metrics for all sectors."""
     sectors = {}
 
-    # Download SPY for relative strength
-    spy = yf.download('SPY', period=period, progress=False)
-    if isinstance(spy.columns, pd.MultiIndex):
-        spy.columns = spy.columns.get_level_values(0)
+    # Download SPY for relative strength (use cached version)
+    spy = get_spy_data_cached(period=period)
 
     if len(spy) < 63:
         return sectors
@@ -125,8 +131,7 @@ def calculate_sector_metrics(period='6mo'):
     for etf, name in SECTOR_ETFS.items():
         try:
             df = yf.download(etf, period=period, progress=False)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            df = normalize_dataframe_columns(df)
 
             if len(df) < 63:
                 continue
@@ -184,6 +189,7 @@ def calculate_sector_metrics(period='6mo'):
             }
 
         except Exception as e:
+            logger.error(f"Error calculating metrics for {etf}: {e}")
             continue
 
     return sectors
@@ -193,9 +199,7 @@ def calculate_sub_industry_metrics(period='3mo'):
     """Calculate metrics for sub-industries."""
     sub_industries = {}
 
-    spy = yf.download('SPY', period=period, progress=False)
-    if isinstance(spy.columns, pd.MultiIndex):
-        spy.columns = spy.columns.get_level_values(0)
+    spy = get_spy_data_cached(period=period)
 
     if len(spy) < 21:
         return sub_industries
@@ -205,8 +209,7 @@ def calculate_sub_industry_metrics(period='3mo'):
     for etf, name in SUB_INDUSTRY_ETFS.items():
         try:
             df = yf.download(etf, period=period, progress=False)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            df = normalize_dataframe_columns(df)
 
             if len(df) < 21:
                 continue
@@ -227,7 +230,8 @@ def calculate_sub_industry_metrics(period='3mo'):
                 'rs_1m': round(rs_1m, 2),
             }
 
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating sub-industry metrics for {etf}: {e}")
             continue
 
     return sub_industries
@@ -237,9 +241,7 @@ def calculate_factor_rotation(period='3mo'):
     """Calculate factor rotation metrics."""
     factors = {}
 
-    spy = yf.download('SPY', period=period, progress=False)
-    if isinstance(spy.columns, pd.MultiIndex):
-        spy.columns = spy.columns.get_level_values(0)
+    spy = get_spy_data_cached(period=period)
 
     if len(spy) < 21:
         return factors
@@ -249,8 +251,7 @@ def calculate_factor_rotation(period='3mo'):
     for etf, name in FACTOR_ETFS.items():
         try:
             df = yf.download(etf, period=period, progress=False)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            df = normalize_dataframe_columns(df)
 
             if len(df) < 21:
                 continue
@@ -268,7 +269,8 @@ def calculate_factor_rotation(period='3mo'):
                 'rs': round(rs, 2),
             }
 
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating factor metrics for {etf}: {e}")
             continue
 
     # Calculate factor spreads
@@ -470,7 +472,7 @@ def load_previous_sector_state():
 
 def run_sector_rotation_analysis(include_sub_industries=False, include_factors=True):
     """Run full sector rotation analysis."""
-    print("Analyzing sector rotation...")
+    logger.info("Analyzing sector rotation...")
 
     # Calculate current metrics
     sectors = calculate_sector_metrics()
@@ -523,8 +525,8 @@ def get_best_sectors_for_regime(market_regime='bull'):
 if __name__ == '__main__':
     results = run_sector_rotation_analysis(include_sub_industries=True, include_factors=True)
 
-    print("\n" + "=" * 60)
-    print(format_sector_rotation_report(
+    logger.info("=" * 60)
+    logger.info(format_sector_rotation_report(
         results['ranked'],
         results['rotations'],
         results['cycle'],
@@ -532,5 +534,5 @@ if __name__ == '__main__':
     ))
 
     if results['sub_industries']:
-        print("\n" + "=" * 60)
-        print(format_sub_industry_report(results['sub_industries']))
+        logger.info("=" * 60)
+        logger.info(format_sub_industry_report(results['sub_industries']))

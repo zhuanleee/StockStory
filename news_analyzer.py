@@ -22,9 +22,10 @@ import xml.etree.ElementTree as ET
 import warnings
 warnings.filterwarnings('ignore')
 
-# DeepSeek API Configuration (set via environment variable for security)
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+from config import config
+from utils import get_logger, APIError
+
+logger = get_logger(__name__)
 
 
 # Sentiment keywords with weights
@@ -103,9 +104,9 @@ Be concise. Focus on actionable trading insights."""
 
     try:
         response = requests.post(
-            DEEPSEEK_API_URL,
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -134,11 +135,11 @@ Be concise. Focus on actionable trading insights."""
             analysis = json.loads(content.strip())
             return analysis
         else:
-            print(f"DeepSeek API error: {response.status_code}")
+            logger.error(f"DeepSeek API error: {response.status_code}")
             return None
 
     except Exception as e:
-        print(f"DeepSeek analysis error: {e}")
+        logger.error(f"DeepSeek analysis error: {e}")
         return None
 
 
@@ -178,9 +179,9 @@ Respond in this exact JSON format:
 
     try:
         response = requests.post(
-            DEEPSEEK_API_URL,
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -208,7 +209,7 @@ Respond in this exact JSON format:
         return None
 
     except Exception as e:
-        print(f"Sector analysis error: {e}")
+        logger.error(f"Sector analysis error: {e}")
         return None
 
 
@@ -240,6 +241,7 @@ def scrape_finviz_news(ticker):
 
         return headlines
     except Exception as e:
+        logger.error(f"Error scraping Finviz news for {ticker}: {e}")
         return []
 
 
@@ -266,6 +268,7 @@ def scrape_yahoo_news(ticker):
 
         return headlines
     except Exception as e:
+        logger.error(f"Error scraping Yahoo news for {ticker}: {e}")
         return []
 
 
@@ -297,6 +300,7 @@ def scrape_google_news(ticker):
 
         return headlines
     except Exception as e:
+        logger.error(f"Error scraping Google news for {ticker}: {e}")
         return []
 
 
@@ -331,6 +335,7 @@ def scrape_marketwatch_news(ticker):
 
         return headlines
     except Exception as e:
+        logger.error(f"Error scraping MarketWatch news for {ticker}: {e}")
         return []
 
 
@@ -394,6 +399,7 @@ def scrape_stocktwits(ticker):
 
         return posts[:10], social_stats
     except Exception as e:
+        logger.error(f"Error scraping StockTwits for {ticker}: {e}")
         return [], None
 
 
@@ -425,6 +431,7 @@ def scrape_reddit_sentiment(ticker):
 
         return all_posts[:10]
     except Exception as e:
+        logger.error(f"Error scraping Reddit sentiment for {ticker}: {e}")
         return []
 
 
@@ -448,7 +455,8 @@ def aggregate_news_sources(ticker):
             for h in headlines:
                 if h.get('title'):
                     all_headlines.append(h)
-        except:
+        except Exception as e:
+            logger.error(f"Error fetching from {source_name}: {e}")
             continue
 
     # Deduplicate by similarity
@@ -481,13 +489,15 @@ def aggregate_social_sentiment(ticker):
     # StockTwits
     try:
         stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching StockTwits for {ticker}: {e}")
         stocktwits_posts, stocktwits_stats = [], None
 
     # Reddit
     try:
         reddit_posts = scrape_reddit_sentiment(ticker)
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching Reddit for {ticker}: {e}")
         reddit_posts = []
 
     return {
@@ -599,9 +609,9 @@ Be concise. Focus on actionable insights. Note any divergence between news senti
 
     try:
         response = requests.post(
-            DEEPSEEK_API_URL,
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -627,11 +637,11 @@ Be concise. Focus on actionable insights. Note any divergence between news senti
 
             return json.loads(content.strip())
         else:
-            print(f"DeepSeek API error: {response.status_code}")
+            logger.error(f"DeepSeek API error: {response.status_code}")
             return None
 
     except Exception as e:
-        print(f"DeepSeek comprehensive analysis error: {e}")
+        logger.error(f"DeepSeek comprehensive analysis error: {e}")
         return None
 
 
@@ -660,7 +670,7 @@ def analyze_ticker_news(ticker, use_ai=True):
 
     # Try comprehensive AI analysis
     ai_analysis = None
-    if use_ai and DEEPSEEK_API_KEY:
+    if use_ai and config.ai.api_key:
         ai_analysis = analyze_with_deepseek_comprehensive(ticker, headlines, social_data)
 
     if ai_analysis:
@@ -934,7 +944,7 @@ def scan_news_sentiment(tickers):
                         sentiment=sentiment.lower().replace('strong_', '')
                     )
     except Exception as e:
-        pass  # Silent fail - don't break news scan if learning fails
+        logger.debug(f"Learning from news events failed: {e}")
 
     return results
 
@@ -1022,14 +1032,14 @@ def format_news_scan_results(results):
 if __name__ == '__main__':
     # Test single ticker
     ticker = 'NVDA'
-    print(f"Analyzing news for {ticker}...")
+    logger.info(f"Analyzing news for {ticker}...")
     analysis = analyze_ticker_news(ticker)
-    print(format_news_analysis(ticker, analysis))
+    logger.info(format_news_analysis(ticker, analysis))
 
-    print("\n" + "=" * 60)
+    logger.info("\n" + "=" * 60)
 
     # Test scan
     test_tickers = ['NVDA', 'AMD', 'AAPL', 'TSLA', 'META']
-    print("\nScanning news sentiment...")
+    logger.info("Scanning news sentiment...")
     results = scan_news_sentiment(test_tickers)
-    print(format_news_scan_results(results))
+    logger.info(format_news_scan_results(results))

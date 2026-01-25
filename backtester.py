@@ -17,6 +17,14 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
 
 def calculate_signals(df):
     """Calculate all signals for a given dataframe."""
@@ -55,8 +63,7 @@ def calculate_signals(df):
 
     # RS vs SPY
     spy = yf.download('SPY', start=df.index[0], end=df.index[-1], progress=False)
-    if isinstance(spy.columns, pd.MultiIndex):
-        spy.columns = spy.columns.get_level_values(0)
+    spy = normalize_dataframe_columns(spy)
 
     # Align indexes
     spy = spy.reindex(df.index, method='ffill')
@@ -141,6 +148,7 @@ def backtest_signal(df, signal_name, hold_days=10, stop_loss_pct=None, take_prof
             })
 
         except Exception as e:
+            logger.error(f"Error processing trade at {entry_date}: {e}")
             continue
 
     if not trades:
@@ -173,9 +181,9 @@ def run_backtest(tickers, period='2y', hold_days=10):
     """
     Run backtest on multiple tickers.
     """
-    print(f"Running backtest on {len(tickers)} tickers...")
-    print(f"Period: {period}, Hold Days: {hold_days}")
-    print("=" * 60)
+    logger.info(f"Running backtest on {len(tickers)} tickers...")
+    logger.info(f"Period: {period}, Hold Days: {hold_days}")
+    logger.info("=" * 60)
 
     all_results = {
         'breakout': [],
@@ -187,8 +195,7 @@ def run_backtest(tickers, period='2y', hold_days=10):
     for ticker in tickers:
         try:
             df = yf.download(ticker, period=period, progress=False)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            df = normalize_dataframe_columns(df)
 
             if len(df) < 200:
                 continue
@@ -204,6 +211,7 @@ def run_backtest(tickers, period='2y', hold_days=10):
                     all_results[signal].append(result)
 
         except Exception as e:
+            logger.error(f"Error running backtest for {ticker}: {e}")
             continue
 
     # Aggregate results
@@ -228,11 +236,11 @@ def run_backtest(tickers, period='2y', hold_days=10):
             'tickers_tested': len(results),
         }
 
-        print(f"\n{signal.upper()}")
-        print(f"  Trades: {total_trades}")
-        print(f"  Win Rate: {summary[signal]['win_rate']}%")
-        print(f"  Avg PnL/Trade: {summary[signal]['avg_pnl_per_trade']}%")
-        print(f"  Total PnL: {summary[signal]['total_pnl']}%")
+        logger.info(f"{signal.upper()}")
+        logger.info(f"  Trades: {total_trades}")
+        logger.info(f"  Win Rate: {summary[signal]['win_rate']}%")
+        logger.info(f"  Avg PnL/Trade: {summary[signal]['avg_pnl_per_trade']}%")
+        logger.info(f"  Total PnL: {summary[signal]['total_pnl']}%")
 
     return summary, all_results
 
@@ -269,12 +277,12 @@ TEST_TICKERS = [
 if __name__ == '__main__':
     summary, details = run_backtest(TEST_TICKERS, period='2y', hold_days=10)
 
-    print("\n" + "=" * 60)
-    print("TELEGRAM MESSAGE:")
-    print("=" * 60)
-    print(format_backtest_report(summary))
+    logger.info("=" * 60)
+    logger.info("TELEGRAM MESSAGE:")
+    logger.info("=" * 60)
+    logger.info(format_backtest_report(summary))
 
     # Save results
     with open('backtest_results.json', 'w') as f:
         json.dump(summary, f, indent=2)
-    print("\nResults saved to backtest_results.json")
+    logger.info("Results saved to backtest_results.json")

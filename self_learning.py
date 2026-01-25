@@ -18,6 +18,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
 
+from config import config
+from utils import get_logger, APIError
+
+logger = get_logger(__name__)
+
 # Data storage
 LEARNING_DATA_DIR = Path('learning_data')
 LEARNING_DATA_DIR.mkdir(exist_ok=True)
@@ -1170,8 +1175,8 @@ def auto_learn_from_scan(scan_results, market_data=None):
             if market_data is not None and len(market_data) > 0:
                 spy_price = float(market_data['Close'].iloc[-1])
                 record_regime_change(regime, spy_price)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error updating market regime: {e}")
 
     # Record alerts from scan results
     for _, row in scan_results.iterrows() if hasattr(scan_results, 'iterrows') else []:
@@ -1194,8 +1199,8 @@ def auto_learn_from_scan(scan_results, market_data=None):
                     'score': score,
                     'sector': row.get('sector', 'unknown')
                 })
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error recording alert for {ticker}: {e}")
 
 def auto_learn_from_news(news_results):
     """
@@ -1212,8 +1217,8 @@ def auto_learn_from_news(news_results):
 
             if ticker and headline:
                 record_news_event(ticker, news_type, headline, price, sentiment)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error learning from news: {e}")
 
 def auto_learn_stock_profile(ticker, price_data):
     """
@@ -1221,5 +1226,6 @@ def auto_learn_stock_profile(ticker, price_data):
     """
     try:
         return analyze_stock_personality(ticker, price_data)
-    except:
+    except Exception as e:
+        logger.error(f"Error analyzing stock profile for {ticker}: {e}")
         return {}

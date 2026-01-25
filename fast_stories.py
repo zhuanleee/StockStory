@@ -18,11 +18,13 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 
+from config import config
+from utils import get_logger, APIError
+
+logger = get_logger(__name__)
+
 # Cache configuration
-CACHE_DIR = Path('cache')
-CACHE_DIR.mkdir(exist_ok=True)
-CACHE_DURATION = 600  # 10 minutes
-BACKGROUND_REFRESH_INTERVAL = 300  # 5 minutes
+CACHE_DIR = config.cache.directory
 
 # Global cache
 _story_cache = {
@@ -55,7 +57,8 @@ def fetch_finviz_news(ticker):
         headlines = re.findall(news_pattern, response.text)
 
         return [{'title': h, 'source': 'finviz', 'ticker': ticker} for h in headlines[:5]]
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching Finviz news for {ticker}: {e}")
         return []
 
 
@@ -68,7 +71,8 @@ def fetch_yahoo_news(ticker):
 
         return [{'title': n.get('title', ''), 'source': 'yahoo', 'ticker': ticker}
                 for n in news[:5] if n.get('title')]
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching Yahoo news for {ticker}: {e}")
         return []
 
 
@@ -81,7 +85,8 @@ def fetch_google_news(query):
 
         return [{'title': e.title, 'source': 'google', 'ticker': query}
                 for e in feed.entries[:5]]
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching Google news for {query}: {e}")
         return []
 
 
@@ -100,7 +105,8 @@ def fetch_stocktwits(ticker):
         return [{'title': m.get('body', '')[:100], 'source': 'stocktwits', 'ticker': ticker,
                 'sentiment': m.get('entities', {}).get('sentiment', {}).get('basic')}
                 for m in messages]
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching StockTwits for {ticker}: {e}")
         return []
 
 
@@ -128,8 +134,8 @@ def fetch_all_sources_parallel(tickers, max_workers=10):
                 result = future.result()
                 if result:
                     all_headlines.extend(result)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error collecting parallel fetch result: {e}")
 
     return all_headlines
 
@@ -194,8 +200,8 @@ def load_theme_history():
         try:
             with open(path, 'r') as f:
                 return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error loading theme history: {e}")
     return {}
 
 
@@ -340,10 +346,10 @@ def load_cache():
         try:
             with open(cache_path, 'r') as f:
                 data = json.load(f)
-                if time.time() - data.get('timestamp', 0) < CACHE_DURATION:
+                if time.time() - data.get('timestamp', 0) < config.cache.story_ttl_seconds:
                     return data
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error loading cache: {e}")
     return None
 
 
@@ -505,12 +511,12 @@ def _background_refresh_worker():
         try:
             # Run detection (bypasses cache to get fresh data)
             result = run_fast_story_detection(use_cache=False)
-            print(f"[Background] Stories refreshed: {len(result.get('themes', []))} themes detected")
+            logger.info(f"[Background] Stories refreshed: {len(result.get('themes', []))} themes detected")
         except Exception as e:
-            print(f"[Background] Refresh error: {e}")
+            logger.error(f"[Background] Refresh error: {e}")
 
         # Wait for next refresh
-        for _ in range(BACKGROUND_REFRESH_INTERVAL):
+        for _ in range(config.cache.background_refresh_interval):
             if not _refresh_running:
                 break
             time.sleep(1)
@@ -526,14 +532,14 @@ def start_background_refresh():
     _refresh_running = True
     _refresh_thread = threading.Thread(target=_background_refresh_worker, daemon=True)
     _refresh_thread.start()
-    print("[Background] Story refresh started (every 5 min)")
+    logger.info("[Background] Story refresh started (every 5 min)")
 
 
 def stop_background_refresh():
     """Stop background refresh thread."""
     global _refresh_running
     _refresh_running = False
-    print("[Background] Story refresh stopped")
+    logger.info("[Background] Story refresh stopped")
 
 
 # =============================================================================
@@ -542,8 +548,7 @@ def stop_background_refresh():
 
 def enhance_with_ai(themes, headlines):
     """Optionally enhance theme detection with AI analysis."""
-    api_key = os.environ.get('DEEPSEEK_API_KEY')
-    if not api_key:
+    if not config.ai.api_key:
         return themes
 
     try:
@@ -566,9 +571,9 @@ Respond in JSON:
 }}"""
 
         response = requests.post(
-            'https://api.deepseek.com/v1/chat/completions',
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -593,8 +598,8 @@ Respond in JSON:
                         break
 
             return themes, ai_result.get('market_narrative', '')
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error enhancing themes with AI: {e}")
 
     return themes, None
 

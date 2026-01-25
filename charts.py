@@ -14,6 +14,11 @@ from matplotlib.patches import Rectangle
 import pandas as pd
 import numpy as np
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 
 def generate_candlestick_chart(ticker, df, days=60):
     """
@@ -31,8 +36,7 @@ def generate_candlestick_chart(ticker, df, days=60):
         # Prepare data
         df = df.iloc[-days:].copy()
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         # Create figure with subplots
         fig, (ax1, ax2) = plt.subplots(
@@ -146,7 +150,7 @@ def generate_candlestick_chart(ticker, df, days=60):
         return buf
 
     except Exception as e:
-        print(f"Chart error: {e}")
+        logger.error(f"Chart generation error for {ticker}: {e}")
         return None
 
 
@@ -209,7 +213,7 @@ def generate_portfolio_chart(positions, prices):
         return buf
 
     except Exception as e:
-        print(f"Portfolio chart error: {e}")
+        logger.error(f"Portfolio chart generation error: {e}")
         return None
 
 
@@ -264,5 +268,5 @@ def generate_performance_chart(trades):
         return buf
 
     except Exception as e:
-        print(f"Performance chart error: {e}")
+        logger.error(f"Performance chart generation error: {e}")
         return None

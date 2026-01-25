@@ -20,57 +20,29 @@ import yfinance as yf
 import pandas as pd
 import threading
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, send_message, send_photo, validate_ticker,
+    validate_webhook_url, validate_webhook_signature, ValidationError,
+    DataFetchError,
+)
+
+logger = get_logger(__name__)
+
 app = Flask(__name__)
 
 # Track processed updates to prevent duplicates
 processed_updates = set()
 MAX_PROCESSED = 1000  # Limit memory usage
 
-# Configuration
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN') or os.environ.get('BOT_TOKEN', '')
-TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+# Configuration is now loaded from config module
+# Access via: config.telegram.bot_token, config.telegram.api_url, config.ai.api_key
 
 
 # =============================================================================
-# TELEGRAM HELPERS
+# TELEGRAM HELPERS - Now imported from utils
 # =============================================================================
-
-def send_message(chat_id, text, parse_mode='Markdown'):
-    """Send message to Telegram."""
-    try:
-        # Truncate if too long
-        if len(text) > 4000:
-            text = text[:4000] + "\n\n_...truncated_"
-
-        response = requests.post(
-            f"{TELEGRAM_API}/sendMessage",
-            json={
-                'chat_id': chat_id,
-                'text': text,
-                'parse_mode': parse_mode,
-                'disable_web_page_preview': True,
-            },
-            timeout=10
-        )
-        return response.status_code == 200
-    except Exception as e:
-        print(f"Send error: {e}")
-        return False
-
-
-def send_photo(chat_id, photo_buffer, caption=''):
-    """Send photo to Telegram."""
-    try:
-        response = requests.post(
-            f"{TELEGRAM_API}/sendPhoto",
-            files={'photo': ('chart.png', photo_buffer, 'image/png')},
-            data={'chat_id': chat_id, 'caption': caption[:1024], 'parse_mode': 'Markdown'},
-            timeout=30
-        )
-        return response.status_code == 200
-    except:
-        return False
 
 
 # =============================================================================
@@ -119,8 +91,7 @@ def handle_ticker(chat_id, ticker):
             send_message(chat_id, f"❌ No data for `{ticker}`")
             return
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         close = df['Close']
         current = float(close.iloc[-1])
@@ -128,14 +99,10 @@ def handle_ticker(chat_id, ticker):
         sma_20 = float(close.rolling(20).mean().iloc[-1])
         sma_50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
 
-        # RS calculation
-        spy = yf.download('SPY', period='1mo', progress=False)
-        if isinstance(spy.columns, pd.MultiIndex):
-            spy.columns = spy.columns.get_level_values(0)
-
-        stock_ret = (current / float(close.iloc[-20]) - 1) * 100
-        spy_ret = (float(spy['Close'].iloc[-1]) / float(spy['Close'].iloc[-20]) - 1) * 100
-        rs = stock_ret - spy_ret
+        # RS calculation using cached SPY data
+        spy_df, spy_returns = get_spy_data_cached()
+        rs_data = calculate_rs(df, spy_returns)
+        rs = rs_data['rs_composite']
 
         vol_ratio = float(df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean())
 
@@ -156,7 +123,8 @@ def handle_ticker(chat_id, ticker):
                     earnings_warning = ""
             else:
                 earnings_warning = ""
-        except:
+        except Exception as e:
+            logger.debug(f"Earnings check failed for {ticker}: {e}")
             earnings_warning = ""
 
         msg = f"📊 *{ticker} ANALYSIS*\n\n"
@@ -182,9 +150,10 @@ def handle_ticker(chat_id, ticker):
             if chart:
                 send_photo(chat_id, chart, f"{ticker} Chart")
         except Exception as e:
-            print(f"Chart error: {e}")
+            logger.error(f"Chart error for {ticker}: {e}")
 
     except Exception as e:
+        logger.error(f"Ticker analysis error for {ticker}: {e}")
         send_message(chat_id, f"❌ Error: {str(e)}")
 
 
@@ -390,9 +359,9 @@ def handle_briefing(chat_id):
     """Handle /briefing command."""
     send_message(chat_id, "🤖 Generating briefing...")
     try:
-        from ai_learning import get_daily_briefing, DEEPSEEK_API_KEY
+        from ai_learning import get_daily_briefing
 
-        if not DEEPSEEK_API_KEY:
+        if not config.ai.api_key:
             send_message(chat_id, "❌ DEEPSEEK_API_KEY not set in environment.")
             return
 
@@ -429,8 +398,7 @@ def handle_predict(chat_id, ticker):
         from ai_learning import predict_trade_outcome
 
         df = yf.download(ticker, period='3mo', progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         close = df['Close']
         current = float(close.iloc[-1])
@@ -565,7 +533,7 @@ def process_message(message):
     if not chat_id or not text:
         return
 
-    print(f"[{datetime.now()}] {chat_id}: {text}")
+    logger.info(f"Message from {chat_id}: {text}")
 
     text_lower = text.lower()
 
@@ -650,6 +618,12 @@ def webhook():
     """Handle incoming Telegram webhook."""
     global processed_updates
 
+    # Verify webhook signature
+    signature = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
+    if not validate_webhook_signature(request.data, signature):
+        logger.warning("Invalid webhook signature")
+        return jsonify({'ok': False}), 401
+
     try:
         data = request.get_json()
 
@@ -660,7 +634,7 @@ def webhook():
         update_id = data.get('update_id')
         if update_id:
             if update_id in processed_updates:
-                print(f"Skipping duplicate update {update_id}")
+                logger.debug(f"Skipping duplicate update {update_id}")
                 return jsonify({'ok': True})
 
             processed_updates.add(update_id)
@@ -690,7 +664,7 @@ def webhook():
 
         return jsonify({'ok': True})
     except Exception as e:
-        print(f"Webhook error: {e}")
+        logger.error(f"Webhook error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
 
 
@@ -699,8 +673,13 @@ def set_webhook():
     """Set Telegram webhook URL."""
     url = request.args.get('url')
     if not url:
-        return jsonify({'error': 'Missing url parameter'})
-    response = requests.post(f"{TELEGRAM_API}/setWebhook", json={'url': f"{url}/webhook"})
+        return jsonify({'error': 'Missing url parameter'}), 400
+    try:
+        validated_url = validate_webhook_url(url)
+    except ValidationError as e:
+        logger.warning(f"Invalid webhook URL rejected: {url}")
+        return jsonify({'error': str(e)}), 400
+    response = requests.post(f"{config.telegram.api_url}/setWebhook", json={'url': f"{validated_url}/webhook"})
     return jsonify(response.json())
 
 
@@ -708,18 +687,17 @@ def set_webhook():
 # DASHBOARD API ENDPOINTS
 # =============================================================================
 
+
+@app.after_request
 def add_cors_headers(response):
-    """Add CORS headers to response."""
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    """Add CORS headers to response based on allowed origins."""
+    origin = request.headers.get('Origin', '')
+    allowed = config.security.allowed_cors_origins
+    if '*' in allowed or origin in allowed:
+        response.headers['Access-Control-Allow-Origin'] = origin if origin else '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
-
-
-@app.after_request
-def after_request(response):
-    """Add CORS headers to all responses."""
-    return add_cors_headers(response)
 
 
 @app.route('/api/stories')
@@ -765,22 +743,17 @@ def api_ticker(ticker):
         if len(df) < 20:
             return jsonify({'ok': False, 'error': 'No data'})
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         close = df['Close']
         current = float(close.iloc[-1])
         sma_20 = float(close.rolling(20).mean().iloc[-1])
         sma_50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
 
-        # RS calculation
-        spy = yf.download('SPY', period='1mo', progress=False)
-        if isinstance(spy.columns, pd.MultiIndex):
-            spy.columns = spy.columns.get_level_values(0)
-
-        stock_ret = (current / float(close.iloc[-20]) - 1) * 100
-        spy_ret = (float(spy['Close'].iloc[-1]) / float(spy['Close'].iloc[-20]) - 1) * 100
-        rs = stock_ret - spy_ret
+        # RS calculation using cached SPY data
+        spy_df, spy_returns = get_spy_data_cached()
+        rs_data = calculate_rs(df, spy_returns)
+        rs = rs_data['rs_composite']
 
         vol_ratio = float(df['Volume'].iloc[-1] / df['Volume'].iloc[-20:].mean())
 
@@ -884,9 +857,7 @@ def api_predict(ticker):
 
         ticker = ticker.upper()
         df = yf.download(ticker, period='3mo', progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         close = df['Close']
         current = float(close.iloc[-1])
@@ -914,5 +885,4 @@ def api_predict(ticker):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=config.port, debug=config.debug)

@@ -17,6 +17,11 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 
 # ============================================================
 # INDUSTRY TAM ESTIMATES (in billions USD)
@@ -241,7 +246,8 @@ def get_company_financials(ticker):
             'revenue': round(revenue, 2),
             'revenue_growth': round(revenue_growth, 1),
         }
-    except:
+    except Exception as e:
+        logger.debug(f"Failed to get financials for {ticker}: {e}")
         return None
 
 
@@ -435,21 +441,21 @@ def format_undervalued(theme, analysis):
 
 if __name__ == '__main__':
     # Test theme analysis
-    print("=" * 60)
-    print("TAM ANALYSIS: AI_Infrastructure")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("TAM ANALYSIS: AI_Infrastructure")
+    logger.info("=" * 60)
     analysis = analyze_theme_tam('AI_Infrastructure')
     if analysis:
-        print(format_tam_analysis(analysis))
+        logger.info(format_tam_analysis(analysis))
 
-    print("\n" + "=" * 60)
-    print("THEME RANKINGS BY GROWTH")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("THEME RANKINGS BY GROWTH")
+    logger.info("=" * 60)
     rankings = rank_themes_by_opportunity()
-    print(format_theme_rankings(rankings))
+    logger.info(format_theme_rankings(rankings))
 
-    print("\n" + "=" * 60)
-    print("UNDERVALUED IN GLP1_Obesity")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("UNDERVALUED IN GLP1_Obesity")
+    logger.info("=" * 60)
     undervalued = find_undervalued_in_theme('GLP1_Obesity')
-    print(format_undervalued('GLP1_Obesity', undervalued))
+    logger.info(format_undervalued('GLP1_Obesity', undervalued))

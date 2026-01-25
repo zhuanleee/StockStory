@@ -21,16 +21,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
 
+from config import config
+from utils import get_logger, APIError
+
+logger = get_logger(__name__)
+
 # Try to import yfinance for price checks
 try:
     import yfinance as yf
     YF_AVAILABLE = True
 except ImportError:
     YF_AVAILABLE = False
-
-# DeepSeek for AI-powered claim extraction
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # ============================================================
 # CONFIGURATION
@@ -391,7 +392,7 @@ def extract_claims_ai(headlines):
     """
     Use AI to extract specific factual claims from headlines.
     """
-    if not DEEPSEEK_API_KEY or not headlines:
+    if not config.ai.api_key or not headlines:
         return extract_claims_keywords(headlines)
 
     headlines_text = "\n".join([
@@ -430,9 +431,9 @@ Only extract claims that make specific, verifiable statements. Skip vague opinio
 
     try:
         response = requests.post(
-            DEEPSEEK_API_URL,
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -459,7 +460,7 @@ Only extract claims that make specific, verifiable statements. Skip vague opinio
             return json.loads(content.strip())
 
     except Exception as e:
-        print(f"AI claim extraction error: {e}")
+        logger.error(f"AI claim extraction error: {e}")
 
     return extract_claims_keywords(headlines)
 
@@ -606,6 +607,7 @@ def verify_claim_price_action(claim):
         }
 
     except Exception as e:
+        logger.error(f"Error verifying claim price action: {e}")
         return None
 
 
@@ -828,6 +830,6 @@ if __name__ == '__main__':
     ]
 
     result = run_fact_check(test_headlines)
-    print(format_fact_check_report(result))
-    print("\n" + "="*50 + "\n")
-    print(format_source_trust_report())
+    logger.info(format_fact_check_report(result))
+    logger.info("\n" + "="*50 + "\n")
+    logger.info(format_source_trust_report())

@@ -20,9 +20,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
 
-# DeepSeek API
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
+from config import config
+from utils import get_logger, APIError
+
+logger = get_logger(__name__)
 
 # Data storage
 AI_LEARNING_DIR = Path('ai_learning_data')
@@ -31,7 +32,7 @@ AI_LEARNING_DIR.mkdir(exist_ok=True)
 
 def call_deepseek(prompt, system_prompt=None, max_tokens=2000):
     """Call DeepSeek API for AI analysis."""
-    if not DEEPSEEK_API_KEY:
+    if not config.ai.api_key:
         return None
 
     messages = []
@@ -41,9 +42,9 @@ def call_deepseek(prompt, system_prompt=None, max_tokens=2000):
 
     try:
         response = requests.post(
-            DEEPSEEK_API_URL,
+            config.ai.api_url,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {config.ai.api_key}",
                 "Content-Type": "application/json"
             },
             json={
@@ -58,7 +59,7 @@ def call_deepseek(prompt, system_prompt=None, max_tokens=2000):
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
     except Exception as e:
-        print(f"DeepSeek API error: {e}")
+        logger.error(f"DeepSeek API error: {e}")
 
     return None
 
@@ -504,7 +505,8 @@ def summarize_price_data(price_data):
 
         return f"Price ${current:.2f}, 5d change {change_5d:+.1f}%, 20d change {change_20d:+.1f}%, " \
                f"20d range ${low_20d:.2f}-${high_20d:.2f}"
-    except:
+    except Exception as e:
+        logger.error(f"Error processing price data: {e}")
         return "Error processing price data"
 
 
@@ -719,8 +721,8 @@ def get_daily_briefing():
             from fast_stories import run_fast_story_detection
             detection = run_fast_story_detection(use_cache=True)
             themes = detection.get('themes', [])
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error fetching fast stories: {e}")
 
         # Get sector data if available
         sectors = []
@@ -728,8 +730,8 @@ def get_daily_briefing():
             from sector_rotation import run_sector_rotation_analysis
             rotation = run_sector_rotation_analysis()
             sectors = rotation.get('ranked', [])
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error fetching sector rotation: {e}")
 
         # Get top stocks from latest scan
         top_stocks = []
@@ -748,8 +750,8 @@ def get_daily_briefing():
             results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD'][:3])
             news = [{'ticker': r['ticker'], 'sentiment': r['overall_sentiment']}
                    for r in results if r.get('overall_sentiment')]
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error fetching news sentiment: {e}")
 
         narrative = generate_market_narrative(themes, sectors, top_stocks, news)
         return narrative
@@ -865,7 +867,8 @@ def scan_for_anomalies(stock_data_dict, personalities=None):
                         'ticker': ticker,
                         'analysis': result,
                     })
-        except:
+        except Exception as e:
+            logger.error(f"Error analyzing anomalies for {ticker}: {e}")
             continue
 
     return anomalies

@@ -13,6 +13,14 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
 
 def analyze_timeframe(df, timeframe_name):
     """Analyze a single timeframe."""
@@ -20,8 +28,7 @@ def analyze_timeframe(df, timeframe_name):
         return None
 
     # Flatten columns if MultiIndex
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    df = normalize_dataframe_columns(df)
 
     close = df['Close']
     current_price = float(close.iloc[-1])
@@ -86,21 +93,24 @@ def multi_timeframe_analysis(ticker):
     try:
         daily = yf.download(ticker, period='1y', progress=False)
         results['daily'] = analyze_timeframe(daily, 'DAILY')
-    except:
+    except Exception as e:
+        logger.error(f"Error analyzing daily timeframe for {ticker}: {e}")
         results['daily'] = None
 
     # Weekly
     try:
         weekly = get_weekly_data(ticker)
         results['weekly'] = analyze_timeframe(weekly, 'WEEKLY')
-    except:
+    except Exception as e:
+        logger.error(f"Error analyzing weekly timeframe for {ticker}: {e}")
         results['weekly'] = None
 
     # Monthly
     try:
         monthly = get_monthly_data(ticker)
         results['monthly'] = analyze_timeframe(monthly, 'MONTHLY')
-    except:
+    except Exception as e:
+        logger.error(f"Error analyzing monthly timeframe for {ticker}: {e}")
         results['monthly'] = None
 
     # Calculate confluence score
@@ -215,7 +225,8 @@ def scan_mtf_confluence(tickers, min_score=6):
                     'weekly': results.get('weekly', {}).get('trend', 'N/A'),
                     'monthly': results.get('monthly', {}).get('trend', 'N/A'),
                 })
-        except:
+        except Exception as e:
+            logger.error(f"Error scanning MTF confluence for {ticker}: {e}")
             continue
 
     return sorted(strong_confluence, key=lambda x: x['score'], reverse=True)
@@ -239,14 +250,14 @@ def format_mtf_scan_results(results):
 if __name__ == '__main__':
     # Test single ticker
     ticker = 'NVDA'
-    print(f"Analyzing {ticker}...")
+    logger.info(f"Analyzing {ticker}...")
     results = multi_timeframe_analysis(ticker)
-    print(format_mtf_analysis(ticker, results))
+    logger.info(format_mtf_analysis(ticker, results))
 
-    print("\n" + "=" * 60)
+    logger.info("=" * 60)
 
     # Test scan
     test_tickers = ['NVDA', 'AMD', 'AAPL', 'MSFT', 'GOOGL', 'META', 'TSLA', 'AMZN']
-    print("\nScanning for MTF confluence...")
+    logger.info("Scanning for MTF confluence...")
     scan_results = scan_mtf_confluence(test_tickers)
-    print(format_mtf_scan_results(scan_results))
+    logger.info(format_mtf_scan_results(scan_results))

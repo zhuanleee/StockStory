@@ -19,12 +19,21 @@ import time
 import json
 from pathlib import Path
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
 # Import full S&P 500 universe from market_health
 try:
     from market_health import BREADTH_UNIVERSE
     DEFAULT_TICKERS = BREADTH_UNIVERSE
-except:
+except Exception as e:
     # Fallback if import fails
+    logger.error(f"Error importing BREADTH_UNIVERSE: {e}")
     DEFAULT_TICKERS = [
         'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B',
         'JPM', 'V', 'UNH', 'MA', 'HD', 'PG', 'JNJ', 'XOM', 'BAC', 'ABBV',
@@ -50,107 +59,62 @@ SECTOR_TICKERS = {
 # Cache configuration
 CACHE_DIR = Path('cache')
 CACHE_DIR.mkdir(exist_ok=True)
-CACHE_TTL = 300  # 5 minutes
-
-# Global SPY cache to avoid redundant downloads
-_spy_cache = {
-    'data': None,
-    'returns': None,
-    'timestamp': 0
-}
-
-
-def get_spy_data():
-    """Get cached SPY data for RS calculations."""
-    global _spy_cache
-
-    # Check if cache is valid
-    if _spy_cache['data'] is not None and time.time() - _spy_cache['timestamp'] < CACHE_TTL:
-        return _spy_cache['data'], _spy_cache['returns']
-
-    try:
-        spy = yf.download('SPY', period='3mo', progress=False)
-        if isinstance(spy.columns, pd.MultiIndex):
-            spy.columns = spy.columns.get_level_values(0)
-
-        if len(spy) < 20:
-            return None, None
-
-        close = spy['Close']
-        current = float(close.iloc[-1])
-
-        returns = {
-            '5d': (current / float(close.iloc[-5]) - 1) * 100 if len(close) >= 5 else 0,
-            '20d': (current / float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0,
-        }
-
-        _spy_cache['data'] = spy
-        _spy_cache['returns'] = returns
-        _spy_cache['timestamp'] = time.time()
-
-        return spy, returns
-    except:
-        return None, None
 
 
 def get_stock_metrics(ticker, spy_returns=None):
     """Fetch metrics for a single stock."""
     try:
-        df = yf.download(ticker, period='3mo', progress=False)
+        df = download_stock_data(ticker, period='3mo', normalize=True, validate=False)
+        df = normalize_dataframe_columns(df)
 
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        if len(df) < 20:
+        if df is None or len(df) < 20:
             return None
 
         close = df['Close']
         volume = df['Volume']
-        current = float(close.iloc[-1])
+        current = safe_float(close.iloc[-1])
+        if current is None:
+            return None
 
         # Calculate metrics
-        sma_20 = float(close.rolling(20).mean().iloc[-1])
-        sma_50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
-        sma_200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else sma_50
+        sma_20 = safe_float(close.rolling(20).mean().iloc[-1])
+        sma_50 = safe_float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
+        sma_200 = safe_float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else sma_50
 
         # Returns
-        ret_1d = (current / float(close.iloc[-2]) - 1) * 100 if len(close) >= 2 else 0
-        ret_5d = (current / float(close.iloc[-5]) - 1) * 100 if len(close) >= 5 else 0
-        ret_20d = (current / float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
+        ret_1d = (current / safe_float(close.iloc[-2]) - 1) * 100 if len(close) >= 2 else 0
+        ret_5d = (current / safe_float(close.iloc[-5]) - 1) * 100 if len(close) >= 5 else 0
+        ret_20d = (current / safe_float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
 
         # Volume
-        vol_avg = float(volume.iloc[-20:].mean())
-        vol_ratio = float(volume.iloc[-1] / vol_avg) if vol_avg > 0 else 1
+        vol_avg = safe_float(volume.iloc[-20:].mean())
+        vol_ratio = safe_float(volume.iloc[-1] / vol_avg) if vol_avg and vol_avg > 0 else 1
 
-        # Relative strength vs SPY (use cached SPY returns)
-        if spy_returns:
-            rs_5d = ret_5d - spy_returns.get('5d', 0)
-            rs_20d = ret_20d - spy_returns.get('20d', 0)
-            rs = rs_20d  # Primary RS metric
-        else:
-            rs_5d = ret_5d
-            rs_20d = ret_20d
-            rs = ret_20d
+        # Relative strength vs SPY using calculate_rs utility
+        rs_data = calculate_rs(df, spy_returns)
+        rs_5d = rs_data.get('rs_5d', ret_5d)
+        rs_20d = rs_data.get('rs_20d', ret_20d)
+        rs = rs_data.get('rs_composite', rs_20d)  # Use composite as primary RS metric
 
         # ATR
         high = df['High']
         low = df['Low']
         tr = pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
-        atr = float(tr.rolling(14).mean().iloc[-1])
-        atr_pct = atr / current * 100
+        atr = safe_float(tr.rolling(14).mean().iloc[-1])
+        atr_pct = atr / current * 100 if atr and current else 0
 
         # RSI
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs_val = gain / loss
-        rsi = float(100 - (100 / (1 + rs_val.iloc[-1])))
+        rsi = safe_float(100 - (100 / (1 + rs_val.iloc[-1])))
 
         # Distance from highs/lows
-        high_52w = float(close.max())
-        low_52w = float(close.min())
-        from_high = (current - high_52w) / high_52w * 100
-        from_low = (current - low_52w) / low_52w * 100
+        high_52w = safe_float(close.max())
+        low_52w = safe_float(close.min())
+        from_high = (current - high_52w) / high_52w * 100 if high_52w else 0
+        from_low = (current - low_52w) / low_52w * 100 if low_52w else 0
 
         # Trend strength
         trend_score = 0
@@ -163,27 +127,28 @@ def get_stock_metrics(ticker, spy_returns=None):
         return {
             'ticker': ticker,
             'price': round(current, 2),
-            'sma_20': round(sma_20, 2),
-            'sma_50': round(sma_50, 2),
-            'sma_200': round(sma_200, 2),
-            'above_20sma': current > sma_20,
-            'above_50sma': current > sma_50,
-            'above_200sma': current > sma_200,
+            'sma_20': round(sma_20, 2) if sma_20 else 0,
+            'sma_50': round(sma_50, 2) if sma_50 else 0,
+            'sma_200': round(sma_200, 2) if sma_200 else 0,
+            'above_20sma': current > sma_20 if sma_20 else False,
+            'above_50sma': current > sma_50 if sma_50 else False,
+            'above_200sma': current > sma_200 if sma_200 else False,
             'ret_1d': round(ret_1d, 2),
             'ret_5d': round(ret_5d, 2),
             'ret_20d': round(ret_20d, 2),
-            'rs': round(rs, 2),
-            'rs_5d': round(rs_5d, 2),
-            'rs_20d': round(rs_20d, 2),
-            'volume': float(volume.iloc[-1]),
-            'vol_ratio': round(vol_ratio, 2),
-            'atr_pct': round(atr_pct, 2),
-            'rsi': round(rsi, 1),
+            'rs': round(rs, 2) if rs else 0,
+            'rs_5d': round(rs_5d, 2) if rs_5d else 0,
+            'rs_20d': round(rs_20d, 2) if rs_20d else 0,
+            'volume': safe_float(volume.iloc[-1]) or 0,
+            'vol_ratio': round(vol_ratio, 2) if vol_ratio else 1,
+            'atr_pct': round(atr_pct, 2) if atr_pct else 0,
+            'rsi': round(rsi, 1) if rsi else 50,
             'from_high': round(from_high, 1),
             'from_low': round(from_low, 1),
             'trend_score': trend_score,
         }
     except Exception as e:
+        logger.error(f"Error fetching metrics for {ticker}: {e}")
         return None
 
 
@@ -194,10 +159,10 @@ def load_screener_cache():
         try:
             with open(cache_path, 'r') as f:
                 data = json.load(f)
-                if time.time() - data.get('timestamp', 0) < CACHE_TTL:
+                if time.time() - data.get('timestamp', 0) < config.cache.screener_ttl_seconds:
                     return data.get('results', [])
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error loading screener cache: {e}")
     return None
 
 
@@ -212,7 +177,7 @@ def save_screener_cache(results):
         json.dump(data, f, default=str)
 
 
-def screen_stocks(filters, tickers=None, max_workers=50, use_cache=True):
+def screen_stocks(filters, tickers=None, max_workers=None, use_cache=True):
     """
     Screen stocks with custom filters.
 
@@ -229,6 +194,10 @@ def screen_stocks(filters, tickers=None, max_workers=50, use_cache=True):
     - trend_score: Trend strength (0-5)
     - sector: Filter by sector name
     """
+    # Use config default if max_workers not specified
+    if max_workers is None:
+        max_workers = config.scanner.max_workers
+
     # Handle sector filter
     sector = filters.pop('sector', None)
     if sector and sector.lower() in SECTOR_TICKERS:
@@ -236,8 +205,8 @@ def screen_stocks(filters, tickers=None, max_workers=50, use_cache=True):
     elif tickers is None:
         tickers = DEFAULT_TICKERS
 
-    # Get cached SPY data once
-    _, spy_returns = get_spy_data()
+    # Get cached SPY data once using utility function
+    _, spy_returns = get_spy_data_cached()
 
     # Fetch all metrics in parallel
     results = []
@@ -249,8 +218,8 @@ def screen_stocks(filters, tickers=None, max_workers=50, use_cache=True):
                 metrics = future.result()
                 if metrics:
                     results.append(metrics)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error processing stock: {e}")
 
     # Apply filters
     filtered = []
@@ -401,11 +370,11 @@ PRESET_SCREENS = {
 
 
 if __name__ == '__main__':
-    print("Testing enhanced screener...")
+    logger.info("Testing enhanced screener...")
 
     # Test momentum screen
-    print("\n=== Momentum Leaders ===")
-    results = screen_stocks(PRESET_SCREENS['momentum'])
-    print(f"Found {len(results)} stocks")
+    logger.info("=== Momentum Leaders ===")
+    results = screen_stocks(PRESET_SCREENS['momentum'].copy())
+    logger.info(f"Found {len(results)} stocks")
     for r in results[:5]:
-        print(f"  {r['ticker']}: RS {r['rs']:+.1f}%, Vol {r['vol_ratio']:.1f}x")
+        logger.info(f"  {r['ticker']}: RS {r['rs']:+.1f}%, Vol {r['vol_ratio']:.1f}x")

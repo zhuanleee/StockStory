@@ -11,10 +11,8 @@ Runs daily to:
 Set up as GitHub Action or local cron job.
 """
 
-import os
 import io
 import json
-import requests
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -27,28 +25,26 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data, send_message, send_photo,
+    TelegramClient, DataFetchError,
+)
+
+logger = get_logger(__name__)
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
 
-# Telegram settings (set via environment variables for security)
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
-
-# Scoring weights
+# Scoring weights (from config)
 WEIGHTS = {
-    'trend': 0.30,
-    'squeeze': 0.20,
-    'rs': 0.20,
-    'sentiment': 0.15,
-    'volume': 0.15,
-}
-
-# Alert thresholds
-ALERT_THRESHOLDS = {
-    'min_composite_score': 70,
-    'min_rs': 5,
-    'volume_spike': 2.0,
+    'trend': config.scanner.weight_trend,
+    'squeeze': config.scanner.weight_squeeze,
+    'rs': config.scanner.weight_rs,
+    'sentiment': config.scanner.weight_sentiment,
+    'volume': config.scanner.weight_volume,
 }
 
 # Ticker lists (embedded for reliability)
@@ -122,25 +118,16 @@ NASDAQ100_TICKERS = [
 # ============================================================
 
 def send_telegram_message(message, parse_mode='Markdown'):
-    """Send message via Telegram bot."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram not configured. Printing to console:")
-        print(message)
+    """Send message via Telegram bot using centralized client."""
+    if not config.telegram.is_configured:
+        logger.info("Telegram not configured. Printing to console:")
+        logger.info(message)
         return False
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': message,
-        'parse_mode': parse_mode,
-        'disable_web_page_preview': True,
-    }
-
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        return response.status_code == 200
+        return send_message(config.telegram.chat_id, message, parse_mode=parse_mode)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        logger.error(f"Telegram error: {e}")
         return False
 
 
@@ -214,8 +201,10 @@ def get_ticker_df(data, ticker):
             df = data[ticker].copy()
         else:
             df = data.copy()
+        df = normalize_dataframe_columns(df)
         return df.dropna()
-    except:
+    except Exception as e:
+        logger.debug(f"Failed to extract ticker {ticker}: {e}")
         return None
 
 
@@ -286,61 +275,39 @@ def calculate_indicators(df):
     }
 
 
-def calculate_rs(df, spy_df):
-    """Calculate relative strength vs SPY."""
-    if df is None or spy_df is None:
-        return {'rs_composite': 0, 'rs_score': 0}
+def calculate_rs_local(df, spy_returns):
+    """Calculate relative strength vs SPY using centralized utility.
 
-    try:
-        stock_ret_5 = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-        stock_ret_10 = (df['Close'].iloc[-1] / df['Close'].iloc[-10] - 1) * 100
-        stock_ret_20 = (df['Close'].iloc[-1] / df['Close'].iloc[-20] - 1) * 100
-
-        spy_ret_5 = (spy_df['Close'].iloc[-1] / spy_df['Close'].iloc[-5] - 1) * 100
-        spy_ret_10 = (spy_df['Close'].iloc[-1] / spy_df['Close'].iloc[-10] - 1) * 100
-        spy_ret_20 = (spy_df['Close'].iloc[-1] / spy_df['Close'].iloc[-20] - 1) * 100
-
-        rs_5 = stock_ret_5 - spy_ret_5
-        rs_10 = stock_ret_10 - spy_ret_10
-        rs_20 = stock_ret_20 - spy_ret_20
-
-        rs_composite = rs_5 * 0.5 + rs_10 * 0.3 + rs_20 * 0.2
-
-        if rs_composite > 5:
-            rs_score = 3
-        elif rs_composite > 2:
-            rs_score = 2
-        elif rs_composite > 0:
-            rs_score = 1
-        else:
-            rs_score = 0
-
-        return {'rs_composite': rs_composite, 'rs_score': rs_score}
-    except:
-        return {'rs_composite': 0, 'rs_score': 0}
+    This is a wrapper around the imported calculate_rs function
+    for backward compatibility with existing code.
+    """
+    # Use the centralized calculate_rs from utils
+    return calculate_rs(df, spy_returns)
 
 
 def get_sector(ticker):
     """Get sector for ticker using yfinance."""
     try:
         return yf.Ticker(ticker).info.get('sector', 'Unknown')
-    except:
+    except Exception as e:
+        logger.debug(f"Failed to get sector for {ticker}: {e}")
         return 'Unknown'
 
 
 def run_scan():
     """Run the full scan."""
-    print(f"Starting scan at {datetime.now()}")
+    logger.info(f"Starting scan at {datetime.now()}")
 
     # Get unique tickers
     all_tickers = list(set(SP500_TICKERS + NASDAQ100_TICKERS))
-    print(f"Scanning {len(all_tickers)} tickers...")
+    logger.info(f"Scanning {len(all_tickers)} tickers...")
 
     # Fetch data
-    print("Fetching price data...")
+    logger.info("Fetching price data...")
     price_data = yf.download(all_tickers + ['SPY'], period='1y', group_by='ticker', progress=False)
 
-    spy_df = get_ticker_df(price_data, 'SPY')
+    # Get SPY data using cached utility
+    spy_df, spy_returns = get_spy_data_cached(period='1y', force_refresh=True)
 
     # Scan each ticker
     results = []
@@ -355,7 +322,8 @@ def run_scan():
         if indicators is None:
             continue
 
-        rs = calculate_rs(df, spy_df)
+        # Use the imported calculate_rs with spy_returns
+        rs = calculate_rs(df, spy_returns)
 
         # Get sector (with caching)
         if ticker not in sector_cache:
@@ -390,7 +358,7 @@ def run_scan():
     df_results['rank'] = df_results['composite_score'].rank(ascending=False).astype(int)
     df_results = df_results.sort_values('composite_score', ascending=False)
 
-    print(f"Scan complete. {len(df_results)} tickers analyzed.")
+    logger.info(f"Scan complete. {len(df_results)} tickers analyzed.")
 
     return df_results, price_data
 
@@ -401,7 +369,7 @@ def detect_alerts(df_results, previous_results=None):
 
     # New breakouts (high score + breakout flag)
     breakouts = df_results[
-        (df_results['composite_score'] >= ALERT_THRESHOLDS['min_composite_score']) &
+        (df_results['composite_score'] >= config.scanner.min_composite_score) &
         (df_results['breakout_up'] == True)
     ]
 
@@ -418,7 +386,7 @@ def detect_alerts(df_results, previous_results=None):
 
     # Volume surges
     vol_surges = df_results[
-        (df_results['vol_ratio'] >= ALERT_THRESHOLDS['volume_spike']) &
+        (df_results['vol_ratio'] >= config.scanner.volume_spike_threshold) &
         (df_results['rs_composite'] > 0)
     ]
 
@@ -609,7 +577,8 @@ def detect_unknown_clusters(price_data, df_results, min_size=3, corr_threshold=0
                     df = price_data['Close']
                 if len(df) >= 20:
                     returns_data[ticker] = df.pct_change().iloc[-20:]
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get returns for {ticker}: {e}")
                 continue
 
         if len(returns_data) < 5:
@@ -646,7 +615,8 @@ def detect_unknown_clusters(price_data, df_results, min_size=3, corr_threshold=0
                     used.update(correlated)
 
         return sorted(clusters, key=lambda x: x['breakouts'], reverse=True)[:3]
-    except:
+    except Exception as e:
+        logger.error(f"Failed to detect unknown clusters: {e}")
         return []
 
 
@@ -804,7 +774,7 @@ def track_unknown_clusters(new_clusters, df_results):
                         'appearances': existing['appearances'],
                     })
 
-                    print(f"  🎓 PROMOTED: {sig} → {theme_id} (seen {existing['appearances']} times)")
+                    logger.info(f"PROMOTED: {sig} -> {theme_id} (seen {existing['appearances']} times)")
                 break
 
         if not matched:
@@ -817,7 +787,7 @@ def track_unknown_clusters(new_clusters, df_results):
                 'appearances': 1,
                 'avg_rs': cluster['avg_rs'],
             })
-            print(f"  📝 NEW CLUSTER: {', '.join(tickers[:4])} (tracking started)")
+            logger.info(f"NEW CLUSTER: {', '.join(tickers[:4])} (tracking started)")
 
     # Clean up old clusters (not seen in 14 days)
     cutoff = (datetime.now() - timedelta(days=14)).strftime('%Y-%m-%d')
@@ -1020,11 +990,11 @@ def is_sunday():
 def run_weekly_digest():
     """Run and send weekly digest if it's Sunday."""
     if is_sunday():
-        print("\n📊 Generating weekly digest (Sunday)...")
+        logger.info("Generating weekly digest (Sunday)...")
         digest = generate_weekly_digest()
         if digest:
             send_telegram_message(digest)
-            print("  Weekly digest sent!")
+            logger.info("Weekly digest sent!")
             return True
     return False
 
@@ -1035,6 +1005,7 @@ def run_weekly_digest():
 
 def scrape_finviz_news(ticker):
     """Scrape recent news headlines from Finviz."""
+    import requests
     try:
         url = f"https://finviz.com/quote.ashx?t={ticker}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -1109,6 +1080,7 @@ def analyze_sentiment(headlines):
 
 def scrape_insider_activity(ticker):
     """Scrape insider trading data from Finviz."""
+    import requests
     try:
         url = f"https://finviz.com/quote.ashx?t={ticker}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -1133,7 +1105,7 @@ def scrape_insider_activity(ticker):
         if insider_trans != 'N/A':
             try:
                 trans_pct = float(insider_trans.replace('%', '').replace('+', ''))
-            except:
+            except (ValueError, TypeError):
                 pass
 
         return {
@@ -1142,7 +1114,8 @@ def scrape_insider_activity(ticker):
             'trans_pct': trans_pct,
             'is_buying': trans_pct > 0,
         }
-    except:
+    except Exception as e:
+        logger.debug(f"Failed to scrape insider activity for {ticker}: {e}")
         return None
 
 
@@ -1168,6 +1141,7 @@ def detect_insider_buying(tickers, min_buy_pct=1.0):
 
 def scrape_options_data(ticker):
     """Get options-related metrics from Finviz."""
+    import requests
     try:
         url = f"https://finviz.com/quote.ashx?t={ticker}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -1191,7 +1165,7 @@ def scrape_options_data(ticker):
         if short_float != 'N/A':
             try:
                 short_float_pct = float(short_float.replace('%', ''))
-            except:
+            except (ValueError, TypeError):
                 pass
 
         return {
@@ -1200,7 +1174,8 @@ def scrape_options_data(ticker):
             'short_float_pct': short_float_pct,
             'high_short': short_float_pct > 15,  # >15% short is notable
         }
-    except:
+    except Exception as e:
+        logger.debug(f"Failed to scrape options data for {ticker}: {e}")
         return None
 
 
@@ -1290,6 +1265,7 @@ def generate_chart(ticker, price_data):
         else:
             df = price_data.copy()
 
+        df = normalize_dataframe_columns(df)
         df = df.dropna().iloc[-60:]  # Last 60 days
 
         if len(df) < 20:
@@ -1356,28 +1332,19 @@ def generate_chart(ticker, price_data):
 
         return buf
     except Exception as e:
-        print(f"Chart error for {ticker}: {e}")
+        logger.error(f"Chart error for {ticker}: {e}")
         return None
 
 
 def send_telegram_photo(photo_buffer, caption=''):
-    """Send a photo via Telegram."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    """Send a photo via Telegram using centralized client."""
+    if not config.telegram.is_configured:
         return False
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-
     try:
-        files = {'photo': ('chart.png', photo_buffer, 'image/png')}
-        data = {
-            'chat_id': TELEGRAM_CHAT_ID,
-            'caption': caption,
-            'parse_mode': 'Markdown',
-        }
-        response = requests.post(url, files=files, data=data, timeout=30)
-        return response.status_code == 200
+        return send_photo(config.telegram.chat_id, photo_buffer, caption)
     except Exception as e:
-        print(f"Telegram photo error: {e}")
+        logger.error(f"Telegram photo error: {e}")
         return False
 
 
@@ -1398,7 +1365,8 @@ def calculate_correlation_matrix(price_data, tickers, period=20):
 
             if len(df) >= period:
                 returns_data[ticker] = df.pct_change().iloc[-period:]
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to calculate returns for {ticker}: {e}")
             continue
 
     if len(returns_data) < 2:
@@ -1452,10 +1420,11 @@ def format_correlation_alert(high_corr_pairs, top_n=10):
 
 def get_telegram_updates(offset=None):
     """Get updates from Telegram bot."""
-    if not TELEGRAM_BOT_TOKEN:
+    import requests
+    if not config.telegram.is_configured:
         return []
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    url = f"{config.telegram.api_url}/getUpdates"
     params = {'timeout': 1}
     if offset:
         params['offset'] = offset
@@ -1464,8 +1433,8 @@ def get_telegram_updates(offset=None):
         response = requests.get(url, params=params, timeout=5)
         if response.status_code == 200:
             return response.json().get('result', [])
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to get Telegram updates: {e}")
     return []
 
 
@@ -1518,8 +1487,8 @@ def process_ticker_query(ticker, price_data, df_results):
             msg += f"• ATR: ${entry_signals['atr']:.2f}\n"
             msg += f"• Stop: ${entry_signals['entries'][0]['stop']:.2f}\n"
             msg += f"• Target: ${entry_signals['entries'][0]['target']:.2f}\n"
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to calculate entry signals for {ticker}: {e}")
 
     # News sentiment
     headlines = scrape_finviz_news(ticker)
@@ -1598,7 +1567,7 @@ def handle_interactive_commands(price_data, df_results):
                 json.dump({'offset': update_id}, f)
 
     except Exception as e:
-        print(f"Interactive bot error: {e}")
+        logger.error(f"Interactive bot error: {e}")
 
 
 # ============================================================
@@ -1607,10 +1576,10 @@ def handle_interactive_commands(price_data, df_results):
 
 def main():
     """Main automation function."""
-    print("=" * 60)
-    print("STOCK SCANNER AUTOMATION")
-    print(f"Started: {datetime.now()}")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("STOCK SCANNER AUTOMATION")
+    logger.info(f"Started: {datetime.now()}")
+    logger.info("=" * 60)
 
     # Load previous state
     prev_state = load_previous_state()
@@ -1632,19 +1601,19 @@ def main():
     # ============================================================
     # THEME DETECTION
     # ============================================================
-    print("\nRunning theme detection...")
+    logger.info("Running theme detection...")
 
     # Detect supply chain plays
     supply_plays = detect_supply_chain_plays(df_results)
-    print(f"  Found {len(supply_plays)} supply chain opportunities")
+    logger.info(f"Found {len(supply_plays)} supply chain opportunities")
 
     # Analyze themes
     themes = analyze_themes(df_results)
-    print(f"  Analyzed {len(themes)} themes")
+    logger.info(f"Analyzed {len(themes)} themes")
 
     # Detect unknown clusters
     unknown_clusters = detect_unknown_clusters(price_data, df_results)
-    print(f"  Found {len(unknown_clusters)} unknown clusters")
+    logger.info(f"Found {len(unknown_clusters)} unknown clusters")
 
     # Send theme alert
     if themes or supply_plays or unknown_clusters:
@@ -1654,7 +1623,7 @@ def main():
     # ============================================================
     # SELF-LEARNING SYSTEM
     # ============================================================
-    print("\nRunning self-learning system...")
+    logger.info("Running self-learning system...")
 
     # Track unknown clusters and check for promotions
     new_emerging, learned_themes = track_unknown_clusters(unknown_clusters, df_results)
@@ -1663,7 +1632,7 @@ def main():
     if new_emerging:
         emerging_msg = format_emerging_theme_alert(new_emerging)
         send_telegram_message(emerging_msg)
-        print(f"  🎓 Promoted {len(new_emerging)} new emerging themes!")
+        logger.info(f"Promoted {len(new_emerging)} new emerging themes!")
 
     # Analyze and report on learned themes
     if learned_themes:
@@ -1672,7 +1641,7 @@ def main():
             learned_msg = format_learned_themes_summary(learned_analysis)
             if learned_msg:
                 send_telegram_message(learned_msg)
-        print(f"  📚 Tracking {len(learned_themes)} learned themes")
+        logger.info(f"Tracking {len(learned_themes)} learned themes")
 
     # ============================================================
     # BREAKOUT ALERTS
@@ -1694,17 +1663,17 @@ def main():
     # ============================================================
     # WEEKLY STATS & DIGEST
     # ============================================================
-    print("\nUpdating weekly stats...")
+    logger.info("Updating weekly stats...")
     update_weekly_stats(df_results, themes, supply_plays)
 
     # Send weekly digest on Sunday
     if run_weekly_digest():
-        print("  📊 Weekly digest sent!")
+        logger.info("Weekly digest sent!")
 
     # ============================================================
     # INSIDER BUYING DETECTION
     # ============================================================
-    print("\nChecking insider activity...")
+    logger.info("Checking insider activity...")
     top_tickers = df_results.head(30)['ticker'].tolist()
     insider_buys = detect_insider_buying(top_tickers)
 
@@ -1713,12 +1682,12 @@ def main():
         for ib in insider_buys[:5]:
             msg += f"• `{ib['ticker']}` - {ib['recent_trans']} (Own: {ib['ownership']})\n"
         send_telegram_message(msg)
-        print(f"  Found {len(insider_buys)} stocks with insider buying")
+        logger.info(f"Found {len(insider_buys)} stocks with insider buying")
 
     # ============================================================
     # CORRELATION MATRIX
     # ============================================================
-    print("\nCalculating correlations...")
+    logger.info("Calculating correlations...")
     top_20 = df_results.head(20)['ticker'].tolist()
     corr_matrix = calculate_correlation_matrix(price_data, top_20)
 
@@ -1728,30 +1697,30 @@ def main():
             corr_msg = format_correlation_alert(high_corr)
             if corr_msg:
                 send_telegram_message(corr_msg)
-            print(f"  Found {len(high_corr)} highly correlated pairs")
+            logger.info(f"Found {len(high_corr)} highly correlated pairs")
 
     # ============================================================
     # SEND CHARTS FOR TOP 3
     # ============================================================
-    print("\nGenerating charts for top stocks...")
+    logger.info("Generating charts for top stocks...")
     for ticker in df_results.head(3)['ticker'].tolist():
         chart = generate_chart(ticker, price_data)
         if chart:
             row = df_results[df_results['ticker'] == ticker].iloc[0]
             caption = f"*{ticker}* | Score: {row['composite_score']:.0f} | RS: {row['rs_composite']:+.1f}%"
             send_telegram_photo(chart, caption=caption)
-            print(f"  📈 Chart sent: {ticker}")
+            logger.info(f"Chart sent: {ticker}")
 
     # ============================================================
     # PROCESS INTERACTIVE COMMANDS
     # ============================================================
-    print("\nChecking for interactive commands...")
+    logger.info("Checking for interactive commands...")
     handle_interactive_commands(price_data, df_results)
 
     # ============================================================
     # SECTOR ROTATION ANALYSIS
     # ============================================================
-    print("\nRunning sector rotation analysis...")
+    logger.info("Running sector rotation analysis...")
     try:
         from sector_rotation import run_sector_rotation_analysis, format_sector_rotation_report
         rotation_results = run_sector_rotation_analysis()
@@ -1761,14 +1730,14 @@ def main():
             rotation_results['cycle']
         )
         send_telegram_message(rotation_msg)
-        print("  Sector rotation report sent!")
+        logger.info("Sector rotation report sent!")
     except Exception as e:
-        print(f"  Sector rotation error: {e}")
+        logger.error(f"Sector rotation error: {e}")
 
     # ============================================================
     # MULTI-TIMEFRAME CONFLUENCE (Top 5)
     # ============================================================
-    print("\nRunning multi-timeframe analysis...")
+    logger.info("Running multi-timeframe analysis...")
     try:
         from multi_timeframe import scan_mtf_confluence, format_mtf_scan_results
         top_tickers = df_results.head(20)['ticker'].tolist()
@@ -1776,28 +1745,28 @@ def main():
         if mtf_results:
             mtf_msg = format_mtf_scan_results(mtf_results)
             send_telegram_message(mtf_msg)
-            print(f"  Found {len(mtf_results)} stocks with MTF confluence")
+            logger.info(f"Found {len(mtf_results)} stocks with MTF confluence")
     except Exception as e:
-        print(f"  MTF analysis error: {e}")
+        logger.error(f"MTF analysis error: {e}")
 
     # ============================================================
     # NEWS SENTIMENT SCAN
     # ============================================================
-    print("\nScanning news sentiment...")
+    logger.info("Scanning news sentiment...")
     try:
         from news_analyzer import scan_news_sentiment, format_news_scan_results
         top_10 = df_results.head(10)['ticker'].tolist()
         news_results = scan_news_sentiment(top_10)
         news_msg = format_news_scan_results(news_results)
         send_telegram_message(news_msg)
-        print("  News sentiment scan sent!")
+        logger.info("News sentiment scan sent!")
     except Exception as e:
-        print(f"  News scan error: {e}")
+        logger.error(f"News scan error: {e}")
 
     # ============================================================
     # COMPREHENSIVE SELF-LEARNING
     # ============================================================
-    print("\nRunning comprehensive self-learning...")
+    logger.info("Running comprehensive self-learning...")
     try:
         from self_learning import (
             auto_learn_from_scan,
@@ -1812,14 +1781,14 @@ def main():
 
         # 1. Learn from scan results (alert accuracy, entries)
         auto_learn_from_scan(df_results, spy_df)
-        print("  Recorded alerts for accuracy tracking")
+        logger.info("Recorded alerts for accuracy tracking")
 
         # 2. Detect and record market regime
         if spy_df is not None and len(spy_df) >= 50:
             regime = detect_market_regime(spy_df)
             spy_price = float(spy_df['Close'].iloc[-1])
             record_regime_change(regime, spy_price)
-            print(f"  Market regime: {regime}")
+            logger.info(f"Market regime: {regime}")
 
         # 3. Learn stock personalities for top movers
         top_movers = df_results.head(20)['ticker'].tolist()
@@ -1830,9 +1799,9 @@ def main():
                 if ticker_df is not None and len(ticker_df) >= 50:
                     auto_learn_stock_profile(ticker, ticker_df)
                     profiles_updated += 1
-            except:
-                pass
-        print(f"  Updated {profiles_updated} stock personality profiles")
+            except Exception as e:
+                logger.debug(f"Failed to update profile for {ticker}: {e}")
+        logger.info(f"Updated {profiles_updated} stock personality profiles")
 
         # 4. Track theme lifecycles
         for theme in themes[:10]:
@@ -1856,17 +1825,17 @@ def main():
                 top_stocks=top_stocks,
                 momentum_score=theme['avg_rs']
             )
-        print(f"  Tracked lifecycle for {min(len(themes), 10)} themes")
+        logger.info(f"Tracked lifecycle for {min(len(themes), 10)} themes")
 
-        print("  Self-learning complete!")
+        logger.info("Self-learning complete!")
 
     except Exception as e:
-        print(f"  Self-learning error: {e}")
+        logger.error(f"Self-learning error: {e}")
 
     # ============================================================
     # AI-POWERED ANALYSIS
     # ============================================================
-    print("\nRunning AI-powered analysis...")
+    logger.info("Running AI-powered analysis...")
     try:
         from ai_learning import (
             generate_market_narrative,
@@ -1900,7 +1869,7 @@ def main():
                 msg += f"\n*Risk:* {risk['description']}"
 
             send_telegram_message(msg)
-            print("  AI market narrative sent!")
+            logger.info("AI market narrative sent!")
 
         # 2. Learn patterns from top alerts
         for _, row in df_results.head(5).iterrows():
@@ -1917,9 +1886,9 @@ def main():
                     'rs_strong': row.get('rs_composite', 0) > 5,
                 }
                 analyze_signal_pattern(signals)
-            except:
-                pass
-        print("  Recorded signal patterns for AI learning")
+            except Exception as e:
+                logger.debug(f"Failed to analyze signal pattern: {e}")
+        logger.info("Recorded signal patterns for AI learning")
 
         # 3. Scan for anomalies in top movers
         anomaly_data = {}
@@ -1936,7 +1905,7 @@ def main():
                   if d['vol_ratio'] > 3 or abs(d.get('daily_change', 0)) > 5}
 
         if extreme:
-            print(f"  Detected {len(extreme)} potential anomalies for AI review")
+            logger.info(f"Detected {len(extreme)} potential anomalies for AI review")
 
         # 4. Report best patterns if we have enough data
         patterns = get_best_patterns()
@@ -1948,16 +1917,16 @@ def main():
                 msg += f"Win rate: {best['win_rate']:.0f}% ({best['total_trades']} trades)\n"
                 msg += f"\n_Focus on setups with these signals._"
                 send_telegram_message(msg)
-                print(f"  Best pattern: {best['pattern']} ({best['win_rate']:.0f}%)")
+                logger.info(f"Best pattern: {best['pattern']} ({best['win_rate']:.0f}%)")
 
-        print("  AI analysis complete!")
+        logger.info("AI analysis complete!")
 
     except Exception as e:
-        print(f"  AI analysis error: {e}")
+        logger.error(f"AI analysis error: {e}")
 
-    print(f"\nCompleted: {datetime.now()}")
-    print(f"Sent {len(new_alerts)} new breakout alerts")
-    print(f"Themes analyzed: {len(themes)}")
+    logger.info(f"Completed: {datetime.now()}")
+    logger.info(f"Sent {len(new_alerts)} new breakout alerts")
+    logger.info(f"Themes analyzed: {len(themes)}")
 
     return df_results
 

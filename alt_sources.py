@@ -17,6 +17,11 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -172,6 +177,7 @@ def get_youtube_video_ids(channel_id, max_videos=5):
 
         return videos
     except Exception as e:
+        logger.debug(f"Failed to get YouTube videos for channel {channel_id}: {e}")
         return []
 
 
@@ -219,6 +225,7 @@ def get_youtube_transcript(video_id):
         return transcript[:5000]  # Limit length
 
     except Exception as e:
+        logger.debug(f"Failed to get YouTube transcript for video {video_id}: {e}")
         return None
 
 
@@ -236,7 +243,8 @@ def scrape_podcast_transcripts():
                     pub_date = datetime.fromisoformat(video['published'].replace('Z', '+00:00'))
                     if pub_date < datetime.now(pub_date.tzinfo) - timedelta(days=7):
                         continue
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Could not parse date for video: {e}")
                     pass
 
                 # For now, just use title as content (transcript is slow)
@@ -247,7 +255,8 @@ def scrape_podcast_transcripts():
                     'content': video['title'],  # Use title for quick analysis
                     'video_id': video['id'],
                 })
-        except:
+        except Exception as e:
+            logger.warning(f"Failed to scrape podcast {name}: {e}")
             continue
 
     return all_content
@@ -283,7 +292,8 @@ def scrape_substack_feed(name, feed_url):
                         date_str = pub_date.text
                         # Simple check - just look for recent month/year
                         pass  # Skip date check for now
-                except:
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.debug(f"Could not parse date for {name}: {e}")
                     pass
 
                 # Clean description HTML
@@ -300,6 +310,7 @@ def scrape_substack_feed(name, feed_url):
 
         return posts
     except Exception as e:
+        logger.warning(f"Failed to scrape Substack feed {name}: {e}")
         return []
 
 
@@ -311,7 +322,8 @@ def scrape_all_newsletters():
         try:
             posts = scrape_substack_feed(name, feed_url)
             all_posts.extend(posts)
-        except:
+        except Exception as e:
+            logger.warning(f"Error scraping newsletter {name}: {e}")
             continue
 
     return all_posts
@@ -352,6 +364,7 @@ def scrape_podcast_rss(name, feed_url):
 
         return episodes
     except Exception as e:
+        logger.warning(f"Failed to scrape podcast RSS {name}: {e}")
         return []
 
 
@@ -363,7 +376,8 @@ def scrape_all_podcast_notes():
         try:
             episodes = scrape_podcast_rss(name, feed_url)
             all_episodes.extend(episodes)
-        except:
+        except Exception as e:
+            logger.warning(f"Error scraping podcast {name}: {e}")
             continue
 
     return all_episodes
@@ -384,21 +398,24 @@ def aggregate_alt_sources():
     try:
         podcasts = scrape_podcast_transcripts()
         all_content.extend(podcasts)
-    except:
+    except Exception as e:
+        logger.error(f"Failed to scrape podcast transcripts: {e}")
         pass
 
     # Newsletters
     try:
         newsletters = scrape_all_newsletters()
         all_content.extend(newsletters)
-    except:
+    except Exception as e:
+        logger.error(f"Failed to scrape newsletters: {e}")
         pass
 
     # Podcast show notes
     try:
         podcast_notes = scrape_all_podcast_notes()
         all_content.extend(podcast_notes)
-    except:
+    except Exception as e:
+        logger.error(f"Failed to scrape podcast notes: {e}")
         pass
 
     return all_content
@@ -500,9 +517,9 @@ def format_alt_sources_report(analysis):
 # ============================================================
 
 if __name__ == '__main__':
-    print("Scraping alternative sources...")
+    logger.info("Scraping alternative sources...")
     content = aggregate_alt_sources()
-    print(f"Found {len(content)} items")
+    logger.info(f"Found {len(content)} items")
 
     analysis = extract_themes_from_alt_sources(content)
-    print(format_alt_sources_report(analysis))
+    logger.info(format_alt_sources_report(analysis))

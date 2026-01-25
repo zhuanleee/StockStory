@@ -18,9 +18,16 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 
-# Transaction costs (realistic estimates)
-COMMISSION_PCT = 0.0005  # 0.05% per trade (round trip = 0.1%)
-SLIPPAGE_PCT = 0.001     # 0.1% slippage per trade
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
+# Transaction costs from config (realistic estimates)
+SLIPPAGE_PCT = config.backtest.slippage_pct
 
 # Cache for backtest results
 CACHE_DIR = Path('cache')
@@ -78,11 +85,12 @@ def calculate_drawdown(returns):
 
 def apply_costs(entry_price, exit_price, direction='long'):
     """Apply transaction costs to a trade."""
+    commission_pct = config.backtest.commission_pct
     # Entry cost
-    entry_with_costs = entry_price * (1 + COMMISSION_PCT + SLIPPAGE_PCT)
+    entry_with_costs = entry_price * (1 + commission_pct + SLIPPAGE_PCT)
 
     # Exit cost
-    exit_with_costs = exit_price * (1 - COMMISSION_PCT - SLIPPAGE_PCT)
+    exit_with_costs = exit_price * (1 - commission_pct - SLIPPAGE_PCT)
 
     if direction == 'long':
         return entry_with_costs, exit_with_costs
@@ -99,9 +107,7 @@ def backtest_momentum_strategy(ticker, period='1y', holding_days=5, regime_filte
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 60:
             return None
@@ -111,9 +117,7 @@ def backtest_momentum_strategy(ticker, period='1y', holding_days=5, regime_filte
 
         # Check regime filter
         if regime_filter:
-            spy = yf.download('SPY', period=period, progress=False)
-            if isinstance(spy.columns, pd.MultiIndex):
-                spy.columns = spy.columns.get_level_values(0)
+            spy = get_spy_data_cached(period=period)
             regime = get_market_regime(spy)
             if regime_filter == 'bull_only' and regime != 'bull':
                 return None
@@ -205,6 +209,7 @@ def backtest_momentum_strategy(ticker, period='1y', holding_days=5, regime_filte
         }
 
     except Exception as e:
+        logger.error(f"Error in momentum strategy for {ticker}: {e}")
         return None
 
 
@@ -217,9 +222,7 @@ def backtest_mean_reversion(ticker, period='1y', holding_days=3):
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 60:
             return None
@@ -310,6 +313,7 @@ def backtest_mean_reversion(ticker, period='1y', holding_days=3):
         }
 
     except Exception as e:
+        logger.error(f"Error in mean reversion strategy for {ticker}: {e}")
         return None
 
 
@@ -322,9 +326,7 @@ def backtest_breakout_strategy(ticker, period='1y', holding_days=10):
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 60:
             return None
@@ -414,6 +416,7 @@ def backtest_breakout_strategy(ticker, period='1y', holding_days=10):
         }
 
     except Exception as e:
+        logger.error(f"Error in breakout strategy for {ticker}: {e}")
         return None
 
 
@@ -426,9 +429,7 @@ def backtest_gap_strategy(ticker, period='1y', holding_days=2):
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 60:
             return None
@@ -509,6 +510,7 @@ def backtest_gap_strategy(ticker, period='1y', holding_days=2):
         }
 
     except Exception as e:
+        logger.error(f"Error in gap strategy for {ticker}: {e}")
         return None
 
 
@@ -521,9 +523,7 @@ def backtest_pullback_strategy(ticker, period='1y', holding_days=5):
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 200:
             return None
@@ -611,6 +611,7 @@ def backtest_pullback_strategy(ticker, period='1y', holding_days=5):
         }
 
     except Exception as e:
+        logger.error(f"Error in pullback strategy for {ticker}: {e}")
         return None
 
 
@@ -623,9 +624,7 @@ def backtest_trend_following(ticker, period='2y', holding_days=20):
     """
     try:
         df = yf.download(ticker, period=period, progress=False)
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
 
         if len(df) < 200:
             return None
@@ -711,6 +710,7 @@ def backtest_trend_following(ticker, period='2y', holding_days=20):
         }
 
     except Exception as e:
+        logger.error(f"Error in trend following strategy for {ticker}: {e}")
         return None
 
 
@@ -734,7 +734,8 @@ def backtest_all_strategies(ticker):
             result = func(ticker)
             if result:
                 results.append(result)
-        except:
+        except Exception as e:
+            logger.error(f"Error running {name} strategy for {ticker}: {e}")
             continue
 
     return results
@@ -842,15 +843,15 @@ def format_strategy_summary():
 
 
 if __name__ == '__main__':
-    print("Testing enhanced backtest module...")
+    logger.info("Testing enhanced backtest module...")
 
     # Test single ticker
     ticker = 'NVDA'
-    print(f"\n=== Backtesting {ticker} ===")
+    logger.info(f"=== Backtesting {ticker} ===")
 
     results = backtest_all_strategies(ticker)
-    print(format_backtest_results(results))
+    logger.info(format_backtest_results(results))
 
     # Strategy summary
-    print("\n" + "=" * 60)
-    print(format_strategy_summary())
+    logger.info("=" * 60)
+    logger.info(format_strategy_summary())

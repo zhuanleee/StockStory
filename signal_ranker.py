@@ -17,6 +17,11 @@ from pathlib import Path
 from collections import defaultdict
 import yfinance as yf
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -241,9 +246,11 @@ def calculate_timing_score(theme_name, tickers):
                     'week': round(week_move, 1),
                     'month': round(month_move, 1),
                 }
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get timing data for {ticker}: {e}")
                 continue
-    except:
+    except Exception as e:
+        logger.error(f"Error calculating timing score: {e}")
         pass
 
     if not moves:
@@ -393,7 +400,8 @@ def record_signal(theme, sources, tickers, catalyst=None):
             hist = stock.history(period='1d')
             if len(hist) > 0:
                 prices[ticker] = float(hist['Close'].iloc[-1])
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to get price for {ticker}: {e}")
             pass
 
     history['signals'][signal_id] = {
@@ -466,7 +474,8 @@ def evaluate_signal_performance(signal, period='1w'):
                     current = float(hist['Close'].iloc[-1])
                     ret = (current / initial - 1) * 100
                     returns.append(ret)
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get return for {ticker}: {e}")
                 pass
 
         if not returns:
@@ -482,7 +491,8 @@ def evaluate_signal_performance(signal, period='1w'):
                 spy_return = (spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[0] - 1) * 100
             else:
                 spy_return = 0
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to get SPY return: {e}")
             spy_return = 0
 
         outperformance = avg_return - spy_return
@@ -494,7 +504,8 @@ def evaluate_signal_performance(signal, period='1w'):
             'spy_return': round(spy_return, 1),
             'outperformance': round(outperformance, 1),
         }
-    except:
+    except Exception as e:
+        logger.error(f"Error evaluating signal performance: {e}")
         return None
 
 
@@ -648,9 +659,9 @@ if __name__ == '__main__':
     }
 
     result = calculate_overall_score(test_signal)
-    print(f"Signal: {test_signal['theme']}")
-    print(f"Overall Score: {result['overall_score']}")
-    print(f"Source Trust: {result['source_trust']}")
-    print(f"Signal Strength: {result['signal_strength']}")
-    print(f"Timing: {result['timing_detail']} ({result['timing_score']})")
-    print(f"Factors: {result['strength_factors']}")
+    logger.info(f"Signal: {test_signal['theme']}")
+    logger.info(f"Overall Score: {result['overall_score']}")
+    logger.info(f"Source Trust: {result['source_trust']}")
+    logger.info(f"Signal Strength: {result['signal_strength']}")
+    logger.info(f"Timing: {result['timing_detail']} ({result['timing_score']})")
+    logger.info(f"Factors: {result['strength_factors']}")

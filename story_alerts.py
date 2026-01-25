@@ -17,10 +17,10 @@ import requests
 from datetime import datetime
 from pathlib import Path
 
-# Configuration
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')  # Your chat ID
-TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+from config import config
+from utils import get_logger, send_message, APIError
+
+logger = get_logger(__name__)
 
 # Storage for previous state
 STATE_FILE = Path('story_state.json')
@@ -28,24 +28,14 @@ STATE_FILE = Path('story_state.json')
 
 def send_telegram_alert(message):
     """Send alert to Telegram."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print(f"[Alert] {message}")
+    if not config.telegram.bot_token or not config.telegram.chat_id:
+        logger.info(f"[Alert] {message}")
         return False
 
     try:
-        response = requests.post(
-            f"{TELEGRAM_API}/sendMessage",
-            json={
-                'chat_id': TELEGRAM_CHAT_ID,
-                'text': message,
-                'parse_mode': 'Markdown',
-                'disable_web_page_preview': True,
-            },
-            timeout=10
-        )
-        return response.status_code == 200
+        return send_message(config.telegram.chat_id, message)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        logger.error(f"Telegram error: {e}")
         return False
 
 
@@ -55,8 +45,8 @@ def load_previous_state():
         try:
             with open(STATE_FILE, 'r') as f:
                 return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error loading previous state: {e}")
     return {'themes': {}, 'momentum': {}, 'last_update': None}
 
 
@@ -188,7 +178,7 @@ def format_alert_message(alerts):
 
 def run_story_detection():
     """Main function to run story detection and send alerts."""
-    print(f"[{datetime.now()}] Running story detection...")
+    logger.info(f"[{datetime.now()}] Running story detection...")
 
     # Load previous state
     previous = load_previous_state()
@@ -198,12 +188,12 @@ def run_story_detection():
         from fast_stories import run_fast_story_detection
         current = run_fast_story_detection(use_cache=False)  # Fresh data
     except Exception as e:
-        print(f"Detection error: {e}")
+        logger.error(f"Detection error: {e}")
         return
 
     # Skip if no data
     if not current or not current.get('themes'):
-        print("No themes detected")
+        logger.info("No themes detected")
         return
 
     # Detect changes
@@ -213,10 +203,10 @@ def run_story_detection():
     if alerts:
         message = format_alert_message(alerts)
         if message:
-            print(f"Sending {len(alerts)} alerts...")
+            logger.info(f"Sending {len(alerts)} alerts...")
             send_telegram_alert(message)
     else:
-        print("No significant changes detected")
+        logger.info("No significant changes detected")
 
     # Save current state for next comparison
     new_state = {
@@ -234,7 +224,7 @@ def run_story_detection():
     }
     save_state(new_state)
 
-    print(f"State saved. {len(current.get('themes', []))} themes tracked.")
+    logger.info(f"State saved. {len(current.get('themes', []))} themes tracked.")
 
 
 def check_price_alerts():
@@ -272,25 +262,17 @@ def check_price_alerts():
                         msg += f"`{ticker}` hit ${current_price:.2f}\n"
                         msg += f"Your alert: {alert['direction']} ${alert['price']:.2f}"
 
-                        requests.post(
-                            f"{TELEGRAM_API}/sendMessage",
-                            json={
-                                'chat_id': alert['chat_id'],
-                                'text': msg,
-                                'parse_mode': 'Markdown'
-                            },
-                            timeout=10
-                        )
+                        send_message(alert['chat_id'], msg)
 
                         # Mark as triggered
                         mark_alert_triggered(alert['chat_id'], ticker, current_price)
-                        print(f"Alert triggered: {ticker} {alert['direction']} {alert['price']}")
+                        logger.info(f"Alert triggered: {ticker} {alert['direction']} {alert['price']}")
 
             except Exception as e:
-                print(f"Price check error for {ticker}: {e}")
+                logger.error(f"Price check error for {ticker}: {e}")
 
     except Exception as e:
-        print(f"Alert check error: {e}")
+        logger.error(f"Alert check error: {e}")
 
 
 def check_earnings_alerts():
@@ -322,11 +304,11 @@ def check_earnings_alerts():
         msg += "\n_Avoid new positions before earnings!_"
 
         # Send to main chat
-        if TELEGRAM_CHAT_ID:
+        if config.telegram.chat_id:
             send_telegram_alert(msg)
 
     except Exception as e:
-        print(f"Earnings alert error: {e}")
+        logger.error(f"Earnings alert error: {e}")
 
 
 if __name__ == '__main__':

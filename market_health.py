@@ -21,6 +21,14 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
+from config import config
+from utils import (
+    get_logger, normalize_dataframe_columns, get_spy_data_cached,
+    calculate_rs, safe_float, download_stock_data,
+)
+
+logger = get_logger(__name__)
+
 # Full S&P 500 stock universe for breadth calculation
 # Updated January 2025 - excludes recently delisted tickers
 BREADTH_UNIVERSE = [
@@ -98,22 +106,11 @@ def get_stock_data(ticker, period='3mo'):
     """Fetch stock data with error handling."""
     try:
         df = yf.download(ticker, period=period, progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        df = normalize_dataframe_columns(df)
         return ticker, df
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching data for {ticker}: {e}")
         return ticker, None
-
-
-def safe_float(val):
-    """Safely convert any value to float."""
-    if val is None:
-        return None
-    if hasattr(val, 'iloc'):
-        return float(val.iloc[0])
-    if hasattr(val, 'item'):
-        return float(val.item())
-    return float(val)
 
 
 def safe_get_series(df, column, ticker=None):
@@ -126,7 +123,8 @@ def safe_get_series(df, column, ticker=None):
             if isinstance(result, pd.DataFrame):
                 result = result.iloc[:, 0]
             return result
-        except:
+        except Exception as e:
+            logger.error(f"Error extracting {column} for {ticker}: {e}")
             pass
     if column in df.columns:
         return df[column]
@@ -156,7 +154,7 @@ def get_last_close(df, ticker=None):
             val = df['Close'].iloc[-1]
             return float(val) if not pd.isna(val) else None
     except Exception as e:
-        pass
+        logger.error(f"Error getting last close: {e}")
     return None
 
 
@@ -172,8 +170,8 @@ def get_real_put_call_ratio():
             val = get_last_close(pcr, '^PCALL')
             if val and 0.5 < val < 2.0:
                 return val, 'CBOE'
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error fetching CBOE put/call ratio: {e}")
 
     try:
         # Try equity put/call ratio
@@ -182,8 +180,8 @@ def get_real_put_call_ratio():
             val = get_last_close(pcr, '^CPCE')
             if val and 0.3 < val < 1.5:
                 return val, 'CPCE'
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error fetching equity put/call ratio: {e}")
 
     return None, None
 
@@ -203,8 +201,8 @@ def get_nyse_highs_lows():
 
         if nh is not None and nl is not None:
             return int(nh), int(nl)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error fetching NYSE highs/lows: {e}")
 
     return None, None
 
@@ -341,7 +339,8 @@ def calculate_market_breadth():
             if current >= high_50d * 0.98:
                 at_50day_high += 1
 
-        except:
+        except Exception as e:
+            logger.error(f"Error processing stock data for {ticker}: {e}")
             continue
 
     total = len(stocks_data)
@@ -429,7 +428,7 @@ def calculate_fear_greed_index():
 
         # 2. Market Momentum (20%) - SPY vs 125-day MA
         try:
-            spy = yf.download('SPY', period='6mo', progress=False)
+            spy = get_spy_data_cached(period='6mo')
             spy_close = safe_get_series(spy, 'Close', 'SPY')
             if spy_close is None or len(spy_close) < 125:
                 raise ValueError("Not enough SPY data")
@@ -452,7 +451,8 @@ def calculate_fear_greed_index():
                 'weight': 0.20,
                 'label': f'Momentum ({momentum_pct:+.1f}%)'
             }
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating market momentum: {e}")
             components['momentum'] = {'value': 0, 'score': 50, 'weight': 0.20, 'label': 'Market Momentum'}
 
         # 3. Put/Call Ratio (15%) - Real data when available
@@ -497,7 +497,8 @@ def calculate_fear_greed_index():
                     'weight': 0.15,
                     'label': f'P/C Est ({pc_proxy:.2f})'
                 }
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating put/call ratio: {e}")
             components['put_call'] = {'value': 1.0, 'score': 50, 'weight': 0.15, 'label': 'Put/Call Ratio'}
 
         # 4. Safe Haven Demand (15%) - SPY vs TLT (bonds)
@@ -613,7 +614,8 @@ def calculate_fear_greed_index():
                 'weight': 0.10,
                 'label': f'Price Strength'
             }
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating price strength: {e}")
             components['strength'] = {'value': 50, 'score': 50, 'weight': 0.10, 'label': 'Price Strength'}
 
         # Calculate weighted score
@@ -749,6 +751,6 @@ def format_health_report(health):
 
 
 if __name__ == '__main__':
-    print("Calculating market health...")
+    logger.info("Calculating market health...")
     health = get_market_health()
-    print(format_health_report(health))
+    logger.info(format_health_report(health))

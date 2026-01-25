@@ -18,11 +18,17 @@ import json
 from pathlib import Path
 import requests
 
+from config import config
+from utils import get_logger, normalize_dataframe_columns, safe_float
+
+logger = get_logger(__name__)
+
 # Import full S&P 500 universe
 try:
     from market_health import BREADTH_UNIVERSE
     EARNINGS_WATCHLIST = BREADTH_UNIVERSE
-except:
+except ImportError:
+    logger.debug("market_health module not available, using fallback watchlist")
     # Fallback watchlist
     EARNINGS_WATCHLIST = [
         # Mega caps
@@ -66,7 +72,8 @@ def load_earnings_history():
         try:
             with open(EARNINGS_HISTORY_FILE, 'r') as f:
                 return json.load(f)
-        except:
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            logger.warning(f"Failed to load earnings history: {e}")
             pass
     return {'earnings': {}, 'surprises': []}
 
@@ -133,7 +140,8 @@ def get_earnings_info(ticker):
                         result['eps_estimate'] = float(earnings_est.loc['avg', '0q'])
                     elif len(earnings_est.columns) > 0:
                         result['eps_estimate'] = float(earnings_est.loc['avg'].iloc[0])
-        except:
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            logger.debug(f"Could not get earnings estimate for {ticker}: {e}")
             pass
 
         # Get revenue estimates
@@ -145,7 +153,8 @@ def get_earnings_info(ticker):
                         result['revenue_estimate'] = float(rev_est.loc['avg', '0q'])
                     elif len(rev_est.columns) > 0:
                         result['revenue_estimate'] = float(rev_est.loc['avg'].iloc[0])
-        except:
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            logger.debug(f"Could not get revenue estimate for {ticker}: {e}")
             pass
 
         # Get historical earnings for beat/miss analysis
@@ -172,10 +181,12 @@ def get_earnings_info(ticker):
                     result['historical_surprise'] = round(sum(surprises) / len(surprises), 1)
                 if total > 0:
                     result['beat_rate'] = round(beats / total * 100, 0)
-        except:
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
+            logger.debug(f"Could not get earnings history for {ticker}: {e}")
             pass
 
     except Exception as e:
+        logger.debug(f"Failed to get earnings info for {ticker}: {e}")
         pass
 
     return result
@@ -211,7 +222,8 @@ def get_upcoming_earnings(tickers=None, days_ahead=14, include_estimates=True):
                     date = info['next_date']
                     if today <= date <= cutoff:
                         earnings.append(info)
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get earnings for a ticker: {e}")
                 pass
 
     # Sort by date, then by high impact
@@ -286,7 +298,8 @@ def check_earnings_soon(tickers, days=3):
             if info.get('days_until') is not None:
                 if 0 <= info['days_until'] <= days:
                     earnings_soon[ticker] = info
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to check earnings for {ticker}: {e}")
             pass
 
     return earnings_soon
@@ -369,14 +382,14 @@ def get_high_impact_earnings(days_ahead=7):
 
 
 if __name__ == '__main__':
-    print("Testing enhanced earnings module...")
+    logger.info("Testing enhanced earnings module...")
 
     # Test single ticker
-    print("\n=== NVDA Earnings Info ===")
+    logger.info("\n=== NVDA Earnings Info ===")
     info = get_earnings_info('NVDA')
-    print(json.dumps(info, indent=2, default=str))
+    logger.info(json.dumps(info, indent=2, default=str))
 
     # Test calendar
-    print("\n=== High Impact Earnings (7 days) ===")
+    logger.info("\n=== High Impact Earnings (7 days) ===")
     earnings = get_high_impact_earnings(days_ahead=7)
-    print(format_earnings_calendar(earnings))
+    logger.info(format_earnings_calendar(earnings))
