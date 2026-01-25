@@ -136,6 +136,59 @@ class AIConfig:
 
 
 @dataclass(frozen=True)
+class DataProviderConfig:
+    """
+    Data provider API configuration.
+
+    Free tier limits:
+    - Finnhub: 60 calls/min
+    - Tiingo: 1000 calls/day
+    - Alpha Vantage: 25 calls/day
+    - FRED: Unlimited
+    - SEC EDGAR: Unlimited (no key needed)
+    """
+    # API Keys
+    finnhub_api_key: str = field(default_factory=lambda: _get_env('FINNHUB_API_KEY'))
+    tiingo_api_key: str = field(default_factory=lambda: _get_env('TIINGO_API_KEY'))
+    alpha_vantage_api_key: str = field(default_factory=lambda: _get_env('ALPHA_VANTAGE_API_KEY'))
+    fred_api_key: str = field(default_factory=lambda: _get_env('FRED_API_KEY'))
+
+    # Rate limits (per minute)
+    finnhub_rate_limit: int = 60
+    tiingo_rate_limit: int = 50
+    alpha_vantage_rate_limit: int = 5
+
+    # Timeouts
+    request_timeout: int = 10
+
+    @property
+    def finnhub_configured(self) -> bool:
+        return bool(self.finnhub_api_key)
+
+    @property
+    def tiingo_configured(self) -> bool:
+        return bool(self.tiingo_api_key)
+
+    @property
+    def alpha_vantage_configured(self) -> bool:
+        return bool(self.alpha_vantage_api_key)
+
+    @property
+    def fred_configured(self) -> bool:
+        return bool(self.fred_api_key)
+
+    @property
+    def any_configured(self) -> bool:
+        """Check if any premium data provider is configured."""
+        return any([
+            self.finnhub_configured,
+            self.tiingo_configured,
+            self.alpha_vantage_configured,
+            self.fred_configured
+        ])
+
+
+@dataclass(frozen=True)
 class SecurityConfig:
     """Security configuration."""
     webhook_secret: str = field(default_factory=lambda: _get_env('WEBHOOK_SECRET'))
@@ -172,6 +225,7 @@ class Config:
     ai: AIConfig = field(default_factory=AIConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    data_providers: DataProviderConfig = field(default_factory=DataProviderConfig)
 
     # Server settings
     debug: bool = field(default_factory=lambda: _get_env_bool('DEBUG', False))

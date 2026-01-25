@@ -2,11 +2,13 @@
 """
 AI News Analyzer - Multi-Source Edition
 
-Fetches news from multiple sources and uses DeepSeek AI for analysis:
-- Yahoo Finance (via yfinance)
-- Finviz
-- Google News RSS
-- MarketWatch
+Fetches news from multiple sources and uses DeepSeek AI for analysis.
+
+Priority order (high-accuracy first):
+1. Finnhub (professional news feed, 60 req/min free)
+2. Tiingo (curated news, 1000 req/day free)
+3. Yahoo Finance (via yfinance) - fallback
+4. Google News RSS - fallback
 
 Provides comprehensive sentiment analysis and trading insights.
 """
@@ -24,6 +26,12 @@ warnings.filterwarnings('ignore')
 
 from config import config
 from utils import get_logger, APIError
+from utils.data_providers import (
+    FinnhubProvider,
+    TiingoProvider,
+    UnifiedDataFetcher,
+    check_provider_status,
+)
 
 logger = get_logger(__name__)
 
@@ -435,36 +443,126 @@ def scrape_reddit_sentiment(ticker):
         return []
 
 
+def fetch_finnhub_news(ticker):
+    """
+    Fetch news from Finnhub (high-accuracy, professional source).
+
+    Free tier: 60 API calls/minute
+    Returns standardized headline format.
+    """
+    if not FinnhubProvider.is_configured():
+        return []
+
+    try:
+        news = FinnhubProvider.get_company_news(ticker, days_back=7)
+        headlines = []
+
+        for item in news[:15]:
+            headlines.append({
+                'title': item.get('headline', ''),
+                'url': item.get('url', ''),
+                'source': item.get('source', 'Finnhub'),
+                'summary': item.get('summary', ''),
+                'timestamp': item.get('datetime', 0),
+                'provider': 'finnhub',
+            })
+
+        logger.info(f"Finnhub: fetched {len(headlines)} headlines for {ticker}")
+        return headlines
+    except Exception as e:
+        logger.error(f"Finnhub news error for {ticker}: {e}")
+        return []
+
+
+def fetch_tiingo_news(ticker):
+    """
+    Fetch news from Tiingo (high-accuracy, curated source).
+
+    Free tier: 1000 API calls/day
+    Returns standardized headline format.
+    """
+    if not TiingoProvider.is_configured():
+        return []
+
+    try:
+        news = TiingoProvider.get_news([ticker], limit=15)
+        headlines = []
+
+        for item in news:
+            headlines.append({
+                'title': item.get('title', ''),
+                'url': item.get('url', ''),
+                'source': item.get('source', 'Tiingo'),
+                'summary': item.get('description', ''),
+                'timestamp': item.get('publishedDate', ''),
+                'provider': 'tiingo',
+            })
+
+        logger.info(f"Tiingo: fetched {len(headlines)} headlines for {ticker}")
+        return headlines
+    except Exception as e:
+        logger.error(f"Tiingo news error for {ticker}: {e}")
+        return []
+
+
 def aggregate_news_sources(ticker):
     """
-    Aggregate news from all sources.
+    Aggregate news from all sources with priority ordering.
+
+    Priority (high-accuracy first):
+    1. Finnhub (professional feed)
+    2. Tiingo (curated news)
+    3. Yahoo Finance (fallback)
+    4. Google News (fallback)
+
     Deduplicates and sorts by recency.
     """
     all_headlines = []
 
-    # Fetch from all sources
-    sources = [
-        ('Yahoo Finance', scrape_yahoo_news),
-        ('Finviz', scrape_finviz_news),
-        ('Google News', scrape_google_news),
-    ]
+    # Check which premium providers are available
+    provider_status = check_provider_status()
+    logger.debug(f"Provider status: {provider_status}")
 
-    for source_name, scraper in sources:
-        try:
-            headlines = scraper(ticker)
-            for h in headlines:
-                if h.get('title'):
-                    all_headlines.append(h)
-        except Exception as e:
-            logger.error(f"Error fetching from {source_name}: {e}")
-            continue
+    # Priority 1: Finnhub (best accuracy)
+    if provider_status.get('finnhub'):
+        finnhub_news = fetch_finnhub_news(ticker)
+        all_headlines.extend(finnhub_news)
+
+    # Priority 2: Tiingo (good accuracy)
+    if provider_status.get('tiingo') and len(all_headlines) < 10:
+        tiingo_news = fetch_tiingo_news(ticker)
+        all_headlines.extend(tiingo_news)
+
+    # Fallback to scrapers if not enough news from premium sources
+    if len(all_headlines) < 5:
+        logger.info(f"Using fallback scrapers for {ticker} (premium sources returned {len(all_headlines)} items)")
+
+        fallback_sources = [
+            ('Yahoo Finance', scrape_yahoo_news),
+            ('Google News', scrape_google_news),
+        ]
+
+        for source_name, scraper in fallback_sources:
+            try:
+                headlines = scraper(ticker)
+                for h in headlines:
+                    if h.get('title'):
+                        h['provider'] = source_name.lower().replace(' ', '_')
+                        all_headlines.append(h)
+            except Exception as e:
+                logger.error(f"Error fetching from {source_name}: {e}")
+                continue
 
     # Deduplicate by similarity
     unique_headlines = []
     seen_titles = set()
 
     for h in all_headlines:
-        title_lower = h['title'].lower()
+        title = h.get('title', '')
+        if not title:
+            continue
+
+        title_lower = title.lower()
         # Simple dedup - check if key words match
         title_words = set(title_lower.split()[:5])
 
@@ -479,36 +577,82 @@ def aggregate_news_sources(ticker):
             seen_titles.add(title_lower)
             unique_headlines.append(h)
 
+    # Sort by timestamp if available (most recent first)
+    def get_timestamp(h):
+        ts = h.get('timestamp', 0)
+        if isinstance(ts, str):
+            try:
+                return datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp()
+            except (ValueError, AttributeError):
+                return 0
+        return ts or 0
+
+    unique_headlines.sort(key=get_timestamp, reverse=True)
+
     return unique_headlines[:15]  # Limit to 15 headlines
 
 
 def aggregate_social_sentiment(ticker):
     """
-    Aggregate social media sentiment from StockTwits and Reddit.
+    Aggregate social media sentiment from multiple sources.
+
+    Priority:
+    1. Finnhub sentiment (professional, aggregated)
+    2. StockTwits (retail sentiment)
+    3. Reddit (social discussion)
     """
-    # StockTwits
+    result = {
+        'finnhub': None,
+        'stocktwits': {'posts': [], 'stats': None},
+        'reddit': {'posts': []},
+    }
+
+    # Priority 1: Finnhub sentiment (best accuracy)
+    try:
+        finnhub_sentiment = UnifiedDataFetcher.get_sentiment(ticker)
+        if finnhub_sentiment:
+            result['finnhub'] = {
+                'bullish_pct': finnhub_sentiment.get('bullish', 0) * 100,
+                'bearish_pct': finnhub_sentiment.get('bearish', 0) * 100,
+                'buzz_score': finnhub_sentiment.get('buzz', 0),
+                'source': finnhub_sentiment.get('source', 'finnhub'),
+            }
+            logger.info(f"Finnhub sentiment for {ticker}: {finnhub_sentiment}")
+    except Exception as e:
+        logger.error(f"Error fetching Finnhub sentiment for {ticker}: {e}")
+
+    # StockTwits (retail sentiment)
     try:
         stocktwits_posts, stocktwits_stats = scrape_stocktwits(ticker)
-    except Exception as e:
-        logger.error(f"Error fetching StockTwits for {ticker}: {e}")
-        stocktwits_posts, stocktwits_stats = [], None
-
-    # Reddit
-    try:
-        reddit_posts = scrape_reddit_sentiment(ticker)
-    except Exception as e:
-        logger.error(f"Error fetching Reddit for {ticker}: {e}")
-        reddit_posts = []
-
-    return {
-        'stocktwits': {
+        result['stocktwits'] = {
             'posts': stocktwits_posts,
             'stats': stocktwits_stats,
-        },
-        'reddit': {
-            'posts': reddit_posts,
         }
+    except Exception as e:
+        logger.error(f"Error fetching StockTwits for {ticker}: {e}")
+
+    # Reddit (only if needed for more context)
+    try:
+        reddit_posts = scrape_reddit_sentiment(ticker)
+        result['reddit'] = {'posts': reddit_posts}
+    except Exception as e:
+        logger.error(f"Error fetching Reddit for {ticker}: {e}")
+
+    # Combine into overall sentiment score
+    overall_bullish = 50.0  # Default neutral
+
+    if result['finnhub']:
+        # Finnhub is most reliable
+        overall_bullish = result['finnhub'].get('bullish_pct', 50)
+    elif result['stocktwits']['stats']:
+        overall_bullish = result['stocktwits']['stats'].get('bullish_pct', 50)
+
+    result['overall'] = {
+        'bullish_pct': overall_bullish,
+        'sentiment': 'BULLISH' if overall_bullish > 55 else 'BEARISH' if overall_bullish < 45 else 'NEUTRAL',
     }
+
+    return result
 
 
 def analyze_headline_sentiment(headline):

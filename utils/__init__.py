@@ -7,6 +7,7 @@ This package provides centralized utilities to eliminate code duplication:
 - data_utils: Data fetching and processing
 - validators: Input validation
 - telegram_utils: Telegram API client
+- data_providers: High-accuracy data from Finnhub, Tiingo, Alpha Vantage, SEC, FRED
 """
 from .logging_config import get_logger, setup_logging
 from .exceptions import (
@@ -42,6 +43,16 @@ from .telegram_utils import (
     send_message,
     send_photo,
 )
+from .data_providers import (
+    FinnhubProvider,
+    TiingoProvider,
+    AlphaVantageProvider,
+    SECEdgarProvider,
+    FREDProvider,
+    UnifiedDataFetcher,
+    check_provider_status,
+    get_available_providers,
+)
 
 __all__ = [
     # Logging
@@ -76,4 +87,13 @@ __all__ = [
     'get_telegram_client',
     'send_message',
     'send_photo',
+    # Data Providers (high-accuracy)
+    'FinnhubProvider',
+    'TiingoProvider',
+    'AlphaVantageProvider',
+    'SECEdgarProvider',
+    'FREDProvider',
+    'UnifiedDataFetcher',
+    'check_provider_status',
+    'get_available_providers',
 ]

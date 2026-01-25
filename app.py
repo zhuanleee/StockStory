@@ -849,6 +849,33 @@ def api_health():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@app.route('/api/data-providers')
+def api_data_providers():
+    """Get data provider status and configuration."""
+    try:
+        from utils.data_providers import check_provider_status, get_available_providers
+
+        status = check_provider_status()
+        available = get_available_providers()
+
+        return jsonify({
+            'ok': True,
+            'providers': status,
+            'available': available,
+            'total_configured': len(available),
+            'description': {
+                'finnhub': 'Real-time quotes, news, sentiment (60 req/min free)',
+                'tiingo': 'EOD prices, curated news (1000 req/day free)',
+                'alpha_vantage': 'Fundamentals, technicals (25 req/day free)',
+                'fred': 'Economic indicators (unlimited free)',
+                'sec_edgar': 'Official SEC filings (unlimited, no key needed)',
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 @app.route('/api/predict/<ticker>')
 def api_predict(ticker):
     """Get AI prediction for ticker."""
