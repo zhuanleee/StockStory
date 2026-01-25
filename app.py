@@ -377,20 +377,31 @@ def handle_briefing(chat_id):
     """Handle /briefing command."""
     send_message(chat_id, "🤖 Generating briefing...")
     try:
-        from ai_learning import get_daily_briefing
+        from ai_learning import get_daily_briefing, DEEPSEEK_API_KEY
+
+        if not DEEPSEEK_API_KEY:
+            send_message(chat_id, "❌ DEEPSEEK_API_KEY not set in environment.")
+            return
+
         briefing = get_daily_briefing()
-        if briefing and not briefing.get('error'):
+
+        if briefing and briefing.get('headline'):
             msg = "🎯 *AI MARKET BRIEFING*\n\n"
-            msg += f"*{briefing.get('headline', 'Market Update')}*\n\n"
+            msg += f"*{briefing.get('headline')}*\n\n"
             msg += f"*Mood:* {briefing.get('market_mood', 'N/A').upper()}\n\n"
-            msg += f"_{briefing.get('main_narrative', '')}_\n\n"
+            if briefing.get('main_narrative'):
+                msg += f"_{briefing.get('main_narrative')}_\n\n"
             opp = briefing.get('key_opportunity', {})
-            if opp:
-                msg += f"*Opportunity:* {opp.get('description', 'N/A')}\n"
+            if opp and opp.get('description'):
+                msg += f"*Opportunity:* {opp.get('description')}\n"
                 if opp.get('tickers'):
                     msg += f"Watch: `{'`, `'.join(opp['tickers'][:4])}`"
+        elif briefing and briefing.get('error'):
+            msg = f"Briefing error: {briefing.get('error')}"
+        elif briefing and briefing.get('raw_narrative'):
+            msg = f"🎯 *AI BRIEFING*\n\n{briefing.get('raw_narrative')[:1500]}"
         else:
-            msg = "Briefing unavailable. Set DEEPSEEK_API_KEY for AI features."
+            msg = "❌ AI returned empty response. Check API key."
         send_message(chat_id, msg)
     except Exception as e:
         send_message(chat_id, f"Briefing error: {str(e)}")

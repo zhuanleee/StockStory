@@ -713,11 +713,11 @@ def get_daily_briefing():
         # Load recent data
         from self_learning import load_alert_history, get_best_strategies_for_regime
 
-        # Get themes from story detector if available
+        # Get themes from fast stories if available
         themes = []
         try:
-            from story_detector import run_story_detection
-            detection = run_story_detection()
+            from fast_stories import run_fast_story_detection
+            detection = run_fast_story_detection(use_cache=True)
             themes = detection.get('themes', [])
         except:
             pass
