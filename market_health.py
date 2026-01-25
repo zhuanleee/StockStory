@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-Market Health Module
+Market Health Module - Enhanced Version
 
 Calculates:
-- Market Breadth indicators
-- Fear & Greed Index
+- Market Breadth indicators (expanded universe)
+- Fear & Greed Index (real data sources)
+- McClellan Oscillator
 - Overall market health score
+
+Data Sources:
+- yfinance: VIX, SPY, TLT, HYG, LQD, individual stocks
+- CBOE Put/Call Ratio (via proxy)
+- NYSE Highs/Lows indicators
 """
 
 import yfinance as yf
@@ -13,26 +19,49 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
 
-# Stock universe for breadth calculation
+# Expanded stock universe for breadth calculation (200 stocks)
+# S&P 500 representative sample across all sectors
 BREADTH_UNIVERSE = [
-    # Mega caps
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'BRK-B',
-    # Tech
-    'AMD', 'AVGO', 'CRM', 'ADBE', 'INTC', 'CSCO', 'ORCL', 'IBM',
-    # Finance
-    'JPM', 'BAC', 'WFC', 'GS', 'MS', 'V', 'MA', 'AXP',
-    # Healthcare
-    'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT',
-    # Consumer
-    'WMT', 'PG', 'KO', 'PEP', 'COST', 'HD', 'MCD', 'NKE',
-    # Industrial
-    'CAT', 'DE', 'BA', 'HON', 'UPS', 'RTX', 'LMT', 'GE',
-    # Energy
-    'XOM', 'CVX', 'COP', 'SLB', 'EOG',
-    # Utilities/REIT
-    'NEE', 'DUK', 'SO', 'AMT', 'PLD'
+    # Technology (30)
+    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'NVDA', 'AVGO', 'ADBE', 'CRM', 'CSCO',
+    'ORCL', 'ACN', 'IBM', 'INTC', 'AMD', 'QCOM', 'TXN', 'NOW', 'INTU', 'AMAT',
+    'ADI', 'LRCX', 'MU', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'FTNT', 'PANW', 'CRWD',
+    # Financials (25)
+    'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'BLK', 'SCHW', 'AXP', 'SPGI',
+    'CB', 'MMC', 'PGR', 'AON', 'ICE', 'CME', 'MCO', 'USB', 'PNC', 'TFC',
+    'AIG', 'MET', 'PRU', 'ALL', 'TRV',
+    # Healthcare (25)
+    'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY',
+    'AMGN', 'GILD', 'MDT', 'CVS', 'ELV', 'CI', 'ISRG', 'VRTX', 'REGN', 'SYK',
+    'BSX', 'ZTS', 'BDX', 'HUM', 'MCK',
+    # Consumer Discretionary (20)
+    'AMZN', 'TSLA', 'HD', 'MCD', 'NKE', 'LOW', 'SBUX', 'TJX', 'BKNG', 'CMG',
+    'MAR', 'ORLY', 'AZO', 'ROST', 'DHI', 'LEN', 'GM', 'F', 'YUM', 'DG',
+    # Consumer Staples (15)
+    'PG', 'KO', 'PEP', 'COST', 'WMT', 'PM', 'MO', 'MDLZ', 'CL', 'KMB',
+    'GIS', 'K', 'HSY', 'STZ', 'KHC',
+    # Industrials (25)
+    'CAT', 'DE', 'BA', 'HON', 'UPS', 'RTX', 'LMT', 'GE', 'MMM', 'UNP',
+    'ADP', 'ITW', 'EMR', 'ETN', 'PH', 'NSC', 'CSX', 'CTAS', 'WM', 'RSG',
+    'FDX', 'GD', 'NOC', 'TT', 'PCAR',
+    # Energy (14) - PXD delisted (acquired by XOM)
+    'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY',
+    'WMB', 'KMI', 'HAL', 'DVN', 'FANG',
+    # Utilities (10)
+    'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'ED', 'WEC',
+    # Real Estate (10)
+    'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'O', 'WELL', 'SPG', 'DLR', 'AVB',
+    # Materials (10)
+    'LIN', 'APD', 'SHW', 'ECL', 'FCX', 'NEM', 'NUE', 'VMC', 'MLM', 'DOW',
+    # Communication (14) - PARA delisted (merged with Skydance)
+    'VZ', 'T', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR', 'WBD', 'EA', 'TTWO',
+    'OMC', 'IPG', 'LYV', 'MTCH',
 ]
+
+# Historical A/D data for McClellan Oscillator
+_ad_history = []
 
 
 def get_stock_data(ticker, period='3mo'):
@@ -46,19 +75,161 @@ def get_stock_data(ticker, period='3mo'):
         return ticker, None
 
 
+def safe_float(val):
+    """Safely convert any value to float."""
+    if val is None:
+        return None
+    if hasattr(val, 'iloc'):
+        return float(val.iloc[0])
+    if hasattr(val, 'item'):
+        return float(val.item())
+    return float(val)
+
+
+def safe_get_series(df, column, ticker=None):
+    """Safely extract a column from yfinance dataframe."""
+    if df is None or len(df) == 0:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        try:
+            result = df[column][ticker] if ticker else df[column].iloc[:, 0]
+            if isinstance(result, pd.DataFrame):
+                result = result.iloc[:, 0]
+            return result
+        except:
+            pass
+    if column in df.columns:
+        return df[column]
+    return None
+
+
+def get_last_close(df, ticker=None):
+    """Get the last closing price from a yfinance dataframe."""
+    if df is None or len(df) == 0:
+        return None
+    try:
+        if isinstance(df.columns, pd.MultiIndex):
+            if ('Close', ticker) in df.columns:
+                val = df[('Close', ticker)].iloc[-1]
+                return float(val) if not pd.isna(val) else None
+            if 'Close' in df.columns.get_level_values(0):
+                close_df = df['Close']
+                if isinstance(close_df, pd.DataFrame):
+                    if ticker and ticker in close_df.columns:
+                        val = close_df[ticker].iloc[-1]
+                    else:
+                        val = close_df.iloc[-1, 0]
+                else:
+                    val = close_df.iloc[-1]
+                return float(val) if not pd.isna(val) else None
+        if 'Close' in df.columns:
+            val = df['Close'].iloc[-1]
+            return float(val) if not pd.isna(val) else None
+    except Exception as e:
+        pass
+    return None
+
+
+def get_real_put_call_ratio():
+    """
+    Get real Put/Call ratio from CBOE data.
+    Falls back to VIX-based estimate if unavailable.
+    """
+    try:
+        # Try CBOE total put/call ratio
+        pcr = yf.download('^PCALL', period='5d', progress=False)
+        if pcr is not None and len(pcr) > 0:
+            val = get_last_close(pcr, '^PCALL')
+            if val and 0.5 < val < 2.0:
+                return val, 'CBOE'
+    except:
+        pass
+
+    try:
+        # Try equity put/call ratio
+        pcr = yf.download('^CPCE', period='5d', progress=False)
+        if pcr is not None and len(pcr) > 0:
+            val = get_last_close(pcr, '^CPCE')
+            if val and 0.3 < val < 1.5:
+                return val, 'CPCE'
+    except:
+        pass
+
+    return None, None
+
+
+def get_nyse_highs_lows():
+    """
+    Get NYSE New Highs and New Lows data.
+    Returns (new_highs, new_lows) or (None, None) if unavailable.
+    """
+    try:
+        # NYSE New Highs
+        highs = yf.download('^HIGN', period='5d', progress=False)
+        lows = yf.download('^LOWN', period='5d', progress=False)
+
+        nh = get_last_close(highs, '^HIGN') if highs is not None and len(highs) > 0 else None
+        nl = get_last_close(lows, '^LOWN') if lows is not None and len(lows) > 0 else None
+
+        if nh is not None and nl is not None:
+            return int(nh), int(nl)
+    except:
+        pass
+
+    return None, None
+
+
+def calculate_mcclellan_oscillator(advances, declines):
+    """
+    Calculate McClellan Oscillator from advance/decline data.
+
+    McClellan = 19-day EMA of (Advances - Declines) - 39-day EMA of (Advances - Declines)
+
+    Returns oscillator value and signal.
+    """
+    global _ad_history
+
+    # Add today's data
+    ad_diff = advances - declines
+    _ad_history.append(ad_diff)
+
+    # Keep last 50 days
+    if len(_ad_history) > 50:
+        _ad_history = _ad_history[-50:]
+
+    if len(_ad_history) < 20:
+        # Not enough history, return neutral
+        return 0, 'Neutral'
+
+    # Calculate EMAs
+    ad_series = pd.Series(_ad_history)
+    ema_19 = ad_series.ewm(span=19, adjust=False).mean().iloc[-1]
+    ema_39 = ad_series.ewm(span=39, adjust=False).mean().iloc[-1]
+
+    oscillator = ema_19 - ema_39
+
+    # Signal interpretation
+    if oscillator > 50:
+        signal = 'Strongly Bullish'
+    elif oscillator > 0:
+        signal = 'Bullish'
+    elif oscillator > -50:
+        signal = 'Bearish'
+    else:
+        signal = 'Strongly Bearish'
+
+    return round(oscillator, 1), signal
+
+
 def calculate_market_breadth():
     """
     Calculate comprehensive market breadth indicators.
 
-    Returns dict with:
-    - above_20sma: % of stocks above 20-day SMA
-    - above_50sma: % of stocks above 50-day SMA
-    - above_200sma: % of stocks above 200-day SMA
-    - advance_decline: Ratio of advancing vs declining stocks
-    - new_highs: Count of stocks at 52-week highs
-    - new_lows: Count of stocks at 52-week lows
-    - sector_breadth: % of sectors positive
-    - breadth_score: Overall breadth score (0-100)
+    Enhanced with:
+    - Larger stock universe (200 stocks)
+    - Real NYSE highs/lows when available
+    - McClellan Oscillator
+    - Price strength indicator
     """
     results = {
         'above_20sma': 0,
@@ -70,14 +241,19 @@ def calculate_market_breadth():
         'advance_decline_ratio': 1.0,
         'new_highs': 0,
         'new_lows': 0,
+        'nyse_highs': None,
+        'nyse_lows': None,
+        'mcclellan_oscillator': 0,
+        'mcclellan_signal': 'Neutral',
+        'price_strength': 0,  # % at 50-day high
         'breadth_score': 50,
         'stocks_analyzed': 0
     }
 
     stocks_data = []
 
-    # Parallel fetch
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # Parallel fetch with more workers for larger universe
+    with ThreadPoolExecutor(max_workers=20) as executor:
         futures = {executor.submit(get_stock_data, t, '1y'): t for t in BREADTH_UNIVERSE}
 
         for future in as_completed(futures):
@@ -95,6 +271,7 @@ def calculate_market_breadth():
     declining = 0
     new_highs = 0
     new_lows = 0
+    at_50day_high = 0  # Price strength
 
     for ticker, df in stocks_data:
         try:
@@ -124,12 +301,17 @@ def calculate_market_breadth():
             high_52w = float(close.tail(252).max()) if len(close) >= 252 else float(close.max())
             low_52w = float(close.tail(252).min()) if len(close) >= 252 else float(close.min())
 
-            if current >= high_52w * 0.98:  # Within 2% of high
+            if current >= high_52w * 0.98:
                 new_highs += 1
-            if current <= low_52w * 1.02:  # Within 2% of low
+            if current <= low_52w * 1.02:
                 new_lows += 1
 
-        except Exception as e:
+            # Price Strength: at 50-day high
+            high_50d = float(close.tail(50).max())
+            if current >= high_50d * 0.98:
+                at_50day_high += 1
+
+        except:
             continue
 
     total = len(stocks_data)
@@ -144,13 +326,30 @@ def calculate_market_breadth():
     results['advance_decline_ratio'] = round(advancing / declining, 2) if declining > 0 else 10.0
     results['new_highs'] = new_highs
     results['new_lows'] = new_lows
+    results['price_strength'] = round(at_50day_high / total * 100, 1) if total > 0 else 0
 
-    # Calculate breadth score (0-100)
+    # Try to get real NYSE highs/lows
+    nyse_h, nyse_l = get_nyse_highs_lows()
+    if nyse_h is not None:
+        results['nyse_highs'] = nyse_h
+        results['nyse_lows'] = nyse_l
+
+    # Calculate McClellan Oscillator
+    mcclellan, mcc_signal = calculate_mcclellan_oscillator(advancing, declining)
+    results['mcclellan_oscillator'] = mcclellan
+    results['mcclellan_signal'] = mcc_signal
+
+    # Calculate breadth score (0-100) - Enhanced formula
     breadth_score = 0
-    breadth_score += results['above_50sma'] * 0.3  # 30% weight
-    breadth_score += results['above_200sma'] * 0.2  # 20% weight
-    breadth_score += min(results['advance_decline_ratio'] * 10, 25)  # 25% weight, capped
-    breadth_score += (new_highs / (new_highs + new_lows + 1)) * 25  # 25% weight
+    breadth_score += results['above_50sma'] * 0.25  # 25% weight
+    breadth_score += results['above_200sma'] * 0.20  # 20% weight
+    breadth_score += min(results['advance_decline_ratio'] * 10, 20)  # 20% weight, capped
+    breadth_score += (new_highs / (new_highs + new_lows + 1)) * 20  # 20% weight
+    breadth_score += results['price_strength'] * 0.15  # 15% weight - new
+
+    # McClellan contribution (normalized to 0-10 scale)
+    mcc_contrib = min(max((mcclellan + 100) / 20, 0), 10)  # -100 to 100 -> 0 to 10
+    breadth_score += mcc_contrib  # ~10% effective weight
 
     results['breadth_score'] = round(min(max(breadth_score, 0), 100), 1)
 
@@ -159,94 +358,27 @@ def calculate_market_breadth():
 
 def calculate_fear_greed_index():
     """
-    Calculate Fear & Greed Index (0-100).
+    Calculate Fear & Greed Index (0-100) with enhanced data sources.
 
     Components:
-    1. VIX Level (25%) - Lower VIX = More Greed
+    1. VIX Level (20%) - Lower VIX = More Greed
     2. Market Momentum (20%) - SPY vs 125-day MA
-    3. Put/Call Ratio (20%) - Lower = More Greed (estimated)
+    3. Put/Call Ratio (15%) - Real CBOE data when available
     4. Safe Haven Demand (15%) - Stocks vs Bonds performance
     5. Junk Bond Demand (10%) - HYG vs LQD spread
     6. Market Volatility (10%) - Recent ATR of SPY
-
-    Returns:
-    - score: 0-100 (0=Extreme Fear, 100=Extreme Greed)
-    - label: Text label
-    - components: Individual component scores
+    7. Stock Price Strength (10%) - % at 50-day highs
     """
     components = {}
 
-    def safe_float(val):
-        """Safely convert any value to float."""
-        if val is None:
-            return None
-        if hasattr(val, 'iloc'):
-            # It's a Series with single element
-            return float(val.iloc[0])
-        if hasattr(val, 'item'):
-            # It's a numpy scalar
-            return float(val.item())
-        return float(val)
-
-    def safe_get_series(df, column, ticker=None):
-        """Safely extract a column from yfinance dataframe."""
-        if df is None or len(df) == 0:
-            return None
-        # Handle MultiIndex columns (yfinance returns (Column, Ticker))
-        if isinstance(df.columns, pd.MultiIndex):
-            try:
-                result = df[column][ticker] if ticker else df[column].iloc[:, 0]
-                # Ensure we return a Series, not a DataFrame
-                if isinstance(result, pd.DataFrame):
-                    result = result.iloc[:, 0]
-                return result
-            except:
-                pass
-        # Regular columns
-        if column in df.columns:
-            return df[column]
-        return None
-
-    def get_last_close(df, ticker=None):
-        """Get the last closing price from a yfinance dataframe."""
-        if df is None or len(df) == 0:
-            return None
-        try:
-            # Handle MultiIndex columns
-            if isinstance(df.columns, pd.MultiIndex):
-                # Try direct tuple access first
-                if ('Close', ticker) in df.columns:
-                    val = df[('Close', ticker)].iloc[-1]
-                    return float(val) if not pd.isna(val) else None
-                # Try hierarchical access
-                if 'Close' in df.columns.get_level_values(0):
-                    close_df = df['Close']
-                    if isinstance(close_df, pd.DataFrame):
-                        if ticker and ticker in close_df.columns:
-                            val = close_df[ticker].iloc[-1]
-                        else:
-                            val = close_df.iloc[-1, 0]
-                    else:
-                        val = close_df.iloc[-1]
-                    return float(val) if not pd.isna(val) else None
-            # Regular columns
-            if 'Close' in df.columns:
-                val = df['Close'].iloc[-1]
-                return float(val) if not pd.isna(val) else None
-        except Exception as e:
-            print(f"get_last_close error: {e}")
-        return None
-
     try:
-        # 1. VIX Level (25%)
+        # 1. VIX Level (20%)
         try:
             vix = yf.download('^VIX', period='5d', progress=False)
             vix_current = get_last_close(vix, '^VIX')
             if vix_current is None:
                 raise ValueError("No VIX data")
 
-            # VIX scoring: <15 = 100 (extreme greed), >30 = 0 (extreme fear)
-            # Normal VIX range is 12-25
             if vix_current <= 15:
                 vix_score = 100
             elif vix_current >= 30:
@@ -259,12 +391,11 @@ def calculate_fear_greed_index():
             components['vix'] = {
                 'value': round(vix_current, 1),
                 'score': round(vix_score, 1),
-                'weight': 0.25,
+                'weight': 0.20,
                 'label': f'VIX ({vix_current:.1f})'
             }
         except Exception as e:
-            print(f"VIX error: {e}")
-            components['vix'] = {'value': 20, 'score': 50, 'weight': 0.25, 'label': 'VIX Level'}
+            components['vix'] = {'value': 20, 'score': 50, 'weight': 0.20, 'label': 'VIX Level'}
 
         # 2. Market Momentum (20%) - SPY vs 125-day MA
         try:
@@ -278,7 +409,6 @@ def calculate_fear_greed_index():
 
             momentum_pct = (current_spy - ma_125) / ma_125 * 100
 
-            # Momentum scoring: >8% above = 100, >8% below = 0
             if momentum_pct >= 8:
                 momentum_score = 100
             elif momentum_pct <= -8:
@@ -290,40 +420,55 @@ def calculate_fear_greed_index():
                 'value': round(momentum_pct, 1),
                 'score': round(momentum_score, 1),
                 'weight': 0.20,
-                'label': 'Market Momentum'
+                'label': f'Momentum ({momentum_pct:+.1f}%)'
             }
         except:
             components['momentum'] = {'value': 0, 'score': 50, 'weight': 0.20, 'label': 'Market Momentum'}
 
-        # 3. Put/Call Ratio Estimate (20%)
-        # Using VIX term structure as proxy
+        # 3. Put/Call Ratio (15%) - Real data when available
         try:
-            # Higher VIX relative to recent average = more puts = fear
-            vix_close_series = safe_get_series(vix, 'Close', '^VIX')
-            if vix_close_series is None or len(vix_close_series) < 3:
-                raise ValueError("Not enough VIX data")
-            # Use 3-day MA since we only fetch 5 days of data
-            vix_ma = safe_float(vix_close_series.rolling(3, min_periods=2).mean().iloc[-1])
-            if vix_ma is None or vix_ma == 0:
-                raise ValueError("Invalid VIX MA")
-            pc_proxy = vix_current / vix_ma
+            pc_ratio, pc_source = get_real_put_call_ratio()
 
-            # PC ratio scoring: <0.8 = greed, >1.2 = fear
-            if pc_proxy <= 0.8:
-                pc_score = 100
-            elif pc_proxy >= 1.2:
-                pc_score = 0
+            if pc_ratio is not None:
+                # Real P/C ratio: <0.7 = greed, >1.0 = fear
+                if pc_ratio <= 0.7:
+                    pc_score = 100
+                elif pc_ratio >= 1.0:
+                    pc_score = 0
+                else:
+                    pc_score = 100 - ((pc_ratio - 0.7) / 0.3 * 100)
+
+                components['put_call'] = {
+                    'value': round(pc_ratio, 2),
+                    'score': round(pc_score, 1),
+                    'weight': 0.15,
+                    'label': f'Put/Call ({pc_ratio:.2f})'
+                }
             else:
-                pc_score = 100 - ((pc_proxy - 0.8) / 0.4 * 100)
+                # Fallback to VIX-based estimate
+                vix_close_series = safe_get_series(vix, 'Close', '^VIX')
+                if vix_close_series is None or len(vix_close_series) < 3:
+                    raise ValueError("Not enough VIX data")
+                vix_ma = safe_float(vix_close_series.rolling(3, min_periods=2).mean().iloc[-1])
+                if vix_ma is None or vix_ma == 0:
+                    raise ValueError("Invalid VIX MA")
+                pc_proxy = vix_current / vix_ma
 
-            components['put_call'] = {
-                'value': round(pc_proxy, 2),
-                'score': round(pc_score, 1),
-                'weight': 0.20,
-                'label': 'Put/Call Ratio'
-            }
+                if pc_proxy <= 0.85:
+                    pc_score = 100
+                elif pc_proxy >= 1.15:
+                    pc_score = 0
+                else:
+                    pc_score = 100 - ((pc_proxy - 0.85) / 0.3 * 100)
+
+                components['put_call'] = {
+                    'value': round(pc_proxy, 2),
+                    'score': round(pc_score, 1),
+                    'weight': 0.15,
+                    'label': f'P/C Est ({pc_proxy:.2f})'
+                }
         except:
-            components['put_call'] = {'value': 1.0, 'score': 50, 'weight': 0.20, 'label': 'Put/Call Ratio'}
+            components['put_call'] = {'value': 1.0, 'score': 50, 'weight': 0.15, 'label': 'Put/Call Ratio'}
 
         # 4. Safe Haven Demand (15%) - SPY vs TLT (bonds)
         try:
@@ -332,11 +477,9 @@ def calculate_fear_greed_index():
             if tlt_close is None or len(tlt_close) < 10:
                 raise ValueError("Not enough TLT data")
 
-            # Use 10-day return for more responsiveness
             spy_ret = (safe_float(spy_close.iloc[-1]) / safe_float(spy_close.iloc[-10]) - 1) * 100
             tlt_ret = (safe_float(tlt_close.iloc[-1]) / safe_float(tlt_close.iloc[-10]) - 1) * 100
 
-            # If stocks outperform bonds = greed
             safe_haven_diff = spy_ret - tlt_ret
 
             if safe_haven_diff >= 3:
@@ -355,7 +498,6 @@ def calculate_fear_greed_index():
                 'label': f'Safe Haven ({safe_haven_diff:+.1f}%)'
             }
         except Exception as e:
-            print(f"Safe haven error: {e}")
             components['safe_haven'] = {'value': 0, 'score': 50, 'weight': 0.15, 'label': 'Safe Haven'}
 
         # 5. Junk Bond Demand (10%) - HYG vs LQD
@@ -368,11 +510,9 @@ def calculate_fear_greed_index():
             if hyg_close is None or lqd_close is None or len(hyg_close) < 10 or len(lqd_close) < 10:
                 raise ValueError("Not enough HYG/LQD data")
 
-            # Use 10-day return
             hyg_ret = (safe_float(hyg_close.iloc[-1]) / safe_float(hyg_close.iloc[-10]) - 1) * 100
             lqd_ret = (safe_float(lqd_close.iloc[-1]) / safe_float(lqd_close.iloc[-10]) - 1) * 100
 
-            # If junk outperforms investment grade = greed
             junk_diff = hyg_ret - lqd_ret
 
             if junk_diff >= 1.5:
@@ -391,7 +531,6 @@ def calculate_fear_greed_index():
                 'label': f'Junk Bonds ({junk_diff:+.1f}%)'
             }
         except Exception as e:
-            print(f"Junk bond error: {e}")
             components['junk_bond'] = {'value': 0, 'score': 50, 'weight': 0.10, 'label': 'Junk Bonds'}
 
         # 6. Market Volatility (10%) - SPY ATR
@@ -412,7 +551,6 @@ def calculate_fear_greed_index():
             atr_14 = float(tr.rolling(14).mean().iloc[-1])
             atr_pct = atr_14 / safe_float(close.iloc[-1]) * 100
 
-            # Lower volatility = greed (normal ATR% is 0.8-1.5)
             if atr_pct <= 0.7:
                 vol_score = 100
             elif atr_pct >= 2.0:
@@ -429,8 +567,24 @@ def calculate_fear_greed_index():
                 'label': f'Volatility ({atr_pct:.1f}%)'
             }
         except Exception as e:
-            print(f"Volatility error: {e}")
             components['volatility'] = {'value': 1.5, 'score': 50, 'weight': 0.10, 'label': 'Volatility'}
+
+        # 7. Stock Price Strength (10%) - % of stocks at 50-day highs
+        try:
+            # This will be calculated in breadth, use estimate based on momentum
+            if components.get('momentum', {}).get('value', 0) > 0:
+                strength_score = min(50 + components['momentum']['value'] * 5, 100)
+            else:
+                strength_score = max(50 + components['momentum'].get('value', 0) * 5, 0)
+
+            components['strength'] = {
+                'value': round(strength_score, 0),
+                'score': round(strength_score, 1),
+                'weight': 0.10,
+                'label': f'Price Strength'
+            }
+        except:
+            components['strength'] = {'value': 50, 'score': 50, 'weight': 0.10, 'label': 'Price Strength'}
 
         # Calculate weighted score
         total_score = 0
@@ -479,15 +633,20 @@ def get_market_health():
     """
     Get complete market health data.
 
-    Returns combined breadth and fear/greed data.
+    Returns combined breadth and fear/greed data with enhanced indicators.
     """
     # Calculate fear_greed FIRST to avoid yfinance cache corruption
-    # from breadth's multi-ticker downloads
     fear_greed = calculate_fear_greed_index()
     breadth = calculate_market_breadth()
 
-    # Overall health score (average of breadth and fear/greed)
-    overall = (breadth['breadth_score'] + fear_greed['score']) / 2
+    # Update price strength in fear_greed with actual breadth data
+    if 'strength' in fear_greed.get('components', {}):
+        fear_greed['components']['strength']['value'] = breadth.get('price_strength', 50)
+        fear_greed['components']['strength']['score'] = breadth.get('price_strength', 50)
+        fear_greed['components']['strength']['label'] = f"Strength ({breadth.get('price_strength', 0):.0f}%)"
+
+    # Overall health score (weighted average)
+    overall = (breadth['breadth_score'] * 0.4 + fear_greed['score'] * 0.6)
 
     if overall >= 70:
         health_label = 'Bullish'
@@ -540,10 +699,19 @@ def format_health_report(health):
         msg += f"  {emoji} {comp['label']}: {score:.0f}\n"
 
     msg += f"\n*Market Breadth:* {br['breadth_score']:.0f}/100\n"
+    msg += f"  • Stocks Analyzed: {br['stocks_analyzed']}\n"
     msg += f"  • Above 50 SMA: {br['above_50sma']:.0f}%\n"
     msg += f"  • Above 200 SMA: {br['above_200sma']:.0f}%\n"
     msg += f"  • A/D Ratio: {br['advance_decline_ratio']:.2f}\n"
-    msg += f"  • New Highs: {br['new_highs']} | Lows: {br['new_lows']}\n"
+
+    # Show NYSE data if available
+    if br.get('nyse_highs') is not None:
+        msg += f"  • NYSE Highs/Lows: {br['nyse_highs']}/{br['nyse_lows']}\n"
+    else:
+        msg += f"  • New Highs/Lows: {br['new_highs']}/{br['new_lows']}\n"
+
+    msg += f"  • Price Strength: {br['price_strength']:.0f}%\n"
+    msg += f"  • McClellan: {br['mcclellan_oscillator']} ({br['mcclellan_signal']})\n"
 
     msg += f"\n*Overall:* {health['overall_label']} ({health['overall_score']:.0f}/100)"
 
