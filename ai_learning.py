@@ -1236,3 +1236,849 @@ def run_full_ai_analysis(scan_results=None, price_data=None):
         results['strategy_advice'] = {'error': str(e)}
 
     return results
+
+
+# =============================================================================
+# 9. AI CATALYST DETECTOR (Real-time)
+# =============================================================================
+
+def load_catalyst_history():
+    """Load catalyst detection history."""
+    path = AI_LEARNING_DIR / 'catalysts.json'
+    if path.exists():
+        with open(path, 'r') as f:
+            return json.load(f)
+    return {
+        'catalysts': [],
+        'catalyst_outcomes': {},
+        'catalyst_patterns': {},
+    }
+
+
+def save_catalyst_history(data):
+    """Save catalyst history."""
+    path = AI_LEARNING_DIR / 'catalysts.json'
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+# Catalyst type definitions
+CATALYST_TYPES = {
+    'earnings': {'keywords': ['earnings', 'eps', 'revenue', 'guidance', 'beat', 'miss', 'quarterly'],
+                 'impact': 'high', 'typical_move': '5-15%'},
+    'fda': {'keywords': ['fda', 'approval', 'drug', 'trial', 'phase', 'pdufa'],
+            'impact': 'very_high', 'typical_move': '10-50%'},
+    'merger_acquisition': {'keywords': ['acquire', 'merger', 'buyout', 'takeover', 'deal'],
+                           'impact': 'very_high', 'typical_move': '10-30%'},
+    'analyst': {'keywords': ['upgrade', 'downgrade', 'price target', 'rating', 'analyst'],
+                'impact': 'medium', 'typical_move': '2-8%'},
+    'insider': {'keywords': ['insider', 'ceo buy', 'director', 'form 4', '10b5-1'],
+                'impact': 'medium', 'typical_move': '2-5%'},
+    'macro': {'keywords': ['fed', 'rate', 'inflation', 'jobs', 'gdp', 'tariff'],
+              'impact': 'varies', 'typical_move': '1-5%'},
+    'sector': {'keywords': ['sector', 'industry', 'peer', 'competitor'],
+               'impact': 'medium', 'typical_move': '2-5%'},
+    'product': {'keywords': ['launch', 'release', 'product', 'partnership', 'contract', 'award'],
+                'impact': 'medium', 'typical_move': '3-10%'},
+    'legal': {'keywords': ['lawsuit', 'sec', 'investigation', 'settlement', 'regulatory'],
+              'impact': 'high', 'typical_move': '5-20%'},
+    'short': {'keywords': ['short report', 'citron', 'hindenburg', 'muddy waters', 'fraud'],
+              'impact': 'very_high', 'typical_move': '10-40%'},
+}
+
+
+def detect_catalyst_type(headline, content=None):
+    """Detect catalyst type from headline/content."""
+    text = (headline + ' ' + (content or '')).lower()
+
+    detected = []
+    for cat_type, config in CATALYST_TYPES.items():
+        for keyword in config['keywords']:
+            if keyword in text:
+                detected.append({
+                    'type': cat_type,
+                    'keyword': keyword,
+                    'impact': config['impact'],
+                    'typical_move': config['typical_move'],
+                })
+                break
+
+    return detected
+
+
+def analyze_catalyst_realtime(ticker, headline, content=None, price_data=None, related_tickers=None):
+    """
+    Use AI to analyze a breaking catalyst in real-time.
+    Provides immediate trading implications.
+    """
+    # First, detect catalyst type
+    detected_types = detect_catalyst_type(headline, content)
+
+    system_prompt = """You are a real-time catalyst analyst for trading.
+Analyze breaking news and provide IMMEDIATE, ACTIONABLE trading implications.
+Be specific about expected price moves, timing, and risk.
+Speed matters - be concise but thorough."""
+
+    price_context = ""
+    if price_data is not None:
+        try:
+            current = float(price_data['Close'].iloc[-1])
+            prev_close = float(price_data['Close'].iloc[-2])
+            change = (current / prev_close - 1) * 100
+            price_context = f"Current: ${current:.2f} ({change:+.1f}% today)"
+        except Exception:
+            price_context = "Price data unavailable"
+
+    prompt = f"""BREAKING CATALYST ANALYSIS:
+
+Ticker: {ticker}
+Headline: {headline}
+{f'Details: {content[:500]}' if content else ''}
+
+Detected catalyst types: {json.dumps(detected_types, indent=2) if detected_types else 'Unknown'}
+{f'Price context: {price_context}' if price_context else ''}
+{f'Related tickers: {related_tickers}' if related_tickers else ''}
+
+Provide REAL-TIME analysis in JSON:
+{{
+    "urgency": "immediate/today/this_week/monitor",
+    "catalyst_type": "primary type",
+    "catalyst_quality": "game_changer/significant/moderate/noise",
+
+    "immediate_reaction": {{
+        "expected_direction": "up/down/volatile",
+        "expected_magnitude": "X-Y%",
+        "confidence": "high/medium/low",
+        "timeframe": "minutes/hours/days"
+    }},
+
+    "trading_action": {{
+        "recommendation": "buy_now/buy_dip/sell/avoid/wait",
+        "entry_zone": "price range or condition",
+        "stop_loss": "price or percentage",
+        "target": "price or percentage",
+        "position_size": "full/half/quarter/paper"
+    }},
+
+    "key_levels": {{
+        "support": "price",
+        "resistance": "price",
+        "breakout_trigger": "price"
+    }},
+
+    "secondary_plays": [
+        {{"ticker": "SYMBOL", "relationship": "why related", "expected_move": "direction"}}
+    ],
+
+    "risks": ["risk 1", "risk 2"],
+    "watch_for": ["confirmation signal", "invalidation signal"],
+
+    "follow_up_catalyst": "what news to watch next",
+    "reasoning": "brief explanation of analysis"
+}}"""
+
+    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+
+    if response:
+        try:
+            analysis = json.loads(response)
+
+            # Save catalyst for learning
+            history = load_catalyst_history()
+            catalyst_record = {
+                'id': f"{ticker}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                'ticker': ticker,
+                'headline': headline,
+                'detected_types': detected_types,
+                'analysis': analysis,
+                'timestamp': datetime.now().isoformat(),
+                'outcome': None,  # To be filled later
+            }
+            history['catalysts'].append(catalyst_record)
+            history['catalysts'] = history['catalysts'][-200:]
+            save_catalyst_history(history)
+
+            return analysis
+        except json.JSONDecodeError:
+            return {'raw_analysis': response, 'detected_types': detected_types}
+
+    return {'detected_types': detected_types}
+
+
+def update_catalyst_outcome(catalyst_id, actual_move_pct, was_profitable):
+    """Update catalyst with actual outcome for learning."""
+    history = load_catalyst_history()
+
+    for catalyst in history['catalysts']:
+        if catalyst['id'] == catalyst_id:
+            catalyst['outcome'] = {
+                'actual_move': actual_move_pct,
+                'was_profitable': was_profitable,
+                'verified_at': datetime.now().isoformat(),
+            }
+
+            # Update catalyst patterns
+            cat_type = catalyst['analysis'].get('catalyst_type', 'unknown')
+            if cat_type not in history['catalyst_patterns']:
+                history['catalyst_patterns'][cat_type] = {'total': 0, 'profitable': 0, 'avg_move': []}
+
+            history['catalyst_patterns'][cat_type]['total'] += 1
+            if was_profitable:
+                history['catalyst_patterns'][cat_type]['profitable'] += 1
+            history['catalyst_patterns'][cat_type]['avg_move'].append(actual_move_pct)
+
+            # Keep only recent moves
+            history['catalyst_patterns'][cat_type]['avg_move'] = \
+                history['catalyst_patterns'][cat_type]['avg_move'][-50:]
+            break
+
+    save_catalyst_history(history)
+
+
+def get_catalyst_stats():
+    """Get catalyst type performance statistics."""
+    history = load_catalyst_history()
+
+    stats = []
+    for cat_type, data in history.get('catalyst_patterns', {}).items():
+        if data['total'] >= 3:
+            win_rate = data['profitable'] / data['total'] * 100
+            avg_move = sum(data['avg_move']) / len(data['avg_move']) if data['avg_move'] else 0
+            stats.append({
+                'type': cat_type,
+                'win_rate': round(win_rate, 1),
+                'avg_move': round(avg_move, 2),
+                'total_trades': data['total'],
+            })
+
+    stats.sort(key=lambda x: x['win_rate'], reverse=True)
+    return stats
+
+
+# =============================================================================
+# 10. AI THEME LIFECYCLE PREDICTOR
+# =============================================================================
+
+def load_theme_lifecycle_data():
+    """Load theme lifecycle tracking data."""
+    path = AI_LEARNING_DIR / 'theme_lifecycle.json'
+    if path.exists():
+        with open(path, 'r') as f:
+            return json.load(f)
+    return {
+        'themes': {},
+        'lifecycle_history': [],
+        'predictions': [],
+    }
+
+
+def save_theme_lifecycle_data(data):
+    """Save theme lifecycle data."""
+    path = AI_LEARNING_DIR / 'theme_lifecycle.json'
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+THEME_LIFECYCLE_STAGES = {
+    'nascent': {'description': 'Just emerging, few aware', 'typical_duration': '1-4 weeks', 'opportunity': 'very_high'},
+    'emerging': {'description': 'Gaining traction, early adopters', 'typical_duration': '2-8 weeks', 'opportunity': 'high'},
+    'growth': {'description': 'Broad awareness, momentum building', 'typical_duration': '4-12 weeks', 'opportunity': 'medium'},
+    'peak': {'description': 'Maximum hype, everyone talking', 'typical_duration': '1-4 weeks', 'opportunity': 'low_risk'},
+    'mature': {'description': 'Established, less volatility', 'typical_duration': 'ongoing', 'opportunity': 'selective'},
+    'fading': {'description': 'Interest declining, rotation out', 'typical_duration': '2-6 weeks', 'opportunity': 'avoid'},
+    'dead': {'description': 'No longer relevant', 'typical_duration': 'n/a', 'opportunity': 'none'},
+}
+
+
+def analyze_theme_lifecycle(theme_name, theme_data, historical_performance=None):
+    """
+    Use AI to analyze a theme's lifecycle stage and predict trajectory.
+    """
+    system_prompt = """You are a thematic investment analyst specializing in lifecycle analysis.
+Determine where a market theme is in its lifecycle and predict its trajectory.
+Be specific about timing and actionable implications."""
+
+    prompt = f"""Analyze the lifecycle stage of this market theme:
+
+Theme: {theme_name}
+
+Current Data:
+{json.dumps(theme_data, indent=2)}
+
+Historical Performance (if available):
+{json.dumps(historical_performance, indent=2) if historical_performance else 'Not available'}
+
+Lifecycle Stages Reference:
+{json.dumps(THEME_LIFECYCLE_STAGES, indent=2)}
+
+Provide lifecycle analysis in JSON:
+{{
+    "current_stage": "nascent/emerging/growth/peak/mature/fading/dead",
+    "stage_confidence": "high/medium/low",
+    "stage_evidence": ["evidence point 1", "evidence point 2"],
+
+    "trajectory": {{
+        "direction": "accelerating/stable/decelerating",
+        "next_stage": "predicted next stage",
+        "time_to_transition": "estimated time",
+        "transition_triggers": ["what would cause transition"]
+    }},
+
+    "opportunity_window": {{
+        "status": "open/closing/closed",
+        "remaining_upside": "estimated %",
+        "risk_reward": "favorable/neutral/unfavorable",
+        "best_entry": "now/pullback/breakout/avoid"
+    }},
+
+    "key_stocks": {{
+        "leaders": ["tickers leading the theme"],
+        "laggards": ["tickers that could catch up"],
+        "avoid": ["overextended or problematic"]
+    }},
+
+    "rotation_signal": {{
+        "rotating_from": "what money is leaving",
+        "rotating_to": "what money is entering",
+        "strength": "strong/moderate/weak"
+    }},
+
+    "comparable_themes": [
+        {{"theme": "historical theme", "similarity": "what's similar", "outcome": "how it played out"}}
+    ],
+
+    "actionable_insight": "most important takeaway",
+    "watch_list": ["signals to monitor for changes"]
+}}"""
+
+    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+
+    if response:
+        try:
+            analysis = json.loads(response)
+
+            # Save lifecycle analysis
+            data = load_theme_lifecycle_data()
+
+            # Update theme tracking
+            if theme_name not in data['themes']:
+                data['themes'][theme_name] = {
+                    'first_seen': datetime.now().isoformat(),
+                    'stage_history': [],
+                }
+
+            data['themes'][theme_name]['stage_history'].append({
+                'stage': analysis['current_stage'],
+                'timestamp': datetime.now().isoformat(),
+                'analysis': analysis,
+            })
+
+            # Keep only recent history
+            data['themes'][theme_name]['stage_history'] = \
+                data['themes'][theme_name]['stage_history'][-30:]
+
+            save_theme_lifecycle_data(data)
+
+            return analysis
+        except json.JSONDecodeError:
+            return {'raw_analysis': response}
+
+    return None
+
+
+def predict_theme_rotation(current_themes, market_regime, sector_performance):
+    """
+    Use AI to predict which themes will rotate in/out.
+    """
+    system_prompt = """You are a thematic rotation specialist.
+Predict which market themes will gain or lose favor based on current conditions.
+Be specific about timing and magnitude of rotations."""
+
+    prompt = f"""Predict theme rotation based on current market conditions:
+
+Current Hot Themes:
+{json.dumps(current_themes[:10], indent=2) if current_themes else 'None identified'}
+
+Market Regime: {market_regime}
+
+Sector Performance:
+{json.dumps(sector_performance[:10], indent=2) if sector_performance else 'Not available'}
+
+Predict rotation in JSON:
+{{
+    "rotation_outlook": "risk_on/risk_off/selective/choppy",
+
+    "themes_gaining": [
+        {{
+            "theme": "theme name",
+            "catalyst": "why gaining favor",
+            "expected_duration": "how long",
+            "confidence": "high/medium/low",
+            "top_plays": ["ticker 1", "ticker 2"]
+        }}
+    ],
+
+    "themes_fading": [
+        {{
+            "theme": "theme name",
+            "reason": "why losing favor",
+            "exit_urgency": "immediate/soon/gradual",
+            "what_to_sell": ["ticker 1", "ticker 2"]
+        }}
+    ],
+
+    "emerging_themes": [
+        {{
+            "theme": "potential new theme",
+            "early_signals": ["signal 1", "signal 2"],
+            "catalyst": "what could ignite it",
+            "probability": "high/medium/low"
+        }}
+    ],
+
+    "cross_theme_trades": [
+        {{
+            "long": "theme/ticker to buy",
+            "short": "theme/ticker to sell/avoid",
+            "rationale": "why this pair trade"
+        }}
+    ],
+
+    "timing": {{
+        "rotation_speed": "fast/gradual/slow",
+        "key_dates": ["dates to watch"],
+        "trigger_events": ["events that could accelerate"]
+    }},
+
+    "contrarian_view": "what the crowd is missing"
+}}"""
+
+    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+
+    if response:
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {'raw_analysis': response}
+
+    return None
+
+
+def get_theme_lifecycle_summary():
+    """Get summary of all tracked themes and their stages."""
+    data = load_theme_lifecycle_data()
+
+    summary = []
+    for theme_name, theme_data in data.get('themes', {}).items():
+        history = theme_data.get('stage_history', [])
+        if history:
+            latest = history[-1]
+            summary.append({
+                'theme': theme_name,
+                'current_stage': latest.get('stage', 'unknown'),
+                'last_updated': latest.get('timestamp'),
+                'trajectory': latest.get('analysis', {}).get('trajectory', {}).get('direction', 'unknown'),
+            })
+
+    return summary
+
+
+# =============================================================================
+# 11. AI OPTIONS FLOW ANALYZER
+# =============================================================================
+
+def load_options_flow_data():
+    """Load options flow analysis data."""
+    path = AI_LEARNING_DIR / 'options_flow.json'
+    if path.exists():
+        with open(path, 'r') as f:
+            return json.load(f)
+    return {
+        'flow_analyses': [],
+        'unusual_activity': [],
+        'flow_accuracy': {},
+    }
+
+
+def save_options_flow_data(data):
+    """Save options flow data."""
+    path = AI_LEARNING_DIR / 'options_flow.json'
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2, default=str)
+
+
+def analyze_options_flow(ticker, options_data, price_data=None, news_context=None):
+    """
+    Use AI to analyze options flow for smart money signals.
+
+    options_data should contain:
+    - unusual_volume: list of unusual options activity
+    - put_call_ratio: current P/C ratio
+    - iv_rank: implied volatility rank
+    - large_trades: significant block trades
+    """
+    system_prompt = """You are an options flow analyst specializing in detecting institutional activity.
+Analyze options data to identify smart money positioning and predict stock direction.
+Focus on unusual activity that indicates informed trading."""
+
+    price_context = ""
+    if price_data is not None:
+        try:
+            current = float(price_data['Close'].iloc[-1])
+            change_5d = (current / float(price_data['Close'].iloc[-5]) - 1) * 100
+            price_context = f"Stock at ${current:.2f}, 5-day change: {change_5d:+.1f}%"
+        except Exception:
+            price_context = "Price data unavailable"
+
+    prompt = f"""Analyze options flow for institutional signals:
+
+Ticker: {ticker}
+{f'Price Context: {price_context}' if price_context else ''}
+
+Options Data:
+{json.dumps(options_data, indent=2)}
+
+{f'News Context: {news_context}' if news_context else ''}
+
+Provide options flow analysis in JSON:
+{{
+    "smart_money_signal": "bullish/bearish/neutral/mixed",
+    "signal_strength": "strong/moderate/weak",
+    "confidence": "high/medium/low",
+
+    "key_observations": [
+        {{
+            "observation": "what was noticed",
+            "significance": "why it matters",
+            "historical_accuracy": "how often this signal works"
+        }}
+    ],
+
+    "institutional_positioning": {{
+        "direction": "accumulating/distributing/neutral",
+        "timeframe": "near_term/medium_term/long_term",
+        "size_estimate": "large/medium/small",
+        "evidence": ["evidence point 1", "evidence point 2"]
+    }},
+
+    "unusual_activity": [
+        {{
+            "type": "call_sweep/put_sweep/straddle/etc",
+            "strike": "price",
+            "expiry": "date",
+            "premium": "amount",
+            "interpretation": "what it suggests"
+        }}
+    ],
+
+    "implied_move": {{
+        "expected_range": "low to high price",
+        "by_date": "expiration or event date",
+        "probability": "% chance of move"
+    }},
+
+    "trading_implication": {{
+        "stock_action": "buy/sell/hold/avoid",
+        "options_play": "specific options strategy if applicable",
+        "risk_level": "high/medium/low",
+        "catalyst_timing": "when move expected"
+    }},
+
+    "warnings": ["red flag 1", "red flag 2"],
+    "follow_flow": ["what to watch for confirmation"]
+}}"""
+
+    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+
+    if response:
+        try:
+            analysis = json.loads(response)
+
+            # Save analysis
+            data = load_options_flow_data()
+            flow_record = {
+                'id': f"{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}",
+                'ticker': ticker,
+                'options_data': options_data,
+                'analysis': analysis,
+                'timestamp': datetime.now().isoformat(),
+                'outcome': None,
+            }
+            data['flow_analyses'].append(flow_record)
+            data['flow_analyses'] = data['flow_analyses'][-100:]
+
+            # Track unusual activity
+            if analysis.get('signal_strength') == 'strong':
+                data['unusual_activity'].append({
+                    'ticker': ticker,
+                    'signal': analysis['smart_money_signal'],
+                    'timestamp': datetime.now().isoformat(),
+                })
+                data['unusual_activity'] = data['unusual_activity'][-50:]
+
+            save_options_flow_data(data)
+
+            return analysis
+        except json.JSONDecodeError:
+            return {'raw_analysis': response}
+
+    return None
+
+
+def update_options_flow_outcome(flow_id, actual_move_pct, was_correct):
+    """Update options flow analysis with actual outcome."""
+    data = load_options_flow_data()
+
+    for flow in data['flow_analyses']:
+        if flow['id'] == flow_id:
+            flow['outcome'] = {
+                'actual_move': actual_move_pct,
+                'was_correct': was_correct,
+                'verified_at': datetime.now().isoformat(),
+            }
+
+            # Update accuracy tracking
+            signal = flow['analysis'].get('smart_money_signal', 'unknown')
+            if signal not in data['flow_accuracy']:
+                data['flow_accuracy'][signal] = {'correct': 0, 'incorrect': 0}
+
+            if was_correct:
+                data['flow_accuracy'][signal]['correct'] += 1
+            else:
+                data['flow_accuracy'][signal]['incorrect'] += 1
+            break
+
+    save_options_flow_data(data)
+
+
+def get_options_flow_accuracy():
+    """Get options flow signal accuracy."""
+    data = load_options_flow_data()
+
+    accuracy = []
+    for signal, stats in data.get('flow_accuracy', {}).items():
+        total = stats['correct'] + stats['incorrect']
+        if total >= 5:
+            acc = stats['correct'] / total * 100
+            accuracy.append({
+                'signal': signal,
+                'accuracy': round(acc, 1),
+                'total': total,
+            })
+
+    accuracy.sort(key=lambda x: x['accuracy'], reverse=True)
+    return accuracy
+
+
+def scan_options_unusual_activity(tickers, threshold_volume_ratio=3.0):
+    """
+    Scan multiple tickers for unusual options activity.
+    Returns tickers with significant smart money signals.
+    """
+    unusual = []
+
+    for ticker in tickers[:20]:  # Limit to avoid API overload
+        try:
+            # Get options data (would integrate with real options data source)
+            # For now, this is a placeholder structure
+            options_data = get_options_data_for_ticker(ticker)
+
+            if options_data and options_data.get('volume_ratio', 1) >= threshold_volume_ratio:
+                analysis = analyze_options_flow(ticker, options_data)
+                if analysis and analysis.get('signal_strength') in ['strong', 'moderate']:
+                    unusual.append({
+                        'ticker': ticker,
+                        'signal': analysis.get('smart_money_signal'),
+                        'strength': analysis.get('signal_strength'),
+                        'analysis': analysis,
+                    })
+        except Exception as e:
+            logger.debug(f"Error scanning options for {ticker}: {e}")
+            continue
+
+    # Sort by signal strength
+    strength_order = {'strong': 0, 'moderate': 1, 'weak': 2}
+    unusual.sort(key=lambda x: strength_order.get(x.get('strength', 'weak'), 3))
+
+    return unusual
+
+
+def get_options_data_for_ticker(ticker):
+    """
+    Get options data for a ticker.
+    This would integrate with a real options data source.
+    Returns placeholder structure for now.
+    """
+    try:
+        import yfinance as yf
+        stock = yf.Ticker(ticker)
+
+        # Get options chain
+        try:
+            expirations = stock.options
+            if not expirations:
+                return None
+
+            # Get nearest expiration
+            chain = stock.option_chain(expirations[0])
+            calls = chain.calls
+            puts = chain.puts
+
+            if calls.empty and puts.empty:
+                return None
+
+            # Calculate basic metrics
+            total_call_volume = calls['volume'].sum() if not calls.empty else 0
+            total_put_volume = puts['volume'].sum() if not puts.empty else 0
+            total_call_oi = calls['openInterest'].sum() if not calls.empty else 0
+            total_put_oi = puts['openInterest'].sum() if not puts.empty else 0
+
+            put_call_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 1
+
+            # Find unusual volume (volume > open interest)
+            unusual_calls = calls[calls['volume'] > calls['openInterest'] * 2] if not calls.empty else []
+            unusual_puts = puts[puts['volume'] > puts['openInterest'] * 2] if not puts.empty else []
+
+            return {
+                'put_call_ratio': round(put_call_ratio, 2),
+                'total_call_volume': int(total_call_volume),
+                'total_put_volume': int(total_put_volume),
+                'call_oi': int(total_call_oi),
+                'put_oi': int(total_put_oi),
+                'unusual_call_count': len(unusual_calls) if hasattr(unusual_calls, '__len__') else 0,
+                'unusual_put_count': len(unusual_puts) if hasattr(unusual_puts, '__len__') else 0,
+                'volume_ratio': (total_call_volume + total_put_volume) / max(total_call_oi + total_put_oi, 1),
+                'expiration': expirations[0],
+            }
+        except Exception:
+            return None
+    except Exception as e:
+        logger.debug(f"Error getting options data for {ticker}: {e}")
+        return None
+
+
+# =============================================================================
+# ENHANCED AI INTERFACE
+# =============================================================================
+
+def run_realtime_ai_scan(news_items=None, themes=None, top_stocks=None):
+    """
+    Run real-time AI analysis including new features.
+    Returns comprehensive real-time insights.
+    """
+    results = {
+        'catalysts': [],
+        'theme_lifecycle': [],
+        'options_signals': [],
+        'rotation_prediction': None,
+    }
+
+    # Analyze catalysts from news
+    if news_items:
+        for item in news_items[:10]:
+            ticker = item.get('ticker')
+            headline = item.get('headline') or item.get('title')
+            if ticker and headline:
+                try:
+                    catalyst = analyze_catalyst_realtime(ticker, headline)
+                    if catalyst and catalyst.get('urgency') in ['immediate', 'today']:
+                        results['catalysts'].append({
+                            'ticker': ticker,
+                            'headline': headline,
+                            'analysis': catalyst,
+                        })
+                except Exception as e:
+                    logger.error(f"Error analyzing catalyst: {e}")
+
+    # Analyze theme lifecycles
+    if themes:
+        for theme in themes[:5]:
+            theme_name = theme.get('theme') or theme.get('name')
+            if theme_name:
+                try:
+                    lifecycle = analyze_theme_lifecycle(theme_name, theme)
+                    if lifecycle:
+                        results['theme_lifecycle'].append({
+                            'theme': theme_name,
+                            'analysis': lifecycle,
+                        })
+                except Exception as e:
+                    logger.error(f"Error analyzing theme lifecycle: {e}")
+
+    # Scan options for top stocks
+    if top_stocks:
+        tickers = [s.get('ticker') or s for s in top_stocks[:10] if s]
+        try:
+            options_signals = scan_options_unusual_activity(tickers)
+            results['options_signals'] = options_signals[:5]
+        except Exception as e:
+            logger.error(f"Error scanning options: {e}")
+
+    # Predict theme rotation
+    if themes:
+        try:
+            results['rotation_prediction'] = predict_theme_rotation(
+                themes,
+                'unknown',  # Would get from market_health
+                []  # Would get from sector_rotation
+            )
+        except Exception as e:
+            logger.error(f"Error predicting rotation: {e}")
+
+    return results
+
+
+def format_realtime_ai_alerts(realtime_results):
+    """Format real-time AI results for Telegram."""
+    msg = "🚨 *REAL-TIME AI ALERTS*\n\n"
+
+    # Urgent catalysts
+    catalysts = realtime_results.get('catalysts', [])
+    if catalysts:
+        msg += "*⚡ BREAKING CATALYSTS:*\n"
+        for c in catalysts[:3]:
+            analysis = c.get('analysis', {})
+            urgency = analysis.get('urgency', 'unknown')
+            direction = analysis.get('immediate_reaction', {}).get('expected_direction', '?')
+            magnitude = analysis.get('immediate_reaction', {}).get('expected_magnitude', '?')
+            msg += f"• *{c['ticker']}*: {c['headline'][:50]}...\n"
+            msg += f"  → {direction.upper()} {magnitude} ({urgency})\n"
+        msg += "\n"
+
+    # Theme lifecycle alerts
+    lifecycle = realtime_results.get('theme_lifecycle', [])
+    if lifecycle:
+        msg += "*📈 THEME STATUS:*\n"
+        for t in lifecycle[:3]:
+            analysis = t.get('analysis', {})
+            stage = analysis.get('current_stage', '?')
+            trajectory = analysis.get('trajectory', {}).get('direction', '?')
+            msg += f"• {t['theme']}: {stage.upper()} ({trajectory})\n"
+        msg += "\n"
+
+    # Options signals
+    options = realtime_results.get('options_signals', [])
+    if options:
+        msg += "*🎯 SMART MONEY SIGNALS:*\n"
+        for o in options[:3]:
+            signal = o.get('signal', '?')
+            strength = o.get('strength', '?')
+            msg += f"• *{o['ticker']}*: {signal.upper()} ({strength})\n"
+        msg += "\n"
+
+    # Rotation prediction
+    rotation = realtime_results.get('rotation_prediction', {})
+    if rotation and not rotation.get('raw_analysis'):
+        gaining = rotation.get('themes_gaining', [])
+        fading = rotation.get('themes_fading', [])
+        if gaining or fading:
+            msg += "*🔄 ROTATION OUTLOOK:*\n"
+            if gaining:
+                msg += f"📈 Gaining: {', '.join([t['theme'] for t in gaining[:2]])}\n"
+            if fading:
+                msg += f"📉 Fading: {', '.join([t['theme'] for t in fading[:2]])}\n"
+
+    if msg == "🚨 *REAL-TIME AI ALERTS*\n\n":
+        msg += "_No urgent signals detected._"
+
+    return msg
