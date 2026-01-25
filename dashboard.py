@@ -1413,20 +1413,56 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         // Refresh all data
         async function refreshAll() {
-            document.getElementById('refresh-btn').disabled = true;
-            document.getElementById('refresh-btn').textContent = '⏳ Refreshing...';
+            const btn = document.getElementById('refresh-btn');
+            const lastUpdate = document.getElementById('last-update');
 
-            await Promise.all([
-                fetchHealth(),
-                fetchStories(),
-                fetchScan(),
-                fetchNews(),
-                fetchBriefing()
-            ]);
+            if (!btn) {
+                console.error('Refresh button not found');
+                return;
+            }
 
-            document.getElementById('refresh-btn').disabled = false;
-            document.getElementById('refresh-btn').textContent = '🔄 Refresh Data';
-            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+            btn.disabled = true;
+            btn.textContent = '⏳ Refreshing...';
+
+            try {
+                // Set a timeout for slow API responses
+                const timeout = (ms) => new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), ms)
+                );
+
+                const fetchWithTimeout = async (fn) => {
+                    try {
+                        await Promise.race([fn(), timeout(30000)]);
+                    } catch (e) {
+                        console.warn('Fetch failed:', e.message);
+                    }
+                };
+
+                await Promise.all([
+                    fetchWithTimeout(fetchHealth),
+                    fetchWithTimeout(fetchStories),
+                    fetchWithTimeout(fetchScan),
+                    fetchWithTimeout(fetchNews),
+                    fetchWithTimeout(fetchBriefing)
+                ]);
+
+                lastUpdate.textContent = new Date().toLocaleTimeString();
+                btn.textContent = '✅ Updated!';
+
+                setTimeout(() => {
+                    btn.textContent = '🔄 Refresh Data';
+                }, 2000);
+
+            } catch (e) {
+                console.error('Refresh error:', e);
+                btn.textContent = '❌ Error - Try Again';
+
+                setTimeout(() => {
+                    btn.textContent = '🔄 Refresh Data';
+                }, 3000);
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // Smooth scroll for nav links
@@ -1537,9 +1573,18 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         .refresh-bar {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
+            align-items: center;
             gap: 12px;
             margin-bottom: 20px;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .refresh-bar .action-btn {
+            min-width: 140px;
         }
     </style>
 
