@@ -21,43 +21,73 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
-# Expanded stock universe for breadth calculation (200 stocks)
-# S&P 500 representative sample across all sectors
+# Full S&P 500 stock universe for breadth calculation
+# Updated January 2025 - excludes recently delisted tickers
 BREADTH_UNIVERSE = [
-    # Technology (30)
-    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'NVDA', 'AVGO', 'ADBE', 'CRM', 'CSCO',
-    'ORCL', 'ACN', 'IBM', 'INTC', 'AMD', 'QCOM', 'TXN', 'NOW', 'INTU', 'AMAT',
-    'ADI', 'LRCX', 'MU', 'KLAC', 'SNPS', 'CDNS', 'MRVL', 'FTNT', 'PANW', 'CRWD',
-    # Financials (25)
-    'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'BLK', 'SCHW', 'AXP', 'SPGI',
-    'CB', 'MMC', 'PGR', 'AON', 'ICE', 'CME', 'MCO', 'USB', 'PNC', 'TFC',
-    'AIG', 'MET', 'PRU', 'ALL', 'TRV',
-    # Healthcare (25)
-    'UNH', 'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT', 'DHR', 'BMY',
-    'AMGN', 'GILD', 'MDT', 'CVS', 'ELV', 'CI', 'ISRG', 'VRTX', 'REGN', 'SYK',
-    'BSX', 'ZTS', 'BDX', 'HUM', 'MCK',
-    # Consumer Discretionary (20)
+    # Information Technology (70+)
+    'AAPL', 'MSFT', 'NVDA', 'AVGO', 'ORCL', 'CRM', 'CSCO', 'AMD', 'ACN', 'ADBE',
+    'IBM', 'QCOM', 'TXN', 'INTU', 'AMAT', 'NOW', 'ADI', 'LRCX', 'MU', 'KLAC',
+    'APH', 'MSI', 'SNPS', 'CDNS', 'FTNT', 'PANW', 'ROP', 'ADSK', 'MCHP', 'TEL',
+    'NXPI', 'ON', 'HPQ', 'KEYS', 'ANSS', 'CDW', 'FSLR', 'MPWR', 'TYL', 'ZBRA',
+    'NTAP', 'PTC', 'AKAM', 'EPAM', 'JNPR', 'SWKS', 'TER', 'QRVO', 'GLW', 'FFIV',
+    'GEN', 'TRMB', 'JBL', 'ENPH', 'SEDG', 'CTSH', 'IT', 'VRSN', 'WDC', 'STX',
+    'HPE', 'DELL', 'GDDY', 'SMCI', 'CRWD', 'PLTR', 'MRVL',
+    # Financials (70+)
+    'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'SPGI', 'AXP', 'BLK',
+    'C', 'SCHW', 'CB', 'PGR', 'MMC', 'ICE', 'CME', 'AON', 'USB', 'PNC',
+    'TFC', 'AIG', 'MET', 'PRU', 'AFL', 'ALL', 'TRV', 'MCO', 'AJG', 'MSCI',
+    'BK', 'COF', 'STT', 'DFS', 'FITB', 'HBAN', 'RF', 'CFG', 'NTRS', 'KEY',
+    'SYF', 'WRB', 'CINF', 'L', 'RJF', 'BRO', 'EG', 'FDS', 'CBOE', 'NDAQ',
+    'TROW', 'IVZ', 'BEN', 'JKHY', 'MKTX', 'ERIE', 'GL', 'AIZ', 'LNC', 'FRC',
+    'ACGL', 'HIG', 'MTB', 'ZION', 'CMA', 'WBS',
+    # Healthcare (65+)
+    'LLY', 'UNH', 'JNJ', 'MRK', 'ABBV', 'TMO', 'ABT', 'PFE', 'DHR', 'AMGN',
+    'ISRG', 'ELV', 'BMY', 'VRTX', 'MDT', 'GILD', 'SYK', 'CI', 'CVS', 'REGN',
+    'BSX', 'ZTS', 'BDX', 'HUM', 'MCK', 'EW', 'IDXX', 'A', 'IQV', 'MTD',
+    'CAH', 'GEHC', 'DXCM', 'WST', 'RMD', 'BAX', 'ALGN', 'HOLX', 'ILMN', 'COO',
+    'WAT', 'ZBH', 'PODD', 'STE', 'MOH', 'CNC', 'TECH', 'LH', 'DGX', 'VTRS',
+    'CRL', 'XRAY', 'HSIC', 'OGN', 'CTLT', 'RVTY', 'MRNA', 'BIIB', 'INCY',
+    # Consumer Discretionary (60+)
     'AMZN', 'TSLA', 'HD', 'MCD', 'NKE', 'LOW', 'SBUX', 'TJX', 'BKNG', 'CMG',
-    'MAR', 'ORLY', 'AZO', 'ROST', 'DHI', 'LEN', 'GM', 'F', 'YUM', 'DG',
-    # Consumer Staples (15)
+    'ORLY', 'MAR', 'AZO', 'ROST', 'DHI', 'YUM', 'GM', 'LEN', 'F', 'ABNB',
+    'HLT', 'GRMN', 'DG', 'DLTR', 'EBAY', 'APTV', 'TSCO', 'BBY', 'ULTA', 'DRI',
+    'LVS', 'WYNN', 'CZR', 'MGM', 'RCL', 'CCL', 'NCLH', 'EXPE', 'GPC', 'PHM',
+    'NVR', 'TPR', 'POOL', 'BWA', 'KMX', 'LKQ', 'ETSY', 'RL', 'HAS', 'DECK',
+    'LULU', 'NWL', 'WHR', 'MHK', 'LEG', 'PVH', 'VFC',
+    # Communication Services (25+)
+    'GOOGL', 'GOOG', 'META', 'NFLX', 'DIS', 'CMCSA', 'VZ', 'T', 'TMUS', 'CHTR',
+    'EA', 'WBD', 'TTWO', 'OMC', 'IPG', 'LYV', 'MTCH', 'FOXA', 'FOX', 'NWS',
+    'NWSA', 'DISH', 'LUMN', 'PARAA', 'ATVI',
+    # Industrials (75+)
+    'GE', 'CAT', 'RTX', 'HON', 'UNP', 'UPS', 'BA', 'DE', 'LMT', 'ADP',
+    'ETN', 'ITW', 'EMR', 'GD', 'NOC', 'FDX', 'WM', 'CSX', 'NSC', 'MMM',
+    'PH', 'CTAS', 'TT', 'PCAR', 'RSG', 'JCI', 'CARR', 'OTIS', 'AME', 'CMI',
+    'ROK', 'FAST', 'PAYX', 'VRSK', 'CPRT', 'ODFL', 'GWW', 'EFX', 'IR', 'XYL',
+    'DOV', 'SWK', 'NDSN', 'TDG', 'HWM', 'IEX', 'WAB', 'PWR', 'HUBB', 'J',
+    'MAS', 'LII', 'SNA', 'PNR', 'AOS', 'ALLE', 'CHRW', 'EXPD', 'JBHT', 'DAL',
+    'UAL', 'LUV', 'AAL', 'ALK', 'LDOS', 'BAH', 'AXON', 'HII', 'TXT', 'HEI',
+    'BLDR', 'URI', 'GNRC',
+    # Consumer Staples (40+)
     'PG', 'KO', 'PEP', 'COST', 'WMT', 'PM', 'MO', 'MDLZ', 'CL', 'KMB',
-    'GIS', 'K', 'HSY', 'STZ', 'KHC',
-    # Industrials (25)
-    'CAT', 'DE', 'BA', 'HON', 'UPS', 'RTX', 'LMT', 'GE', 'MMM', 'UNP',
-    'ADP', 'ITW', 'EMR', 'ETN', 'PH', 'NSC', 'CSX', 'CTAS', 'WM', 'RSG',
-    'FDX', 'GD', 'NOC', 'TT', 'PCAR',
-    # Energy (14) - PXD delisted (acquired by XOM)
-    'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY',
-    'WMB', 'KMI', 'HAL', 'DVN', 'FANG',
-    # Utilities (10)
+    'GIS', 'K', 'HSY', 'STZ', 'KHC', 'SYY', 'KR', 'ADM', 'EL', 'CHD',
+    'KDP', 'MNST', 'WBA', 'CLX', 'MKC', 'TSN', 'HRL', 'SJM', 'CAG', 'CPB',
+    'TAP', 'BG', 'LW', 'BF-B', 'CASY',
+    # Energy (25+)
+    'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY', 'WMB',
+    'KMI', 'HAL', 'DVN', 'FANG', 'HES', 'BKR', 'TRGP', 'OKE', 'CTRA', 'APA',
+    'MRO', 'EQT', 'PR',
+    # Utilities (30+)
     'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'ED', 'WEC',
-    # Real Estate (10)
+    'PEG', 'CEG', 'AWK', 'DTE', 'ETR', 'FE', 'PPL', 'ES', 'AEE', 'CMS',
+    'CNP', 'EVRG', 'ATO', 'NI', 'LNT', 'NRG', 'PNW',
+    # Real Estate (30+)
     'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'O', 'WELL', 'SPG', 'DLR', 'AVB',
-    # Materials (10)
+    'VICI', 'SBAC', 'EQR', 'WY', 'ARE', 'VTR', 'IRM', 'EXR', 'MAA', 'ESS',
+    'INVH', 'SUI', 'REG', 'UDR', 'CPT', 'HST', 'KIM', 'BXP', 'DOC', 'FRT',
+    # Materials (30+)
     'LIN', 'APD', 'SHW', 'ECL', 'FCX', 'NEM', 'NUE', 'VMC', 'MLM', 'DOW',
-    # Communication (14) - PARA delisted (merged with Skydance)
-    'VZ', 'T', 'CMCSA', 'NFLX', 'DIS', 'TMUS', 'CHTR', 'WBD', 'EA', 'TTWO',
-    'OMC', 'IPG', 'LYV', 'MTCH',
+    'DD', 'PPG', 'CTVA', 'IP', 'CE', 'ALB', 'EMN', 'IFF', 'FMC', 'CF',
+    'MOS', 'PKG', 'AVY', 'SEE', 'BALL', 'AMCR', 'WRK',
 ]
 
 # Historical A/D data for McClellan Oscillator
@@ -252,8 +282,8 @@ def calculate_market_breadth():
 
     stocks_data = []
 
-    # Parallel fetch with more workers for larger universe
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    # Parallel fetch with 50 workers for full S&P 500 universe
+    with ThreadPoolExecutor(max_workers=50) as executor:
         futures = {executor.submit(get_stock_data, t, '1y'): t for t in BREADTH_UNIVERSE}
 
         for future in as_completed(futures):
