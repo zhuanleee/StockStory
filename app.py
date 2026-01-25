@@ -13,7 +13,6 @@ Features:
 
 import os
 import json
-import random
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
@@ -934,45 +933,202 @@ def api_briefing():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+def _get_real_market_health_data():
+    """Fetch real market data for health indicators."""
+    import numpy as np
+
+    def safe_download(ticker, period='6mo'):
+        """Safely download and normalize data."""
+        try:
+            data = yf.download(ticker, period=period, progress=False)
+            if data is None or len(data) == 0:
+                return None
+            return normalize_dataframe_columns(data)
+        except Exception:
+            return None
+
+    def get_last_close(df):
+        """Get last close price safely."""
+        if df is None or len(df) == 0:
+            return None
+        try:
+            return float(df['Close'].iloc[-1])
+        except Exception:
+            return None
+
+    def calculate_sma(df, period):
+        """Calculate SMA."""
+        if df is None or len(df) < period:
+            return None
+        try:
+            return float(df['Close'].rolling(window=period).mean().iloc[-1])
+        except Exception:
+            return None
+
+    results = {}
+
+    # 1. VIX - Volatility Index (lower = greed, higher = fear)
+    vix_df = safe_download('^VIX', '1mo')
+    vix_val = get_last_close(vix_df)
+    if vix_val:
+        # VIX 12 = 100 (extreme greed), VIX 35 = 0 (extreme fear)
+        if vix_val <= 12:
+            results['vix_score'] = 100
+        elif vix_val >= 35:
+            results['vix_score'] = 0
+        else:
+            results['vix_score'] = round(100 - ((vix_val - 12) / 23 * 100), 1)
+        results['vix_val'] = round(vix_val, 2)
+    else:
+        results['vix_score'] = 50
+        results['vix_val'] = None
+
+    # 2. Market Momentum - SPY vs 125-day MA
+    spy_df = safe_download('SPY', '6mo')
+    if spy_df is not None and len(spy_df) >= 125:
+        spy_close = get_last_close(spy_df)
+        spy_ma125 = calculate_sma(spy_df, 125)
+        if spy_close and spy_ma125:
+            # % above/below 125-day MA, scaled to 0-100
+            pct_diff = ((spy_close - spy_ma125) / spy_ma125) * 100
+            # -10% = 0, +10% = 100
+            results['momentum_score'] = round(max(0, min(100, 50 + (pct_diff * 5))), 1)
+            results['spy_price'] = round(spy_close, 2)
+            results['spy_ma125'] = round(spy_ma125, 2)
+        else:
+            results['momentum_score'] = 50
+    else:
+        results['momentum_score'] = 50
+
+    # 3. Put/Call Ratio - Estimate from VIX term structure (VIX vs VIX3M)
+    vix3m_df = safe_download('^VIX3M', '1mo')
+    vix3m_val = get_last_close(vix3m_df)
+    if vix_val and vix3m_val:
+        # Contango (VIX < VIX3M) = greed, Backwardation = fear
+        term_ratio = vix_val / vix3m_val
+        # 0.8 = 100 (greed), 1.2 = 0 (fear)
+        if term_ratio <= 0.8:
+            results['put_call_score'] = 100
+        elif term_ratio >= 1.2:
+            results['put_call_score'] = 0
+        else:
+            results['put_call_score'] = round(100 - ((term_ratio - 0.8) / 0.4 * 100), 1)
+        results['vix_term_ratio'] = round(term_ratio, 3)
+    else:
+        results['put_call_score'] = 50
+
+    # 4. Safe Haven Demand - TLT (bonds) vs SPY relative performance (20-day)
+    tlt_df = safe_download('TLT', '2mo')
+    if spy_df is not None and tlt_df is not None and len(spy_df) >= 20 and len(tlt_df) >= 20:
+        try:
+            spy_ret_20d = (float(spy_df['Close'].iloc[-1]) / float(spy_df['Close'].iloc[-20]) - 1) * 100
+            tlt_ret_20d = (float(tlt_df['Close'].iloc[-1]) / float(tlt_df['Close'].iloc[-20]) - 1) * 100
+            # If stocks outperform bonds = greed, bonds outperform = fear
+            diff = spy_ret_20d - tlt_ret_20d
+            # -5% diff = 0 (fear), +5% diff = 100 (greed)
+            results['safe_haven_score'] = round(max(0, min(100, 50 + (diff * 10))), 1)
+            results['spy_20d_return'] = round(spy_ret_20d, 2)
+            results['tlt_20d_return'] = round(tlt_ret_20d, 2)
+        except Exception:
+            results['safe_haven_score'] = 50
+    else:
+        results['safe_haven_score'] = 50
+
+    # 5. Junk Bond Demand - HYG (high yield) vs LQD (investment grade) spread
+    hyg_df = safe_download('HYG', '2mo')
+    lqd_df = safe_download('LQD', '2mo')
+    if hyg_df is not None and lqd_df is not None and len(hyg_df) >= 20 and len(lqd_df) >= 20:
+        try:
+            hyg_ret = (float(hyg_df['Close'].iloc[-1]) / float(hyg_df['Close'].iloc[-20]) - 1) * 100
+            lqd_ret = (float(lqd_df['Close'].iloc[-1]) / float(lqd_df['Close'].iloc[-20]) - 1) * 100
+            # If junk outperforms = greed (risk-on)
+            diff = hyg_ret - lqd_ret
+            results['junk_bond_score'] = round(max(0, min(100, 50 + (diff * 15))), 1)
+            results['hyg_20d_return'] = round(hyg_ret, 2)
+            results['lqd_20d_return'] = round(lqd_ret, 2)
+        except Exception:
+            results['junk_bond_score'] = 50
+    else:
+        results['junk_bond_score'] = 50
+
+    # 6. Stock Price Breadth - % of S&P 500 sample above moving averages
+    breadth_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'JPM',
+                       'V', 'JNJ', 'WMT', 'PG', 'MA', 'HD', 'DIS', 'NFLX', 'ADBE',
+                       'CRM', 'INTC', 'CSCO', 'PFE', 'KO', 'PEP', 'MRK', 'ABT',
+                       'CVX', 'XOM', 'BAC', 'WFC', 'C']
+
+    above_20 = 0
+    above_50 = 0
+    above_200 = 0
+    valid_count = 0
+
+    for ticker in breadth_tickers:
+        df = safe_download(ticker, '1y')
+        if df is not None and len(df) >= 200:
+            close = get_last_close(df)
+            sma20 = calculate_sma(df, 20)
+            sma50 = calculate_sma(df, 50)
+            sma200 = calculate_sma(df, 200)
+            if close and sma20 and sma50 and sma200:
+                valid_count += 1
+                if close > sma20:
+                    above_20 += 1
+                if close > sma50:
+                    above_50 += 1
+                if close > sma200:
+                    above_200 += 1
+
+    if valid_count > 0:
+        results['above_20sma'] = round((above_20 / valid_count) * 100, 1)
+        results['above_50sma'] = round((above_50 / valid_count) * 100, 1)
+        results['above_200sma'] = round((above_200 / valid_count) * 100, 1)
+        results['breadth_score'] = round((results['above_20sma'] + results['above_50sma'] + results['above_200sma']) / 3, 1)
+        results['breadth_sample_size'] = valid_count
+    else:
+        results['above_20sma'] = 50
+        results['above_50sma'] = 50
+        results['above_200sma'] = 50
+        results['breadth_score'] = 50
+
+    # 7. Advance/Decline approximation from breadth
+    results['advance_decline_ratio'] = round(results.get('above_50sma', 50) / max(1, 100 - results.get('above_50sma', 50)) * 1.0, 2)
+    results['new_highs'] = int(results.get('above_20sma', 50) * 2)  # Approximation
+    results['new_lows'] = int((100 - results.get('above_20sma', 50)) * 1.5)
+
+    return results
+
+
 @app.route('/api/health')
 def api_health():
-    """Get market health - VIX-based quick estimate with full dashboard format."""
+    """Get real market health data from actual market indicators."""
     cache_key = 'health'
 
-    # Check cache first
-    cached_data, is_cached = _endpoint_cache.get(cache_key, CACHE_TTL['health'])
+    # Check cache first (cache for 10 minutes due to heavy computation)
+    cached_data, is_cached = _endpoint_cache.get(cache_key, 600)
     if is_cached:
         cached_data['cached'] = True
         return jsonify(cached_data)
 
     try:
-        # Quick VIX-based health check (avoid heavy imports)
-        vix = yf.download('^VIX', period='5d', progress=False)
-        if vix is None or len(vix) == 0:
-            raise ValueError("No VIX data")
+        # Get real market data
+        data = _get_real_market_health_data()
 
-        vix_df = normalize_dataframe_columns(vix)
-        vix_val = float(vix_df['Close'].iloc[-1])
+        # Calculate overall Fear & Greed score (weighted average)
+        vix_score = data.get('vix_score', 50)
+        momentum_score = data.get('momentum_score', 50)
+        put_call_score = data.get('put_call_score', 50)
+        safe_haven_score = data.get('safe_haven_score', 50)
+        junk_bond_score = data.get('junk_bond_score', 50)
 
-        # VIX to score: 12=100, 35=0
-        if vix_val <= 12:
-            vix_score = 100
-        elif vix_val >= 35:
-            vix_score = 0
-        else:
-            vix_score = 100 - ((vix_val - 12) / 23 * 100)
-        vix_score = round(max(0, min(100, vix_score)), 1)
-
-        # Estimate other components based on VIX (simplified model)
-        momentum_score = round(min(100, max(0, vix_score + random.uniform(-10, 10))), 1)
-        put_call_score = round(min(100, max(0, vix_score + random.uniform(-15, 5))), 1)
-        safe_haven_score = round(min(100, max(0, 100 - vix_score + random.uniform(-10, 10))), 1)
-        junk_bond_score = round(min(100, max(0, vix_score + random.uniform(-5, 15))), 1)
-        volatility_score = vix_score  # Direct VIX correlation
-
-        # Overall score is weighted average
-        score = round((vix_score * 0.3 + momentum_score * 0.2 + put_call_score * 0.15 +
-                      safe_haven_score * 0.15 + junk_bond_score * 0.1 + volatility_score * 0.1), 1)
+        # Weighted average (similar to CNN Fear & Greed)
+        score = round(
+            vix_score * 0.25 +           # VIX level
+            momentum_score * 0.25 +       # Market momentum
+            put_call_score * 0.15 +       # Put/Call (VIX term structure)
+            safe_haven_score * 0.20 +     # Safe haven demand
+            junk_bond_score * 0.15,       # Junk bond demand
+            1
+        )
 
         if score >= 80:
             label, color = 'Extreme Greed', '#22c55e'
@@ -985,13 +1141,6 @@ def api_health():
         else:
             label, color = 'Extreme Fear', '#ef4444'
 
-        # Estimate breadth based on VIX (simplified)
-        base_breadth = min(80, max(20, score * 0.7 + 15))
-        breadth_score = round(base_breadth + random.uniform(-5, 5), 1)
-        ad_ratio = round(0.5 + (score / 100) * 1.5, 2)
-        new_highs = int(50 + (score / 100) * 150)
-        new_lows = int(150 - (score / 100) * 130)
-
         response = {
             'ok': True,
             'fear_greed': {
@@ -999,27 +1148,41 @@ def api_health():
                 'label': label,
                 'color': color,
                 'components': {
-                    'vix': {'score': vix_score, 'label': 'VIX Level'},
-                    'momentum': {'score': momentum_score, 'label': 'Market Momentum'},
-                    'put_call': {'score': put_call_score, 'label': 'Put/Call Ratio'},
-                    'safe_haven': {'score': safe_haven_score, 'label': 'Safe Haven'},
-                    'junk_bond': {'score': junk_bond_score, 'label': 'Junk Bonds'},
-                    'volatility': {'score': volatility_score, 'label': 'Volatility'}
+                    'vix': {'score': vix_score, 'label': 'VIX Level', 'value': data.get('vix_val')},
+                    'momentum': {'score': momentum_score, 'label': 'Market Momentum',
+                                'spy_price': data.get('spy_price'), 'spy_ma125': data.get('spy_ma125')},
+                    'put_call': {'score': put_call_score, 'label': 'Put/Call Ratio',
+                                'vix_term_ratio': data.get('vix_term_ratio')},
+                    'safe_haven': {'score': safe_haven_score, 'label': 'Safe Haven',
+                                  'spy_20d': data.get('spy_20d_return'), 'tlt_20d': data.get('tlt_20d_return')},
+                    'junk_bond': {'score': junk_bond_score, 'label': 'Junk Bonds',
+                                 'hyg_20d': data.get('hyg_20d_return'), 'lqd_20d': data.get('lqd_20d_return')},
+                    'volatility': {'score': vix_score, 'label': 'Volatility'}
                 }
             },
             'overall_score': score,
             'overall_color': color,
             'overall_label': label,
             'breadth': {
-                'breadth_score': breadth_score,
-                'advance_decline_ratio': ad_ratio,
-                'new_highs': new_highs,
-                'new_lows': new_lows,
-                'above_20sma': round(base_breadth + random.uniform(-3, 7), 1),
-                'above_50sma': round(base_breadth + random.uniform(-5, 5), 1),
-                'above_200sma': round(base_breadth + random.uniform(-8, 3), 1)
+                'breadth_score': data.get('breadth_score', 50),
+                'advance_decline_ratio': data.get('advance_decline_ratio', 1.0),
+                'new_highs': data.get('new_highs', 100),
+                'new_lows': data.get('new_lows', 100),
+                'above_20sma': data.get('above_20sma', 50),
+                'above_50sma': data.get('above_50sma', 50),
+                'above_200sma': data.get('above_200sma', 50),
+                'sample_size': data.get('breadth_sample_size', 0)
             },
-            'vix': round(vix_val, 1),
+            'raw_data': {
+                'vix': data.get('vix_val'),
+                'spy_price': data.get('spy_price'),
+                'spy_ma125': data.get('spy_ma125'),
+                'vix_term_ratio': data.get('vix_term_ratio'),
+                'spy_20d_return': data.get('spy_20d_return'),
+                'tlt_20d_return': data.get('tlt_20d_return'),
+                'hyg_20d_return': data.get('hyg_20d_return'),
+                'lqd_20d_return': data.get('lqd_20d_return')
+            },
             'cached': False,
             'timestamp': datetime.now().isoformat()
         }
