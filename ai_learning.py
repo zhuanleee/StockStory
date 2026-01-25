@@ -1602,7 +1602,7 @@ Current Hot Themes:
 Market Regime: {market_regime}
 
 Sector Performance:
-{json.dumps(sector_performance[:10], indent=2) if sector_performance else 'Not available'}
+{json.dumps(dict(list(sector_performance.items())[:10]), indent=2) if isinstance(sector_performance, dict) else json.dumps(sector_performance[:10] if sector_performance else [], indent=2)}
 
 Predict rotation in JSON:
 {{
@@ -2007,7 +2007,7 @@ def run_realtime_ai_scan(news_items=None, themes=None, top_stocks=None):
 
     # Scan options for top stocks
     if top_stocks:
-        tickers = [s.get('ticker') or s for s in top_stocks[:10] if s]
+        tickers = [s.get('ticker') if isinstance(s, dict) else s for s in top_stocks[:10] if s]
         try:
             options_signals = scan_options_unusual_activity(tickers)
             results['options_signals'] = options_signals[:5]
