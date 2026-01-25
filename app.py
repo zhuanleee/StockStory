@@ -964,7 +964,7 @@ def _get_simple_news_sentiment(tickers):
 
 @app.route('/api/news')
 def api_news():
-    """Get news sentiment with caching."""
+    """Get news sentiment with caching - using yfinance for reliability."""
     cache_key = 'news'
 
     # Check cache first (15 min cache)
@@ -975,71 +975,26 @@ def api_news():
 
     tickers = ['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT']
 
+    # Use yfinance-based sentiment for reliability
     try:
-        # Try the full news analyzer first
-        from news_analyzer import scan_news_sentiment
-        raw_results = scan_news_sentiment(tickers)
-
-        # Transform results to dashboard format
-        sentiment = []
-        for r in raw_results:
-            ticker = r.get('ticker', 'N/A')
-            overall = r.get('overall_sentiment', 'NEUTRAL')
-
-            # Convert sentiment to bullish/bearish percentages
-            if overall == 'STRONG_BULLISH':
-                bullish, bearish = 85, 15
-            elif overall == 'BULLISH':
-                bullish, bearish = 70, 30
-            elif overall == 'STRONG_BEARISH':
-                bullish, bearish = 15, 85
-            elif overall == 'BEARISH':
-                bullish, bearish = 30, 70
-            else:
-                bullish, bearish = 50, 50
-
-            sentiment.append({
-                'ticker': ticker,
-                'bullish': bullish,
-                'bearish': bearish,
-                'sentiment': overall,
-                'headline_count': r.get('headline_count', 0),
-                'key_headlines': r.get('key_headlines', [])[:3]
-            })
-
+        sentiment = _get_simple_news_sentiment(tickers)
         response = {
             'ok': True,
             'sentiment': sentiment,
-            'source': 'news_analyzer',
+            'source': 'yfinance',
             'cached': False,
             'timestamp': datetime.now().isoformat()
         }
         _endpoint_cache.set(cache_key, response)
         return jsonify(response)
-
     except Exception as e:
-        logger.error(f"News analyzer failed: {e}, falling back to yfinance")
-
-        # Fallback to simple yfinance-based sentiment
-        try:
-            sentiment = _get_simple_news_sentiment(tickers)
-            response = {
-                'ok': True,
-                'sentiment': sentiment,
-                'source': 'yfinance_fallback',
-                'cached': False,
-                'timestamp': datetime.now().isoformat()
-            }
-            _endpoint_cache.set(cache_key, response)
-            return jsonify(response)
-        except Exception as e2:
-            logger.error(f"Fallback also failed: {e2}")
-            return jsonify({
-                'ok': False,
-                'sentiment': [],
-                'error': f"Primary: {str(e)}, Fallback: {str(e2)}",
-                'timestamp': datetime.now().isoformat()
-            })
+        logger.error(f"News sentiment failed: {e}")
+        return jsonify({
+            'ok': False,
+            'sentiment': [],
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        })
 
 
 @app.route('/api/sectors')
