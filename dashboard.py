@@ -1096,7 +1096,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     </footer>
 
     <script>
-        const API_BASE = 'https://stock-scanner-bot-xgqi.onrender.com/api';
+        const API_BASE = 'https://stock-scanner-bot.onrender.com/api';
 
         // Loading state helper
         function setLoading(elementId, loading) {
