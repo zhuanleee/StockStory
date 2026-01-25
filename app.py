@@ -871,6 +871,58 @@ def api_ticker(ticker):
         return jsonify({'ok': False, 'error': str(e)})
 
 
+def _get_simple_news_sentiment(tickers):
+    """Simple news sentiment using yfinance only (fallback)."""
+    results = []
+    for ticker in tickers:
+        try:
+            stock = yf.Ticker(ticker)
+            news = stock.news if hasattr(stock, 'news') else []
+
+            bullish_count = 0
+            bearish_count = 0
+            headlines = []
+
+            for item in news[:10]:
+                title = item.get('title', '').lower()
+                headlines.append({'title': item.get('title', ''), 'source': item.get('publisher', '')})
+
+                # Simple sentiment check
+                bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade']
+                bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade']
+
+                if any(w in title for w in bullish_words):
+                    bullish_count += 1
+                if any(w in title for w in bearish_words):
+                    bearish_count += 1
+
+            total = bullish_count + bearish_count
+            if total > 0:
+                bullish_pct = int((bullish_count / total) * 100)
+            else:
+                bullish_pct = 50
+
+            results.append({
+                'ticker': ticker,
+                'bullish': bullish_pct,
+                'bearish': 100 - bullish_pct,
+                'sentiment': 'BULLISH' if bullish_pct > 60 else ('BEARISH' if bullish_pct < 40 else 'NEUTRAL'),
+                'headline_count': len(news),
+                'key_headlines': headlines[:3]
+            })
+        except Exception as e:
+            results.append({
+                'ticker': ticker,
+                'bullish': 50,
+                'bearish': 50,
+                'sentiment': 'NEUTRAL',
+                'headline_count': 0,
+                'key_headlines': []
+            })
+
+    return results
+
+
 @app.route('/api/news')
 def api_news():
     """Get news sentiment with caching."""
@@ -882,9 +934,12 @@ def api_news():
         cached_data['cached'] = True
         return jsonify(cached_data)
 
+    tickers = ['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT']
+
     try:
+        # Try the full news analyzer first
         from news_analyzer import scan_news_sentiment
-        raw_results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD', 'MSFT'])
+        raw_results = scan_news_sentiment(tickers)
 
         # Transform results to dashboard format
         sentiment = []
@@ -916,28 +971,36 @@ def api_news():
         response = {
             'ok': True,
             'sentiment': sentiment,
+            'source': 'news_analyzer',
             'cached': False,
             'timestamp': datetime.now().isoformat()
         }
         _endpoint_cache.set(cache_key, response)
         return jsonify(response)
+
     except Exception as e:
-        logger.error(f"News endpoint error: {e}")
-        # Return mock data on error so dashboard doesn't break
-        return jsonify({
-            'ok': True,
-            'sentiment': [
-                {'ticker': 'NVDA', 'bullish': 65, 'bearish': 35, 'sentiment': 'BULLISH'},
-                {'ticker': 'AAPL', 'bullish': 55, 'bearish': 45, 'sentiment': 'NEUTRAL'},
-                {'ticker': 'TSLA', 'bullish': 45, 'bearish': 55, 'sentiment': 'NEUTRAL'},
-                {'ticker': 'META', 'bullish': 60, 'bearish': 40, 'sentiment': 'BULLISH'},
-                {'ticker': 'AMD', 'bullish': 58, 'bearish': 42, 'sentiment': 'BULLISH'},
-                {'ticker': 'MSFT', 'bullish': 62, 'bearish': 38, 'sentiment': 'BULLISH'}
-            ],
-            'error': str(e),
-            'fallback': True,
-            'timestamp': datetime.now().isoformat()
-        })
+        logger.error(f"News analyzer failed: {e}, falling back to yfinance")
+
+        # Fallback to simple yfinance-based sentiment
+        try:
+            sentiment = _get_simple_news_sentiment(tickers)
+            response = {
+                'ok': True,
+                'sentiment': sentiment,
+                'source': 'yfinance_fallback',
+                'cached': False,
+                'timestamp': datetime.now().isoformat()
+            }
+            _endpoint_cache.set(cache_key, response)
+            return jsonify(response)
+        except Exception as e2:
+            logger.error(f"Fallback also failed: {e2}")
+            return jsonify({
+                'ok': False,
+                'sentiment': [],
+                'error': f"Primary: {str(e)}, Fallback: {str(e2)}",
+                'timestamp': datetime.now().isoformat()
+            })
 
 
 @app.route('/api/sectors')
