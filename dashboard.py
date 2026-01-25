@@ -613,40 +613,6 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             font-size: 0.85rem;
         }
 
-        /* Traffic Light */
-        .traffic-light {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            padding: 16px;
-            background: #1a1a1a;
-            border-radius: 20px;
-            width: fit-content;
-            margin: 0 auto 16px;
-        }
-
-        .traffic-light-item {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            opacity: 0.2;
-            transition: opacity 0.3s, box-shadow 0.3s;
-        }
-
-        .traffic-light-item.red { background: #ef4444; }
-        .traffic-light-item.yellow { background: #eab308; }
-        .traffic-light-item.green { background: #22c55e; }
-
-        .traffic-light-item.active {
-            opacity: 1;
-            box-shadow: 0 0 20px currentColor;
-        }
-
-        .traffic-light-item.red.active { box-shadow: 0 0 20px #ef4444; }
-        .traffic-light-item.yellow.active { box-shadow: 0 0 20px #eab308; }
-        .traffic-light-item.green.active { box-shadow: 0 0 20px #22c55e; }
-
         .health-score {
             font-size: 2rem;
             font-weight: 700;
@@ -846,11 +812,6 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             </div>
                         </div>
                         <div class="card-body" style="text-align: center;">
-                            <div class="traffic-light">
-                                <div class="traffic-light-item red" id="tl-red"></div>
-                                <div class="traffic-light-item yellow" id="tl-yellow"></div>
-                                <div class="traffic-light-item green" id="tl-green"></div>
-                            </div>
                             <div class="health-score" id="health-score">--</div>
                             <div class="health-label" id="health-label">Loading...</div>
 
@@ -1264,12 +1225,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         </div>`;
                     }).join('');
 
-                    // Update traffic light
                     const overall = data.overall_score;
-                    document.getElementById('tl-red').classList.toggle('active', overall < 35);
-                    document.getElementById('tl-yellow').classList.toggle('active', overall >= 35 && overall < 65);
-                    document.getElementById('tl-green').classList.toggle('active', overall >= 65);
-
                     document.getElementById('health-score').textContent = overall.toFixed(0);
                     document.getElementById('health-score').style.color = data.overall_color;
                     document.getElementById('health-label').textContent = data.overall_label;
