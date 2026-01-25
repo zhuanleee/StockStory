@@ -195,7 +195,11 @@ def calculate_fear_greed_index():
         # Handle MultiIndex columns (yfinance returns (Column, Ticker))
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                return df[column][ticker] if ticker else df[column].iloc[:, 0]
+                result = df[column][ticker] if ticker else df[column].iloc[:, 0]
+                # Ensure we return a Series, not a DataFrame
+                if isinstance(result, pd.DataFrame):
+                    result = result.iloc[:, 0]
+                return result
             except:
                 pass
         # Regular columns
@@ -203,14 +207,43 @@ def calculate_fear_greed_index():
             return df[column]
         return None
 
+    def get_last_close(df, ticker=None):
+        """Get the last closing price from a yfinance dataframe."""
+        if df is None or len(df) == 0:
+            return None
+        try:
+            # Handle MultiIndex columns
+            if isinstance(df.columns, pd.MultiIndex):
+                # Try direct tuple access first
+                if ('Close', ticker) in df.columns:
+                    val = df[('Close', ticker)].iloc[-1]
+                    return float(val) if not pd.isna(val) else None
+                # Try hierarchical access
+                if 'Close' in df.columns.get_level_values(0):
+                    close_df = df['Close']
+                    if isinstance(close_df, pd.DataFrame):
+                        if ticker and ticker in close_df.columns:
+                            val = close_df[ticker].iloc[-1]
+                        else:
+                            val = close_df.iloc[-1, 0]
+                    else:
+                        val = close_df.iloc[-1]
+                    return float(val) if not pd.isna(val) else None
+            # Regular columns
+            if 'Close' in df.columns:
+                val = df['Close'].iloc[-1]
+                return float(val) if not pd.isna(val) else None
+        except Exception as e:
+            print(f"get_last_close error: {e}")
+        return None
+
     try:
         # 1. VIX Level (25%)
         try:
             vix = yf.download('^VIX', period='5d', progress=False)
-            vix_close = safe_get_series(vix, 'Close', '^VIX')
-            if vix_close is None or len(vix_close) == 0:
+            vix_current = get_last_close(vix, '^VIX')
+            if vix_current is None:
                 raise ValueError("No VIX data")
-            vix_current = safe_float(vix_close.iloc[-1])
 
             # VIX scoring: <15 = 100 (extreme greed), >30 = 0 (extreme fear)
             # Normal VIX range is 12-25
@@ -448,8 +481,10 @@ def get_market_health():
 
     Returns combined breadth and fear/greed data.
     """
-    breadth = calculate_market_breadth()
+    # Calculate fear_greed FIRST to avoid yfinance cache corruption
+    # from breadth's multi-ticker downloads
     fear_greed = calculate_fear_greed_index()
+    breadth = calculate_market_breadth()
 
     # Overall health score (average of breadth and fear/greed)
     overall = (breadth['breadth_score'] + fear_greed['score']) / 2
