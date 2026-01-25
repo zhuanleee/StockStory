@@ -91,6 +91,7 @@ def handle_help(chat_id):
     msg += "• `/stories` → Hot themes\n"
     msg += "• `/news` → News sentiment\n"
     msg += "• `/sectors` → Sector rotation\n"
+    msg += "• `/health` → Fear & Greed + Breadth\n"
     msg += "• `/earnings` → Earnings calendar\n"
     msg += "• `/backtest NVDA` → Signal accuracy\n\n"
 
@@ -333,6 +334,18 @@ def handle_sectors(chat_id):
         send_message(chat_id, msg)
     except Exception as e:
         send_message(chat_id, f"Sectors error: {str(e)}")
+
+
+def handle_health(chat_id):
+    """Handle /health command - Market health + Fear & Greed."""
+    send_message(chat_id, "⏳ Analyzing market health...")
+    try:
+        from market_health import get_market_health, format_health_report
+        health = get_market_health()
+        msg = format_health_report(health)
+        send_message(chat_id, msg)
+    except Exception as e:
+        send_message(chat_id, f"Health error: {str(e)}")
 
 
 # =============================================================================
@@ -591,6 +604,8 @@ def process_message(message):
         handle_news(chat_id)
     elif text_lower == '/sectors':
         handle_sectors(chat_id)
+    elif text_lower == '/health':
+        handle_health(chat_id)
     elif text_lower == '/earnings':
         handle_earnings(chat_id)
     elif text_lower.startswith('/backtest '):
@@ -660,7 +675,7 @@ def webhook():
 
             # List of slow commands that need background processing
             slow_commands = ['/news', '/sectors', '/stories', '/scan',
-                          '/earnings', '/briefing', '/coach', '/top']
+                          '/earnings', '/briefing', '/coach', '/top', '/health']
 
             # Check if this is a slow command
             is_slow = any(text.startswith(cmd) for cmd in slow_commands)
@@ -842,6 +857,20 @@ def api_briefing():
             'ok': True,
             'briefing': briefing,
             'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/health')
+def api_health():
+    """Get market health (breadth + fear/greed)."""
+    try:
+        from market_health import get_market_health
+        health = get_market_health()
+        return jsonify({
+            'ok': True,
+            **health
         })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})

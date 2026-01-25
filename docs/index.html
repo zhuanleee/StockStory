@@ -513,6 +513,148 @@
             font-size: 0.75rem;
             color: var(--text-dim);
         }
+
+        /* Fear & Greed Gauge */
+        .gauge-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .gauge-svg {
+            width: 100%;
+            max-width: 200px;
+        }
+
+        .gauge-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-top: -20px;
+        }
+
+        .gauge-label {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .gauge-legend {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 12px;
+        }
+
+        /* Component Items */
+        .component-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .component-item:last-child {
+            border-bottom: none;
+        }
+
+        .component-name {
+            flex: 0 0 110px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .component-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-accent);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .component-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease, background 0.3s;
+        }
+
+        .component-score {
+            flex: 0 0 35px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        /* Traffic Light */
+        .traffic-light {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            background: #1a1a1a;
+            border-radius: 20px;
+            width: fit-content;
+            margin: 0 auto 16px;
+        }
+
+        .traffic-light-item {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            opacity: 0.2;
+            transition: opacity 0.3s, box-shadow 0.3s;
+        }
+
+        .traffic-light-item.red { background: #ef4444; }
+        .traffic-light-item.yellow { background: #eab308; }
+        .traffic-light-item.green { background: #22c55e; }
+
+        .traffic-light-item.active {
+            opacity: 1;
+            box-shadow: 0 0 20px currentColor;
+        }
+
+        .traffic-light-item.red.active { box-shadow: 0 0 20px #ef4444; }
+        .traffic-light-item.yellow.active { box-shadow: 0 0 20px #eab308; }
+        .traffic-light-item.green.active { box-shadow: 0 0 20px #22c55e; }
+
+        .health-score {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .health-label {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .health-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            text-align: left;
+        }
+
+        .health-metric {
+            background: var(--bg-accent);
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .metric-label {
+            display: block;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -532,7 +674,7 @@
             <div style="display: flex; align-items: center; gap: 16px;">
                 <div class="refresh-info">
                     <div class="live-dot"></div>
-                    <span>Updated 2026-01-25 16:09 UTC</span>
+                    <span>Updated 2026-01-25 16:18 UTC</span>
                 </div>
                 <a href="https://t.me/Stocks_Story_Bot" class="telegram-btn" target="_blank">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -567,7 +709,7 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Hot Themes</div>
-                    <div class="stat-value orange" id="hot-themes-count">8</div>
+                    <div class="stat-value orange" id="hot-themes-count">0</div>
                 </div>
             </div>
 
@@ -575,6 +717,136 @@
             <div class="refresh-bar">
                 <span style="color: var(--text-dim); font-size: 0.875rem;">Last refresh: <span id="last-update">--:--</span></span>
                 <button id="refresh-btn" class="action-btn" onclick="refreshAll()">🔄 Refresh Data</button>
+            </div>
+
+            <!-- Fear & Greed + Health Section -->
+            <div class="grid" style="margin-bottom: 24px;">
+                <!-- Fear & Greed Gauge -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Fear & Greed Index
+                            </div>
+                            <button class="action-btn" onclick="fetchHealth()" style="padding: 6px 12px; font-size: 0.75rem;">Update</button>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="gauge-container" id="fear-greed-gauge">
+                                <svg viewBox="0 0 200 120" class="gauge-svg">
+                                    <!-- Background arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#2a2a3a" stroke-width="20" stroke-linecap="round"/>
+                                    <!-- Gradient definitions -->
+                                    <defs>
+                                        <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" style="stop-color:#ef4444"/>
+                                            <stop offset="25%" style="stop-color:#f97316"/>
+                                            <stop offset="50%" style="stop-color:#eab308"/>
+                                            <stop offset="75%" style="stop-color:#84cc16"/>
+                                            <stop offset="100%" style="stop-color:#22c55e"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <!-- Colored arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGradient)" stroke-width="20" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="125.6" id="gauge-fill"/>
+                                    <!-- Needle -->
+                                    <line x1="100" y1="100" x2="100" y2="30" stroke="#fff" stroke-width="3" stroke-linecap="round" id="gauge-needle" transform="rotate(-90, 100, 100)"/>
+                                    <circle cx="100" cy="100" r="8" fill="#fff"/>
+                                </svg>
+                                <div class="gauge-value" id="fg-score">--</div>
+                                <div class="gauge-label" id="fg-label">Loading...</div>
+                            </div>
+                            <div class="gauge-legend">
+                                <span style="color: #ef4444;">Extreme Fear</span>
+                                <span style="color: #eab308;">Neutral</span>
+                                <span style="color: #22c55e;">Extreme Greed</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Health Components -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📈</span>
+                                Fear & Greed Components
+                            </div>
+                        </div>
+                        <div class="card-body" id="fg-components">
+                            <div class="component-item">
+                                <span class="component-name">VIX Level</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Market Momentum</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Put/Call Ratio</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Safe Haven</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Junk Bonds</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Volatility</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Health Traffic Light -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🚦</span>
+                                Market Health
+                            </div>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="traffic-light">
+                                <div class="traffic-light-item red" id="tl-red"></div>
+                                <div class="traffic-light-item yellow" id="tl-yellow"></div>
+                                <div class="traffic-light-item green" id="tl-green"></div>
+                            </div>
+                            <div class="health-score" id="health-score">--</div>
+                            <div class="health-label" id="health-label">Loading...</div>
+
+                            <div class="health-metrics" id="health-metrics">
+                                <div class="health-metric">
+                                    <span class="metric-label">Breadth Score</span>
+                                    <span class="metric-value" id="breadth-score">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">A/D Ratio</span>
+                                    <span class="metric-value" id="ad-ratio">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">New Highs</span>
+                                    <span class="metric-value" id="new-highs">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">New Lows</span>
+                                    <span class="metric-value" id="new-lows">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="grid">
@@ -685,47 +957,7 @@
                         </div>
                         <div class="card-body">
                             <div class="themes-container" id="themes-content">
-                                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Ai Infrastructure</span>
-                    <span class="theme-count">24</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Cloud Infrastructure</span>
-                    <span class="theme-count">17</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Ev Battery</span>
-                    <span class="theme-count">16</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Semiconductor</span>
-                    <span class="theme-count">13</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Glp1 Obesity</span>
-                    <span class="theme-count">10</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Hbm Memory</span>
-                    <span class="theme-count">5</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Nuclear</span>
-                    <span class="theme-count">5</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Crypto Bitcoin</span>
-                    <span class="theme-count">5</span>
-                </div>
-                
+                                <span class="theme-tag theme-neutral">No themes detected yet</span>
                             </div>
                         </div>
                     </div>
@@ -961,6 +1193,80 @@
             }
         }
 
+        // Fetch market health (Fear & Greed + Breadth)
+        async function fetchHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    // Update Fear & Greed gauge
+                    const fg = data.fear_greed;
+                    const score = fg.score;
+
+                    document.getElementById('fg-score').textContent = score.toFixed(0);
+                    document.getElementById('fg-score').style.color = fg.color;
+                    document.getElementById('fg-label').textContent = fg.label;
+                    document.getElementById('fg-label').style.color = fg.color;
+
+                    // Rotate needle (0 = -90deg, 100 = 90deg)
+                    const rotation = -90 + (score / 100 * 180);
+                    document.getElementById('gauge-needle').setAttribute('transform', `rotate(${rotation}, 100, 100)`);
+
+                    // Update gauge fill
+                    const dashoffset = 251.2 - (score / 100 * 251.2);
+                    document.getElementById('gauge-fill').setAttribute('stroke-dashoffset', dashoffset);
+
+                    // Update components
+                    const compContainer = document.getElementById('fg-components');
+                    const components = fg.components || {};
+                    const compOrder = ['vix', 'momentum', 'put_call', 'safe_haven', 'junk_bond', 'volatility'];
+
+                    compContainer.innerHTML = compOrder.map(key => {
+                        const comp = components[key] || { score: 50, label: key };
+                        const score = comp.score || 50;
+                        const color = score >= 60 ? 'var(--green)' : (score >= 40 ? 'var(--yellow)' : 'var(--red)');
+
+                        return `<div class="component-item">
+                            <span class="component-name">${comp.label || key}</span>
+                            <div class="component-bar">
+                                <div class="component-fill" style="width: ${score}%; background: ${color};"></div>
+                            </div>
+                            <span class="component-score" style="color: ${color};">${score.toFixed(0)}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Update traffic light
+                    const overall = data.overall_score;
+                    document.getElementById('tl-red').classList.toggle('active', overall < 35);
+                    document.getElementById('tl-yellow').classList.toggle('active', overall >= 35 && overall < 65);
+                    document.getElementById('tl-green').classList.toggle('active', overall >= 65);
+
+                    document.getElementById('health-score').textContent = overall.toFixed(0);
+                    document.getElementById('health-score').style.color = data.overall_color;
+                    document.getElementById('health-label').textContent = data.overall_label;
+                    document.getElementById('health-label').style.color = data.overall_color;
+
+                    // Update breadth metrics
+                    const br = data.breadth;
+                    document.getElementById('breadth-score').textContent = br.breadth_score.toFixed(0);
+                    document.getElementById('ad-ratio').textContent = br.advance_decline_ratio.toFixed(2);
+                    document.getElementById('new-highs').textContent = br.new_highs;
+                    document.getElementById('new-lows').textContent = br.new_lows;
+
+                    // Update breadth bars in sidebar
+                    if (document.getElementById('above-20-pct')) {
+                        document.getElementById('above-20-pct').textContent = br.above_20sma + '%';
+                        document.getElementById('above-50-pct').textContent = br.above_50sma + '%';
+                        document.getElementById('above-200-pct').textContent = br.above_200sma + '%';
+                    }
+                }
+            } catch (e) {
+                console.error('Health error:', e);
+                document.getElementById('fg-label').textContent = 'Error loading';
+            }
+        }
+
         // Fetch AI briefing
         async function fetchBriefing() {
             try {
@@ -1083,6 +1389,7 @@
             document.getElementById('refresh-btn').textContent = '⏳ Refreshing...';
 
             await Promise.all([
+                fetchHealth(),
                 fetchStories(),
                 fetchScan(),
                 fetchNews(),
