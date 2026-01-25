@@ -895,7 +895,7 @@ def api_ticker(ticker):
 
 
 def _get_simple_news_sentiment(tickers):
-    """Simple news sentiment using yfinance only (fallback)."""
+    """Simple news sentiment using yfinance only."""
     results = []
     for ticker in tickers:
         try:
@@ -917,19 +917,30 @@ def _get_simple_news_sentiment(tickers):
 
             for item in (news[:10] if news else []):
                 try:
-                    title = str(item.get('title', '')).lower()
+                    # Handle new yfinance format where content is nested
+                    content = item.get('content', item)
+                    title = str(content.get('title', '')).lower()
+                    summary = str(content.get('summary', '')).lower()
+
+                    # Get provider info
+                    provider = content.get('provider', {})
+                    source = provider.get('displayName', '') if isinstance(provider, dict) else str(provider)
+
                     headlines.append({
-                        'title': item.get('title', ''),
-                        'source': item.get('publisher', item.get('source', ''))
+                        'title': content.get('title', ''),
+                        'source': source
                     })
 
-                    # Simple sentiment check
-                    bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade']
-                    bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade']
+                    # Combine title and summary for sentiment
+                    text = title + ' ' + summary
 
-                    if any(w in title for w in bullish_words):
+                    # Simple sentiment check
+                    bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade', 'buy', 'bullish', 'trillion', 'demand']
+                    bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade', 'sell', 'bearish', 'warning', 'cut']
+
+                    if any(w in text for w in bullish_words):
                         bullish_count += 1
-                    if any(w in title for w in bearish_words):
+                    if any(w in text for w in bearish_words):
                         bearish_count += 1
                 except Exception:
                     continue
