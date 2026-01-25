@@ -34,6 +34,29 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
+
+# Global error handler to return JSON instead of HTML on errors
+@app.errorhandler(500)
+def handle_500(error):
+    """Return JSON on internal server errors."""
+    return jsonify({
+        'ok': False,
+        'error': 'Internal server error',
+        'details': str(error)
+    }), 500
+
+
+@app.errorhandler(Exception)
+def handle_exception(error):
+    """Return JSON for unhandled exceptions."""
+    logger.error(f"Unhandled exception: {error}")
+    return jsonify({
+        'ok': False,
+        'error': str(error.__class__.__name__),
+        'details': str(error)
+    }), 500
+
+
 # Track processed updates to prevent duplicates
 processed_updates = set()
 MAX_PROCESSED = 1000  # Limit memory usage
@@ -877,24 +900,39 @@ def _get_simple_news_sentiment(tickers):
     for ticker in tickers:
         try:
             stock = yf.Ticker(ticker)
-            news = stock.news if hasattr(stock, 'news') else []
+
+            # Try to get news - handle different yfinance versions
+            news = []
+            try:
+                if hasattr(stock, 'news'):
+                    news = stock.news or []
+                elif hasattr(stock, 'get_news'):
+                    news = stock.get_news() or []
+            except Exception:
+                news = []
 
             bullish_count = 0
             bearish_count = 0
             headlines = []
 
-            for item in news[:10]:
-                title = item.get('title', '').lower()
-                headlines.append({'title': item.get('title', ''), 'source': item.get('publisher', '')})
+            for item in (news[:10] if news else []):
+                try:
+                    title = str(item.get('title', '')).lower()
+                    headlines.append({
+                        'title': item.get('title', ''),
+                        'source': item.get('publisher', item.get('source', ''))
+                    })
 
-                # Simple sentiment check
-                bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade']
-                bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade']
+                    # Simple sentiment check
+                    bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade']
+                    bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade']
 
-                if any(w in title for w in bullish_words):
-                    bullish_count += 1
-                if any(w in title for w in bearish_words):
-                    bearish_count += 1
+                    if any(w in title for w in bullish_words):
+                        bullish_count += 1
+                    if any(w in title for w in bearish_words):
+                        bearish_count += 1
+                except Exception:
+                    continue
 
             total = bullish_count + bearish_count
             if total > 0:
@@ -907,10 +945,11 @@ def _get_simple_news_sentiment(tickers):
                 'bullish': bullish_pct,
                 'bearish': 100 - bullish_pct,
                 'sentiment': 'BULLISH' if bullish_pct > 60 else ('BEARISH' if bullish_pct < 40 else 'NEUTRAL'),
-                'headline_count': len(news),
+                'headline_count': len(news) if news else 0,
                 'key_headlines': headlines[:3]
             })
         except Exception as e:
+            logger.warning(f"News sentiment for {ticker} failed: {e}")
             results.append({
                 'ticker': ticker,
                 'bullish': 50,
