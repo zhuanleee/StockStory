@@ -935,7 +935,7 @@ def api_briefing():
 
 @app.route('/api/health')
 def api_health():
-    """Get market health - uses fast lite version to avoid timeouts."""
+    """Get market health - VIX-based quick estimate."""
     cache_key = 'health'
 
     # Check cache first
@@ -945,13 +945,42 @@ def api_health():
         return jsonify(cached_data)
 
     try:
-        # Use lite version (fast, just VIX-based) to avoid timeouts
-        from market_health import get_market_health_lite
-        health = get_market_health_lite()
+        # Quick VIX-based health check (avoid heavy imports)
+        vix = yf.download('^VIX', period='5d', progress=False)
+        if vix is None or len(vix) == 0:
+            raise ValueError("No VIX data")
+
+        vix_df = normalize_dataframe_columns(vix)
+        vix_val = float(vix_df['Close'].iloc[-1])
+
+        # VIX to score: 12=100, 35=0
+        if vix_val <= 12:
+            score = 100
+        elif vix_val >= 35:
+            score = 0
+        else:
+            score = 100 - ((vix_val - 12) / 23 * 100)
+        score = round(max(0, min(100, score)), 1)
+
+        if score >= 80:
+            label, color = 'Extreme Greed', '#22c55e'
+        elif score >= 60:
+            label, color = 'Greed', '#84cc16'
+        elif score >= 40:
+            label, color = 'Neutral', '#eab308'
+        elif score >= 20:
+            label, color = 'Fear', '#f97316'
+        else:
+            label, color = 'Extreme Fear', '#ef4444'
+
         response = {
             'ok': True,
+            'score': score,
+            'label': label,
+            'color': color,
+            'vix': round(vix_val, 1),
             'cached': False,
-            **health
+            'timestamp': datetime.now().isoformat()
         }
         _endpoint_cache.set(cache_key, response)
         return jsonify(response)
