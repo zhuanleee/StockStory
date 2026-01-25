@@ -1057,7 +1057,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     </footer>
 
     <script>
-        const API_BASE = 'https://stock-scanner-bot.onrender.com/api';
+        const API_BASE = 'https://web-production-46562.up.railway.app/api';
 
         // Loading state helper
         function setLoading(elementId, loading) {
