@@ -1212,7 +1212,7 @@ def generate_dashboard():
     # Initialize default values
     data = {
         'LAST_UPDATE': datetime.now().strftime('%Y-%m-%d %H:%M UTC'),
-        'BOT_USERNAME': os.environ.get('BOT_USERNAME', 'your_bot'),
+        'BOT_USERNAME': os.environ.get('BOT_USERNAME', 'Stocks_Story_Bot'),
         'TOTAL_SCANNED': '0',
         'BREAKOUTS': '0',
         'SQUEEZES': '0',
