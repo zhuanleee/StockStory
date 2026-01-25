@@ -19,6 +19,8 @@ from datetime import datetime
 import yfinance as yf
 import pandas as pd
 import threading
+import time
+from functools import wraps
 
 from config import config
 from utils import (
@@ -35,6 +37,56 @@ app = Flask(__name__)
 # Track processed updates to prevent duplicates
 processed_updates = set()
 MAX_PROCESSED = 1000  # Limit memory usage
+
+
+# =============================================================================
+# CACHING SYSTEM - Reduce load on heavy endpoints
+# =============================================================================
+
+class EndpointCache:
+    """Simple in-memory cache for expensive API endpoints."""
+
+    def __init__(self):
+        self._cache = {}
+        self._locks = {}
+        self._computing = set()
+
+    def get(self, key: str, ttl_seconds: int = 300):
+        """Get cached value if valid."""
+        if key in self._cache:
+            data, timestamp = self._cache[key]
+            if time.time() - timestamp < ttl_seconds:
+                return data, True  # data, is_cached
+        return None, False
+
+    def set(self, key: str, data):
+        """Store data in cache."""
+        self._cache[key] = (data, time.time())
+
+    def is_computing(self, key: str) -> bool:
+        """Check if computation is in progress."""
+        return key in self._computing
+
+    def start_computing(self, key: str):
+        """Mark computation as started."""
+        self._computing.add(key)
+
+    def stop_computing(self, key: str):
+        """Mark computation as finished."""
+        self._computing.discard(key)
+
+
+# Global cache instance
+_endpoint_cache = EndpointCache()
+
+# Cache TTLs (in seconds)
+CACHE_TTL = {
+    'health': 300,      # 5 minutes
+    'stories': 600,     # 10 minutes
+    'scan': 300,        # 5 minutes
+    'top': 300,         # 5 minutes
+    'sectors': 600,     # 10 minutes
+}
 
 # Configuration is now loaded from config module
 # Access via: config.telegram.bot_token, config.telegram.api_url, config.ai.api_key
@@ -702,35 +754,81 @@ def add_cors_headers(response):
 
 @app.route('/api/stories')
 def api_stories():
-    """Get current hot stories/themes."""
+    """Get current hot stories/themes (cached)."""
+    cache_key = 'stories'
+
+    # Check cache first
+    cached_data, is_cached = _endpoint_cache.get(cache_key, CACHE_TTL['stories'])
+    if is_cached:
+        cached_data['cached'] = True
+        return jsonify(cached_data)
+
+    # Return stale cache if computation in progress
+    if _endpoint_cache.is_computing(cache_key):
+        if cached_data:
+            cached_data['cached'] = True
+            cached_data['computing'] = True
+            return jsonify(cached_data)
+        return jsonify({'ok': True, 'themes': [], 'momentum_stocks': [], 'cached': False, 'computing': True})
+
     try:
+        _endpoint_cache.start_computing(cache_key)
         from fast_stories import run_fast_story_detection
         result = run_fast_story_detection(use_cache=True)
-        return jsonify({
+        response = {
             'ok': True,
-            'themes': result.get('themes', []),
-            'momentum_stocks': result.get('momentum_stocks', []),
-            'timestamp': datetime.now().isoformat()
-        })
+            'themes': result.get('themes', [])[:10],  # Limit results
+            'momentum_stocks': result.get('momentum_stocks', [])[:10],
+            'timestamp': datetime.now().isoformat(),
+            'cached': False
+        }
+        _endpoint_cache.set(cache_key, response)
+        return jsonify(response)
     except Exception as e:
+        logger.error(f"Stories endpoint error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+    finally:
+        _endpoint_cache.stop_computing(cache_key)
 
 
 @app.route('/api/scan')
 def api_scan():
-    """Get scan results."""
+    """Get scan results (cached)."""
+    cache_key = 'scan'
+
+    # Check cache first
+    cached_data, is_cached = _endpoint_cache.get(cache_key, CACHE_TTL['scan'])
+    if is_cached:
+        cached_data['cached'] = True
+        return jsonify(cached_data)
+
+    # Return stale cache if computation in progress
+    if _endpoint_cache.is_computing(cache_key):
+        if cached_data:
+            cached_data['cached'] = True
+            cached_data['computing'] = True
+            return jsonify(cached_data)
+        return jsonify({'ok': True, 'stocks': [], 'total': 0, 'cached': False, 'computing': True})
+
     try:
+        _endpoint_cache.start_computing(cache_key)
         from screener import screen_stocks
         filters = {'rs': '>0', 'above_20sma': True}
         results = screen_stocks(filters)
-        return jsonify({
+        response = {
             'ok': True,
             'stocks': results[:20],
             'total': len(results),
-            'timestamp': datetime.now().isoformat()
-        })
+            'timestamp': datetime.now().isoformat(),
+            'cached': False
+        }
+        _endpoint_cache.set(cache_key, response)
+        return jsonify(response)
     except Exception as e:
+        logger.error(f"Scan endpoint error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+    finally:
+        _endpoint_cache.stop_computing(cache_key)
 
 
 @app.route('/api/ticker/<ticker>')
@@ -837,16 +935,40 @@ def api_briefing():
 
 @app.route('/api/health')
 def api_health():
-    """Get market health (breadth + fear/greed)."""
+    """Get market health (breadth + fear/greed) - cached."""
+    cache_key = 'health'
+
+    # Check cache first
+    cached_data, is_cached = _endpoint_cache.get(cache_key, CACHE_TTL['health'])
+    if is_cached:
+        cached_data['cached'] = True
+        return jsonify(cached_data)
+
+    # Return stale cache if computation in progress
+    if _endpoint_cache.is_computing(cache_key):
+        if cached_data:
+            cached_data['cached'] = True
+            cached_data['computing'] = True
+            return jsonify(cached_data)
+        return jsonify({'ok': True, 'score': 50, 'label': 'Computing...', 'cached': False, 'computing': True})
+
     try:
+        _endpoint_cache.start_computing(cache_key)
         from market_health import get_market_health
         health = get_market_health()
-        return jsonify({
+        response = {
             'ok': True,
+            'cached': False,
+            'timestamp': datetime.now().isoformat(),
             **health
-        })
+        }
+        _endpoint_cache.set(cache_key, response)
+        return jsonify(response)
     except Exception as e:
+        logger.error(f"Health endpoint error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+    finally:
+        _endpoint_cache.stop_computing(cache_key)
 
 
 @app.route('/api/data-providers')
