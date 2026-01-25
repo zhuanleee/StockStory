@@ -176,13 +176,41 @@ def calculate_fear_greed_index():
     """
     components = {}
 
+    def safe_float(val):
+        """Safely convert any value to float."""
+        if val is None:
+            return None
+        if hasattr(val, 'iloc'):
+            # It's a Series with single element
+            return float(val.iloc[0])
+        if hasattr(val, 'item'):
+            # It's a numpy scalar
+            return float(val.item())
+        return float(val)
+
+    def safe_get_series(df, column, ticker=None):
+        """Safely extract a column from yfinance dataframe."""
+        if df is None or len(df) == 0:
+            return None
+        # Handle MultiIndex columns (yfinance returns (Column, Ticker))
+        if isinstance(df.columns, pd.MultiIndex):
+            try:
+                return df[column][ticker] if ticker else df[column].iloc[:, 0]
+            except:
+                pass
+        # Regular columns
+        if column in df.columns:
+            return df[column]
+        return None
+
     try:
         # 1. VIX Level (25%)
         try:
             vix = yf.download('^VIX', period='5d', progress=False)
-            if isinstance(vix.columns, pd.MultiIndex):
-                vix.columns = vix.columns.get_level_values(0)
-            vix_current = float(vix['Close'].iloc[-1])
+            vix_close = safe_get_series(vix, 'Close', '^VIX')
+            if vix_close is None or len(vix_close) == 0:
+                raise ValueError("No VIX data")
+            vix_current = safe_float(vix_close.iloc[-1])
 
             # VIX scoring: <15 = 100 (extreme greed), >30 = 0 (extreme fear)
             # Normal VIX range is 12-25
@@ -208,12 +236,12 @@ def calculate_fear_greed_index():
         # 2. Market Momentum (20%) - SPY vs 125-day MA
         try:
             spy = yf.download('SPY', period='6mo', progress=False)
-            if isinstance(spy.columns, pd.MultiIndex):
-                spy.columns = spy.columns.get_level_values(0)
+            spy_close = safe_get_series(spy, 'Close', 'SPY')
+            if spy_close is None or len(spy_close) < 125:
+                raise ValueError("Not enough SPY data")
 
-            spy_close = spy['Close']
-            current_spy = float(spy_close.iloc[-1])
-            ma_125 = float(spy_close.rolling(125).mean().iloc[-1])
+            current_spy = safe_float(spy_close.iloc[-1])
+            ma_125 = safe_float(spy_close.rolling(125).mean().iloc[-1])
 
             momentum_pct = (current_spy - ma_125) / ma_125 * 100
 
@@ -238,7 +266,13 @@ def calculate_fear_greed_index():
         # Using VIX term structure as proxy
         try:
             # Higher VIX relative to recent average = more puts = fear
-            vix_ma = float(vix['Close'].rolling(5).mean().iloc[-1])
+            vix_close_series = safe_get_series(vix, 'Close', '^VIX')
+            if vix_close_series is None or len(vix_close_series) < 3:
+                raise ValueError("Not enough VIX data")
+            # Use 3-day MA since we only fetch 5 days of data
+            vix_ma = safe_float(vix_close_series.rolling(3, min_periods=2).mean().iloc[-1])
+            if vix_ma is None or vix_ma == 0:
+                raise ValueError("Invalid VIX MA")
             pc_proxy = vix_current / vix_ma
 
             # PC ratio scoring: <0.8 = greed, >1.2 = fear
@@ -261,12 +295,13 @@ def calculate_fear_greed_index():
         # 4. Safe Haven Demand (15%) - SPY vs TLT (bonds)
         try:
             tlt = yf.download('TLT', period='1mo', progress=False)
-            if isinstance(tlt.columns, pd.MultiIndex):
-                tlt.columns = tlt.columns.get_level_values(0)
+            tlt_close = safe_get_series(tlt, 'Close', 'TLT')
+            if tlt_close is None or len(tlt_close) < 10:
+                raise ValueError("Not enough TLT data")
 
             # Use 10-day return for more responsiveness
-            spy_ret = (float(spy_close.iloc[-1]) / float(spy_close.iloc[-10]) - 1) * 100
-            tlt_ret = (float(tlt['Close'].iloc[-1]) / float(tlt['Close'].iloc[-10]) - 1) * 100
+            spy_ret = (safe_float(spy_close.iloc[-1]) / safe_float(spy_close.iloc[-10]) - 1) * 100
+            tlt_ret = (safe_float(tlt_close.iloc[-1]) / safe_float(tlt_close.iloc[-10]) - 1) * 100
 
             # If stocks outperform bonds = greed
             safe_haven_diff = spy_ret - tlt_ret
@@ -295,14 +330,14 @@ def calculate_fear_greed_index():
             hyg = yf.download('HYG', period='1mo', progress=False)
             lqd = yf.download('LQD', period='1mo', progress=False)
 
-            if isinstance(hyg.columns, pd.MultiIndex):
-                hyg.columns = hyg.columns.get_level_values(0)
-            if isinstance(lqd.columns, pd.MultiIndex):
-                lqd.columns = lqd.columns.get_level_values(0)
+            hyg_close = safe_get_series(hyg, 'Close', 'HYG')
+            lqd_close = safe_get_series(lqd, 'Close', 'LQD')
+            if hyg_close is None or lqd_close is None or len(hyg_close) < 10 or len(lqd_close) < 10:
+                raise ValueError("Not enough HYG/LQD data")
 
             # Use 10-day return
-            hyg_ret = (float(hyg['Close'].iloc[-1]) / float(hyg['Close'].iloc[-10]) - 1) * 100
-            lqd_ret = (float(lqd['Close'].iloc[-1]) / float(lqd['Close'].iloc[-10]) - 1) * 100
+            hyg_ret = (safe_float(hyg_close.iloc[-1]) / safe_float(hyg_close.iloc[-10]) - 1) * 100
+            lqd_ret = (safe_float(lqd_close.iloc[-1]) / safe_float(lqd_close.iloc[-10]) - 1) * 100
 
             # If junk outperforms investment grade = greed
             junk_diff = hyg_ret - lqd_ret
@@ -328,9 +363,12 @@ def calculate_fear_greed_index():
 
         # 6. Market Volatility (10%) - SPY ATR
         try:
-            high = spy['High']
-            low = spy['Low']
-            close = spy['Close']
+            high = safe_get_series(spy, 'High', 'SPY')
+            low = safe_get_series(spy, 'Low', 'SPY')
+            close = safe_get_series(spy, 'Close', 'SPY')
+
+            if high is None or low is None or close is None:
+                raise ValueError("Missing SPY OHLC data")
 
             tr = pd.concat([
                 high - low,
@@ -339,7 +377,7 @@ def calculate_fear_greed_index():
             ], axis=1).max(axis=1)
 
             atr_14 = float(tr.rolling(14).mean().iloc[-1])
-            atr_pct = atr_14 / float(close.iloc[-1]) * 100
+            atr_pct = atr_14 / safe_float(close.iloc[-1]) * 100
 
             # Lower volatility = greed (normal ATR% is 0.8-1.5)
             if atr_pct <= 0.7:
