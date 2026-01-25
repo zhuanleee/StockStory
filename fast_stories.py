@@ -139,38 +139,79 @@ def fetch_all_sources_parallel(tickers, max_workers=10):
 # =============================================================================
 
 THEME_KEYWORDS = {
-    'AI_INFRASTRUCTURE': ['nvidia', 'nvda', 'ai chip', 'gpu', 'data center', 'artificial intelligence', 'chatgpt', 'openai'],
-    'HBM_MEMORY': ['hbm', 'high bandwidth memory', 'micron', 'sk hynix', 'memory', 'dram'],
-    'SEMICONDUCTOR': ['semiconductor', 'chip', 'foundry', 'tsmc', 'asml', 'amd', 'intel'],
-    'GLP1_OBESITY': ['glp-1', 'ozempic', 'wegovy', 'mounjaro', 'obesity', 'weight loss', 'eli lilly', 'novo nordisk'],
-    'NUCLEAR': ['nuclear', 'uranium', 'smr', 'small modular reactor', 'constellation', 'cameco'],
-    'EV_BATTERY': ['ev', 'electric vehicle', 'tesla', 'battery', 'lithium', 'charging'],
-    'CRYPTO_BITCOIN': ['bitcoin', 'crypto', 'btc', 'ethereum', 'coinbase', 'microstrategy'],
-    'CLOUD_INFRASTRUCTURE': ['cloud', 'aws', 'azure', 'google cloud', 'data center', 'saas'],
-    'CYBERSECURITY': ['cybersecurity', 'security', 'crowdstrike', 'palo alto', 'hack', 'breach'],
-    'QUANTUM': ['quantum', 'quantum computing', 'ionq', 'rigetti'],
-    'ROBOTICS': ['robot', 'humanoid', 'automation', 'boston dynamics', 'figure'],
-    'SPACE': ['space', 'spacex', 'rocket', 'satellite', 'starlink'],
+    'AI_INFRASTRUCTURE': ['nvidia', 'nvda', 'ai chip', 'gpu', 'data center', 'artificial intelligence', 'chatgpt', 'openai', 'llm', 'inference', 'ai server'],
+    'HBM_MEMORY': ['hbm', 'high bandwidth memory', 'micron', 'sk hynix', 'memory', 'dram', 'hbm3', 'hbm4'],
+    'SEMICONDUCTOR': ['semiconductor', 'chip', 'foundry', 'tsmc', 'asml', 'amd', 'intel', 'fab', 'wafer'],
+    'GLP1_OBESITY': ['glp-1', 'ozempic', 'wegovy', 'mounjaro', 'obesity', 'weight loss', 'eli lilly', 'novo nordisk', 'zepbound'],
+    'NUCLEAR': ['nuclear', 'uranium', 'smr', 'small modular reactor', 'constellation', 'cameco', 'nuclear power', 'reactor'],
+    'EV_BATTERY': ['ev', 'electric vehicle', 'tesla', 'battery', 'lithium', 'charging', 'solid state'],
+    'CRYPTO_BITCOIN': ['bitcoin', 'crypto', 'btc', 'ethereum', 'coinbase', 'microstrategy', 'etf', 'btc etf'],
+    'CLOUD_INFRASTRUCTURE': ['cloud', 'aws', 'azure', 'google cloud', 'data center', 'saas', 'hyperscaler'],
+    'CYBERSECURITY': ['cybersecurity', 'security', 'crowdstrike', 'palo alto', 'hack', 'breach', 'ransomware', 'zero trust'],
+    'QUANTUM': ['quantum', 'quantum computing', 'ionq', 'rigetti', 'qubit', 'supremacy'],
+    'ROBOTICS': ['robot', 'humanoid', 'automation', 'boston dynamics', 'figure', 'optimus'],
+    'SPACE': ['space', 'spacex', 'rocket', 'satellite', 'starlink', 'lunar', 'orbit'],
+    # New themes
+    'DEFENSE_AEROSPACE': ['defense', 'aerospace', 'military', 'pentagon', 'lockheed', 'raytheon', 'boeing'],
+    'CHINA_TRADE': ['china', 'tariff', 'trade war', 'xi jinping', 'beijing', 'decoupling'],
+    'INTEREST_RATES': ['fed', 'rate cut', 'rate hike', 'powell', 'fomc', 'inflation', 'cpi'],
+    'EARNINGS_SEASON': ['earnings', 'beat', 'miss', 'guidance', 'outlook', 'eps'],
+    'FINTECH_PAYMENTS': ['fintech', 'payments', 'visa', 'mastercard', 'paypal', 'square', 'digital payments'],
+    'STREAMING_MEDIA': ['streaming', 'netflix', 'disney+', 'hulu', 'subscriber', 'content'],
+    'BIOTECH_PHARMA': ['biotech', 'fda', 'approval', 'trial', 'drug', 'pipeline', 'clinical'],
+    'REAL_ESTATE': ['real estate', 'housing', 'mortgage', 'reit', 'commercial', 'homebuilder'],
 }
 
 THEME_TICKERS = {
-    'AI_INFRASTRUCTURE': ['NVDA', 'AMD', 'AVGO', 'MRVL', 'TSM', 'SMCI'],
-    'HBM_MEMORY': ['MU', 'WDC', 'STX'],
-    'SEMICONDUCTOR': ['NVDA', 'AMD', 'INTC', 'TSM', 'ASML', 'AMAT', 'LRCX', 'KLAC'],
-    'GLP1_OBESITY': ['LLY', 'NVO', 'AMGN', 'VKTX'],
-    'NUCLEAR': ['CEG', 'VST', 'CCJ', 'UEC', 'SMR', 'OKLO'],
-    'EV_BATTERY': ['TSLA', 'RIVN', 'LCID', 'ALB', 'SQM', 'LAC'],
-    'CRYPTO_BITCOIN': ['MSTR', 'COIN', 'MARA', 'RIOT', 'CLSK'],
-    'CLOUD_INFRASTRUCTURE': ['AMZN', 'MSFT', 'GOOGL', 'CRM', 'NOW'],
-    'CYBERSECURITY': ['CRWD', 'PANW', 'FTNT', 'ZS', 'S'],
-    'QUANTUM': ['IONQ', 'RGTI', 'QBTS', 'IBM'],
-    'ROBOTICS': ['ISRG', 'ROK', 'TER', 'FANUY'],
-    'SPACE': ['RKLB', 'LUNR', 'ASTS', 'SPCE'],
+    'AI_INFRASTRUCTURE': ['NVDA', 'AMD', 'AVGO', 'MRVL', 'TSM', 'SMCI', 'ARM', 'DELL'],
+    'HBM_MEMORY': ['MU', 'WDC', 'STX', 'LRCX'],
+    'SEMICONDUCTOR': ['NVDA', 'AMD', 'INTC', 'TSM', 'ASML', 'AMAT', 'LRCX', 'KLAC', 'ON', 'NXPI'],
+    'GLP1_OBESITY': ['LLY', 'NVO', 'AMGN', 'VKTX', 'PFE'],
+    'NUCLEAR': ['CEG', 'VST', 'CCJ', 'UEC', 'SMR', 'OKLO', 'NRG'],
+    'EV_BATTERY': ['TSLA', 'RIVN', 'LCID', 'ALB', 'SQM', 'LAC', 'QS'],
+    'CRYPTO_BITCOIN': ['MSTR', 'COIN', 'MARA', 'RIOT', 'CLSK', 'HUT'],
+    'CLOUD_INFRASTRUCTURE': ['AMZN', 'MSFT', 'GOOGL', 'CRM', 'NOW', 'SNOW', 'NET'],
+    'CYBERSECURITY': ['CRWD', 'PANW', 'FTNT', 'ZS', 'S', 'OKTA'],
+    'QUANTUM': ['IONQ', 'RGTI', 'QBTS', 'IBM', 'GOOGL'],
+    'ROBOTICS': ['ISRG', 'ROK', 'TER', 'ABB'],
+    'SPACE': ['RKLB', 'LUNR', 'ASTS', 'SPCE', 'BA'],
+    # New theme tickers
+    'DEFENSE_AEROSPACE': ['LMT', 'RTX', 'NOC', 'GD', 'BA', 'HII'],
+    'CHINA_TRADE': ['BABA', 'JD', 'PDD', 'NIO', 'BIDU'],
+    'INTEREST_RATES': ['JPM', 'BAC', 'WFC', 'GS', 'MS'],
+    'EARNINGS_SEASON': [],  # Dynamic based on earnings
+    'FINTECH_PAYMENTS': ['V', 'MA', 'PYPL', 'SQ', 'AFRM', 'SOFI'],
+    'STREAMING_MEDIA': ['NFLX', 'DIS', 'WBD', 'PARA', 'ROKU'],
+    'BIOTECH_PHARMA': ['MRNA', 'REGN', 'VRTX', 'BIIB', 'GILD', 'BMY'],
+    'REAL_ESTATE': ['AMT', 'PLD', 'CCI', 'SPG', 'DHI', 'LEN'],
 }
 
 
+def load_theme_history():
+    """Load previous theme counts for momentum tracking."""
+    path = CACHE_DIR / 'theme_history.json'
+    if path.exists():
+        try:
+            with open(path, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_theme_history(current_counts):
+    """Save current theme counts for future comparison."""
+    path = CACHE_DIR / 'theme_history.json'
+    data = {
+        'timestamp': time.time(),
+        'counts': current_counts,
+    }
+    with open(path, 'w') as f:
+        json.dump(data, f)
+
+
 def detect_themes_fast(headlines):
-    """Fast keyword-based theme detection."""
+    """Fast keyword-based theme detection with momentum tracking."""
     theme_counts = defaultdict(lambda: {'count': 0, 'headlines': [], 'sentiment': []})
 
     for item in headlines:
@@ -191,34 +232,61 @@ def detect_themes_fast(headlines):
                 if sentiment:
                     theme_counts[theme]['sentiment'].append(sentiment)
 
+    # Load previous counts for momentum
+    prev_history = load_theme_history()
+    prev_counts = prev_history.get('counts', {})
+
     # Sort by count
     sorted_themes = sorted(theme_counts.items(), key=lambda x: -x[1]['count'])
 
-    # Format results
+    # Format results with momentum
     themes = []
-    for theme_name, data in sorted_themes[:10]:
+    current_counts = {}
+
+    for theme_name, data in sorted_themes[:15]:  # Track more themes
+        current_counts[theme_name] = data['count']
+
         if data['count'] >= 2:  # Minimum mentions
             # Calculate sentiment
             sentiments = data['sentiment']
             bullish = sentiments.count('Bullish')
             bearish = sentiments.count('Bearish')
 
-            if bullish > bearish:
+            # Calculate momentum (vs previous scan)
+            prev_count = prev_counts.get(theme_name, 0)
+            momentum_change = data['count'] - prev_count
+
+            if momentum_change > 2:
+                momentum = 'HEATING_UP'
+            elif momentum_change < -2:
+                momentum = 'COOLING_DOWN'
+            else:
+                momentum = 'STABLE'
+
+            # Determine heat level
+            if bullish > bearish and data['count'] >= 5:
                 heat = 'HOT'
             elif data['count'] >= 5:
                 heat = 'WARM'
-            else:
+            elif momentum == 'HEATING_UP':
                 heat = 'EMERGING'
+            else:
+                heat = 'NEUTRAL'
 
             themes.append({
                 'name': theme_name.replace('_', ' ').title(),
                 'heat': heat,
                 'mention_count': data['count'],
+                'momentum': momentum,
+                'momentum_change': momentum_change,
                 'primary_plays': THEME_TICKERS.get(theme_name, [])[:5],
                 'sample_headlines': [h['title'][:60] for h in data['headlines'][:3]],
                 'bullish_count': bullish,
                 'bearish_count': bearish,
             })
+
+    # Save current counts for next comparison
+    save_theme_history(current_counts)
 
     return themes
 
@@ -313,10 +381,28 @@ def run_fast_story_detection(tickers=None, use_cache=True):
             cached['from_cache'] = True
             return cached
 
-    # Default tickers
+    # Expanded default tickers (40 stocks across hot themes)
     if tickers is None:
-        tickers = ['NVDA', 'AMD', 'TSLA', 'AAPL', 'META', 'MSFT', 'GOOGL', 'AMZN',
-                   'MU', 'AVGO', 'LLY', 'NVO', 'CEG', 'MSTR', 'COIN', 'CRWD']
+        tickers = [
+            # AI/Semis
+            'NVDA', 'AMD', 'AVGO', 'MRVL', 'MU', 'TSM', 'SMCI', 'ARM',
+            # Big Tech
+            'AAPL', 'MSFT', 'GOOGL', 'META', 'AMZN', 'TSLA',
+            # Healthcare/GLP-1
+            'LLY', 'NVO', 'AMGN', 'MRNA',
+            # Nuclear/Energy
+            'CEG', 'VST', 'CCJ', 'UEC', 'SMR', 'OKLO',
+            # Crypto
+            'MSTR', 'COIN', 'MARA', 'RIOT',
+            # Cybersecurity
+            'CRWD', 'PANW', 'ZS', 'FTNT',
+            # Cloud/Software
+            'CRM', 'NOW', 'PLTR', 'SNOW',
+            # Quantum
+            'IONQ', 'RGTI', 'QBTS',
+            # Space
+            'RKLB', 'LUNR', 'ASTS',
+        ]
 
     start_time = time.time()
 
@@ -348,7 +434,7 @@ def run_fast_story_detection(tickers=None, use_cache=True):
 
 
 def format_fast_stories_report(result):
-    """Format stories for Telegram."""
+    """Format stories for Telegram with momentum indicators."""
     from_cache = result.get('from_cache', False)
     cache_indicator = " (cached)" if from_cache else ""
 
@@ -356,11 +442,29 @@ def format_fast_stories_report(result):
 
     themes = result.get('themes', [])
     if themes:
-        for t in themes[:6]:
+        for t in themes[:8]:
             heat = t.get('heat', 'WARM')
-            emoji = "🔥" if heat == 'HOT' else ("📈" if heat == 'WARM' else "🌱")
+            momentum = t.get('momentum', 'STABLE')
 
-            msg += f"{emoji} *{t['name']}* ({t['mention_count']} mentions)\n"
+            # Heat emoji
+            if heat == 'HOT':
+                emoji = "🔥"
+            elif heat == 'WARM':
+                emoji = "📈"
+            elif heat == 'EMERGING':
+                emoji = "🌱"
+            else:
+                emoji = "⚪"
+
+            # Momentum indicator
+            if momentum == 'HEATING_UP':
+                momentum_icon = "⬆️"
+            elif momentum == 'COOLING_DOWN':
+                momentum_icon = "⬇️"
+            else:
+                momentum_icon = ""
+
+            msg += f"{emoji} *{t['name']}* ({t['mention_count']}){momentum_icon}\n"
 
             plays = t.get('primary_plays', [])
             if plays:
@@ -368,11 +472,19 @@ def format_fast_stories_report(result):
     else:
         msg += "_No hot themes detected_\n"
 
+    # Heating up section
+    heating = [t for t in themes if t.get('momentum') == 'HEATING_UP']
+    if heating:
+        msg += "\n*⬆️ HEATING UP:*\n"
+        for t in heating[:3]:
+            change = t.get('momentum_change', 0)
+            msg += f"   {t['name']} (+{change} mentions)\n"
+
     # Momentum stocks
-    momentum = result.get('momentum_stocks', [])
-    if momentum:
+    momentum_stocks = result.get('momentum_stocks', [])
+    if momentum_stocks:
         msg += "\n*📊 Trending Tickers:*\n"
-        for m in momentum[:5]:
+        for m in momentum_stocks[:5]:
             sent_emoji = "🟢" if m['sentiment'] == 'Bullish' else ("🔴" if m['sentiment'] == 'Bearish' else "⚪")
             msg += f"{sent_emoji} `{m['ticker']}` - {m['mentions']} mentions\n"
 
