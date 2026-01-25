@@ -184,12 +184,48 @@ class FinnhubProvider:
         """
         Get social sentiment for a ticker.
 
+        Note: news-sentiment endpoint requires premium. Use company-news instead
+        and derive sentiment from headlines.
+
         Returns: {
             'buzz': {'articlesInLastWeek': int, 'buzz': float},
             'sentiment': {'bearishPercent': float, 'bullishPercent': float}
         }
         """
-        return FinnhubProvider._request('news-sentiment', {'symbol': ticker.upper()})
+        # news-sentiment requires premium, use company-news instead
+        try:
+            news = FinnhubProvider.get_company_news(ticker, days_back=7)
+            if not news:
+                return None
+
+            # Simple sentiment analysis from headlines
+            bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade', 'buy']
+            bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade', 'sell']
+
+            bullish_count = 0
+            bearish_count = 0
+
+            for article in news[:20]:
+                headline = (article.get('headline', '') + ' ' + article.get('summary', '')).lower()
+                if any(w in headline for w in bullish_words):
+                    bullish_count += 1
+                if any(w in headline for w in bearish_words):
+                    bearish_count += 1
+
+            total = bullish_count + bearish_count
+            if total > 0:
+                bullish_pct = bullish_count / total
+                bearish_pct = bearish_count / total
+            else:
+                bullish_pct = 0.5
+                bearish_pct = 0.5
+
+            return {
+                'buzz': {'articlesInLastWeek': len(news), 'buzz': len(news) / 10.0},
+                'sentiment': {'bullishPercent': bullish_pct, 'bearishPercent': bearish_pct}
+            }
+        except Exception:
+            return None
 
     @staticmethod
     def get_earnings_calendar(from_date: str = None, to_date: str = None) -> List[Dict]:
