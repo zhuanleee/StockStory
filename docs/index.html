@@ -4,18 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Scanner Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
     <style>
         :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-tertiary: #21262d;
-            --text-primary: #f0f6fc;
-            --text-secondary: #8b949e;
-            --accent-green: #3fb950;
-            --accent-red: #f85149;
-            --accent-blue: #58a6ff;
-            --accent-orange: #d29922;
-            --accent-purple: #a371f7;
+            --bg-dark: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-card-hover: #1a1a25;
+            --bg-accent: #1e1e2e;
+            --border: #2a2a3a;
+            --text: #e4e4e7;
+            --text-dim: #71717a;
+            --green: #22c55e;
+            --green-dim: rgba(34, 197, 94, 0.15);
+            --red: #ef4444;
+            --red-dim: rgba(239, 68, 68, 0.15);
+            --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.15);
+            --purple: #a855f7;
+            --purple-dim: rgba(168, 85, 247, 0.15);
+            --orange: #f97316;
+            --orange-dim: rgba(249, 115, 22, 0.15);
+            --yellow: #eab308;
         }
 
         * {
@@ -25,169 +34,120 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
         }
 
-        .container {
-            max-width: 1400px;
+        /* Navbar */
+        .navbar {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .navbar-content {
+            max-width: 1600px;
             margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 0;
-            border-bottom: 1px solid var(--bg-tertiary);
-            margin-bottom: 30px;
         }
 
-        h1 {
-            font-size: 1.8rem;
-            font-weight: 600;
-        }
-
-        .last-update {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid var(--bg-tertiary);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .card-title {
-            font-size: 1.1rem;
-            font-weight: 600;
+        .logo {
             display: flex;
             align-items: center;
+            gap: 12px;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .logo-icon {
+            font-size: 1.5rem;
+        }
+
+        .nav-links {
+            display: flex;
             gap: 8px;
         }
 
-        .badge {
-            background: var(--bg-tertiary);
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th, td {
-            padding: 10px 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--bg-tertiary);
-        }
-
-        th {
-            color: var(--text-secondary);
-            font-weight: 500;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-        }
-
-        .ticker {
-            font-weight: 600;
-            color: var(--accent-blue);
-        }
-
-        .positive {
-            color: var(--accent-green);
-        }
-
-        .negative {
-            color: var(--accent-red);
-        }
-
-        .score-bar {
-            background: var(--bg-tertiary);
-            border-radius: 4px;
-            height: 8px;
-            overflow: hidden;
-        }
-
-        .score-fill {
-            height: 100%;
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-
-        .theme-tag {
-            display: inline-block;
-            background: var(--bg-tertiary);
-            padding: 4px 10px;
-            border-radius: 6px;
-            margin: 4px;
-            font-size: 0.85rem;
-        }
-
-        .theme-hot {
-            background: rgba(63, 185, 80, 0.2);
-            color: var(--accent-green);
-        }
-
-        .corr-pair {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--bg-tertiary);
-        }
-
-        .breadth-meter {
-            background: var(--bg-tertiary);
+        .nav-link {
+            padding: 8px 16px;
             border-radius: 8px;
-            height: 24px;
-            overflow: hidden;
-            margin: 10px 0;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.2s;
         }
 
-        .breadth-fill {
-            height: 100%;
+        .nav-link:hover {
+            background: var(--bg-accent);
+            color: var(--text);
+        }
+
+        .nav-link.active {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .telegram-btn {
+            background: linear-gradient(135deg, #0088cc, #00a8e8);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 0.85rem;
-            font-weight: 600;
+            gap: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .stat-grid {
+        .telegram-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 136, 204, 0.4);
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
         }
 
         .stat-card {
-            background: var(--bg-secondary);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 20px;
-            text-align: center;
-            border: 1px solid var(--bg-tertiary);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--blue);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
         }
 
         .stat-value {
@@ -195,371 +155,714 @@
             font-weight: 700;
         }
 
-        .stat-label {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            margin-top: 5px;
+        .stat-value.green { color: var(--green); }
+        .stat-value.red { color: var(--red); }
+        .stat-value.blue { color: var(--blue); }
+        .stat-value.purple { color: var(--purple); }
+        .stat-value.orange { color: var(--orange); }
+
+        .stat-change {
+            font-size: 0.875rem;
+            margin-top: 4px;
         }
 
-        @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-            .stat-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 20px;
+        }
+
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+        .col-12 { grid-column: span 12; }
+
+        @media (max-width: 1200px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title-icon {
+            font-size: 1.25rem;
+        }
+
+        .card-badge {
+            background: var(--bg-accent);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .card-body {
+            padding: 20px 24px;
+        }
+
+        /* Tables */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+        }
+
+        .table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .table tr:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .ticker {
+            font-weight: 600;
+            color: var(--blue);
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
+        /* Score Bar */
+        .score-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .score-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-accent);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .score-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--green), var(--blue));
+        }
+
+        /* Theme Tags */
+        .themes-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .theme-tag {
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s;
+            cursor: default;
+        }
+
+        .theme-tag:hover {
+            transform: scale(1.05);
+        }
+
+        .theme-hot {
+            background: var(--orange-dim);
+            color: var(--orange);
+            border: 1px solid var(--orange);
+        }
+
+        .theme-warm {
+            background: var(--yellow);
+            background: rgba(234, 179, 8, 0.15);
+            color: var(--yellow);
+            border: 1px solid var(--yellow);
+        }
+
+        .theme-neutral {
+            background: var(--bg-accent);
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+
+        .theme-count {
+            background: rgba(255,255,255,0.15);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+
+        /* Sentiment Bars */
+        .sentiment-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sentiment-row:last-child {
+            border-bottom: none;
+        }
+
+        .sentiment-ticker {
+            width: 60px;
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .sentiment-bar-container {
+            flex: 1;
+            display: flex;
+            height: 24px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 0 16px;
+        }
+
+        .sentiment-bullish {
+            background: var(--green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .sentiment-bearish {
+            background: var(--red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .sentiment-label {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .sentiment-label.bullish { background: var(--green-dim); color: var(--green); }
+        .sentiment-label.bearish { background: var(--red-dim); color: var(--red); }
+        .sentiment-label.neutral { background: var(--bg-accent); color: var(--text-dim); }
+
+        /* Breadth Meters */
+        .breadth-item {
+            margin-bottom: 16px;
+        }
+
+        .breadth-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .breadth-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.875rem;
+        }
+
+        .breadth-bar {
+            height: 12px;
+            background: var(--bg-accent);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .breadth-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        /* AI Insights */
+        .ai-insight {
+            background: linear-gradient(135deg, var(--purple-dim), var(--blue-dim));
+            border: 1px solid var(--purple);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .ai-insight:last-child {
+            margin-bottom: 0;
+        }
+
+        .ai-insight-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .ai-insight-text {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        /* Command Card */
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .command-item {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .command-item:hover {
+            border-color: var(--blue);
+            background: var(--blue-dim);
+        }
+
+        .command-name {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+            color: var(--blue);
+            margin-bottom: 6px;
+        }
+
+        .command-desc {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 24px;
+            color: var(--text-dim);
+            font-size: 0.875rem;
+        }
+
+        .footer a {
+            color: var(--blue);
+            text-decoration: none;
+        }
+
+        /* Pulse Animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        /* Refresh timestamp */
+        .refresh-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
         }
     </style>
 </head>
 <body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">
+                <span class="logo-icon">📊</span>
+                <span>Stock Scanner</span>
+            </div>
+            <div class="nav-links">
+                <a href="#overview" class="nav-link active">Overview</a>
+                <a href="#themes" class="nav-link">Themes</a>
+                <a href="#sentiment" class="nav-link">Sentiment</a>
+                <a href="#commands" class="nav-link">Commands</a>
+            </div>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="refresh-info">
+                    <div class="live-dot"></div>
+                    <span>Updated 2026-01-25 15:50 UTC</span>
+                </div>
+                <a href="https://t.me/your_bot" class="telegram-btn" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.139-5.062 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.442-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.015 3.333-1.386 4.025-1.627 4.477-1.635.099-.002.321.023.465.141.121.1.154.234.17.33.015.097.035.311.019.48z"/>
+                    </svg>
+                    Open Bot
+                </a>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
-        <header>
-            <h1>📊 Stock Scanner Dashboard</h1>
-            <span class="last-update">Last updated: 2026-01-24 14:24 UTC</span>
-        </header>
-
         <!-- Stats Overview -->
-        <div class="stat-grid">
-            <div class="stat-card">
-                <div class="stat-value positive">503</div>
-                <div class="stat-label">Stocks Scanned</div>
+        <section id="overview">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-label">Stocks Scanned</div>
+                    <div class="stat-value blue">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Breakouts</div>
+                    <div class="stat-value green">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">In Squeeze</div>
+                    <div class="stat-value purple">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Market Breadth</div>
+                    <div class="stat-value ">50%</div>
+                    <div class="stat-change">Above 50 SMA</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Hot Themes</div>
+                    <div class="stat-value orange">9</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value" style="color: var(--accent-orange)">20</div>
-                <div class="stat-label">Active Breakouts</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" style="color: var(--accent-purple)">55</div>
-                <div class="stat-label">In Squeeze</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" style="color: var(--accent-blue)">68%</div>
-                <div class="stat-label">Above 50 SMA</div>
-            </div>
-        </div>
 
-        <div class="grid">
-            <!-- Top 10 Stocks -->
+            <div class="grid">
+                <!-- Top Stocks -->
+                <div class="col-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🏆</span>
+                                Top Momentum Stocks
+                            </div>
+                            <span class="card-badge">Live Rankings</span>
+                        </div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Ticker</th>
+                                    <th>Price</th>
+                                    <th>RS vs SPY</th>
+                                    <th>Volume</th>
+                                    <th style="width: 150px;">Score</th>
+                                    <th>Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Run /scan to populate data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Market Breadth -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Market Breadth
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 20 SMA</span>
+                                    <span class="">50%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: 50%; background: var(--blue);"></div>
+                                </div>
+                            </div>
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 50 SMA</span>
+                                    <span class="">50%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: 50%; background: var(--green);"></div>
+                                </div>
+                            </div>
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 200 SMA</span>
+                                    <span class="">50%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: 50%; background: var(--purple);"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sector Leaders -->
+                    <div class="card" style="margin-top: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📈</span>
+                                Sector Leaders
+                            </div>
+                        </div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Sector</th>
+                                    <th>RS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="2" style="color: var(--text-dim);">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hot Themes -->
+        <section id="themes" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔥</span>
+                                Hot Themes & Stories
+                            </div>
+                            <span class="card-badge">Auto-detected</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="themes-container">
+                                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Cloud Infrastructure</span>
+                    <span class="theme-count">17</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Ai Infrastructure</span>
+                    <span class="theme-count">12</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Crypto Bitcoin</span>
+                    <span class="theme-count">10</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Glp1 Obesity</span>
+                    <span class="theme-count">10</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Ev Battery</span>
+                    <span class="theme-count">9</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Hbm Memory</span>
+                    <span class="theme-count">5</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Nuclear</span>
+                    <span class="theme-count">5</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Cybersecurity</span>
+                    <span class="theme-count">5</span>
+                </div>
+                
+                <div class="theme-tag theme-neutral">
+                    <span>📈 Semiconductor</span>
+                    <span class="theme-count">3</span>
+                </div>
+                
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sentiment -->
+        <section id="sentiment" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📰</span>
+                                News Sentiment
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p style="color: var(--text-dim);">Run /news to get sentiment data</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🤖</span>
+                                AI Insights
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="ai-insight"><div class="ai-insight-header">💡 Getting Started</div><div class="ai-insight-text">Use /briefing in Telegram to get AI-powered market insights.</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bot Commands -->
+        <section id="commands" style="margin-top: 24px;">
             <div class="card">
                 <div class="card-header">
-                    <span class="card-title">🏆 Top 10 Stocks</span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Ticker</th>
-                            <th>Score</th>
-                            <th>RS</th>
-                            <th>Signal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        
-        <tr>
-            <td>1</td>
-            <td class="ticker">GILD</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>83</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 83.33333333333333%; background: var(--accent-green);"></div>
+                    <div class="card-title">
+                        <span class="card-title-icon">⌨️</span>
+                        Telegram Bot Commands
                     </div>
+                    <a href="https://t.me/your_bot" class="telegram-btn" target="_blank">
+                        Open in Telegram
+                    </a>
                 </div>
-            </td>
-            <td class="positive">+10.1%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>2</td>
-            <td class="ticker">CVS</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>75</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 75.0%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+6.1%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>3</td>
-            <td class="ticker">STLD</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>73</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 73.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+5.5%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>4</td>
-            <td class="ticker">KMI</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>73</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 73.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+7.8%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>5</td>
-            <td class="ticker">WMB</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>73</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 73.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+7.3%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>6</td>
-            <td class="ticker">AMD</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>73</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 73.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+18.9%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>7</td>
-            <td class="ticker">ENPH</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>71</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 70.83333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+14.5%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>8</td>
-            <td class="ticker">SLB</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>70</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 70.0%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+11.5%</td>
-            <td></td>
-        </tr>
-        
-        <tr>
-            <td>9</td>
-            <td class="ticker">MNST</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>68</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 68.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+5.9%</td>
-            <td>🚀</td>
-        </tr>
-        
-        <tr>
-            <td>10</td>
-            <td class="ticker">DVN</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span>68</span>
-                    <div class="score-bar" style="width: 60px;">
-                        <div class="score-fill" style="width: 68.33333333333333%; background: var(--accent-green);"></div>
-                    </div>
-                </div>
-            </td>
-            <td class="positive">+7.6%</td>
-            <td>🚀</td>
-        </tr>
-        
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Hot Themes -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">🔥 Hot Themes</span>
-                </div>
-                <div style="margin-top: 10px;">
-                    <span class="theme-tag theme-hot">Basic Materials (+6.0%)</span><span class="theme-tag theme-hot">Energy (+5.9%)</span><span class="theme-tag theme-hot">Consumer Defensive (+3.1%)</span><span class="theme-tag ">Industrials (+1.7%)</span><span class="theme-tag ">Healthcare (+1.1%)</span><span class="theme-tag ">Real Estate (+1.0%)</span><span class="theme-tag ">Consumer Cyclical (+0.5%)</span><span class="theme-tag ">Technology (+0.4%)</span>
-                </div>
-            </div>
-
-            <!-- Sector Strength -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📈 Sector Strength</span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Sector</th>
-                            <th>RS</th>
-                            <th>Breakouts</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        
-        <tr>
-            <td>Basic Materials</td>
-            <td class="positive">+6.0%</td>
-            <td>2</td>
-        </tr>
-        
-        <tr>
-            <td>Energy</td>
-            <td class="positive">+5.9%</td>
-            <td>5</td>
-        </tr>
-        
-        <tr>
-            <td>Consumer Defensive</td>
-            <td class="positive">+3.1%</td>
-            <td>3</td>
-        </tr>
-        
-        <tr>
-            <td>Industrials</td>
-            <td class="positive">+1.7%</td>
-            <td>2</td>
-        </tr>
-        
-        <tr>
-            <td>Healthcare</td>
-            <td class="positive">+1.1%</td>
-            <td>3</td>
-        </tr>
-        
-        <tr>
-            <td>Real Estate</td>
-            <td class="positive">+1.0%</td>
-            <td>0</td>
-        </tr>
-        
-        <tr>
-            <td>Consumer Cyclical</td>
-            <td class="positive">+0.5%</td>
-            <td>1</td>
-        </tr>
-        
-        <tr>
-            <td>Technology</td>
-            <td class="positive">+0.4%</td>
-            <td>2</td>
-        </tr>
-        
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Correlation Warnings -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">🔗 High Correlations</span>
-                    <span class="badge">Watch for overconcentration</span>
-                </div>
-                <div style="margin-top: 10px;">
-                    <p style='color: var(--text-secondary);'>Run scan to detect correlations</p>
-                </div>
-            </div>
-
-            <!-- Supply Chain Plays -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">⛓️ Supply Chain Plays</span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Driver</th>
-                            <th>→</th>
-                            <th>Beneficiary</th>
-                            <th>Gap</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td colspan='4' style='color: var(--text-secondary);'>Run scan for supply chain analysis</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Learned Themes -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📚 Learned Themes</span>
-                    <span class="badge">Auto-detected</span>
-                </div>
-                <div style="margin-top: 10px;">
-                    <p style='color: var(--text-secondary);'>No themes learned yet. System will auto-detect patterns over time.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Market Breadth -->
-        <div class="card" style="margin-bottom: 30px;">
-            <div class="card-header">
-                <span class="card-title">📊 Market Breadth</span>
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 15px;">
-                <div>
-                    <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 5px;">Above 20 SMA</div>
-                    <div class="breadth-meter">
-                        <div class="breadth-fill" style="width: 59%; background: var(--accent-blue);">59%</div>
-                    </div>
-                </div>
-                <div>
-                    <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 5px;">Above 50 SMA</div>
-                    <div class="breadth-meter">
-                        <div class="breadth-fill" style="width: 68%; background: var(--accent-green);">68%</div>
-                    </div>
-                </div>
-                <div>
-                    <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 5px;">Above 200 SMA</div>
-                    <div class="breadth-meter">
-                        <div class="breadth-fill" style="width: 68%; background: var(--accent-purple);">68%</div>
+                <div class="card-body">
+                    <div class="command-grid">
+                        <div class="command-item">
+                            <div class="command-name">/scan</div>
+                            <div class="command-desc">Run full momentum scanner</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/stories</div>
+                            <div class="command-desc">Detect hot themes</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/news</div>
+                            <div class="command-desc">News sentiment analysis</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/sectors</div>
+                            <div class="command-desc">Sector rotation</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/earnings</div>
+                            <div class="command-desc">Earnings calendar</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/briefing</div>
+                            <div class="command-desc">AI market narrative</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/predict NVDA</div>
+                            <div class="command-desc">AI trade prediction</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/screen</div>
+                            <div class="command-desc">Custom stock screener</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">NVDA</div>
+                            <div class="command-desc">Full stock analysis</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/backtest NVDA</div>
+                            <div class="command-desc">Signal accuracy test</div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <footer style="text-align: center; color: var(--text-secondary); padding: 20px 0;">
-            <p>Generated by Stock Scanner Bot | Data updates twice daily</p>
-        </footer>
+        </section>
     </div>
+
+    <footer class="footer">
+        <p>Stock Scanner Bot Dashboard | Auto-updates every 6 hours</p>
+        <p style="margin-top: 8px;">
+            <a href="https://github.com/zhuanleee/stock_scanner_bot">GitHub</a> ·
+            <a href="https://t.me/your_bot">Telegram Bot</a>
+        </p>
+    </footer>
+
+    <script>
+        // Smooth scroll for nav links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href.startsWith('#')) {
+                    e.preventDefault();
+                    document.querySelector(href).scrollIntoView({ behavior: 'smooth' });
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                }
+            });
+        });
+
+        // Update active nav on scroll
+        window.addEventListener('scroll', () => {
+            const sections = ['overview', 'themes', 'sentiment', 'commands'];
+            let current = 'overview';
+
+            sections.forEach(id => {
+                const section = document.getElementById(id);
+                if (section && window.scrollY >= section.offsetTop - 100) {
+                    current = id;
+                }
+            });
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+            });
+        });
+    </script>
 </body>
 </html>
