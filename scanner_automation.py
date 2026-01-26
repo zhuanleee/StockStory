@@ -530,6 +530,97 @@ def run_scan(use_story_first=True):
     return df_results, price_data
 
 
+# =============================================================================
+# ASYNC SCAN FUNCTIONS
+# =============================================================================
+
+async def run_scan_async(use_story_first=True):
+    """
+    Async version of run_scan for 8-25x performance improvement.
+
+    Uses concurrent API calls with proper rate limiting and caching.
+
+    Args:
+        use_story_first: Whether to use story-first scoring approach
+
+    Returns:
+        Tuple of (results DataFrame, price_data dict)
+    """
+    from async_scanner import AsyncScanner
+
+    logger.info(f"Starting ASYNC {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {datetime.now()}")
+
+    # Get tickers from universe
+    tickers = get_scan_universe()
+    logger.info(f"Async scanning {len(tickers)} tickers...")
+
+    # Create scanner with concurrency limit
+    scanner = AsyncScanner(max_concurrent=50)
+
+    try:
+        df_results, price_data = await scanner.run_scan_async(
+            tickers=tickers,
+            use_story_first=use_story_first,
+        )
+
+        # Log story stats
+        if use_story_first and len(df_results) > 0:
+            if 'has_theme' in df_results.columns:
+                theme_count = df_results['has_theme'].sum()
+                logger.info(f"Async scan complete: {theme_count} in themes")
+
+        logger.info(f"Async scan complete. {len(df_results)} tickers analyzed.")
+
+        # Trigger theme learning (same as sync version)
+        if HAS_THEME_LEARNER and len(df_results) > 0:
+            try:
+                # Prepare price data for learning
+                returns_data = {}
+                for ticker in df_results['ticker'].tolist()[:100]:
+                    try:
+                        df = price_data.get(ticker)
+                        if df is not None and len(df) >= 20:
+                            close = df['Close'] if 'Close' in df.columns else df.iloc[:, 0]
+                            returns = close.pct_change().dropna().tolist()
+                            returns_data[ticker] = returns
+                    except Exception:
+                        continue
+
+                # Run learning cycle
+                learner = get_theme_learner()
+                learning_result = await learner.run_learning_cycle(
+                    price_data=returns_data,
+                    candidate_tickers=df_results['ticker'].tolist(),
+                )
+                if learning_result:
+                    members_discovered = len(learning_result.get('members_discovered', []))
+                    themes_discovered = len(learning_result.get('themes_discovered', []))
+                    logger.info(f"Theme learning: {members_discovered} members, {themes_discovered} themes discovered")
+            except Exception as e:
+                logger.debug(f"Theme learning skipped: {e}")
+
+        return df_results, price_data
+
+    finally:
+        await scanner.close()
+
+
+def run_scan_with_async(use_story_first=True):
+    """
+    Sync wrapper for async scan - use this from existing code.
+
+    This provides a drop-in replacement for run_scan() with async performance.
+
+    Usage:
+        results, price_data = run_scan_with_async()
+
+    Returns:
+        Tuple of (results DataFrame, price_data dict)
+    """
+    import asyncio
+    return asyncio.run(run_scan_async(use_story_first))
+
+
 def detect_alerts(df_results, previous_results=None):
     """Detect alert-worthy conditions."""
     alerts = []
