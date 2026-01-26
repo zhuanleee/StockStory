@@ -1359,11 +1359,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         </div>
                         <div class="card-body">
                             <div class="inplay-bar" id="inplay-bar">
-                                <div class="inplay-card">
-                                    <div class="inplay-ticker">--</div>
-                                    <div class="inplay-score">--</div>
-                                    <div class="inplay-theme">Loading...</div>
-                                </div>
+                                {{INPLAY_HTML}}
                             </div>
                         </div>
                     </div>
@@ -1380,13 +1376,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             <span class="card-badge">Lagging Plays</span>
                         </div>
                         <div class="card-body" id="opportunities-list">
-                            <div class="opportunity-card">
-                                <div class="opportunity-header">
-                                    <span class="opportunity-ticker">Loading...</span>
-                                    <span class="opportunity-gap">--</span>
-                                </div>
-                                <div class="opportunity-detail">Fetching ecosystem data...</div>
-                            </div>
+                            {{OPPORTUNITIES_HTML}}
                         </div>
                     </div>
                 </div>
@@ -1402,6 +1392,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         </div>
                         <div class="card-body">
                             <div class="subtheme-grid" id="subtheme-grid">
+                                {{SUBTHEMES_HTML}}
                                 <div class="subtheme-card">
                                     <div class="subtheme-header">
                                         <span class="subtheme-name">Loading...</span>
@@ -2481,6 +2472,9 @@ def generate_dashboard():
         'SECTOR_ROWS': '<tr><td colspan="2" style="color: var(--text-dim);">No data</td></tr>',
         'SENTIMENT_HTML': '<p style="color: var(--text-dim);">Run /news to get sentiment data</p>',
         'AI_INSIGHTS_HTML': '<div class="ai-insight"><div class="ai-insight-header">💡 Getting Started</div><div class="ai-insight-text">Use /briefing in Telegram to get AI-powered market insights.</div></div>',
+        'INPLAY_HTML': '<div class="inplay-card"><div class="inplay-ticker">--</div><div class="inplay-score">--</div><div class="inplay-theme">Run scan first</div></div>',
+        'OPPORTUNITIES_HTML': '<div class="opportunity-card"><div class="opportunity-header"><span class="opportunity-ticker">--</span><span class="opportunity-gap">--</span></div><div class="opportunity-detail">Run scan to find opportunities</div></div>',
+        'SUBTHEMES_HTML': '<div class="subtheme-card"><div class="subtheme-header"><span class="subtheme-name">No sub-themes</span><span class="subtheme-status status-warm">--</span></div></div>',
     }
 
     # Try to load scan data
@@ -2581,16 +2575,95 @@ def generate_dashboard():
                 if sector_rows:
                     data['SECTOR_ROWS'] = ''.join(sector_rows)
 
+            # Generate In-Play stocks (top momentum stocks)
+            inplay_cards = []
+            for _, row in df.head(8).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                score = row.get('composite_score', row.get('story_score', 0))
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val)[:15] if pd.notna(theme_val) and theme_val else 'Momentum'
+                rs = row.get('rs_composite', 0) or 0
+
+                score_class = 'green' if score >= 50 else ('orange' if score >= 30 else 'blue')
+                inplay_cards.append(f'''
+                <div class="inplay-card">
+                    <div class="inplay-ticker">{ticker}</div>
+                    <div class="inplay-score" style="color: var(--{score_class});">{score:.0f}</div>
+                    <div class="inplay-theme">{theme}</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: {rs:+.1f}%</div>
+                </div>
+                ''')
+            if inplay_cards:
+                data['INPLAY_HTML'] = ''.join(inplay_cards)
+
+            # Generate Ecosystem Opportunities (stocks with themes that are lagging)
+            opportunities = []
+            theme_stocks = df[df['has_theme'] == True] if 'has_theme' in df.columns else pd.DataFrame()
+            lagging = theme_stocks[theme_stocks['rs_composite'] < 0] if not theme_stocks.empty and 'rs_composite' in theme_stocks.columns else pd.DataFrame()
+
+            for _, row in lagging.head(5).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                rs = row.get('rs_composite', 0) or 0
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val) if pd.notna(theme_val) and theme_val else 'Theme Play'
+                gap = abs(rs)
+
+                opportunities.append(f'''
+                <div class="opportunity-card">
+                    <div class="opportunity-header">
+                        <span class="opportunity-ticker">{ticker}</span>
+                        <span class="opportunity-gap">{gap:.1f}% gap</span>
+                    </div>
+                    <div class="opportunity-detail">{theme} | Lagging beneficiary</div>
+                </div>
+                ''')
+
+            if not opportunities:
+                # Show top breakout/squeeze candidates if no lagging theme stocks
+                breakouts = df[df['breakout_up'] == True] if 'breakout_up' in df.columns else pd.DataFrame()
+                squeezes = df[df['in_squeeze'] == True] if 'in_squeeze' in df.columns else pd.DataFrame()
+
+                for _, row in breakouts.head(2).iterrows():
+                    ticker = row.get('ticker', 'N/A')
+                    rs = row.get('rs_composite', 0)
+                    opportunities.append(f'''
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">{ticker}</span>
+                            <span class="opportunity-gap">🚀 Breakout</span>
+                        </div>
+                        <div class="opportunity-detail">RS: {rs:+.1f}% | Breaking resistance</div>
+                    </div>
+                    ''')
+
+                for _, row in squeezes.head(3).iterrows():
+                    ticker = row.get('ticker', 'N/A')
+                    vol = row.get('vol_ratio', 1)
+                    opportunities.append(f'''
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">{ticker}</span>
+                            <span class="opportunity-gap">⏳ Squeeze</span>
+                        </div>
+                        <div class="opportunity-detail">Vol: {vol:.1f}x | Compression setup</div>
+                    </div>
+                    ''')
+
+            if opportunities:
+                data['OPPORTUNITIES_HTML'] = ''.join(opportunities)
+
         except Exception as e:
             print(f"Error loading scan data: {e}")
 
     # Try to load stories/themes
+    themes_loaded = False
     try:
         from fast_stories import run_fast_story_detection
         stories = run_fast_story_detection(use_cache=True)
 
         themes = stories.get('themes', [])
         if themes:
+            themes_loaded = True
             hot_count = len([t for t in themes if t.get('heat') == 'HOT'])
             data['HOT_THEMES'] = str(hot_count) if hot_count else str(len(themes))
 
@@ -2615,6 +2688,120 @@ def generate_dashboard():
             data['THEMES_HTML'] = ''.join(theme_tags)
     except Exception as e:
         print(f"Stories error: {e}")
+
+    # Fallback to theme_registry if fast_stories didn't return themes
+    if not themes_loaded:
+        try:
+            from theme_registry import ThemeRegistry
+            registry = ThemeRegistry()
+            active_themes = registry.get_active_themes()
+
+            if active_themes:
+                data['HOT_THEMES'] = str(len(active_themes))
+                theme_tags = []
+                for theme in active_themes[:12]:
+                    # Handle LearnedTheme objects
+                    name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                    stage = getattr(theme, 'stage', None)
+                    stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                    members = getattr(theme, 'members', {})
+
+                    # Map stage to heat
+                    if stage_str == 'peak':
+                        heat_class = 'theme-hot'
+                        icon = '🔥'
+                    elif stage_str in ['early', 'middle']:
+                        heat_class = 'theme-warm'
+                        icon = '📈'
+                    else:
+                        heat_class = 'theme-neutral'
+                        icon = '📊'
+
+                    theme_tags.append(f'''
+                    <div class="theme-tag {heat_class}">
+                        <span>{icon} {name}</span>
+                        <span class="theme-count">{len(members)}</span>
+                    </div>
+                    ''')
+
+                data['THEMES_HTML'] = ''.join(theme_tags)
+
+                # Generate sub-themes HTML
+                subtheme_cards = []
+                for theme in active_themes[:6]:
+                    name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                    stage = getattr(theme, 'stage', None)
+                    stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                    members = getattr(theme, 'members', {})
+
+                    # Stage styling
+                    if stage_str == 'peak':
+                        status_class = 'status-hot'
+                    elif stage_str == 'early':
+                        status_class = 'status-early'
+                    else:
+                        status_class = 'status-warm'
+
+                    # Get member tickers
+                    member_tickers = list(members.keys())[:5]
+                    tickers_html = ''.join([f'<span class="subtheme-ticker">{t}</span>' for t in member_tickers])
+
+                    subtheme_cards.append(f'''
+                    <div class="subtheme-card">
+                        <div class="subtheme-header">
+                            <span class="subtheme-name">{name[:20]}</span>
+                            <span class="subtheme-status {status_class}">{stage_str.upper()}</span>
+                        </div>
+                        <div class="subtheme-tickers">{tickers_html if tickers_html else '<span style="color: var(--text-dim);">No members</span>'}</div>
+                    </div>
+                    ''')
+
+                if subtheme_cards:
+                    data['SUBTHEMES_HTML'] = ''.join(subtheme_cards)
+
+        except Exception as e:
+            print(f"Theme registry fallback error: {e}")
+
+    # Always generate sub-themes from theme_registry (independent of fast_stories)
+    try:
+        from theme_registry import ThemeRegistry
+        registry = ThemeRegistry()
+        active_themes = registry.get_active_themes()
+
+        if active_themes:
+            subtheme_cards = []
+            for theme in active_themes[:6]:
+                name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                stage = getattr(theme, 'stage', None)
+                stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                members = getattr(theme, 'members', {})
+
+                # Stage styling
+                if stage_str == 'peak':
+                    status_class = 'status-hot'
+                elif stage_str == 'early':
+                    status_class = 'status-early'
+                else:
+                    status_class = 'status-warm'
+
+                # Get member tickers
+                member_tickers = list(members.keys())[:5]
+                tickers_html = ''.join([f'<span class="subtheme-ticker">{t}</span>' for t in member_tickers])
+
+                subtheme_cards.append(f'''
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">{name[:20]}</span>
+                        <span class="subtheme-status {status_class}">{stage_str.upper()}</span>
+                    </div>
+                    <div class="subtheme-tickers">{tickers_html if tickers_html else '<span style="color: var(--text-dim);">No members</span>'}</div>
+                </div>
+                ''')
+
+            if subtheme_cards:
+                data['SUBTHEMES_HTML'] = ''.join(subtheme_cards)
+    except Exception as e:
+        print(f"Sub-themes generation error: {e}")
 
     # Try to load sentiment
     try:

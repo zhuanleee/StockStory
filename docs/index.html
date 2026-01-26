@@ -806,6 +806,125 @@
             padding: 2px 8px;
             border-radius: 12px;
         }
+
+        /* Evolution Engine Styles */
+        .evolution-card {
+            background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
+            border: 1px solid var(--purple);
+        }
+
+        .evolution-cycle {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--purple);
+        }
+
+        .evolution-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .evolution-metric:last-child {
+            border-bottom: none;
+        }
+
+        .evolution-metric-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .evolution-metric-value {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .weight-change-positive {
+            color: var(--green);
+        }
+
+        .weight-change-negative {
+            color: var(--red);
+        }
+
+        .discovered-theme-card {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+
+        .theme-stage {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .stage-early {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--green);
+        }
+
+        .stage-middle {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--blue);
+        }
+
+        .stage-peak {
+            background: rgba(249, 115, 22, 0.2);
+            color: var(--orange);
+        }
+
+        .stage-fading {
+            background: rgba(113, 113, 122, 0.2);
+            color: var(--text-dim);
+        }
+
+        .correlation-pair {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-accent);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .correlation-value {
+            background: var(--blue-dim);
+            color: var(--blue);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .accuracy-gauge {
+            text-align: center;
+            padding: 16px;
+        }
+
+        .accuracy-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .accuracy-ci {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .calibration-good {
+            color: var(--green);
+        }
+
+        .calibration-bad {
+            color: var(--red);
+        }
     </style>
 </head>
 <body>
@@ -818,6 +937,7 @@
             </div>
             <div class="nav-links">
                 <a href="#overview" class="nav-link active">Overview</a>
+                <a href="#evolution-section" class="nav-link">Evolution</a>
                 <a href="#themes" class="nav-link">Themes</a>
                 <a href="#sentiment" class="nav-link">Sentiment</a>
                 <a href="#commands" class="nav-link">Commands</a>
@@ -825,7 +945,7 @@
             <div style="display: flex; align-items: center; gap: 16px;">
                 <div class="refresh-info">
                     <div class="live-dot"></div>
-                    <span>Updated 2026-01-26 03:53 UTC</span>
+                    <span>Updated 2026-01-27 02:28 UTC</span>
                 </div>
                 <a href="https://t.me/Stocks_Story_Bot" class="telegram-btn" target="_blank">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -843,24 +963,24 @@
             <div class="stats-bar">
                 <div class="stat-card">
                     <div class="stat-label">Stocks Scanned</div>
-                    <div class="stat-value blue" id="total-scanned">0</div>
+                    <div class="stat-value blue" id="total-scanned">41</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Active Breakouts</div>
-                    <div class="stat-value green">0</div>
+                    <div class="stat-value green">3</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">In Squeeze</div>
-                    <div class="stat-value purple">0</div>
+                    <div class="stat-value purple">14</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Market Breadth</div>
-                    <div class="stat-value ">50%</div>
+                    <div class="stat-value green">63%</div>
                     <div class="stat-change">Above 50 SMA</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Hot Themes</div>
-                    <div class="stat-value orange" id="hot-themes-count">13</div>
+                    <div class="stat-value orange" id="hot-themes-count">9</div>
                 </div>
             </div>
 
@@ -995,6 +1115,208 @@
                 </div>
             </div>
 
+            <!-- Evolution Engine Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="evolution-section">
+                <!-- Evolution Status -->
+                <div class="col-4">
+                    <div class="card evolution-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧬</span>
+                                Evolution Engine
+                            </div>
+                            <button class="action-btn" onclick="fetchEvolution()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="evolution-cycle" id="evolution-cycle">--</div>
+                            <div style="color: var(--text-dim); margin-bottom: 16px;">Learning Cycle</div>
+
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Last Evolution</span>
+                                <span class="evolution-metric-value" id="last-evolution">--</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Overall Accuracy</span>
+                                <span class="evolution-metric-value" id="overall-accuracy">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Calibration</span>
+                                <span class="evolution-metric-value" id="calibration-score">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Discovered Themes</span>
+                                <span class="evolution-metric-value" id="discovered-themes-count">0</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Correlations</span>
+                                <span class="evolution-metric-value" id="correlations-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Adaptive Weights -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚖️</span>
+                                Adaptive Weights
+                            </div>
+                        </div>
+                        <div class="card-body" id="adaptive-weights">
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">theme_heat</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">catalyst</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">technical</span>
+                                <span class="evolution-metric-value">25% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">ecosystem</span>
+                                <span class="evolution-metric-value">10% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">sentiment</span>
+                                <span class="evolution-metric-value">7% <span class="weight-change-positive">--</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discovered Themes -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔮</span>
+                                Auto-Discovered Themes
+                            </div>
+                        </div>
+                        <div class="card-body" id="discovered-themes-list">
+                            <p style="color: var(--text-dim); text-align: center;">No themes discovered yet</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Learned Correlations -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔗</span>
+                                Learned Correlations
+                            </div>
+                        </div>
+                        <div class="card-body" id="learned-correlations">
+                            <p style="color: var(--text-dim); text-align: center;">Run scans to build correlation data</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accuracy Metrics -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Validation Metrics
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="accuracy-gauge">
+                                <div class="accuracy-value" id="accuracy-display">--%</div>
+                                <div class="accuracy-ci" id="accuracy-ci">95% CI: [--%, --%]</div>
+                            </div>
+                            <div id="calibration-buckets">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">Calibration data builds over time</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameter Learning Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="parameter-section">
+                <!-- Parameter Learning Status -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚙️</span>
+                                Parameter Learning
+                            </div>
+                            <button class="action-btn" onclick="fetchParameters()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="param-stats" id="param-stats">
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--blue);" id="param-total">124</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Total Params</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--green);" id="param-learned">0</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Learned</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--purple);" id="param-progress">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Progress</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--orange);" id="param-confidence">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Avg Confidence</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Health -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🏥</span>
+                                System Health
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="param-health">
+                                <div style="text-align: center; padding: 20px;">
+                                    <div style="font-size: 3rem; margin-bottom: 10px;" id="health-icon">✅</div>
+                                    <div style="font-size: 1.2rem; font-weight: 600;" id="health-status">Healthy</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 8px;" id="health-issues">No issues detected</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- A/B Experiments -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧪</span>
+                                A/B Experiments
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="experiments-list">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">No active experiments</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Ecosystem Intelligence Section -->
             <div class="grid" style="margin-bottom: 24px;" id="ecosystem-section">
                 <!-- In-Play Watchlist -->
@@ -1009,11 +1331,63 @@
                         </div>
                         <div class="card-body">
                             <div class="inplay-bar" id="inplay-bar">
-                                <div class="inplay-card">
-                                    <div class="inplay-ticker">--</div>
-                                    <div class="inplay-score">--</div>
-                                    <div class="inplay-theme">Loading...</div>
-                                </div>
+                                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">LRCX</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +39.0%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">TXN</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +20.0%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">COP</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +11.5%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">JNJ</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +14.4%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">SLB</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +38.4%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">CVX</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +10.1%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">AMAT</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +38.9%</div>
+                </div>
+                
+                <div class="inplay-card">
+                    <div class="inplay-ticker">XOM</div>
+                    <div class="inplay-score" style="color: var(--blue);">12</div>
+                    <div class="inplay-theme">Momentum</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: +15.1%</div>
+                </div>
+                
                             </div>
                         </div>
                     </div>
@@ -1030,13 +1404,47 @@
                             <span class="card-badge">Lagging Plays</span>
                         </div>
                         <div class="card-body" id="opportunities-list">
-                            <div class="opportunity-card">
-                                <div class="opportunity-header">
-                                    <span class="opportunity-ticker">Loading...</span>
-                                    <span class="opportunity-gap">--</span>
-                                </div>
-                                <div class="opportunity-detail">Fetching ecosystem data...</div>
-                            </div>
+                            
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">GILD</span>
+                            <span class="opportunity-gap">🚀 Breakout</span>
+                        </div>
+                        <div class="opportunity-detail">RS: +12.5% | Breaking resistance</div>
+                    </div>
+                    
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">AMGN</span>
+                            <span class="opportunity-gap">🚀 Breakout</span>
+                        </div>
+                        <div class="opportunity-detail">RS: +4.6% | Breaking resistance</div>
+                    </div>
+                    
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">META</span>
+                            <span class="opportunity-gap">⏳ Squeeze</span>
+                        </div>
+                        <div class="opportunity-detail">Vol: 0.7x | Compression setup</div>
+                    </div>
+                    
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">MRK</span>
+                            <span class="opportunity-gap">⏳ Squeeze</span>
+                        </div>
+                        <div class="opportunity-detail">Vol: 0.4x | Compression setup</div>
+                    </div>
+                    
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">AMGN</span>
+                            <span class="opportunity-gap">⏳ Squeeze</span>
+                        </div>
+                        <div class="opportunity-detail">Vol: 0.5x | Compression setup</div>
+                    </div>
+                    
                         </div>
                     </div>
                 </div>
@@ -1052,6 +1460,55 @@
                         </div>
                         <div class="card-body">
                             <div class="subtheme-grid" id="subtheme-grid">
+                                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">AI Infrastructure</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span class="subtheme-ticker">NVDA</span><span class="subtheme-ticker">AMD</span><span class="subtheme-ticker">AVGO</span><span class="subtheme-ticker">MRVL</span><span class="subtheme-ticker">MU</span></div>
+                </div>
+                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">AI Software & Applic</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span style="color: var(--text-dim);">No members</span></div>
+                </div>
+                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">Cybersecurity</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span style="color: var(--text-dim);">No members</span></div>
+                </div>
+                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">Cloud Computing</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span style="color: var(--text-dim);">No members</span></div>
+                </div>
+                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">Quantum Computing</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span style="color: var(--text-dim);">No members</span></div>
+                </div>
+                
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">Nuclear Power Renais</span>
+                        <span class="subtheme-status status-early">EARLY</span>
+                    </div>
+                    <div class="subtheme-tickers"><span style="color: var(--text-dim);">No members</span></div>
+                </div>
+                
                                 <div class="subtheme-card">
                                     <div class="subtheme-header">
                                         <span class="subtheme-name">Loading...</span>
@@ -1089,7 +1546,177 @@
                                 </tr>
                             </thead>
                             <tbody id="stocks-table">
-                                <tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Run /scan to populate data</td></tr>
+                                
+                <tr>
+                    <td>1</td>
+                    <td class="ticker">LRCX</td>
+                    <td>$223.95</td>
+                    <td class="positive">+39.0%</td>
+                    <td>0.4x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>2</td>
+                    <td class="ticker">TXN</td>
+                    <td>$195.67</td>
+                    <td class="positive">+20.0%</td>
+                    <td>0.7x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>3</td>
+                    <td class="ticker">COP</td>
+                    <td>$98.41</td>
+                    <td class="positive">+11.5%</td>
+                    <td>0.3x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>4</td>
+                    <td class="ticker">JNJ</td>
+                    <td>$220.98</td>
+                    <td class="positive">+14.4%</td>
+                    <td>0.3x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>5</td>
+                    <td class="ticker">SLB</td>
+                    <td>$49.52</td>
+                    <td class="positive">+38.4%</td>
+                    <td>0.7x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>6</td>
+                    <td class="ticker">CVX</td>
+                    <td>$166.98</td>
+                    <td class="positive">+10.1%</td>
+                    <td>0.4x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>7</td>
+                    <td class="ticker">AMAT</td>
+                    <td>$319.79</td>
+                    <td class="positive">+38.9%</td>
+                    <td>0.3x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>8</td>
+                    <td class="ticker">XOM</td>
+                    <td>$134.72</td>
+                    <td class="positive">+15.1%</td>
+                    <td>0.4x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>9</td>
+                    <td class="ticker">BMY</td>
+                    <td>$55.08</td>
+                    <td class="positive">+13.5%</td>
+                    <td>0.3x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td></td>
+                </tr>
+                
+                <tr>
+                    <td>10</td>
+                    <td class="ticker">GILD</td>
+                    <td>$137.85</td>
+                    <td class="positive">+12.5%</td>
+                    <td>0.7x</td>
+                    <td>
+                        <div class="score-container">
+                            <span>12</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: 12.0%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span style="color: var(--green);">🚀 Breakout</span></td>
+                </tr>
+                
                             </tbody>
                         </table>
                     </div>
@@ -1108,28 +1735,28 @@
                             <div class="breadth-item">
                                 <div class="breadth-label">
                                     <span>Above 20 SMA</span>
-                                    <span class="">50%</span>
+                                    <span class="positive">51%</span>
                                 </div>
                                 <div class="breadth-bar">
-                                    <div class="breadth-fill" style="width: 50%; background: var(--blue);"></div>
+                                    <div class="breadth-fill" style="width: 51%; background: var(--blue);"></div>
                                 </div>
                             </div>
                             <div class="breadth-item">
                                 <div class="breadth-label">
                                     <span>Above 50 SMA</span>
-                                    <span class="">50%</span>
+                                    <span class="positive">63%</span>
                                 </div>
                                 <div class="breadth-bar">
-                                    <div class="breadth-fill" style="width: 50%; background: var(--green);"></div>
+                                    <div class="breadth-fill" style="width: 63%; background: var(--green);"></div>
                                 </div>
                             </div>
                             <div class="breadth-item">
                                 <div class="breadth-label">
                                     <span>Above 200 SMA</span>
-                                    <span class="">50%</span>
+                                    <span class="positive">75%</span>
                                 </div>
                                 <div class="breadth-bar">
-                                    <div class="breadth-fill" style="width: 50%; background: var(--purple);"></div>
+                                    <div class="breadth-fill" style="width: 75%; background: var(--purple);"></div>
                                 </div>
                             </div>
                         </div>
@@ -1151,7 +1778,32 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="2" style="color: var(--text-dim);">No data</td></tr>
+                                
+                    <tr>
+                        <td>Energy</td>
+                        <td class="positive">+8.5%</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>Healthcare</td>
+                        <td class="positive">+8.2%</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>Technology</td>
+                        <td class="positive">+6.3%</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>Financial Services</td>
+                        <td class="negative">-0.5%</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>Communication Services</td>
+                        <td class="negative">-25.7%</td>
+                    </tr>
+                    
                             </tbody>
                         </table>
                     </div>
@@ -1176,62 +1828,47 @@
                                 
                 <div class="theme-tag theme-warm">
                     <span>📈 Ai Infrastructure</span>
-                    <span class="theme-count">43</span>
+                    <span class="theme-count">41</span>
                 </div>
                 
                 <div class="theme-tag theme-warm">
                     <span>📈 Semiconductor</span>
-                    <span class="theme-count">22</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Ev Battery</span>
-                    <span class="theme-count">21</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Cloud Infrastructure</span>
-                    <span class="theme-count">15</span>
+                    <span class="theme-count">24</span>
                 </div>
                 
                 <div class="theme-tag theme-warm">
                     <span>📈 Earnings Season</span>
-                    <span class="theme-count">13</span>
+                    <span class="theme-count">20</span>
                 </div>
                 
                 <div class="theme-tag theme-warm">
-                    <span>📈 Glp1 Obesity</span>
+                    <span>📈 Cloud Infrastructure</span>
+                    <span class="theme-count">17</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Ev Battery</span>
                     <span class="theme-count">10</span>
                 </div>
                 
                 <div class="theme-tag theme-warm">
                     <span>📈 Hbm Memory</span>
-                    <span class="theme-count">9</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 China Trade</span>
-                    <span class="theme-count">9</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Interest Rates</span>
-                    <span class="theme-count">9</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Crypto Bitcoin</span>
-                    <span class="theme-count">7</span>
-                </div>
-                
-                <div class="theme-tag theme-warm">
-                    <span>📈 Streaming Media</span>
                     <span class="theme-count">7</span>
                 </div>
                 
                 <div class="theme-tag theme-warm">
                     <span>📈 Quantum</span>
+                    <span class="theme-count">7</span>
+                </div>
+                
+                <div class="theme-tag theme-warm">
+                    <span>📈 Glp1 Obesity</span>
                     <span class="theme-count">5</span>
+                </div>
+                
+                <div class="theme-tag theme-neutral">
+                    <span>📈 Biotech Pharma</span>
+                    <span class="theme-count">2</span>
                 </div>
                 
                             </div>
@@ -1806,6 +2443,175 @@
             document.getElementById('ticker-modal').style.display = 'none';
         }
 
+        // Fetch Evolution Engine data
+        async function fetchEvolution() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/evolution/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    document.getElementById('evolution-cycle').textContent = `#${status.evolution_cycle || 0}`;
+
+                    if (status.last_evolution) {
+                        const lastDate = new Date(status.last_evolution);
+                        const hoursAgo = Math.round((Date.now() - lastDate) / 3600000);
+                        document.getElementById('last-evolution').textContent = hoursAgo < 24 ? `${hoursAgo}h ago` : lastDate.toLocaleDateString();
+                    }
+
+                    const metrics = status.validation_metrics || {};
+                    if (metrics.overall_accuracy) {
+                        document.getElementById('overall-accuracy').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').style.color = metrics.overall_accuracy >= 60 ? 'var(--green)' : 'var(--orange)';
+                    }
+                    if (metrics.calibration_score) {
+                        const cal = (metrics.calibration_score * 100).toFixed(0);
+                        document.getElementById('calibration-score').textContent = `${cal}%`;
+                        document.getElementById('calibration-score').className = 'evolution-metric-value ' + (cal >= 80 ? 'calibration-good' : 'calibration-bad');
+                    }
+                    if (metrics.confidence_interval_95) {
+                        const ci = metrics.confidence_interval_95;
+                        document.getElementById('accuracy-ci').textContent = `95% CI: [${ci[0].toFixed(1)}%, ${ci[1].toFixed(1)}%]`;
+                    }
+
+                    document.getElementById('discovered-themes-count').textContent = status.discovered_themes_count || 0;
+                    document.getElementById('correlations-count').textContent = status.correlations_count || 0;
+                }
+
+                // Fetch weights
+                const weightsRes = await fetch(`${API_BASE}/evolution/weights`);
+                const weights = await weightsRes.json();
+
+                if (weights.ok) {
+                    const current = weights.current || {};
+                    const changes = weights.changes || {};
+                    const container = document.getElementById('adaptive-weights');
+
+                    container.innerHTML = Object.entries(current).slice(0, 6).map(([key, value]) => {
+                        const change = changes[key] || 0;
+                        const changeClass = change > 0 ? 'weight-change-positive' : (change < 0 ? 'weight-change-negative' : '');
+                        const changeStr = change !== 0 ? (change > 0 ? `+${change.toFixed(1)}pp` : `${change.toFixed(1)}pp`) : '';
+                        return `
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">${key}</span>
+                                <span class="evolution-metric-value">${(value * 100).toFixed(1)}% <span class="${changeClass}">${changeStr}</span></span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch discovered themes
+                const themesRes = await fetch(`${API_BASE}/evolution/themes`);
+                const themes = await themesRes.json();
+
+                if (themes.ok && themes.active_themes && themes.active_themes.length > 0) {
+                    const container = document.getElementById('discovered-themes-list');
+                    container.innerHTML = themes.active_themes.slice(0, 4).map(theme => {
+                        const stage = theme.lifecycle_stage || 'unknown';
+                        const stageClass = stage === 'early' ? 'stage-early' : (stage === 'middle' ? 'stage-middle' : (stage === 'peak' ? 'stage-peak' : 'stage-fading'));
+                        const confidence = ((theme.confidence || 0.7) * 100).toFixed(0);
+                        const stocks = (theme.stocks || []).slice(0, 4).join(', ');
+                        return `
+                            <div class="discovered-theme-card">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600;">${theme.name}</span>
+                                    <span class="theme-stage ${stageClass}">${stage}</span>
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                    Confidence: ${confidence}% | ${stocks}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch correlations
+                const corrRes = await fetch(`${API_BASE}/evolution/correlations`);
+                const corr = await corrRes.json();
+
+                if (corr.ok && corr.pairs && Object.keys(corr.pairs).length > 0) {
+                    const container = document.getElementById('learned-correlations');
+                    const pairs = Object.entries(corr.pairs).slice(0, 6);
+                    container.innerHTML = pairs.map(([key, data]) => {
+                        const t1 = data.ticker1 || key.split('_')[0];
+                        const t2 = data.ticker2 || key.split('_')[1];
+                        const r = (data.correlation || 0).toFixed(2);
+                        return `
+                            <div class="correlation-pair">
+                                <span style="font-family: monospace; font-weight: 600;">${t1}</span>
+                                <span style="color: var(--text-dim);">↔</span>
+                                <span style="font-family: monospace; font-weight: 600;">${t2}</span>
+                                <span class="correlation-value">r=${r}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (e) {
+                console.warn('Evolution fetch failed:', e.message);
+            }
+        }
+
+        // Fetch Parameter Learning data
+        async function fetchParameters() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/parameters/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    const params = status.parameters || {};
+                    document.getElementById('param-total').textContent = params.total || 0;
+                    document.getElementById('param-learned').textContent = params.learned || 0;
+                    document.getElementById('param-progress').textContent = `${((params.learning_progress || 0) * 100).toFixed(0)}%`;
+                    document.getElementById('param-confidence').textContent = `${((params.avg_confidence || 0) * 100).toFixed(0)}%`;
+                }
+
+                // Fetch health
+                const healthRes = await fetch(`${API_BASE}/parameters/health`);
+                const health = await healthRes.json();
+
+                if (health.ok) {
+                    const healthStatus = health.status || 'unknown';
+                    const issues = health.issues || [];
+
+                    let icon = '✅';
+                    let statusText = 'Healthy';
+                    if (healthStatus === 'critical') {
+                        icon = '🔴';
+                        statusText = 'Critical';
+                    } else if (healthStatus === 'degraded') {
+                        icon = '⚠️';
+                        statusText = 'Degraded';
+                    }
+
+                    document.getElementById('health-icon').textContent = icon;
+                    document.getElementById('health-status').textContent = statusText;
+                    document.getElementById('health-issues').textContent = issues.length > 0 ? `${issues.length} issues detected` : 'No issues detected';
+                }
+
+                // Fetch experiments
+                const expRes = await fetch(`${API_BASE}/parameters/experiments`);
+                const exp = await expRes.json();
+
+                if (exp.ok && exp.experiments && exp.experiments.length > 0) {
+                    const container = document.getElementById('experiments-list');
+                    container.innerHTML = exp.experiments.slice(0, 3).map(e => `
+                        <div style="padding: 10px; background: var(--bg-accent); border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; font-size: 0.9rem;">${e.parameter}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                Samples: ${e.total_samples} | Variants: ${e.variants.length}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+            } catch (e) {
+                console.warn('Parameters fetch failed:', e.message);
+            }
+        }
+
         // Refresh all data
         async function refreshAll() {
             const btn = document.getElementById('refresh-btn');
@@ -1841,7 +2647,9 @@
                     fetchWithTimeout(fetchBriefing),
                     fetchWithTimeout(fetchInPlay),
                     fetchWithTimeout(fetchOpportunities),
-                    fetchWithTimeout(fetchThemesLifecycle)
+                    fetchWithTimeout(fetchThemesLifecycle),
+                    fetchWithTimeout(fetchEvolution),
+                    fetchWithTimeout(fetchParameters)
                 ]);
 
                 lastUpdate.textContent = new Date().toLocaleTimeString();
@@ -1878,7 +2686,7 @@
 
         // Update active nav on scroll
         window.addEventListener('scroll', () => {
-            const sections = ['overview', 'themes', 'sentiment', 'commands'];
+            const sections = ['overview', 'evolution-section', 'themes', 'sentiment', 'commands'];
             let current = 'overview';
 
             sections.forEach(id => {

@@ -580,13 +580,15 @@ class AsyncStoryScorer:
 
         Combines social buzz, news momentum, and technical signals.
         """
-        # Fetch social buzz and news concurrently
+        # Fetch social buzz, news, and sector concurrently
         social_task = self.get_social_buzz_score_async(ticker)
         news_task = self.fetcher.fetch_news_async(ticker)
+        sector_task = self.fetcher.fetch_sector_async(ticker)
 
-        social_buzz, news = await asyncio.gather(
+        social_buzz, news, sector = await asyncio.gather(
             social_task,
             news_task,
+            sector_task,
             return_exceptions=True,
         )
 
@@ -595,6 +597,8 @@ class AsyncStoryScorer:
             social_buzz = {'buzz_score': 0, 'trending': False, 'stocktwits': {}, 'reddit': {}, 'sec': {}}
         if isinstance(news, Exception):
             news = []
+        if isinstance(sector, Exception):
+            sector = 'Unknown'
 
         # Calculate news momentum score
         news_score = 0
@@ -631,21 +635,68 @@ class AsyncStoryScorer:
 
         # Calculate technical score from price data
         technical_score = 0
+        price = 0
+        rs_composite = 0
+        vol_ratio = 1.0
+        above_20 = False
+        above_50 = False
+        above_200 = False
+        in_squeeze = False
+        breakout_up = False
+
         if price_data is not None and len(price_data) > 20:
             try:
                 close = price_data['Close'] if 'Close' in price_data.columns else price_data.get('close', price_data.iloc[:, 0])
+                high = price_data['High'] if 'High' in price_data.columns else price_data.get('high', close)
+                low = price_data['Low'] if 'Low' in price_data.columns else price_data.get('low', close)
+                volume = price_data['Volume'] if 'Volume' in price_data.columns else price_data.get('volume', pd.Series([0]))
 
-                # Simple trend check
+                current = float(close.iloc[-1])
+                price = current
+
+                # Moving averages
                 sma20 = close.rolling(20).mean().iloc[-1]
-                current = close.iloc[-1]
-                if current > sma20:
-                    technical_score += 15
+                above_20 = current > sma20
+                if above_20:
+                    technical_score += 10
 
-                # RS check (price vs 50 days ago)
                 if len(close) > 50:
-                    pct_change = (current - close.iloc[-50]) / close.iloc[-50]
-                    if pct_change > 0.1:  # Up 10%+
-                        technical_score += 15
+                    sma50 = close.rolling(50).mean().iloc[-1]
+                    above_50 = current > sma50
+                    if above_50:
+                        technical_score += 10
+
+                if len(close) > 200:
+                    sma200 = close.rolling(200).mean().iloc[-1]
+                    above_200 = current > sma200
+
+                # RS composite (price vs 50 days ago)
+                if len(close) > 50:
+                    pct_change = (current - close.iloc[-50]) / close.iloc[-50] * 100
+                    rs_composite = round(pct_change, 1)
+                    if pct_change > 10:
+                        technical_score += 10
+
+                # Volume ratio
+                if len(volume) > 20:
+                    avg_vol = volume.iloc[-20:].mean()
+                    if avg_vol > 0:
+                        vol_ratio = round(float(volume.iloc[-1]) / avg_vol, 2)
+
+                # Bollinger Bands for squeeze detection
+                if len(close) > 20:
+                    bb_std = close.rolling(20).std()
+                    upper_band = sma20 + (2 * bb_std.iloc[-1])
+                    lower_band = sma20 - (2 * bb_std.iloc[-1])
+                    band_width = (upper_band - lower_band) / sma20 * 100
+
+                    # Check for squeeze (narrow bands)
+                    avg_width = ((close.rolling(20).mean() + 2 * close.rolling(20).std()) -
+                                 (close.rolling(20).mean() - 2 * close.rolling(20).std())).rolling(50).mean().iloc[-1] if len(close) > 70 else band_width
+                    if avg_width > 0:
+                        width_pct = (band_width / avg_width) * 100
+                        in_squeeze = width_pct <= 50
+                        breakout_up = current > upper_band
 
                 technical_score = min(30, technical_score)
             except Exception as e:
@@ -693,6 +744,7 @@ class AsyncStoryScorer:
         return {
             'ticker': ticker,
             'story_score': round(story_score, 1),
+            'composite_score': round(story_score, 1),  # Alias for dashboard
             'story_strength': story_strength,
             'story_stage': 'unknown',
             'hottest_theme': None,
@@ -703,6 +755,17 @@ class AsyncStoryScorer:
             'next_catalyst': None,
             'news_trend': 'stable' if len(news) < 5 else 'accelerating',
             'sentiment_label': sentiment_label,
+            # Dashboard-required fields
+            'price': price,
+            'rs_composite': rs_composite,
+            'vol_ratio': vol_ratio,
+            'above_20': above_20,
+            'above_50': above_50,
+            'above_200': above_200,
+            'in_squeeze': in_squeeze,
+            'breakout_up': breakout_up,
+            'sector': sector,
+            # Detailed scores
             'theme': {'score': theme_score},
             'catalyst': {'score': catalyst_score},
             'news_momentum': {'score': news_score, 'count': len(news)},
@@ -859,6 +922,14 @@ class AsyncScanner:
             f"{self._stats['errors']} errors, {elapsed:.1f}s total, "
             f"{elapsed/len(tickers):.2f}s/ticker"
         )
+
+        # Save results to CSV for dashboard
+        if not df_results.empty:
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d')
+            csv_filename = f'scan_{timestamp}.csv'
+            df_results.to_csv(csv_filename, index=False)
+            logger.info(f"Saved scan results to {csv_filename}")
 
         return df_results, price_data_dict
 
