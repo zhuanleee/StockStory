@@ -874,11 +874,21 @@ def calculate_technical_confirmation(ticker: str, price_data=None) -> dict:
 
         close = df['Close']
         volume = df['Volume']
-        current = float(close.iloc[-1])
+
+        # Handle case where close might be a Series with multi-index (from batch download)
+        def safe_float(val):
+            """Safely convert value to float, handling Series."""
+            if hasattr(val, 'item'):
+                return float(val.item())
+            elif hasattr(val, 'iloc'):
+                return float(val.iloc[0]) if len(val) > 0 else 0.0
+            return float(val)
+
+        current = safe_float(close.iloc[-1])
 
         # Moving averages
-        sma_20 = float(close.rolling(20).mean().iloc[-1])
-        sma_50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
+        sma_20 = safe_float(close.rolling(20).mean().iloc[-1])
+        sma_50 = safe_float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma_20
 
         # Trend score
         above_20 = current > sma_20
@@ -901,18 +911,19 @@ def calculate_technical_confirmation(ticker: str, price_data=None) -> dict:
             trend_score = params.score_technical_trend_0()
 
         # Volume
-        avg_vol = float(volume.iloc[-20:].mean())
-        vol_ratio = float(volume.iloc[-1] / avg_vol) if avg_vol > 0 else 1
+        avg_vol = safe_float(volume.iloc[-20:].mean())
+        vol_ratio = safe_float(volume.iloc[-1]) / avg_vol if avg_vol > 0 else 1
 
         vol_score = min(100, vol_ratio * params.multiplier_volume_score())
 
         # RS vs SPY (simplified)
-        ret_20d = (current / float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
+        ret_20d = (current / safe_float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
 
         try:
             spy = yf.download('SPY', period='1mo', progress=False)
             spy = normalize_dataframe_columns(spy)
-            spy_ret = (float(spy['Close'].iloc[-1]) / float(spy['Close'].iloc[-20]) - 1) * 100
+            spy_close = spy['Close']
+            spy_ret = (safe_float(spy_close.iloc[-1]) / safe_float(spy_close.iloc[-20]) - 1) * 100
             rs = ret_20d - spy_ret
         except Exception:
             rs = ret_20d
