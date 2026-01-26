@@ -159,7 +159,12 @@ def handle_help(chat_id):
     msg += "*⚙️ Parameters:*\n"
     msg += "• `/parameters` → 124 learned params\n"
     msg += "• `/paramhealth` → System health\n"
-    msg += "• `/experiments` → A/B tests\n"
+    msg += "• `/experiments` → A/B tests\n\n"
+
+    msg += "*🎯 Themes & Universe:*\n"
+    msg += "• `/themes` → Learned theme registry\n"
+    msg += "• `/universe` → Dynamic ticker universe\n"
+    msg += "• `/themehealth` → Theme system health\n"
 
     send_message(chat_id, msg)
 
@@ -998,6 +1003,14 @@ def process_message(message):
         handle_param_health(chat_id)
     elif text_lower == '/experiments':
         handle_experiments(chat_id)
+
+    # Theme Registry & Universe Commands
+    elif text_lower == '/themes':
+        handle_themes(chat_id)
+    elif text_lower == '/universe':
+        handle_universe(chat_id)
+    elif text_lower == '/themehealth':
+        handle_themehealth(chat_id)
 
     # Ticker lookup (1-5 letter word)
     elif len(text) <= 5 and text.replace('.', '').isalpha():
@@ -2511,6 +2524,413 @@ def handle_experiments(chat_id):
     except Exception as e:
         logger.error(f"Experiments command error: {e}")
         send_message(chat_id, f"Error: {e}")
+
+
+# =============================================================================
+# THEME REGISTRY COMMANDS
+# =============================================================================
+
+def handle_themes(chat_id):
+    """Handle /themes command - Show learned themes."""
+    try:
+        from theme_registry import get_registry, ThemeStage
+
+        registry = get_registry()
+        active_themes = registry.get_active_themes()
+
+        msg = "🎯 *THEME REGISTRY*\n\n"
+
+        if not active_themes:
+            msg += "No active themes found.\n"
+            msg += "_Use /discoveredthemes to see auto-discovered themes._"
+            send_message(chat_id, msg)
+            return
+
+        # Group by stage
+        by_stage = {}
+        for theme in active_themes:
+            stage = theme.stage.value
+            if stage not in by_stage:
+                by_stage[stage] = []
+            by_stage[stage].append(theme)
+
+        for stage in ['early', 'middle', 'late', 'emerging']:
+            themes = by_stage.get(stage, [])
+            if themes:
+                emoji = {'early': '🌱', 'middle': '🔥', 'late': '📉', 'emerging': '✨'}.get(stage, '📊')
+                msg += f"\n*{emoji} {stage.upper()} ({len(themes)}):*\n"
+
+                for t in sorted(themes, key=lambda x: x.heat_score, reverse=True)[:5]:
+                    members = len(t.members)
+                    drivers = len(t.get_drivers())
+                    heat = t.heat_score if t.heat_score else 0
+                    msg += f"• `{t.template.name}` | Heat: {heat:.0f} | {members} stocks ({drivers} drivers)\n"
+
+        # Summary
+        health = registry.run_health_check()
+        msg += f"\n*📊 Summary:*\n"
+        msg += f"• Total themes: {health.total_themes}\n"
+        msg += f"• Active: {health.active_themes}\n"
+        msg += f"• Total tickers: {health.total_members}\n"
+        msg += f"• Discovered: {health.discovered_themes}\n"
+        msg += f"• Health: {health.health_score:.0f}/100"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Theme registry not available.")
+    except Exception as e:
+        logger.error(f"Themes command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_universe(chat_id):
+    """Handle /universe command - Show universe manager status."""
+    try:
+        from universe_manager import get_universe_manager
+
+        um = get_universe_manager()
+        health = um.run_health_check()
+
+        msg = "🌐 *UNIVERSE MANAGER*\n\n"
+
+        msg += "*Current Universe:*\n"
+        msg += f"• S&P 500: {health.sp500_count} tickers\n"
+        msg += f"• NASDAQ 100: {health.nasdaq100_count} tickers\n"
+        msg += f"• Total unique: {health.total_unique}\n"
+        msg += f"• Breadth universe: {health.breadth_universe_size}\n\n"
+
+        msg += "*Sources:*\n"
+        msg += f"• SP500: {health.sp500_source}\n"
+        msg += f"• NASDAQ: {health.nasdaq100_source}\n\n"
+
+        msg += "*Cache Status:*\n"
+        cache_age = health.cache_age_hours
+        if cache_age:
+            msg += f"• Age: {cache_age:.1f} hours\n"
+            msg += f"• Valid: {'✅' if cache_age < 24 else '⚠️'}\n"
+        else:
+            msg += "• No cache\n"
+
+        msg += f"\n*Health Score:* {health.health_score:.0f}/100"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Universe manager not available. Using hardcoded ticker lists.")
+    except Exception as e:
+        logger.error(f"Universe command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_themehealth(chat_id):
+    """Handle /themehealth command - Theme registry health check."""
+    try:
+        from theme_registry import get_registry
+        from theme_learner import get_learner
+
+        registry = get_registry()
+        reg_health = registry.run_health_check()
+
+        learner = get_learner()
+        learn_health = learner.run_health_check()
+
+        msg = "🏥 *THEME SYSTEM HEALTH*\n\n"
+
+        # Registry health
+        msg += "*📚 Theme Registry:*\n"
+        msg += f"• Score: {reg_health.health_score:.0f}/100\n"
+        msg += f"• Themes: {reg_health.active_themes} active\n"
+        msg += f"• Members: {reg_health.total_members}\n"
+        msg += f"• Avg per theme: {reg_health.avg_members_per_theme:.1f}\n"
+
+        if reg_health.themes_without_drivers:
+            msg += f"• ⚠️ No drivers: {', '.join(reg_health.themes_without_drivers[:3])}\n"
+        if reg_health.stale_themes:
+            msg += f"• ⚠️ Stale: {', '.join(reg_health.stale_themes[:3])}\n"
+
+        # Learner health
+        msg += f"\n*🧠 Theme Learner:*\n"
+        msg += f"• Score: {learn_health.health_score:.0f}/100\n"
+        msg += f"• DeepSeek: {'✅' if learn_health.deepseek_available else '❌'}\n"
+        msg += f"• Discovered (30d): {learn_health.themes_discovered_30d} themes\n"
+        msg += f"• Added (30d): {learn_health.members_added_30d} members\n"
+        msg += f"• Removed (30d): {learn_health.members_removed_30d} members\n"
+        msg += f"• Correlation quality: {learn_health.avg_correlation_quality:.2f}\n"
+
+        if learn_health.last_correlation_run:
+            msg += f"• Last correlation: {learn_health.last_correlation_run[:16]}\n"
+        if learn_health.last_validation_run:
+            msg += f"• Last validation: {learn_health.last_validation_run[:16]}"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Theme system not available.")
+    except Exception as e:
+        logger.error(f"Theme health command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+# =============================================================================
+# THEME & UNIVERSE API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/themes/registry')
+def api_themes_registry():
+    """Get theme registry summary."""
+    try:
+        from theme_registry import get_registry
+
+        registry = get_registry()
+        summary = registry.get_summary()
+
+        return jsonify({
+            'ok': True,
+            'data': summary,
+            'timestamp': datetime.now().isoformat(),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
+    except Exception as e:
+        logger.error(f"Themes registry API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/themes/list')
+def api_themes_list():
+    """Get all themes with details."""
+    try:
+        from theme_registry import get_registry
+
+        registry = get_registry()
+        themes = []
+
+        for theme_id, theme in registry.themes.items():
+            themes.append({
+                'id': theme_id,
+                'name': theme.template.name,
+                'category': theme.template.category,
+                'stage': theme.stage.value,
+                'heat_score': theme.heat_score,
+                'members': len(theme.members),
+                'drivers': theme.get_drivers(),
+                'discovery_method': theme.discovery_method,
+                'discovered_at': theme.discovered_at,
+            })
+
+        return jsonify({
+            'ok': True,
+            'themes': sorted(themes, key=lambda x: x['heat_score'], reverse=True),
+            'total': len(themes),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/themes/members/<theme_id>')
+def api_theme_members(theme_id):
+    """Get members of a specific theme."""
+    try:
+        from theme_registry import get_registry
+
+        registry = get_registry()
+        theme = registry.get_theme(theme_id)
+
+        if not theme:
+            return jsonify({'ok': False, 'error': 'Theme not found'}), 404
+
+        members = []
+        for ticker, member in theme.members.items():
+            members.append({
+                'ticker': ticker,
+                'role': member.role.value,
+                'confidence': member.confidence,
+                'source': member.source,
+                'correlation': member.correlation_to_drivers,
+                'lag_days': member.lead_lag_days,
+                'added_at': member.added_at,
+            })
+
+        return jsonify({
+            'ok': True,
+            'theme_id': theme_id,
+            'theme_name': theme.template.name,
+            'stage': theme.stage.value,
+            'members': sorted(members, key=lambda x: x['confidence'], reverse=True),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/themes/ticker/<ticker>')
+def api_ticker_themes(ticker):
+    """Get all themes for a ticker."""
+    try:
+        from theme_registry import get_themes_for_ticker
+
+        ticker = ticker.upper()
+        themes = get_themes_for_ticker(ticker)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'themes': themes,
+            'count': len(themes),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/themes/learn', methods=['POST'])
+def api_trigger_learning():
+    """Trigger a theme learning cycle."""
+    try:
+        from theme_learner import get_learner
+        import asyncio
+
+        learner = get_learner()
+
+        # Get summary before triggering
+        summary = learner.get_summary()
+
+        return jsonify({
+            'ok': True,
+            'message': 'Learning cycle will run on next scan',
+            'current_state': summary,
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme learner not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/themes/learner/status')
+def api_learner_status():
+    """Get theme learner status."""
+    try:
+        from theme_learner import get_learner
+        from dataclasses import asdict
+
+        learner = get_learner()
+        health = learner.run_health_check()
+
+        return jsonify({
+            'ok': True,
+            'health': asdict(health),
+            'summary': learner.get_summary(),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Theme learner not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/universe/status')
+def api_universe_status():
+    """Get universe manager status."""
+    try:
+        from universe_manager import get_universe_manager
+        from dataclasses import asdict
+
+        um = get_universe_manager()
+        health = um.run_health_check()
+
+        return jsonify({
+            'ok': True,
+            'health': asdict(health),
+            'sp500_count': health.sp500_count,
+            'nasdaq100_count': health.nasdaq100_count,
+            'total_unique': health.total_unique,
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Universe manager not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/universe/tickers')
+def api_universe_tickers():
+    """Get current universe tickers."""
+    try:
+        from universe_manager import get_universe_manager
+
+        um = get_universe_manager()
+
+        index = request.args.get('index', 'all')
+
+        if index == 'sp500':
+            tickers = um.fetch_sp500()
+        elif index == 'nasdaq100':
+            tickers = um.fetch_nasdaq100()
+        elif index == 'breadth':
+            tickers = um.get_breadth_universe()
+        else:
+            sp500 = um.fetch_sp500()
+            nasdaq100 = um.fetch_nasdaq100()
+            tickers = list(set(sp500 + nasdaq100))
+
+        return jsonify({
+            'ok': True,
+            'index': index,
+            'tickers': tickers,
+            'count': len(tickers),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Universe manager not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/universe/refresh', methods=['POST'])
+def api_universe_refresh():
+    """Force refresh universe data."""
+    try:
+        from universe_manager import get_universe_manager
+
+        um = get_universe_manager()
+        um.clear_cache()
+
+        # Trigger fresh fetch
+        sp500 = um.fetch_sp500()
+        nasdaq100 = um.fetch_nasdaq100()
+
+        return jsonify({
+            'ok': True,
+            'message': 'Universe refreshed',
+            'sp500_count': len(sp500),
+            'nasdaq100_count': len(nasdaq100),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Universe manager not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/deepseek/status')
+def api_deepseek_status():
+    """Get DeepSeek AI status."""
+    try:
+        from deepseek_intelligence import get_deepseek_intelligence
+        from dataclasses import asdict
+
+        ds = get_deepseek_intelligence()
+        health = ds.run_health_check()
+
+        return jsonify({
+            'ok': True,
+            'health': asdict(health),
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'DeepSeek intelligence not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

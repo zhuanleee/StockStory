@@ -34,6 +34,18 @@ import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
 
+# Try to import learned theme registry
+try:
+    from theme_registry import (
+        get_themes_for_ticker as get_learned_themes_for_ticker,
+        get_theme_membership_for_scoring,
+        get_all_theme_tickers as get_learned_theme_tickers,
+    )
+    HAS_THEME_REGISTRY = True
+except ImportError:
+    HAS_THEME_REGISTRY = False
+    logger.debug("Theme registry not available, using hardcoded themes")
+
 
 # =============================================================================
 # ADDITIONAL DATA SOURCES - Social & Institutional
@@ -459,11 +471,31 @@ CATALYST_TYPES = {
 # =============================================================================
 
 def get_theme_membership(ticker: str) -> list:
-    """Get all themes a ticker belongs to, including discovered themes."""
+    """Get all themes a ticker belongs to, including learned and discovered themes."""
     themes = []
 
-    # Check hardcoded themes (existing)
+    # PRIORITY 1: Check learned theme registry (dynamic membership)
+    if HAS_THEME_REGISTRY:
+        try:
+            learned_themes = get_theme_membership_for_scoring(ticker)
+            for theme in learned_themes:
+                themes.append({
+                    'theme_id': theme['theme_id'],
+                    'theme_name': theme['theme_name'],
+                    'role': theme['role'],
+                    'stage': theme['stage'],
+                    'confidence': theme.get('confidence', 0.8),
+                    'is_learned': True,
+                })
+        except Exception as e:
+            logger.debug(f"Could not load learned themes: {e}")
+
+    # PRIORITY 2: Check hardcoded themes (fallback / bootstrap)
     for theme_id, theme in THEMES.items():
+        # Skip if already found in learned themes
+        if any(t['theme_id'] == theme_id for t in themes):
+            continue
+
         all_tickers = (
             theme.get('drivers', []) +
             theme.get('beneficiaries', []) +
@@ -477,12 +509,17 @@ def get_theme_membership(ticker: str) -> list:
                 'theme_name': theme['name'],
                 'role': role,
                 'stage': theme.get('stage', 'unknown'),
+                'is_learned': False,
             })
 
-    # Check discovered themes from evolution engine
+    # PRIORITY 3: Check discovered themes from evolution engine
     try:
         from evolution_engine import get_discovered_themes
         for theme in get_discovered_themes():
+            # Skip if already found
+            if any(t['theme_id'] == theme['id'] for t in themes):
+                continue
+
             if ticker in theme.get('stocks', []):
                 themes.append({
                     'theme_id': theme['id'],
@@ -1091,12 +1128,22 @@ def get_theme_stocks(theme_id: str) -> dict:
 
 
 def get_all_theme_tickers() -> list:
-    """Get all tickers that belong to any theme."""
+    """Get all tickers that belong to any theme (learned + hardcoded)."""
     all_tickers = set()
+
+    # Add learned theme tickers
+    if HAS_THEME_REGISTRY:
+        try:
+            all_tickers.update(get_learned_theme_tickers())
+        except Exception as e:
+            logger.debug(f"Could not get learned theme tickers: {e}")
+
+    # Add hardcoded theme tickers
     for theme in THEMES.values():
         all_tickers.update(theme.get('drivers', []))
         all_tickers.update(theme.get('beneficiaries', []))
         all_tickers.update(theme.get('picks_shovels', []))
+
     return list(all_tickers)
 
 

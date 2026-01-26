@@ -29,6 +29,14 @@ from utils import (
 
 logger = get_logger(__name__)
 
+# Try to import dynamic universe manager
+try:
+    from universe_manager import get_universe_manager
+    HAS_UNIVERSE_MANAGER = True
+except ImportError:
+    HAS_UNIVERSE_MANAGER = False
+    logger.debug("Universe manager not available for breadth calculation")
+
 # Full S&P 500 stock universe for breadth calculation
 # Updated January 2025 - excludes recently delisted tickers
 BREADTH_UNIVERSE = [
@@ -100,6 +108,25 @@ BREADTH_UNIVERSE = [
 
 # Historical A/D data for McClellan Oscillator
 _ad_history = []
+
+
+def get_breadth_universe() -> list:
+    """
+    Get tickers for breadth calculation.
+    Uses dynamic universe manager if available, falls back to hardcoded.
+    """
+    if HAS_UNIVERSE_MANAGER:
+        try:
+            um = get_universe_manager()
+            universe = um.get_breadth_universe()
+            if universe and len(universe) >= 100:
+                logger.info(f"Using dynamic breadth universe: {len(universe)} tickers")
+                return universe
+        except Exception as e:
+            logger.warning(f"Universe manager failed for breadth: {e}")
+
+    # Fallback to hardcoded
+    return BREADTH_UNIVERSE
 
 
 def get_stock_data(ticker, period='3mo'):
@@ -293,9 +320,12 @@ def calculate_market_breadth():
 
     stocks_data = []
 
-    # Parallel fetch with 50 workers for full S&P 500 universe
+    # Get dynamic or hardcoded universe
+    breadth_tickers = get_breadth_universe()
+
+    # Parallel fetch with 50 workers for full universe
     with ThreadPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(get_stock_data, t, '1y'): t for t in BREADTH_UNIVERSE}
+        futures = {executor.submit(get_stock_data, t, '1y'): t for t in breadth_tickers}
 
         for future in as_completed(futures):
             ticker, df = future.result()

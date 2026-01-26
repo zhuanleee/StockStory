@@ -49,6 +49,9 @@ ai_learning_data/
 user_data/
 cache/
 logs/
+theme_data/
+universe_data/
+evolution_data/
 
 # Log files
 *.log

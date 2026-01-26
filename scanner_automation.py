@@ -34,6 +34,22 @@ from utils import (
 
 logger = get_logger(__name__)
 
+# Try to import dynamic universe manager
+try:
+    from universe_manager import get_universe_manager
+    HAS_UNIVERSE_MANAGER = True
+except ImportError:
+    HAS_UNIVERSE_MANAGER = False
+    logger.debug("Universe manager not available, using hardcoded tickers")
+
+# Try to import theme learner
+try:
+    from theme_learner import get_learner as get_theme_learner
+    HAS_THEME_LEARNER = True
+except ImportError:
+    HAS_THEME_LEARNER = False
+    logger.debug("Theme learner not available")
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
@@ -120,6 +136,26 @@ NASDAQ100_TICKERS = [
     'REGN', 'ROP', 'ROST', 'SBUX', 'SMCI', 'SNPS', 'TEAM', 'TMUS', 'TSLA', 'TTD',
     'TTWO', 'TXN', 'VRSK', 'VRTX', 'WBD', 'WDAY', 'XEL', 'ZS'
 ]
+
+
+def get_scan_universe() -> list:
+    """
+    Get tickers for scanning - uses dynamic universe manager if available.
+    Falls back to hardcoded lists.
+    """
+    if HAS_UNIVERSE_MANAGER:
+        try:
+            um = get_universe_manager()
+            sp500 = um.fetch_sp500()
+            nasdaq100 = um.fetch_nasdaq100()
+            tickers = list(set(sp500 + nasdaq100))
+            logger.info(f"Using dynamic universe: {len(tickers)} tickers")
+            return tickers
+        except Exception as e:
+            logger.warning(f"Universe manager failed, using hardcoded: {e}")
+
+    # Fallback to hardcoded
+    return list(set(SP500_TICKERS + NASDAQ100_TICKERS))
 
 
 # ============================================================
@@ -314,8 +350,8 @@ def run_scan(use_story_first=True):
     """
     logger.info(f"Starting {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {datetime.now()}")
 
-    # Get unique tickers
-    all_tickers = list(set(SP500_TICKERS + NASDAQ100_TICKERS))
+    # Get unique tickers from dynamic universe or hardcoded fallback
+    all_tickers = get_scan_universe()
     logger.info(f"Scanning {len(all_tickers)} tickers...")
 
     # Fetch data
@@ -454,6 +490,42 @@ def run_scan(use_story_first=True):
         pass
     except Exception as e:
         logger.debug(f"Post-scan learning skipped: {e}")
+
+    # Trigger theme learning cycle
+    if HAS_THEME_LEARNER:
+        try:
+            import asyncio
+
+            # Prepare price data for learning (daily returns)
+            returns_data = {}
+            for ticker in df_results['ticker'].tolist()[:100]:  # Top 100
+                try:
+                    if isinstance(price_data.columns, pd.MultiIndex):
+                        df = price_data[ticker]['Close']
+                    else:
+                        df = price_data['Close']
+
+                    if len(df) >= 20:
+                        returns = df.pct_change().dropna().tolist()
+                        returns_data[ticker] = returns
+                except:
+                    continue
+
+            # Run learning cycle asynchronously
+            async def run_theme_learning():
+                learner = get_theme_learner()
+                return await learner.run_learning_cycle(
+                    price_data=returns_data,
+                    candidate_tickers=df_results['ticker'].tolist(),
+                )
+
+            learning_result = asyncio.get_event_loop().run_until_complete(run_theme_learning())
+            if learning_result:
+                members_discovered = len(learning_result.get('members_discovered', []))
+                themes_discovered = len(learning_result.get('themes_discovered', []))
+                logger.info(f"Theme learning: {members_discovered} members, {themes_discovered} themes discovered")
+        except Exception as e:
+            logger.debug(f"Theme learning skipped: {e}")
 
     return df_results, price_data
 
