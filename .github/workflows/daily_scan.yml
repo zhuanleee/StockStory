@@ -50,15 +50,10 @@ jobs:
           path: scan_*.csv
           retention-days: 30
 
-      - name: Commit state and learned data
+      - name: Commit dashboard
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add scanner_state.json || true
-          git add cluster_history.json || true
-          git add learned_themes.json || true
-          git add weekly_stats.json || true
-          git add telegram_offset.json || true
           git add docs/ || true
-          git commit -m "Update scanner state and dashboard" || true
+          git commit -m "Update dashboard" || true
           git push || true

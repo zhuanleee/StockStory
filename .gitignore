@@ -42,16 +42,19 @@ env/
 secrets.json
 credentials.json
 
-# Data directories
+# Data directories (runtime data, not code)
 learning_data/
 !learning_data/ecosystem_graph.json
 ai_learning_data/
+ai_data/
 user_data/
 cache/
+cache_data/
 logs/
 theme_data/
 universe_data/
 evolution_data/
+parameter_data/
 
 # Log files
 *.log
