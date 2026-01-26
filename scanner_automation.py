@@ -443,6 +443,18 @@ def run_scan(use_story_first=True):
 
     logger.info(f"Scan complete. {len(df_results)} tickers analyzed.")
 
+    # Trigger post-scan learning from evolution engine
+    try:
+        from evolution_engine import EvolutionScheduler
+        scheduler = EvolutionScheduler()
+        learning_results = scheduler.post_scan_learning(df_results)
+        if learning_results:
+            logger.info(f"Post-scan learning: {learning_results.get('correlations', {}).get('updated', 0)} correlations updated")
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"Post-scan learning skipped: {e}")
+
     return df_results, price_data
 
 

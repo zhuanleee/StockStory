@@ -146,7 +146,15 @@ def handle_help(chat_id):
     msg += "• `/briefing` → AI market narrative\n"
     msg += "• `/predict NVDA` → AI prediction\n"
     msg += "• `/coach` → AI coaching\n"
-    msg += "• `/patterns` → Best signal patterns\n"
+    msg += "• `/patterns` → Best signal patterns\n\n"
+
+    msg += "*🧬 Evolution:*\n"
+    msg += "• `/evolution` → Learning status\n"
+    msg += "• `/weights` → Adaptive weights\n"
+    msg += "• `/discoveredthemes` → Auto-discovered themes\n"
+    msg += "• `/accuracy` → Validation metrics\n"
+    msg += "• `/correlations` → Learned relationships\n"
+    msg += "• `/learningreport` → Full report\n"
 
     send_message(chat_id, msg)
 
@@ -597,6 +605,302 @@ def handle_trade(chat_id, args):
 
 
 # =============================================================================
+# EVOLUTION ENGINE TELEGRAM COMMANDS
+# =============================================================================
+
+def handle_evolution(chat_id):
+    """Handle /evolution command - Show learning system status."""
+    send_message(chat_id, "🧬 Checking evolution status...")
+    try:
+        from evolution_engine import get_evolution_status
+
+        status = get_evolution_status()
+
+        msg = "🧬 *EVOLUTION ENGINE*\n\n"
+        msg += f"*Cycle:* #{status.get('evolution_cycle', 0)}\n"
+        msg += f"*Last Run:* {status.get('last_evolution', 'Never')[:16] if status.get('last_evolution') else 'Never'}\n\n"
+
+        # Validation metrics
+        metrics = status.get('validation_metrics', {})
+        accuracy = metrics.get('overall_accuracy')
+        if accuracy:
+            msg += f"*Accuracy:* {accuracy:.1f}%\n"
+            ci = metrics.get('confidence_interval_95', [])
+            if ci:
+                msg += f"95% CI: [{ci[0]:.1f}%, {ci[1]:.1f}%]\n"
+            cal = metrics.get('calibration_score')
+            if cal:
+                msg += f"*Calibration:* {cal*100:.0f}%\n"
+
+        # Weight changes
+        changes = status.get('weight_changes', {})
+        if changes:
+            msg += "\n*Weight Changes:*\n"
+            for k, v in list(changes.items())[:5]:
+                arrow = "↑" if v > 0 else "↓"
+                msg += f"• {k}: {arrow}{abs(v):.1f}pp\n"
+
+        # Discovered themes
+        themes_count = status.get('discovered_themes_count', 0)
+        msg += f"\n*Discovered Themes:* {themes_count}\n"
+
+        # Correlations
+        corr_count = status.get('correlations_count', 0)
+        msg += f"*Learned Correlations:* {corr_count}\n"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Evolution error: {str(e)}")
+
+
+def handle_weights(chat_id):
+    """Handle /weights command - Show adaptive weights."""
+    try:
+        from evolution_engine import load_learning_state, DEFAULT_WEIGHTS, AdaptiveScoringEngine
+
+        state = load_learning_state()
+        engine = AdaptiveScoringEngine()
+        current = state['adaptive_weights']['current']
+        changes = engine.get_weight_changes()
+
+        msg = "⚖️ *ADAPTIVE WEIGHTS*\n\n"
+        msg += "*Current vs Default:*\n"
+
+        for key in sorted(current.keys()):
+            curr_val = current.get(key, 0) * 100
+            def_val = DEFAULT_WEIGHTS.get(key, 0) * 100
+            change = changes.get(key, 0)
+
+            if change > 0:
+                arrow = "↑"
+                indicator = "🟢"
+            elif change < 0:
+                arrow = "↓"
+                indicator = "🔴"
+            else:
+                arrow = "="
+                indicator = "⚪"
+
+            msg += f"{indicator} `{key:15}` {curr_val:5.1f}% ({arrow}{abs(change):.1f}pp)\n"
+
+        # Regime weights summary
+        by_regime = state['adaptive_weights']['by_regime']
+        if any(by_regime.values()):
+            msg += "\n*Regime Adjustments:*\n"
+            for regime, weights in by_regime.items():
+                if weights:
+                    msg += f"• {regime}: configured\n"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Weights error: {str(e)}")
+
+
+def handle_discovered_themes(chat_id):
+    """Handle /themes command for discovered themes."""
+    try:
+        from evolution_engine import get_discovered_themes, load_learning_state
+
+        themes = get_discovered_themes()
+        state = load_learning_state()
+
+        msg = "🔮 *DISCOVERED THEMES*\n\n"
+
+        if not themes:
+            msg += "_No themes discovered yet._\n"
+            msg += "_The system learns from news clusters and correlation patterns._"
+        else:
+            for theme in themes[:10]:
+                stage = theme.get('lifecycle_stage', 'unknown')
+                if stage == 'early':
+                    emoji = "🌱"
+                elif stage == 'middle':
+                    emoji = "🌿"
+                elif stage == 'peak':
+                    emoji = "🌳"
+                else:
+                    emoji = "🍂"
+
+                confidence = theme.get('confidence', 0) * 100
+                msg += f"{emoji} *{theme['name']}*\n"
+                msg += f"   Stage: {stage} | Conf: {confidence:.0f}%\n"
+                stocks = theme.get('stocks', [])[:5]
+                if stocks:
+                    msg += f"   `{', '.join(stocks)}`\n"
+                msg += "\n"
+
+        # Show retired count
+        retired = len(state['discovered_themes'].get('retired_themes', []))
+        if retired:
+            msg += f"\n_Retired themes: {retired}_"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Themes error: {str(e)}")
+
+
+def handle_accuracy(chat_id):
+    """Handle /accuracy command - Show validation metrics."""
+    try:
+        from evolution_engine import get_accuracy_report
+
+        report = get_accuracy_report()
+
+        msg = "📊 *ACCURACY REPORT*\n\n"
+
+        # Overall accuracy
+        accuracy = report.get('accuracy', {})
+        if accuracy.get('accuracy'):
+            msg += f"*Overall:* {accuracy['accuracy']:.1f}%\n"
+            ci = accuracy.get('confidence_interval_95', [])
+            if ci:
+                msg += f"95% CI: [{ci[0]:.1f}%, {ci[1]:.1f}%]\n"
+            msg += f"Trades: {accuracy.get('total', 0)} ({accuracy.get('wins', 0)}W / {accuracy.get('losses', 0)}L)\n"
+
+        # Calibration
+        calibration = report.get('calibration', {})
+        if calibration.get('calibration_score'):
+            msg += f"\n*Calibration:* {calibration['calibration_score']:.0f}% ({calibration.get('interpretation', '')})\n"
+
+            buckets = calibration.get('buckets', {})
+            if buckets:
+                msg += "\n*By Confidence:*\n"
+                for bucket, data in list(buckets.items())[:5]:
+                    msg += f"• {bucket}: pred={data['predicted']:.0f}%, actual={data['actual']:.0f}%\n"
+
+        # Degradation check
+        degradation = report.get('degradation', {})
+        if degradation.get('recent_accuracy'):
+            msg += f"\n*Recent vs Baseline:*\n"
+            msg += f"Recent: {degradation['recent_accuracy']:.1f}%\n"
+            msg += f"Baseline: {degradation['baseline_accuracy']:.1f}%\n"
+            if degradation.get('degradation_detected'):
+                msg += "⚠️ *Performance degradation detected*"
+            else:
+                msg += "✅ Performance stable"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Accuracy error: {str(e)}")
+
+
+def handle_correlations(chat_id):
+    """Handle /correlations command - Show learned correlations."""
+    try:
+        from evolution_engine import get_learned_correlations
+
+        data = get_learned_correlations()
+        pairs = data.get('pairs', {})
+        patterns = data.get('propagation_patterns', {})
+
+        msg = "🔗 *LEARNED CORRELATIONS*\n\n"
+
+        if not pairs and not patterns:
+            msg += "_No correlations learned yet._\n"
+            msg += "_Run scans to build correlation data._"
+        else:
+            if pairs:
+                msg += "*Top Pairs:*\n"
+                sorted_pairs = sorted(pairs.items(), key=lambda x: abs(x[1].get('correlation', 0)), reverse=True)
+                for key, data in sorted_pairs[:8]:
+                    corr = data.get('correlation', 0)
+                    t1 = data.get('ticker1', key.split('_')[0])
+                    t2 = data.get('ticker2', key.split('_')[1] if '_' in key else '?')
+                    arrow = "↔" if corr > 0.8 else "~"
+                    msg += f"• `{t1}` {arrow} `{t2}`: r={corr:.2f}\n"
+
+            if patterns:
+                msg += "\n*Wave Patterns:*\n"
+                for key, pattern in list(patterns.items())[:5]:
+                    msg += f"• {pattern.get('driver', key)}: "
+                    msg += f"T1={pattern.get('tier1_avg_lag', 0):.1f}d, "
+                    msg += f"T2={pattern.get('tier2_avg_lag', 0):.1f}d\n"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Correlations error: {str(e)}")
+
+
+def handle_learning_report(chat_id):
+    """Handle /learningreport command - Comprehensive learning report."""
+    send_message(chat_id, "📝 Generating learning report...")
+    try:
+        from evolution_engine import (
+            get_evolution_status, get_accuracy_report,
+            get_discovered_themes, get_learned_correlations
+        )
+
+        status = get_evolution_status()
+        accuracy_report = get_accuracy_report()
+        themes = get_discovered_themes()
+        correlations = get_learned_correlations()
+
+        msg = "📝 *LEARNING REPORT*\n\n"
+
+        # System Status
+        msg += f"*System Status:*\n"
+        msg += f"• Cycle: #{status.get('evolution_cycle', 0)}\n"
+        msg += f"• Last Run: {status.get('last_evolution', 'Never')[:10] if status.get('last_evolution') else 'Never'}\n\n"
+
+        # Accuracy Summary
+        accuracy = accuracy_report.get('accuracy', {})
+        if accuracy.get('accuracy'):
+            msg += f"*Accuracy:* {accuracy['accuracy']:.1f}%"
+            ci = accuracy.get('confidence_interval_95', [])
+            if ci:
+                msg += f" [{ci[0]:.1f}-{ci[1]:.1f}%]"
+            msg += "\n"
+
+        # Calibration
+        cal = accuracy_report.get('calibration', {})
+        if cal.get('calibration_score'):
+            msg += f"*Calibration:* {cal['calibration_score']:.0f}% ({cal.get('interpretation', '')})\n"
+
+        # Degradation
+        deg = accuracy_report.get('degradation', {})
+        if deg.get('degradation_detected'):
+            msg += "⚠️ *Performance degradation detected*\n"
+
+        msg += "\n"
+
+        # Weight Changes
+        changes = status.get('weight_changes', {})
+        if changes:
+            msg += "*Weight Adjustments:*\n"
+            for k, v in sorted(changes.items(), key=lambda x: abs(x[1]), reverse=True)[:3]:
+                arrow = "↑" if v > 0 else "↓"
+                msg += f"• {k}: {arrow}{abs(v):.1f}pp\n"
+            msg += "\n"
+
+        # Discovered Themes
+        msg += f"*Discovered Themes:* {len(themes)}\n"
+        for theme in themes[:3]:
+            msg += f"• {theme['name']} ({theme.get('lifecycle_stage', 'unknown')})\n"
+
+        # Correlations
+        pairs = correlations.get('pairs', {})
+        msg += f"\n*Learned Correlations:* {len(pairs)}\n"
+
+        msg += "\n_Use individual commands for details._"
+
+        send_message(chat_id, msg)
+    except ImportError:
+        send_message(chat_id, "Evolution engine not available")
+    except Exception as e:
+        send_message(chat_id, f"Report error: {str(e)}")
+
+
+# =============================================================================
 # WEBHOOK HANDLER
 # =============================================================================
 
@@ -667,6 +971,20 @@ def process_message(message):
         handle_patterns(chat_id)
     elif text_lower.startswith('/trade '):
         handle_trade(chat_id, text[7:].strip())
+
+    # Evolution Engine Commands
+    elif text_lower == '/evolution':
+        handle_evolution(chat_id)
+    elif text_lower == '/weights':
+        handle_weights(chat_id)
+    elif text_lower == '/discoveredthemes':
+        handle_discovered_themes(chat_id)
+    elif text_lower == '/accuracy':
+        handle_accuracy(chat_id)
+    elif text_lower == '/correlations':
+        handle_correlations(chat_id)
+    elif text_lower == '/learningreport':
+        handle_learning_report(chat_id)
 
     # Ticker lookup (1-5 letter word)
     elif len(text) <= 5 and text.replace('.', '').isalpha():
@@ -1774,6 +2092,158 @@ def api_ecosystem_refresh():
 
     except Exception as e:
         logger.error(f"Ecosystem refresh error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# EVOLUTION ENGINE API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/evolution/status')
+def api_evolution_status():
+    """Get evolution learning system status."""
+    try:
+        from evolution_engine import get_evolution_status
+        status = get_evolution_status()
+        return jsonify({
+            'ok': True,
+            **status,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution status error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/accuracy')
+def api_evolution_accuracy():
+    """Get validation metrics with confidence intervals."""
+    try:
+        from evolution_engine import get_accuracy_report
+        report = get_accuracy_report()
+        return jsonify({
+            'ok': True,
+            **report,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution accuracy error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/weights')
+def api_evolution_weights():
+    """Get current vs historical adaptive weights."""
+    try:
+        from evolution_engine import load_learning_state, DEFAULT_WEIGHTS, AdaptiveScoringEngine
+
+        state = load_learning_state()
+        engine = AdaptiveScoringEngine()
+
+        return jsonify({
+            'ok': True,
+            'current': state['adaptive_weights']['current'],
+            'defaults': DEFAULT_WEIGHTS,
+            'by_regime': state['adaptive_weights']['by_regime'],
+            'changes': engine.get_weight_changes(),
+            'history': state['adaptive_weights']['history'][-10:],
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution weights error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/themes')
+def api_evolution_themes():
+    """Get discovered themes from evolution engine."""
+    try:
+        from evolution_engine import get_discovered_themes, load_learning_state
+
+        state = load_learning_state()
+        themes = get_discovered_themes()
+
+        return jsonify({
+            'ok': True,
+            'active_themes': themes,
+            'retired_themes': state['discovered_themes'].get('retired_themes', []),
+            'total_discovered': len(state['discovered_themes'].get('themes', [])),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution themes error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/correlations')
+def api_evolution_correlations():
+    """Get learned correlations and lead-lag relationships."""
+    try:
+        from evolution_engine import get_learned_correlations
+
+        correlations = get_learned_correlations()
+
+        return jsonify({
+            'ok': True,
+            'pairs': correlations.get('pairs', {}),
+            'propagation_patterns': correlations.get('propagation_patterns', {}),
+            'total_pairs': len(correlations.get('pairs', {})),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution correlations error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/run-cycle', methods=['POST'])
+def api_evolution_run_cycle():
+    """Trigger a learning cycle manually."""
+    try:
+        from evolution_engine import run_evolution_cycle
+
+        results = run_evolution_cycle()
+
+        return jsonify({
+            'ok': True,
+            'results': results,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Evolution cycle error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/evolution/discover-themes', methods=['POST'])
+def api_evolution_discover_themes():
+    """Force theme discovery."""
+    try:
+        from evolution_engine import ThemeEvolutionEngine
+
+        engine = ThemeEvolutionEngine()
+        discovered = engine.discover_themes()
+
+        return jsonify({
+            'ok': True,
+            'discovered': discovered,
+            'count': len(discovered),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Evolution engine not available'})
+    except Exception as e:
+        logger.error(f"Theme discovery error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
 
 

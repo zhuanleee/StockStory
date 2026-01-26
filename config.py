@@ -245,6 +245,44 @@ class Config:
     debug: bool = field(default_factory=lambda: _get_env_bool('DEBUG', False))
     port: int = field(default_factory=lambda: _get_env_int('PORT', 5000))
 
+    def get_adaptive_weights(self, regime: str = None) -> dict:
+        """
+        Get adaptive scoring weights from evolution engine.
+
+        Prefers learned weights, falls back to defaults from scanner config.
+
+        Args:
+            regime: Optional market regime ('bull_trending', 'bear_volatile', 'range_bound')
+
+        Returns:
+            Dict of weight name -> weight value
+        """
+        # Default weights from scanner config
+        default_weights = {
+            'theme_heat': self.scanner.weight_theme_heat,
+            'catalyst': self.scanner.weight_catalyst,
+            'news_momentum': self.scanner.weight_news_momentum,
+            'sentiment': self.scanner.weight_sentiment,
+            'technical': self.scanner.weight_technical,
+            'social_buzz': 0.12,
+            'ecosystem': 0.10,
+        }
+
+        try:
+            from evolution_engine import get_regime_weights
+            learned_weights = get_regime_weights(regime)
+            if learned_weights:
+                # Merge with defaults (learned takes precedence)
+                return {**default_weights, **learned_weights}
+        except ImportError:
+            pass
+        except Exception as e:
+            # Log but don't fail
+            import logging
+            logging.getLogger(__name__).debug(f"Could not load adaptive weights: {e}")
+
+        return default_weights
+
     def validate(self) -> List[str]:
         """
         Validate configuration and return list of warnings.

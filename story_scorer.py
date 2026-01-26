@@ -458,8 +458,10 @@ CATALYST_TYPES = {
 # =============================================================================
 
 def get_theme_membership(ticker: str) -> list:
-    """Get all themes a ticker belongs to."""
+    """Get all themes a ticker belongs to, including discovered themes."""
     themes = []
+
+    # Check hardcoded themes (existing)
     for theme_id, theme in THEMES.items():
         all_tickers = (
             theme.get('drivers', []) +
@@ -475,6 +477,25 @@ def get_theme_membership(ticker: str) -> list:
                 'role': role,
                 'stage': theme.get('stage', 'unknown'),
             })
+
+    # Check discovered themes from evolution engine
+    try:
+        from evolution_engine import get_discovered_themes
+        for theme in get_discovered_themes():
+            if ticker in theme.get('stocks', []):
+                themes.append({
+                    'theme_id': theme['id'],
+                    'theme_name': theme['name'],
+                    'role': 'discovered',
+                    'stage': theme.get('lifecycle_stage', 'unknown'),
+                    'confidence': theme.get('confidence', 0.7),
+                    'discovery_method': theme.get('discovery_method', 'auto'),
+                })
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"Could not load discovered themes: {e}")
+
     return themes
 
 

@@ -834,6 +834,125 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             padding: 2px 8px;
             border-radius: 12px;
         }
+
+        /* Evolution Engine Styles */
+        .evolution-card {
+            background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
+            border: 1px solid var(--purple);
+        }
+
+        .evolution-cycle {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--purple);
+        }
+
+        .evolution-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .evolution-metric:last-child {
+            border-bottom: none;
+        }
+
+        .evolution-metric-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .evolution-metric-value {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .weight-change-positive {
+            color: var(--green);
+        }
+
+        .weight-change-negative {
+            color: var(--red);
+        }
+
+        .discovered-theme-card {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+
+        .theme-stage {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .stage-early {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--green);
+        }
+
+        .stage-middle {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--blue);
+        }
+
+        .stage-peak {
+            background: rgba(249, 115, 22, 0.2);
+            color: var(--orange);
+        }
+
+        .stage-fading {
+            background: rgba(113, 113, 122, 0.2);
+            color: var(--text-dim);
+        }
+
+        .correlation-pair {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-accent);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .correlation-value {
+            background: var(--blue-dim);
+            color: var(--blue);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .accuracy-gauge {
+            text-align: center;
+            padding: 16px;
+        }
+
+        .accuracy-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .accuracy-ci {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .calibration-good {
+            color: var(--green);
+        }
+
+        .calibration-bad {
+            color: var(--red);
+        }
     </style>
 </head>
 <body>
@@ -846,6 +965,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             </div>
             <div class="nav-links">
                 <a href="#overview" class="nav-link active">Overview</a>
+                <a href="#evolution-section" class="nav-link">Evolution</a>
                 <a href="#themes" class="nav-link">Themes</a>
                 <a href="#sentiment" class="nav-link">Sentiment</a>
                 <a href="#commands" class="nav-link">Commands</a>
@@ -1017,6 +1137,132 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                     <span class="metric-label">New Lows</span>
                                     <span class="metric-value" id="new-lows">--</span>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evolution Engine Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="evolution-section">
+                <!-- Evolution Status -->
+                <div class="col-4">
+                    <div class="card evolution-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧬</span>
+                                Evolution Engine
+                            </div>
+                            <button class="action-btn" onclick="fetchEvolution()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="evolution-cycle" id="evolution-cycle">--</div>
+                            <div style="color: var(--text-dim); margin-bottom: 16px;">Learning Cycle</div>
+
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Last Evolution</span>
+                                <span class="evolution-metric-value" id="last-evolution">--</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Overall Accuracy</span>
+                                <span class="evolution-metric-value" id="overall-accuracy">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Calibration</span>
+                                <span class="evolution-metric-value" id="calibration-score">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Discovered Themes</span>
+                                <span class="evolution-metric-value" id="discovered-themes-count">0</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Correlations</span>
+                                <span class="evolution-metric-value" id="correlations-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Adaptive Weights -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚖️</span>
+                                Adaptive Weights
+                            </div>
+                        </div>
+                        <div class="card-body" id="adaptive-weights">
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">theme_heat</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">catalyst</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">technical</span>
+                                <span class="evolution-metric-value">25% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">ecosystem</span>
+                                <span class="evolution-metric-value">10% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">sentiment</span>
+                                <span class="evolution-metric-value">7% <span class="weight-change-positive">--</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discovered Themes -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔮</span>
+                                Auto-Discovered Themes
+                            </div>
+                        </div>
+                        <div class="card-body" id="discovered-themes-list">
+                            <p style="color: var(--text-dim); text-align: center;">No themes discovered yet</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Learned Correlations -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔗</span>
+                                Learned Correlations
+                            </div>
+                        </div>
+                        <div class="card-body" id="learned-correlations">
+                            <p style="color: var(--text-dim); text-align: center;">Run scans to build correlation data</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accuracy Metrics -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Validation Metrics
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="accuracy-gauge">
+                                <div class="accuracy-value" id="accuracy-display">--%</div>
+                                <div class="accuracy-ci" id="accuracy-ci">95% CI: [--%, --%]</div>
+                            </div>
+                            <div id="calibration-buckets">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">Calibration data builds over time</p>
                             </div>
                         </div>
                     </div>
@@ -1774,6 +2020,116 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             document.getElementById('ticker-modal').style.display = 'none';
         }
 
+        // Fetch Evolution Engine data
+        async function fetchEvolution() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/evolution/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    document.getElementById('evolution-cycle').textContent = `#${status.evolution_cycle || 0}`;
+
+                    if (status.last_evolution) {
+                        const lastDate = new Date(status.last_evolution);
+                        const hoursAgo = Math.round((Date.now() - lastDate) / 3600000);
+                        document.getElementById('last-evolution').textContent = hoursAgo < 24 ? `${hoursAgo}h ago` : lastDate.toLocaleDateString();
+                    }
+
+                    const metrics = status.validation_metrics || {};
+                    if (metrics.overall_accuracy) {
+                        document.getElementById('overall-accuracy').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').style.color = metrics.overall_accuracy >= 60 ? 'var(--green)' : 'var(--orange)';
+                    }
+                    if (metrics.calibration_score) {
+                        const cal = (metrics.calibration_score * 100).toFixed(0);
+                        document.getElementById('calibration-score').textContent = `${cal}%`;
+                        document.getElementById('calibration-score').className = 'evolution-metric-value ' + (cal >= 80 ? 'calibration-good' : 'calibration-bad');
+                    }
+                    if (metrics.confidence_interval_95) {
+                        const ci = metrics.confidence_interval_95;
+                        document.getElementById('accuracy-ci').textContent = `95% CI: [${ci[0].toFixed(1)}%, ${ci[1].toFixed(1)}%]`;
+                    }
+
+                    document.getElementById('discovered-themes-count').textContent = status.discovered_themes_count || 0;
+                    document.getElementById('correlations-count').textContent = status.correlations_count || 0;
+                }
+
+                // Fetch weights
+                const weightsRes = await fetch(`${API_BASE}/evolution/weights`);
+                const weights = await weightsRes.json();
+
+                if (weights.ok) {
+                    const current = weights.current || {};
+                    const changes = weights.changes || {};
+                    const container = document.getElementById('adaptive-weights');
+
+                    container.innerHTML = Object.entries(current).slice(0, 6).map(([key, value]) => {
+                        const change = changes[key] || 0;
+                        const changeClass = change > 0 ? 'weight-change-positive' : (change < 0 ? 'weight-change-negative' : '');
+                        const changeStr = change !== 0 ? (change > 0 ? `+${change.toFixed(1)}pp` : `${change.toFixed(1)}pp`) : '';
+                        return `
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">${key}</span>
+                                <span class="evolution-metric-value">${(value * 100).toFixed(1)}% <span class="${changeClass}">${changeStr}</span></span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch discovered themes
+                const themesRes = await fetch(`${API_BASE}/evolution/themes`);
+                const themes = await themesRes.json();
+
+                if (themes.ok && themes.active_themes && themes.active_themes.length > 0) {
+                    const container = document.getElementById('discovered-themes-list');
+                    container.innerHTML = themes.active_themes.slice(0, 4).map(theme => {
+                        const stage = theme.lifecycle_stage || 'unknown';
+                        const stageClass = stage === 'early' ? 'stage-early' : (stage === 'middle' ? 'stage-middle' : (stage === 'peak' ? 'stage-peak' : 'stage-fading'));
+                        const confidence = ((theme.confidence || 0.7) * 100).toFixed(0);
+                        const stocks = (theme.stocks || []).slice(0, 4).join(', ');
+                        return `
+                            <div class="discovered-theme-card">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600;">${theme.name}</span>
+                                    <span class="theme-stage ${stageClass}">${stage}</span>
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                    Confidence: ${confidence}% | ${stocks}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch correlations
+                const corrRes = await fetch(`${API_BASE}/evolution/correlations`);
+                const corr = await corrRes.json();
+
+                if (corr.ok && corr.pairs && Object.keys(corr.pairs).length > 0) {
+                    const container = document.getElementById('learned-correlations');
+                    const pairs = Object.entries(corr.pairs).slice(0, 6);
+                    container.innerHTML = pairs.map(([key, data]) => {
+                        const t1 = data.ticker1 || key.split('_')[0];
+                        const t2 = data.ticker2 || key.split('_')[1];
+                        const r = (data.correlation || 0).toFixed(2);
+                        return `
+                            <div class="correlation-pair">
+                                <span style="font-family: monospace; font-weight: 600;">${t1}</span>
+                                <span style="color: var(--text-dim);">↔</span>
+                                <span style="font-family: monospace; font-weight: 600;">${t2}</span>
+                                <span class="correlation-value">r=${r}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (e) {
+                console.warn('Evolution fetch failed:', e.message);
+            }
+        }
+
         // Refresh all data
         async function refreshAll() {
             const btn = document.getElementById('refresh-btn');
@@ -1809,7 +2165,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     fetchWithTimeout(fetchBriefing),
                     fetchWithTimeout(fetchInPlay),
                     fetchWithTimeout(fetchOpportunities),
-                    fetchWithTimeout(fetchThemesLifecycle)
+                    fetchWithTimeout(fetchThemesLifecycle),
+                    fetchWithTimeout(fetchEvolution)
                 ]);
 
                 lastUpdate.textContent = new Date().toLocaleTimeString();
@@ -1846,7 +2203,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         // Update active nav on scroll
         window.addEventListener('scroll', () => {
-            const sections = ['overview', 'themes', 'sentiment', 'commands'];
+            const sections = ['overview', 'evolution-section', 'themes', 'sentiment', 'commands'];
             let current = 'overview';
 
             sections.forEach(id => {
