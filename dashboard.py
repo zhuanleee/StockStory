@@ -1269,6 +1269,82 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 </div>
             </div>
 
+            <!-- Parameter Learning Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="parameter-section">
+                <!-- Parameter Learning Status -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚙️</span>
+                                Parameter Learning
+                            </div>
+                            <button class="action-btn" onclick="fetchParameters()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="param-stats" id="param-stats">
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--blue);" id="param-total">124</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Total Params</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--green);" id="param-learned">0</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Learned</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--purple);" id="param-progress">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Progress</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--orange);" id="param-confidence">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Avg Confidence</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Health -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🏥</span>
+                                System Health
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="param-health">
+                                <div style="text-align: center; padding: 20px;">
+                                    <div style="font-size: 3rem; margin-bottom: 10px;" id="health-icon">✅</div>
+                                    <div style="font-size: 1.2rem; font-weight: 600;" id="health-status">Healthy</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 8px;" id="health-issues">No issues detected</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- A/B Experiments -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧪</span>
+                                A/B Experiments
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="experiments-list">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">No active experiments</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Ecosystem Intelligence Section -->
             <div class="grid" style="margin-bottom: 24px;" id="ecosystem-section">
                 <!-- In-Play Watchlist -->
@@ -2130,6 +2206,65 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // Fetch Parameter Learning data
+        async function fetchParameters() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/parameters/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    const params = status.parameters || {};
+                    document.getElementById('param-total').textContent = params.total || 0;
+                    document.getElementById('param-learned').textContent = params.learned || 0;
+                    document.getElementById('param-progress').textContent = `${((params.learning_progress || 0) * 100).toFixed(0)}%`;
+                    document.getElementById('param-confidence').textContent = `${((params.avg_confidence || 0) * 100).toFixed(0)}%`;
+                }
+
+                // Fetch health
+                const healthRes = await fetch(`${API_BASE}/parameters/health`);
+                const health = await healthRes.json();
+
+                if (health.ok) {
+                    const healthStatus = health.status || 'unknown';
+                    const issues = health.issues || [];
+
+                    let icon = '✅';
+                    let statusText = 'Healthy';
+                    if (healthStatus === 'critical') {
+                        icon = '🔴';
+                        statusText = 'Critical';
+                    } else if (healthStatus === 'degraded') {
+                        icon = '⚠️';
+                        statusText = 'Degraded';
+                    }
+
+                    document.getElementById('health-icon').textContent = icon;
+                    document.getElementById('health-status').textContent = statusText;
+                    document.getElementById('health-issues').textContent = issues.length > 0 ? `${issues.length} issues detected` : 'No issues detected';
+                }
+
+                // Fetch experiments
+                const expRes = await fetch(`${API_BASE}/parameters/experiments`);
+                const exp = await expRes.json();
+
+                if (exp.ok && exp.experiments && exp.experiments.length > 0) {
+                    const container = document.getElementById('experiments-list');
+                    container.innerHTML = exp.experiments.slice(0, 3).map(e => `
+                        <div style="padding: 10px; background: var(--bg-accent); border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; font-size: 0.9rem;">${e.parameter}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                Samples: ${e.total_samples} | Variants: ${e.variants.length}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+            } catch (e) {
+                console.warn('Parameters fetch failed:', e.message);
+            }
+        }
+
         // Refresh all data
         async function refreshAll() {
             const btn = document.getElementById('refresh-btn');
@@ -2166,7 +2301,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     fetchWithTimeout(fetchInPlay),
                     fetchWithTimeout(fetchOpportunities),
                     fetchWithTimeout(fetchThemesLifecycle),
-                    fetchWithTimeout(fetchEvolution)
+                    fetchWithTimeout(fetchEvolution),
+                    fetchWithTimeout(fetchParameters)
                 ]);
 
                 lastUpdate.textContent = new Date().toLocaleTimeString();

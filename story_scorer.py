@@ -30,6 +30,7 @@ import re
 
 from config import config
 from utils import get_logger, normalize_dataframe_columns
+import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
 
@@ -237,36 +238,36 @@ def get_social_buzz_score(ticker: str) -> dict:
     reddit = fetch_reddit_mentions(ticker)
     sec = fetch_sec_filings(ticker)
 
-    # Calculate component scores
+    # Calculate component scores using learned thresholds
     st_score = 0
-    if stocktwits['message_volume'] > 20:
-        st_score = 30
-    elif stocktwits['message_volume'] > 10:
-        st_score = 20
-    elif stocktwits['message_volume'] > 5:
-        st_score = 10
+    if stocktwits['message_volume'] > params.threshold_stocktwits_high():
+        st_score = params.score_stocktwits_high()
+    elif stocktwits['message_volume'] > params.threshold_stocktwits_medium():
+        st_score = params.score_stocktwits_medium()
+    elif stocktwits['message_volume'] > params.threshold_stocktwits_low():
+        st_score = params.score_stocktwits_low()
 
     if stocktwits['sentiment'] == 'bullish':
-        st_score += 20
+        st_score += params.score_stocktwits_bullish_boost()
 
     reddit_score = 0
-    if reddit['mention_count'] >= 5:
-        reddit_score = 30
-    elif reddit['mention_count'] >= 2:
-        reddit_score = 20
+    if reddit['mention_count'] >= params.threshold_reddit_high():
+        reddit_score = params.score_stocktwits_high()  # Same scale as stocktwits
+    elif reddit['mention_count'] >= params.threshold_reddit_medium():
+        reddit_score = params.score_stocktwits_medium()
     elif reddit['mention_count'] >= 1:
-        reddit_score = 10
+        reddit_score = params.score_stocktwits_low()
 
-    if reddit['total_score'] > 500:
-        reddit_score += 20
-    elif reddit['total_score'] > 100:
-        reddit_score += 10
+    if reddit['total_score'] > params.threshold_reddit_score_high():
+        reddit_score += params.score_stocktwits_bullish_boost()
+    elif reddit['total_score'] > params.threshold_reddit_score_medium():
+        reddit_score += params.score_stocktwits_low()
 
     sec_score = 0
     if sec['has_8k']:
-        sec_score += 20  # Material event
+        sec_score += params.score_sec_8k()  # Material event
     if sec['insider_activity']:
-        sec_score += 15  # Insider buying/selling
+        sec_score += params.score_sec_insider()  # Insider buying/selling
 
     # Combined buzz score
     buzz_score = min(100, st_score + reddit_score + sec_score)
@@ -274,7 +275,7 @@ def get_social_buzz_score(ticker: str) -> dict:
     # Is it trending?
     trending = (
         stocktwits.get('trending', False) or
-        reddit['mention_count'] >= 3 or
+        reddit['mention_count'] >= params.threshold_trending_reddit_mentions() or
         sec['has_8k']
     )
 
@@ -519,8 +520,8 @@ def calculate_theme_heat(ticker: str, news_data: list = None) -> dict:
     # 3. Theme stage (early > middle > late for alpha)
     # 4. News mentions of theme keywords
 
-    role_scores = {'driver': 100, 'beneficiary': 70, 'picks_shovels': 50}
-    stage_scores = {'early': 100, 'middle': 70, 'late': 30, 'ongoing': 60, 'unknown': 50}
+    role_scores = params.get_role_scores()
+    stage_scores = params.get_stage_scores()
 
     best_score = 0
     hottest_theme = None
@@ -535,7 +536,7 @@ def calculate_theme_heat(ticker: str, news_data: list = None) -> dict:
 
         # Bonus for early stage themes (alpha opportunity)
         if theme['stage'] == 'early':
-            theme_score *= 1.2
+            theme_score *= params.multiplier_early_stage_boost()
 
         if theme_score > best_score:
             best_score = theme_score
@@ -618,7 +619,7 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
     if not catalysts:
         return {'score': 0, 'catalysts': [], 'next_catalyst': None}
 
-    impact_scores = {'very_high': 100, 'high': 75, 'medium': 50, 'low': 25}
+    impact_scores = params.get_catalyst_impact_scores()
     best_score = 0
     next_catalyst = None
 
@@ -628,9 +629,9 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
         # Boost for imminent catalysts
         days = cat.get('days_away', 14)
         if days <= 7:
-            impact *= 1.3
+            impact *= params.multiplier_catalyst_near_7d()
         elif days <= 14:
-            impact *= 1.1
+            impact *= params.multiplier_catalyst_near_14d()
 
         if impact > best_score:
             best_score = impact
@@ -789,18 +790,18 @@ def calculate_sentiment_score(ticker: str, news_data: list = None) -> dict:
 
     score = max(0, min(100, score))
 
-    # Determine sentiment label
-    if score >= 65:
+    # Determine sentiment label using learned thresholds
+    if score >= params.threshold_sentiment_bullish():
         sentiment = 'bullish'
-    elif score <= 35:
+    elif score <= params.threshold_sentiment_bearish():
         sentiment = 'bearish'
     else:
         sentiment = 'neutral'
 
     # Confidence based on article count
-    if total_articles >= 10:
+    if total_articles >= params.get('threshold.confidence.high_articles', 10):
         confidence = 'high'
-    elif total_articles >= 5:
+    elif total_articles >= params.get('threshold.confidence.medium_articles', 5):
         confidence = 'medium'
     else:
         confidence = 'low'
@@ -851,22 +852,22 @@ def calculate_technical_confirmation(ticker: str, price_data=None) -> dict:
 
         if trend_points == 3:
             trend = 'strong_up'
-            trend_score = 100
+            trend_score = params.score_technical_trend_3()
         elif trend_points == 2:
             trend = 'up'
-            trend_score = 70
+            trend_score = params.score_technical_trend_2()
         elif trend_points == 1:
             trend = 'neutral'
-            trend_score = 50
+            trend_score = params.score_technical_trend_1()
         else:
             trend = 'down'
-            trend_score = 20
+            trend_score = params.score_technical_trend_0()
 
         # Volume
         avg_vol = float(volume.iloc[-20:].mean())
         vol_ratio = float(volume.iloc[-1] / avg_vol) if avg_vol > 0 else 1
 
-        vol_score = min(100, vol_ratio * 40)  # 2.5x volume = 100
+        vol_score = min(100, vol_ratio * params.multiplier_volume_score())
 
         # RS vs SPY (simplified)
         ret_20d = (current / float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
@@ -956,16 +957,16 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
         ecosystem_data = {'score': 50, 'breakdown': {}, 'in_ecosystem': False}
         ecosystem_score = 50
 
-    # Weighted composite score (story-first: 75% story, 25% technical)
-    # Updated to include ecosystem score (10%)
+    # Weighted composite score using learned weights
+    weights = params.get_scoring_weights()
     composite = (
-        theme['score'] * 0.18 +
-        catalyst['score'] * 0.18 +
-        social['buzz_score'] * 0.12 +
-        news_momentum['score'] * 0.10 +
-        sentiment['score'] * 0.07 +
-        ecosystem_score * 0.10 +  # Ecosystem strength
-        technical['score'] * 0.25
+        theme['score'] * weights['theme_heat'] +
+        catalyst['score'] * weights['catalyst'] +
+        social['buzz_score'] * weights['social_buzz'] +
+        news_momentum['score'] * weights['news_momentum'] +
+        sentiment['score'] * weights['sentiment'] +
+        ecosystem_score * weights['ecosystem'] +
+        technical['score'] * weights['technical']
     )
 
     # Boost for trending stocks (social momentum)

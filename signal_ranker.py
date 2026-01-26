@@ -19,6 +19,7 @@ import yfinance as yf
 
 from config import config
 from utils import get_logger, normalize_dataframe_columns, safe_float
+import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
 
@@ -28,7 +29,8 @@ logger = get_logger(__name__)
 
 # ALL SOURCES START EQUAL - Trust is earned through accuracy
 # No preset tiers - the system learns which sources are reliable
-INITIAL_TRUST_SCORE = 50  # Everyone starts at 50/100
+def get_initial_trust_score():
+    return params.signal_initial_trust()
 
 # Source metadata (for display only, not scoring)
 SOURCE_METADATA = {
@@ -118,7 +120,7 @@ def get_source_trust_score(source_name):
         # Score = 50 + (accuracy - 0.5) * 100
         return min(100, max(0, 50 + (accuracy_rate - 0.5) * 100))
 
-    return INITIAL_TRUST_SCORE  # New sources start at 50
+    return get_initial_trust_score()  # New sources start at learned threshold
 
 
 def get_source_metadata(source_name):
@@ -150,48 +152,48 @@ def calculate_signal_strength(signal_data):
     score = 0
     factors = []
 
-    # Factor 1: Multiple sources agree (+0-25)
+    # Factor 1: Multiple sources agree (learned points)
     num_sources = len(signal_data.get('sources', []))
     if num_sources >= 4:
-        score += 25
+        score += params.signal_consensus_4plus()
         factors.append('Strong consensus (4+ sources)')
     elif num_sources >= 2:
-        score += 15
+        score += params.signal_consensus_2plus()
         factors.append(f'{num_sources} sources agree')
     elif num_sources == 1:
-        score += 5
+        score += params.signal_consensus_1()
         factors.append('Single source')
 
-    # Factor 2: High-tier sources (+0-20)
+    # Factor 2: High-tier sources (learned points)
     tier1_sources = [s for s in signal_data.get('sources', [])
                      if get_source_tier(s).get('tier', 5) == 1]
     tier2_sources = [s for s in signal_data.get('sources', [])
                      if get_source_tier(s).get('tier', 5) == 2]
 
     if tier1_sources:
-        score += 20
+        score += params.signal_tier1_bonus()
         factors.append(f'Expert source: {tier1_sources[0]}')
     elif tier2_sources:
-        score += 12
+        score += params.signal_tier2_bonus()
         factors.append(f'Quality source: {tier2_sources[0]}')
 
-    # Factor 3: Specific tickers mentioned (+0-15)
+    # Factor 3: Specific tickers mentioned (learned points)
     num_tickers = len(signal_data.get('tickers_mentioned', []))
     if num_tickers >= 3:
-        score += 15
+        score += params.signal_multi_ticker_3plus()
         factors.append(f'{num_tickers} tickers identified')
     elif num_tickers >= 1:
-        score += 10
+        score += params.signal_multi_ticker_1plus()
         factors.append('Specific ticker mentioned')
 
-    # Factor 4: Clear catalyst (+0-15)
+    # Factor 4: Clear catalyst (learned points)
     if signal_data.get('catalyst'):
         catalyst = signal_data['catalyst']
         if len(catalyst) > 20:  # Substantive catalyst
-            score += 15
+            score += params.signal_catalyst_substantive()
             factors.append('Clear catalyst')
         else:
-            score += 8
+            score += params.signal_catalyst_mentioned()
             factors.append('Catalyst mentioned')
 
     # Factor 5: Smart money vs Retail divergence (+0-25)

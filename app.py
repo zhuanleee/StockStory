@@ -154,7 +154,12 @@ def handle_help(chat_id):
     msg += "• `/discoveredthemes` → Auto-discovered themes\n"
     msg += "• `/accuracy` → Validation metrics\n"
     msg += "• `/correlations` → Learned relationships\n"
-    msg += "• `/learningreport` → Full report\n"
+    msg += "• `/learningreport` → Full report\n\n"
+
+    msg += "*⚙️ Parameters:*\n"
+    msg += "• `/parameters` → 124 learned params\n"
+    msg += "• `/paramhealth` → System health\n"
+    msg += "• `/experiments` → A/B tests\n"
 
     send_message(chat_id, msg)
 
@@ -985,6 +990,14 @@ def process_message(message):
         handle_correlations(chat_id)
     elif text_lower == '/learningreport':
         handle_learning_report(chat_id)
+
+    # Parameter Learning Commands
+    elif text_lower == '/parameters':
+        handle_parameters(chat_id)
+    elif text_lower == '/paramhealth':
+        handle_param_health(chat_id)
+    elif text_lower == '/experiments':
+        handle_experiments(chat_id)
 
     # Ticker lookup (1-5 letter word)
     elif len(text) <= 5 and text.replace('.', '').isalpha():
@@ -2245,6 +2258,259 @@ def api_evolution_discover_themes():
     except Exception as e:
         logger.error(f"Theme discovery error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# PARAMETER LEARNING API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/parameters/status')
+def api_parameters_status():
+    """Get parameter learning system status."""
+    try:
+        from parameter_learning import get_learning_status
+        status = get_learning_status()
+        return jsonify({'ok': True, **status})
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Parameter learning not available'})
+    except Exception as e:
+        logger.error(f"Parameter status error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/parameters/health')
+def api_parameters_health():
+    """Run health check on parameter learning system."""
+    try:
+        from parameter_learning import run_health_check
+        health = run_health_check()
+        return jsonify({'ok': True, **health})
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Parameter learning not available'})
+    except Exception as e:
+        logger.error(f"Parameter health error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/parameters/registry')
+def api_parameters_registry():
+    """Get all parameters with metadata."""
+    try:
+        from parameter_learning import get_registry
+        registry = get_registry()
+        params = {}
+        for name, param in registry.parameters.items():
+            params[name] = {
+                'current': param.current_value,
+                'default': param.default_value,
+                'category': param.category,
+                'status': param.status,
+                'learned_samples': param.learned_from_samples,
+                'confidence': param.confidence,
+            }
+        return jsonify({
+            'ok': True,
+            'total': len(params),
+            'parameters': params
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Parameter learning not available'})
+    except Exception as e:
+        logger.error(f"Parameter registry error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/parameters/experiments')
+def api_parameters_experiments():
+    """Get active A/B experiments."""
+    try:
+        from parameter_learning import ABTestingFramework, get_registry
+        ab = ABTestingFramework(get_registry())
+        experiments = []
+        for exp in ab.get_active_experiments():
+            experiments.append(ab.get_experiment_status(exp.experiment_id))
+        return jsonify({
+            'ok': True,
+            'active_count': len(experiments),
+            'experiments': experiments
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Parameter learning not available'})
+    except Exception as e:
+        logger.error(f"Experiments error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/parameters/optimize', methods=['POST'])
+def api_parameters_optimize():
+    """Run optimization cycle."""
+    try:
+        from parameter_learning import run_optimization_cycle
+        result = run_optimization_cycle()
+        return jsonify({'ok': True, **result})
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Parameter learning not available'})
+    except Exception as e:
+        logger.error(f"Optimization error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# PARAMETER LEARNING TELEGRAM HANDLERS
+# =============================================================================
+
+def handle_parameters(chat_id):
+    """Handle /parameters command - Show parameter learning status."""
+    try:
+        from parameter_learning import get_learning_status
+        status = get_learning_status()
+
+        params = status.get('parameters', {})
+        health = status.get('health', {})
+
+        msg = "📊 *PARAMETER LEARNING STATUS*\n\n"
+
+        # Health status
+        health_status = health.get('overall_status', 'unknown')
+        if health_status == 'healthy':
+            msg += "✅ System Status: Healthy\n"
+        elif health_status == 'degraded':
+            msg += "⚠️ System Status: Degraded\n"
+        elif health_status == 'critical':
+            msg += "🔴 System Status: Critical\n"
+        else:
+            msg += f"❓ System Status: {health_status}\n"
+
+        msg += "\n*Parameters:*\n"
+        msg += f"• Total: {params.get('total', 0)}\n"
+        msg += f"• Learned: {params.get('learned', 0)}\n"
+        msg += f"• Static: {params.get('static', 0)}\n"
+
+        progress = params.get('learning_progress', 0)
+        msg += f"• Progress: {progress:.1%}\n"
+        msg += f"• Avg Confidence: {params.get('avg_confidence', 0):.1%}\n"
+
+        # Category breakdown
+        by_category = params.get('by_category', {})
+        if by_category:
+            msg += "\n*By Category:*\n"
+            for cat, count in sorted(by_category.items()):
+                msg += f"• {cat}: {count}\n"
+
+        # Recent changes
+        changes = status.get('recent_changes', [])
+        if changes:
+            msg += f"\n*Recent Changes:* {len(changes)} in last 7 days\n"
+
+        # Active experiments
+        exp_count = status.get('active_experiments', 0)
+        if exp_count:
+            msg += f"\n*Active Experiments:* {exp_count}\n"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Parameter learning system not available.")
+    except Exception as e:
+        logger.error(f"Parameters command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_param_health(chat_id):
+    """Handle /paramhealth command - Show system health."""
+    try:
+        from parameter_learning import run_health_check
+
+        health = run_health_check()
+
+        msg = "🏥 *PARAMETER SYSTEM HEALTH*\n\n"
+
+        status = health.get('status', 'unknown')
+        if status == 'healthy':
+            msg += "✅ *Status: HEALTHY*\n"
+        elif status == 'degraded':
+            msg += "⚠️ *Status: DEGRADED*\n"
+        elif status == 'critical':
+            msg += "🔴 *Status: CRITICAL*\n"
+        else:
+            msg += f"❓ *Status: {status}*\n"
+
+        # Metrics
+        metrics = health.get('metrics', {})
+        if metrics:
+            msg += "\n*Metrics:*\n"
+            for key, value in metrics.items():
+                if isinstance(value, float):
+                    msg += f"• {key}: {value:.2f}\n"
+                else:
+                    msg += f"• {key}: {value}\n"
+
+        # Issues
+        issues = health.get('issues', [])
+        if issues:
+            msg += f"\n*Issues ({len(issues)}):*\n"
+            for issue in issues[:5]:  # Show first 5
+                severity = issue.get('severity', 'info')
+                message = issue.get('message', '')
+                if severity == 'critical':
+                    msg += f"🔴 {message}\n"
+                elif severity == 'warning':
+                    msg += f"⚠️ {message}\n"
+                else:
+                    msg += f"ℹ️ {message}\n"
+
+                suggestion = issue.get('suggestion', '')
+                if suggestion:
+                    msg += f"   _Suggestion: {suggestion}_\n"
+        else:
+            msg += "\n✅ No issues detected\n"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Parameter learning system not available.")
+    except Exception as e:
+        logger.error(f"Param health command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_experiments(chat_id):
+    """Handle /experiments command - Show A/B test experiments."""
+    try:
+        from parameter_learning import ABTestingFramework, get_registry
+
+        ab = ABTestingFramework(get_registry())
+        active = ab.get_active_experiments()
+
+        msg = "🧪 *A/B TEST EXPERIMENTS*\n\n"
+
+        if not active:
+            msg += "No active experiments.\n"
+            msg += "\n_Experiments are created automatically when parameters need optimization._"
+        else:
+            msg += f"*Active: {len(active)}*\n\n"
+            for exp in active:
+                status = ab.get_experiment_status(exp.experiment_id)
+                if status:
+                    msg += f"📊 *{status['parameter']}*\n"
+                    msg += f"   Variants: {status['variants']}\n"
+                    msg += f"   Samples: {status['total_samples']}\n"
+
+                    # Variant performance
+                    for idx, stats in status.get('variant_stats', {}).items():
+                        msg += f"   V{idx}: mean={stats['mean']:.2f} (n={stats['samples']})\n"
+
+                    if status['winner'] is not None:
+                        msg += f"   ✅ Winner: Variant {status['winner']}\n"
+                    msg += "\n"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "Parameter learning system not available.")
+    except Exception as e:
+        logger.error(f"Experiments command error: {e}")
+        send_message(chat_id, f"Error: {e}")
 
 
 if __name__ == '__main__':
