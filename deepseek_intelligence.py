@@ -27,6 +27,13 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, rely on environment variables
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
 logger = logging.getLogger('deepseek_intelligence')

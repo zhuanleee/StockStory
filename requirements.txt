@@ -7,6 +7,9 @@ Werkzeug>=3.0.1
 requests>=2.31.0
 urllib3>=2.0.0
 
+# Environment
+python-dotenv>=1.0.0
+
 # Data & Finance
 yfinance>=0.2.33
 pandas>=2.0.0
