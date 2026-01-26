@@ -291,26 +291,36 @@ class UniverseManager:
         html = response.text
         tickers = []
 
-        # Find table with NASDAQ-100 components
-        table_match = re.search(r'<table[^>]*class="[^"]*wikitable[^"]*sortable[^"]*"[^>]*>(.*?)</table>', html, re.DOTALL)
+        # Find all wikitables and look for the one with 'Ticker' header
+        tables = re.findall(r'<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>(.*?)</table>', html, re.DOTALL)
 
-        if table_match:
-            table_html = table_match.group(1)
+        for table_html in tables:
+            # Check if this table has Ticker/Symbol header
+            if 'Ticker' not in table_html and 'Symbol' not in table_html:
+                continue
+
             rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL)
 
-            for row in rows[1:]:
+            for row in rows[1:]:  # Skip header
                 cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
-                if len(cells) >= 2:
-                    # Ticker is usually in second column for NASDAQ-100
-                    cell = cells[1]
+                if len(cells) >= 1:
+                    # Ticker is in first column for NASDAQ-100
+                    cell = cells[0]
                     ticker_match = re.search(r'>([A-Z]{1,5})</a>', cell)
                     if not ticker_match:
-                        ticker_match = re.search(r'([A-Z]{1,5})', cell.strip())
+                        # Try plain text
+                        clean = re.sub(r'<[^>]+>', '', cell).strip()
+                        if re.match(r'^[A-Z]{1,5}$', clean):
+                            ticker_match = re.match(r'([A-Z]{1,5})', clean)
 
                     if ticker_match:
                         ticker = ticker_match.group(1)
-                        if len(ticker) >= 1 and len(ticker) <= 5:
+                        if 1 <= len(ticker) <= 5:
                             tickers.append(ticker)
+
+            # If we found tickers, stop searching tables
+            if len(tickers) >= 90:
+                break
 
         return sorted(list(set(tickers)))
 
