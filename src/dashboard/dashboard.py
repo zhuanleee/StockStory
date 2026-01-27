@@ -966,6 +966,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="nav-links">
                 <a href="#overview" class="nav-link active">Overview</a>
                 <a href="#evolution-section" class="nav-link">Evolution</a>
+                <a href="#earnings-section" class="nav-link">Earnings</a>
+                <a href="#options-section" class="nav-link">Options</a>
                 <a href="#themes" class="nav-link">Themes</a>
                 <a href="#sentiment" class="nav-link">Sentiment</a>
                 <a href="#commands" class="nav-link">Commands</a>
@@ -1494,6 +1496,65 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                                 {{SECTOR_ROWS}}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Earnings Calendar -->
+        <section id="earnings-section" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📅</span>
+                                Upcoming Earnings
+                            </div>
+                            <button class="action-btn" onclick="fetchEarnings()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="earnings-content" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                                <div style="color: var(--text-dim); text-align: center; padding: 40px;">Loading earnings calendar...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Options Flow -->
+        <section id="options-section" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Unusual Options Activity
+                            </div>
+                            <button class="action-btn" onclick="fetchOptionsFlow()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="options-content">
+                                <div style="color: var(--text-dim); text-align: center; padding: 40px;">Loading options flow...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔌</span>
+                                Data Providers
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="providers-content">
+                                <div style="color: var(--text-dim); text-align: center; padding: 20px;">Checking status...</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2255,6 +2316,144 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // Fetch Earnings Calendar
+        async function fetchEarnings() {
+            try {
+                const res = await fetch(`${API_BASE}/earnings`);
+                const data = await res.json();
+
+                if (data.ok && data.earnings && data.earnings.length > 0) {
+                    const container = document.getElementById('earnings-content');
+                    container.innerHTML = data.earnings.slice(0, 12).map(e => {
+                        const daysUntil = e.days_until || 0;
+                        let urgency = 'var(--text-dim)';
+                        let badge = '';
+                        if (daysUntil === 0) {
+                            urgency = 'var(--red)';
+                            badge = '<span style="background: var(--red-dim); color: var(--red); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 6px;">TODAY</span>';
+                        } else if (daysUntil === 1) {
+                            urgency = 'var(--orange)';
+                            badge = '<span style="background: var(--orange-dim); color: var(--orange); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 6px;">TOMORROW</span>';
+                        } else if (daysUntil <= 3) {
+                            urgency = 'var(--yellow)';
+                        }
+
+                        const impact = e.high_impact ? '⭐' : '';
+
+                        return `
+                            <div style="background: var(--bg-accent); border-radius: 8px; padding: 12px; cursor: pointer;" onclick="showTicker('${e.ticker}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span class="ticker">${impact}${e.ticker}</span>
+                                    ${badge}
+                                </div>
+                                <div style="color: ${urgency}; font-size: 0.85rem; margin-top: 4px;">
+                                    ${e.next_date || 'TBD'} ${daysUntil > 0 ? `(${daysUntil}d)` : ''}
+                                </div>
+                                ${e.eps_estimate ? `<div style="color: var(--text-dim); font-size: 0.75rem;">EPS Est: $${e.eps_estimate.toFixed(2)}</div>` : ''}
+                                ${e.beat_rate ? `<div style="color: var(--green); font-size: 0.75rem;">Beat Rate: ${e.beat_rate}%</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    document.getElementById('earnings-content').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 40px;">No upcoming earnings in watchlist</div>';
+                }
+            } catch (e) {
+                console.warn('Earnings fetch failed:', e.message);
+                document.getElementById('earnings-content').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 40px;">Failed to load earnings</div>';
+            }
+        }
+
+        // Fetch Options Flow
+        async function fetchOptionsFlow() {
+            try {
+                const res = await fetch(`${API_BASE}/options/unusual`);
+                const data = await res.json();
+
+                if (data.ok && data.unusual_activity && data.unusual_activity.length > 0) {
+                    const container = document.getElementById('options-content');
+                    container.innerHTML = `
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Put/Call</th>
+                                    <th>Unusual Calls</th>
+                                    <th>Unusual Puts</th>
+                                    <th>Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.unusual_activity.map(o => {
+                                    const pcRatio = o.put_call_ratio || 0;
+                                    const signal = pcRatio > 1.5 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
+                                    const signalClass = signal === 'Bullish' ? 'positive' : signal === 'Bearish' ? 'negative' : '';
+                                    return `
+                                        <tr onclick="showTicker('${o.ticker}')" style="cursor: pointer;">
+                                            <td class="ticker">${o.ticker}</td>
+                                            <td>${pcRatio.toFixed(2)}</td>
+                                            <td class="positive">${o.unusual_calls || 0}</td>
+                                            <td class="negative">${o.unusual_puts || 0}</td>
+                                            <td class="${signalClass}">${signal}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } else {
+                    document.getElementById('options-content').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 40px;">No unusual options activity detected</div>';
+                }
+            } catch (e) {
+                console.warn('Options fetch failed:', e.message);
+                document.getElementById('options-content').innerHTML = '<div style="color: var(--text-dim); text-align: center; padding: 40px;">Options data requires Polygon API</div>';
+            }
+        }
+
+        // Fetch Data Provider Status
+        async function fetchProviders() {
+            try {
+                const res = await fetch(`${API_BASE}/polygon/status`);
+                const data = await res.json();
+
+                const container = document.getElementById('providers-content');
+
+                if (data.ok) {
+                    const polygonStatus = data.polygon_configured && data.api_working;
+                    const features = data.features || {};
+
+                    container.innerHTML = `
+                        <div style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-weight: 600;">Polygon.io</span>
+                                <span style="color: ${polygonStatus ? 'var(--green)' : 'var(--red)'};">
+                                    ${polygonStatus ? '✅ Connected' : '❌ Not configured'}
+                                </span>
+                            </div>
+                            ${polygonStatus ? `
+                                <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                    ${Object.entries(features).filter(([k,v]) => v).map(([k]) =>
+                                        `<span style="background: var(--green-dim); color: var(--green); padding: 2px 6px; border-radius: 4px; margin: 2px; display: inline-block;">${k.replace('_', ' ')}</span>`
+                                    ).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-weight: 600;">yfinance</span>
+                            <span style="color: var(--green);">✅ Fallback</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 600;">Social APIs</span>
+                            <span style="color: var(--blue);">📡 Active</span>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = '<div style="color: var(--text-dim);">Unable to check status</div>';
+                }
+            } catch (e) {
+                console.warn('Providers fetch failed:', e.message);
+            }
+        }
+
         // Refresh all data
         async function refreshAll() {
             const btn = document.getElementById('refresh-btn');
@@ -2292,10 +2491,13 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     fetchWithTimeout(fetchOpportunities),
                     fetchWithTimeout(fetchThemesLifecycle),
                     fetchWithTimeout(fetchEvolution),
-                    fetchWithTimeout(fetchParameters)
+                    fetchWithTimeout(fetchParameters),
+                    fetchWithTimeout(fetchEarnings),
+                    fetchWithTimeout(fetchOptionsFlow),
+                    fetchWithTimeout(fetchProviders)
                 ]);
 
-                lastUpdate.textContent = new Date().toLocaleTimeString();
+                lastUpdate.textContent = new Date().toLocaleTimeString('en-MY', {timeZone: 'Asia/Kuala_Lumpur', hour: '2-digit', minute: '2-digit'}) + ' MYT';
                 btn.textContent = '✅ Updated!';
 
                 setTimeout(() => {
@@ -2329,7 +2531,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         // Update active nav on scroll
         window.addEventListener('scroll', () => {
-            const sections = ['overview', 'evolution-section', 'themes', 'sentiment', 'commands'];
+            const sections = ['overview', 'evolution-section', 'earnings-section', 'options-section', 'themes', 'sentiment', 'commands'];
             let current = 'overview';
 
             sections.forEach(id => {
@@ -2351,7 +2553,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         // Load data on page load
         document.addEventListener('DOMContentLoaded', () => {
-            // Initial load is from static HTML, user can refresh for live data
+            // Load dynamic sections on page load
+            fetchEarnings();
+            fetchOptionsFlow();
+            fetchProviders();
         });
     </script>
 

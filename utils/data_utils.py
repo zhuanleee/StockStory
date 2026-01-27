@@ -12,6 +12,7 @@ Usage:
         get_spy_data_cached,
         calculate_rs,
         download_stock_data,
+        get_kl_time,
     )
 
     # Get cached SPY data
@@ -22,13 +23,43 @@ Usage:
 
     # Calculate relative strength
     rs_data = calculate_rs(df, spy_returns)
+
+    # Get current time in Kuala Lumpur
+    now_kl = get_kl_time()
 """
 import time
 import threading
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Tuple, Any, List
 from dataclasses import dataclass, field
 import pandas as pd
 import numpy as np
+
+
+# Kuala Lumpur Timezone (UTC+8)
+KL_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def get_kl_time() -> datetime:
+    """Get current time in Kuala Lumpur timezone (UTC+8)."""
+    return datetime.now(KL_TIMEZONE)
+
+
+def get_kl_timestamp() -> str:
+    """Get current timestamp string in Kuala Lumpur timezone."""
+    return get_kl_time().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def format_kl_time(dt: datetime = None, fmt: str = '%Y-%m-%d %H:%M') -> str:
+    """Format datetime in Kuala Lumpur timezone."""
+    if dt is None:
+        dt = get_kl_time()
+    elif dt.tzinfo is None:
+        # Assume UTC if no timezone
+        dt = dt.replace(tzinfo=timezone.utc).astimezone(KL_TIMEZONE)
+    else:
+        dt = dt.astimezone(KL_TIMEZONE)
+    return dt.strftime(fmt)
 
 # Lazy import to avoid circular imports
 _yf = None

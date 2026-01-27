@@ -2933,5 +2933,111 @@ def api_deepseek_status():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/api/options/<ticker>')
+def api_options(ticker):
+    """Get options flow data for a ticker."""
+    try:
+        from src.data.polygon_provider import (
+            get_options_flow_summary_sync,
+            analyze_unusual_options_sync
+        )
+
+        ticker = ticker.upper()
+
+        # Get options flow summary
+        flow = get_options_flow_summary_sync(ticker)
+        unusual = analyze_unusual_options_sync(ticker, volume_threshold=2.0)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'flow': flow,
+            'unusual_activity': unusual,
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Options data not available: {e}'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/options/unusual')
+def api_options_unusual():
+    """Get unusual options activity across watchlist."""
+    try:
+        from src.data.polygon_provider import analyze_unusual_options_sync
+
+        # Get top tickers to check
+        tickers = request.args.get('tickers', 'NVDA,AMD,AAPL,TSLA,META,GOOGL,AMZN,MSFT').split(',')
+        threshold = float(request.args.get('threshold', 2.0))
+
+        results = []
+        for ticker in tickers[:20]:  # Limit to 20
+            try:
+                unusual = analyze_unusual_options_sync(ticker.strip().upper(), volume_threshold=threshold)
+                if unusual and unusual.get('has_unusual_activity'):
+                    results.append({
+                        'ticker': ticker.strip().upper(),
+                        **unusual
+                    })
+            except Exception:
+                continue
+
+        # Sort by total unusual volume
+        results.sort(key=lambda x: x.get('total_unusual_volume', 0), reverse=True)
+
+        return jsonify({
+            'ok': True,
+            'count': len(results),
+            'unusual_activity': results[:10],
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Options data not available: {e}'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/polygon/status')
+def api_polygon_status():
+    """Get Polygon.io API status and usage."""
+    import os
+
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    has_key = bool(polygon_key and len(polygon_key) > 10)
+
+    status = {
+        'ok': True,
+        'polygon_configured': has_key,
+        'features': {
+            'price_data': has_key,
+            'options_data': has_key,
+            'news': has_key,
+            'financials': has_key,
+            'dividends': has_key,
+            'splits': has_key,
+            'technical_indicators': has_key,
+            'ticker_universe': has_key,
+        }
+    }
+
+    if has_key:
+        try:
+            from src.data.polygon_provider import PolygonProvider
+            import asyncio
+
+            async def test_polygon():
+                provider = PolygonProvider()
+                # Quick test
+                quote = await provider.get_quote('AAPL')
+                await provider.close()
+                return quote is not None
+
+            status['api_working'] = asyncio.run(test_polygon())
+        except Exception as e:
+            status['api_working'] = False
+            status['error'] = str(e)
+
+    return jsonify(status)
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=config.port, debug=config.debug)

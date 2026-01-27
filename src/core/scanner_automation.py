@@ -29,7 +29,7 @@ from config import config
 from utils import (
     get_logger, normalize_dataframe_columns, get_spy_data_cached,
     calculate_rs, safe_float, download_stock_data, send_message, send_photo,
-    TelegramClient, DataFetchError,
+    TelegramClient, DataFetchError, get_kl_time, format_kl_time,
 )
 
 logger = get_logger(__name__)
@@ -178,7 +178,7 @@ def send_telegram_message(message, parse_mode='Markdown'):
 
 def format_alert_message(alert_type, data):
     """Format alert message for Telegram."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    timestamp = format_kl_time()  # Kuala Lumpur time (UTC+8)
 
     if alert_type == 'DAILY_SUMMARY':
         msg = f"📊 *DAILY SCAN SUMMARY*\n_{timestamp}_\n\n"
@@ -385,7 +385,7 @@ def run_scan(use_story_first=True):
     2. Score based on story strength (theme, catalyst, news momentum)
     3. Use technical analysis only for confirmation
     """
-    logger.info(f"Starting {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {datetime.now()}")
+    logger.info(f"Starting {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {format_kl_time()}")
 
     # Get unique tickers from dynamic universe or hardcoded fallback
     all_tickers = get_scan_universe()
