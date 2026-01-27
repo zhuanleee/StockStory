@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
-import yfinance as yf
 
 from cache_manager import (
     CacheManager, CacheConfig,
@@ -84,7 +83,7 @@ RATE_LIMITERS = {
     'reddit': AsyncRateLimiter(rate=1.0, burst=4),        # ~60/min, 4 subreddits
     'sec': AsyncRateLimiter(rate=10.0, burst=20),         # Be nice to SEC
     'news': AsyncRateLimiter(rate=5.0, burst=10),         # General news APIs
-    'yfinance': AsyncRateLimiter(rate=2.0, burst=10),     # Yahoo Finance
+    'polygon': AsyncRateLimiter(rate=100.0, burst=50),    # Polygon.io unlimited tier
 }
 
 
@@ -427,9 +426,7 @@ class AsyncDataFetcher:
 
     async def fetch_sector_async(self, ticker: str) -> str:
         """
-        Async fetch sector for ticker.
-
-        Uses Polygon.io as primary, yfinance as fallback.
+        Async fetch sector for ticker using Polygon.io.
         """
         # Check cache first
         cache_key = sector_cache_key(ticker)
@@ -439,7 +436,7 @@ class AsyncDataFetcher:
 
         sector = 'Unknown'
 
-        # Try Polygon first (faster, async native)
+        # Use Polygon.io for sector data
         polygon_key = os.environ.get('POLYGON_API_KEY', '')
         if polygon_key:
             try:
@@ -455,30 +452,13 @@ class AsyncDataFetcher:
             except Exception as e:
                 logger.debug(f"Polygon sector fetch failed for {ticker}: {e}")
 
-        # Fallback to yfinance
-        loop = asyncio.get_event_loop()
-        try:
-            def get_sector():
-                try:
-                    stock = yf.Ticker(ticker)
-                    info = stock.info
-                    return info.get('sector', 'Unknown')
-                except Exception:
-                    return 'Unknown'
-
-            sector = await loop.run_in_executor(None, get_sector)
-
-            # Cache result (long TTL since sectors don't change)
-            self.cache.set(cache_key, sector, ttl=CacheConfig.TTL_SECTOR)
-            return sector
-        except Exception:
-            return 'Unknown'
+        # Cache even 'Unknown' to avoid repeated failed lookups
+        self.cache.set(cache_key, sector, ttl=CacheConfig.TTL_SECTOR)
+        return sector
 
     async def fetch_news_async(self, ticker: str, days: int = 7) -> List[Dict]:
         """
-        Async fetch news for ticker.
-
-        Uses Polygon.io as primary (structured API), yfinance as fallback.
+        Async fetch news for ticker using Polygon.io.
         """
         # Check cache first
         cache_key = news_cache_key(ticker, days)
@@ -488,7 +468,7 @@ class AsyncDataFetcher:
 
         news = []
 
-        # Try Polygon first (faster, structured data, no scraping)
+        # Use Polygon.io for news data
         polygon_key = os.environ.get('POLYGON_API_KEY', '')
         if polygon_key:
             try:
@@ -511,28 +491,12 @@ class AsyncDataFetcher:
                             'keywords': article.get('keywords', []),
                             'source': 'polygon',
                         })
-                    self.cache.set(cache_key, news, ttl=CacheConfig.TTL_NEWS)
-                    return news
             except Exception as e:
                 logger.debug(f"Polygon news fetch failed for {ticker}: {e}")
 
-        # Fallback to yfinance
-        loop = asyncio.get_event_loop()
-        try:
-            def get_news():
-                try:
-                    stock = yf.Ticker(ticker)
-                    return stock.news or []
-                except Exception:
-                    return []
-
-            news = await loop.run_in_executor(None, get_news)
-
-            # Cache result
-            self.cache.set(cache_key, news, ttl=CacheConfig.TTL_NEWS)
-            return news
-        except Exception:
-            return []
+        # Cache result (even empty list to avoid repeated failed lookups)
+        self.cache.set(cache_key, news, ttl=CacheConfig.TTL_NEWS)
+        return news
 
     async def fetch_options_flow_async(self, ticker: str) -> Dict:
         """
@@ -938,59 +902,34 @@ class AsyncScanner:
 
     async def _fetch_price_data(self, tickers: List[str]) -> Dict[str, pd.DataFrame]:
         """
-        Fetch price data for multiple tickers.
-        Uses Polygon.io if available, falls back to yfinance.
+        Fetch price data for multiple tickers using Polygon.io.
         """
         price_data_dict = {}
 
-        # Try Polygon first (faster, more reliable)
         polygon_key = os.environ.get('POLYGON_API_KEY', '')
-        if polygon_key:
-            try:
-                from src.data.polygon_provider import PolygonProvider
-                logger.info("Using Polygon.io for price data...")
+        if not polygon_key:
+            logger.error("POLYGON_API_KEY not set - cannot fetch price data")
+            return price_data_dict
 
-                provider = PolygonProvider(api_key=polygon_key)
-                price_data_dict = await provider.batch_get_daily_bars(
-                    tickers + ['SPY'],
-                    days=250,
-                    max_concurrent=20,
-                )
-                await provider.close()
-
-                if len(price_data_dict) >= len(tickers) * 0.8:
-                    logger.info(f"Polygon fetched {len(price_data_dict)} tickers")
-                    return price_data_dict
-                else:
-                    logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)}, falling back to yfinance")
-            except Exception as e:
-                logger.warning(f"Polygon error, falling back to yfinance: {e}")
-
-        # Fallback to yfinance
         try:
-            logger.info("Using yfinance for price data...")
-            price_data = yf.download(
+            from src.data.polygon_provider import PolygonProvider
+            logger.info("Using Polygon.io for price data...")
+
+            provider = PolygonProvider(api_key=polygon_key)
+            price_data_dict = await provider.batch_get_daily_bars(
                 tickers + ['SPY'],
-                period='1y',
-                group_by='ticker',
-                progress=False,
-                threads=True,
+                days=250,
+                max_concurrent=50,  # Higher concurrency for unlimited tier
             )
+            await provider.close()
 
-            for ticker in tickers:
-                try:
-                    if isinstance(price_data.columns, pd.MultiIndex):
-                        df = price_data[ticker]
-                    else:
-                        df = price_data
-                    if len(df) > 0:
-                        price_data_dict[ticker] = df
-                except Exception:
-                    pass
+            logger.info(f"Polygon fetched {len(price_data_dict)} tickers")
 
-            logger.info(f"yfinance fetched {len(price_data_dict)} tickers")
+            if len(price_data_dict) < len(tickers) * 0.5:
+                logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)} tickers")
+
         except Exception as e:
-            logger.warning(f"Price data fetch error: {e}")
+            logger.error(f"Polygon price data error: {e}")
 
         return price_data_dict
 
