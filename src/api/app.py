@@ -3500,5 +3500,205 @@ def api_polygon_status():
     return jsonify(status)
 
 
+# =============================================================================
+# SEC EDGAR API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/sec/filings/<ticker>')
+def api_sec_filings(ticker):
+    """Get recent SEC filings for a ticker."""
+    try:
+        from src.data.sec_edgar import SECEdgarClient
+
+        days = request.args.get('days', 60, type=int)
+        client = SECEdgarClient()
+        filings = client.get_company_filings(ticker.upper(), days_back=days)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker.upper(),
+            'filings': [f.to_dict() for f in filings],
+            'count': len(filings),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"SEC filings API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sec/ma-check/<ticker>')
+def api_sec_ma_check(ticker):
+    """Check M&A activity for a ticker based on SEC filings."""
+    try:
+        from src.data.sec_edgar import detect_ma_activity
+
+        result = detect_ma_activity(ticker.upper())
+
+        return jsonify({
+            'ok': True,
+            **result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"M&A check API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sec/insider/<ticker>')
+def api_sec_insider(ticker):
+    """Get insider transactions (Form 4) for a ticker."""
+    try:
+        from src.data.sec_edgar import SECEdgarClient
+
+        days = request.args.get('days', 90, type=int)
+        client = SECEdgarClient()
+        transactions = client.get_insider_transactions(ticker.upper(), days_back=days)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker.upper(),
+            'transactions': transactions,
+            'count': len(transactions),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Insider API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sec/deals')
+def api_sec_deals():
+    """Get tracked M&A deals with current spreads."""
+    try:
+        from src.analysis.corporate_actions import DealTracker
+        from src.data.polygon_provider import get_previous_close_sync
+
+        tracker = DealTracker()
+        deals = tracker.get_active_deals()
+
+        # Enrich with current prices and spreads
+        enriched_deals = []
+        for deal in deals:
+            target = deal.get('target', '')
+            deal_price = deal.get('deal_price', 0)
+
+            # Get current price
+            current_price = 0
+            try:
+                quote = get_previous_close_sync(target)
+                current_price = quote.get('close', 0) if quote else 0
+            except:
+                pass
+
+            # Calculate spread
+            if current_price > 0 and deal_price > 0:
+                spread = deal_price - current_price
+                spread_pct = (spread / current_price) * 100
+            else:
+                spread = 0
+                spread_pct = 0
+
+            enriched_deals.append({
+                **deal,
+                'current_price': round(current_price, 2),
+                'spread': round(spread, 2),
+                'spread_pct': round(spread_pct, 2),
+                'signal': 'attractive' if spread_pct > 5 else 'fair' if spread_pct > 2 else 'tight'
+            })
+
+        return jsonify({
+            'ok': True,
+            'deals': enriched_deals,
+            'count': len(enriched_deals),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Deals API error: {e}")
+        return jsonify({'ok': False, 'error': str(e), 'deals': []})
+
+
+@app.route('/api/sec/deals/add', methods=['POST'])
+def api_sec_deals_add():
+    """Add a new M&A deal to track."""
+    try:
+        from src.analysis.corporate_actions import DealTracker
+
+        data = request.get_json() or {}
+        target = data.get('target', '').upper()
+        acquirer = data.get('acquirer', '').upper()
+        deal_price = float(data.get('deal_price', 0))
+
+        if not target or not acquirer or deal_price <= 0:
+            return jsonify({'ok': False, 'error': 'Missing target, acquirer, or deal_price'})
+
+        tracker = DealTracker()
+        deal = tracker.add_deal(
+            target=target,
+            acquirer=acquirer,
+            deal_price=deal_price,
+            deal_type=data.get('deal_type', 'cash'),
+            expected_close=data.get('expected_close'),
+            notes=data.get('notes', '')
+        )
+
+        return jsonify({
+            'ok': True,
+            'deal': deal,
+            'message': f'Deal added: {target} <- {acquirer} @ ${deal_price}'
+        })
+    except Exception as e:
+        logger.error(f"Add deal API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sec/ma-radar')
+def api_sec_ma_radar():
+    """Scan watchlist for M&A activity - used by dashboard."""
+    try:
+        from src.data.sec_edgar import detect_ma_activity
+
+        # Get tickers from scan results or use defaults
+        tickers = []
+        try:
+            from pathlib import Path
+            scan_files = list(Path('.').glob('scan_*.csv'))
+            if scan_files:
+                import pandas as pd
+                latest = max(scan_files, key=lambda x: x.stat().st_mtime)
+                df = pd.read_csv(latest)
+                tickers = df['ticker'].head(20).tolist()
+        except:
+            pass
+
+        if not tickers:
+            tickers = ['NVDA', 'AMD', 'AAPL', 'MSFT', 'GOOGL', 'META', 'TSLA', 'AMZN']
+
+        results = []
+        for ticker in tickers[:15]:
+            try:
+                result = detect_ma_activity(ticker)
+                results.append({
+                    'ticker': ticker,
+                    'score': result.get('ma_score', 0),
+                    'has_activity': result.get('has_activity', False),
+                    'signals': result.get('signals', [])[:2]  # Limit signals
+                })
+            except:
+                continue
+
+        # Sort by score
+        results.sort(key=lambda x: x['score'], reverse=True)
+
+        return jsonify({
+            'ok': True,
+            'radar': results,
+            'high_activity': [r for r in results if r['score'] >= 30],
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"M&A radar API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=config.port, debug=config.debug)

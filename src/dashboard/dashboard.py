@@ -676,6 +676,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="tab active" data-tab="overview">Overview</div>
             <div class="tab" data-tab="scan">Scan Results</div>
             <div class="tab" data-tab="themes">Themes</div>
+            <div class="tab" data-tab="sec">SEC Intel</div>
             <div class="tab" data-tab="analytics">Analytics</div>
         </div>
     </nav>
@@ -861,6 +862,89 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
             <div class="grid grid-3" id="theme-cards">
                 {{THEME_CARDS}}
+            </div>
+        </div>
+
+        <!-- SEC Intelligence Tab -->
+        <div id="sec" class="tab-content">
+            <div class="grid grid-3">
+                <!-- M&A Radar -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🔍 M&A Radar</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchMARadar()">Refresh</button>
+                    </div>
+                    <div class="card-body" id="ma-radar-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading M&A activity...</div>
+                    </div>
+                </div>
+
+                <!-- Active Deals -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🤝 Active Deals</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchDeals()">Refresh</button>
+                    </div>
+                    <div class="card-body" id="deals-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading deals...</div>
+                    </div>
+                </div>
+
+                <!-- Quick Lookup -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📋 SEC Lookup</div>
+                    </div>
+                    <div class="card-body">
+                        <div style="margin-bottom: 12px;">
+                            <input type="text" id="sec-ticker-input" placeholder="Enter ticker..."
+                                style="width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-ghost" onclick="lookupSECFilings()" style="flex: 1;">Filings</button>
+                            <button class="btn btn-ghost" onclick="lookupMACheck()" style="flex: 1;">M&A Check</button>
+                            <button class="btn btn-ghost" onclick="lookupInsider()" style="flex: 1;">Insider</button>
+                        </div>
+                        <div id="sec-lookup-result" style="margin-top: 12px; font-size: 0.8125rem;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deal Tracker Table -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📊 Deal Tracker</div>
+                    <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddDealModal()">+ Add Deal</button>
+                </div>
+                <div class="card-body no-padding">
+                    <div class="table-container">
+                        <table class="data-table" id="deals-table">
+                            <thead>
+                                <tr>
+                                    <th>Target</th>
+                                    <th>Acquirer</th>
+                                    <th>Deal $</th>
+                                    <th>Current</th>
+                                    <th>Spread</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deals-table-body">
+                                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No deals tracked. Click + Add Deal to start.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent SEC Filings Feed -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📄 Recent Filings Feed</div>
+                </div>
+                <div class="card-body" id="filings-feed">
+                    <div style="color: var(--text-muted); font-size: 0.8125rem;">Select a ticker above to view filings...</div>
+                </div>
             </div>
         </div>
 
@@ -1297,6 +1381,196 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // SEC EDGAR Functions
+        async function fetchMARadar() {
+            try {
+                const res = await fetch(`${API_BASE}/sec/ma-radar`);
+                const data = await res.json();
+
+                if (data.ok && data.radar) {
+                    let html = '';
+                    if (data.radar.length === 0) {
+                        html = '<div style="color: var(--text-muted);">No M&A activity detected</div>';
+                    } else {
+                        data.radar.slice(0, 8).forEach(item => {
+                            const color = item.score >= 50 ? 'var(--red)' : item.score >= 25 ? 'var(--yellow)' : 'var(--green)';
+                            const level = item.score >= 50 ? 'HIGH' : item.score >= 25 ? 'MED' : 'LOW';
+                            html += `<div class="sidebar-item" style="cursor: pointer;" onclick="lookupMACheckFor('${item.ticker}')">
+                                <span class="sidebar-label">${item.ticker}</span>
+                                <span class="sidebar-value" style="color: ${color};">${level} ${item.score}%</span>
+                            </div>`;
+                        });
+                    }
+                    document.getElementById('ma-radar-container').innerHTML = html;
+                }
+            } catch (e) { console.warn('M&A radar fetch failed:', e); }
+        }
+
+        async function fetchDeals() {
+            try {
+                const res = await fetch(`${API_BASE}/sec/deals`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    // Update deals container
+                    let html = '';
+                    if (!data.deals || data.deals.length === 0) {
+                        html = '<div style="color: var(--text-muted);">No deals tracked</div>';
+                        document.getElementById('deals-container').innerHTML = html;
+                        document.getElementById('deals-table-body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No deals tracked. Click + Add Deal to start.</td></tr>';
+                        return;
+                    }
+
+                    // Summary in sidebar
+                    data.deals.forEach(deal => {
+                        const spreadColor = deal.spread_pct > 5 ? 'var(--green)' : deal.spread_pct > 2 ? 'var(--yellow)' : 'var(--text-muted)';
+                        html += `<div class="sidebar-item">
+                            <span class="sidebar-label">${deal.target} ← ${deal.acquirer}</span>
+                            <span class="sidebar-value" style="color: ${spreadColor};">+${deal.spread_pct.toFixed(1)}%</span>
+                        </div>`;
+                    });
+                    document.getElementById('deals-container').innerHTML = html;
+
+                    // Table
+                    let tableHtml = '';
+                    data.deals.forEach(deal => {
+                        const statusEmoji = deal.status === 'approved' ? '🟢' : deal.status === 'pending' ? '🟡' : '⚪';
+                        const spreadColor = deal.spread_pct > 5 ? 'var(--green)' : deal.spread_pct > 2 ? 'var(--yellow)' : 'var(--text-muted)';
+                        tableHtml += `<tr>
+                            <td><strong>${deal.target}</strong></td>
+                            <td>${deal.acquirer}</td>
+                            <td>$${deal.deal_price.toFixed(2)}</td>
+                            <td>$${deal.current_price.toFixed(2)}</td>
+                            <td style="color: ${spreadColor};">+${deal.spread_pct.toFixed(1)}%</td>
+                            <td>${statusEmoji} ${deal.status}</td>
+                        </tr>`;
+                    });
+                    document.getElementById('deals-table-body').innerHTML = tableHtml;
+                }
+            } catch (e) { console.warn('Deals fetch failed:', e); }
+        }
+
+        async function lookupSECFilings() {
+            const ticker = document.getElementById('sec-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/sec/filings/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.filings) {
+                    let html = `<div style="margin-bottom: 8px; font-weight: 600;">${ticker} - ${data.count} filings</div>`;
+                    data.filings.slice(0, 10).forEach(f => {
+                        const emoji = f.form_type.includes('8-K') ? '⚡' : f.form_type.includes('DEFM') ? '🔔' : f.form_type === '4' ? '👤' : '📄';
+                        html += `<div style="margin-bottom: 6px;">
+                            ${emoji} <strong>${f.form_type}</strong> - ${f.filed_date}
+                            <a href="${f.url}" target="_blank" style="color: var(--blue); margin-left: 8px;">View</a>
+                        </div>`;
+                    });
+                    document.getElementById('filings-feed').innerHTML = html;
+                    document.getElementById('sec-lookup-result').innerHTML = `<div style="color: var(--green);">Found ${data.count} filings</div>`;
+                } else {
+                    document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--red);">No filings found</div>';
+                }
+            } catch (e) {
+                document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching filings</div>';
+            }
+        }
+
+        async function lookupMACheck() {
+            const ticker = document.getElementById('sec-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+            lookupMACheckFor(ticker);
+        }
+
+        async function lookupMACheckFor(ticker) {
+            document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Analyzing M&A activity...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/sec/ma-check/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const color = data.ma_score >= 50 ? 'var(--red)' : data.ma_score >= 25 ? 'var(--yellow)' : 'var(--green)';
+                    const level = data.ma_score >= 50 ? 'HIGH' : data.ma_score >= 25 ? 'MEDIUM' : 'LOW';
+                    let html = `<div style="margin-bottom: 8px;">
+                        <strong>${ticker}</strong> M&A Probability: <span style="color: ${color}; font-weight: 600;">${level} (${data.ma_score}/100)</span>
+                    </div>`;
+                    if (data.signals && data.signals.length > 0) {
+                        html += '<div style="margin-top: 8px;">';
+                        data.signals.forEach(s => {
+                            html += `<div style="margin-bottom: 4px;">• ${s}</div>`;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<div style="color: var(--text-muted);">No M&A signals detected</div>';
+                    }
+                    document.getElementById('sec-lookup-result').innerHTML = html;
+                }
+            } catch (e) {
+                document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--red);">Error checking M&A</div>';
+            }
+        }
+
+        async function lookupInsider() {
+            const ticker = document.getElementById('sec-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Loading insider data...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/sec/insider/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    let html = `<div style="margin-bottom: 8px;"><strong>${ticker}</strong> - ${data.count} Form 4 filings (90 days)</div>`;
+                    if (data.transactions && data.transactions.length > 0) {
+                        data.transactions.slice(0, 5).forEach(t => {
+                            html += `<div style="margin-bottom: 4px;">👤 ${t.date} - <a href="${t.url}" target="_blank" style="color: var(--blue);">View</a></div>`;
+                        });
+                    } else {
+                        html += '<div style="color: var(--text-muted);">No recent insider transactions</div>';
+                    }
+                    document.getElementById('sec-lookup-result').innerHTML = html;
+                }
+            } catch (e) {
+                document.getElementById('sec-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching insider data</div>';
+            }
+        }
+
+        function showAddDealModal() {
+            const target = prompt('Target ticker (e.g., VMW):');
+            if (!target) return;
+            const acquirer = prompt('Acquirer ticker (e.g., AVGO):');
+            if (!acquirer) return;
+            const price = prompt('Deal price (e.g., 142.50):');
+            if (!price) return;
+
+            addDeal(target, acquirer, parseFloat(price));
+        }
+
+        async function addDeal(target, acquirer, dealPrice) {
+            try {
+                const res = await fetch(`${API_BASE}/sec/deals/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target, acquirer, deal_price: dealPrice })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert(data.message);
+                    fetchDeals();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to add deal');
+            }
+        }
+
         async function refreshAll() {
             document.getElementById('last-update').textContent = 'Refreshing...';
 
@@ -1308,6 +1582,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchParameters(),
                 fetchCorrelations(),
                 fetchThemes(),
+                fetchMARadar(),
+                fetchDeals(),
             ]);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
