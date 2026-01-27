@@ -1165,6 +1165,18 @@ def add_cors_headers(response):
     return response
 
 
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    """Handle CORS preflight OPTIONS requests for all API routes."""
+    return '', 204
+
+
+@app.route('/api', methods=['OPTIONS'])
+def handle_api_options():
+    """Handle OPTIONS for /api root."""
+    return '', 204
+
+
 @app.route('/api/stories')
 def api_stories():
     """Get current hot stories/themes (cached)."""
