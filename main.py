@@ -98,22 +98,40 @@ def run_tests():
     return result.returncode
 
 
+def refresh_universe():
+    """Refresh the market cap cache for scan universe."""
+    from src.data.universe_manager import get_universe_manager
+    from utils import format_kl_time
+
+    print(f"Refreshing market cap cache at {format_kl_time()} MYT...")
+    um = get_universe_manager()
+    stats = um.refresh_market_cap_cache(min_market_cap=300_000_000)
+
+    print(f"\nRefresh complete:")
+    print(f"  Total tickers checked: {stats['total_tickers_checked']}")
+    print(f"  Stocks >= $300M: {stats['tickers_above_threshold']}")
+    print(f"  Cache file: {stats['cache_file']}")
+
+    return stats
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Stock Scanner Bot - Story-First Stock Analysis',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py scan           Run full scan (500+ tickers)
-  python main.py scan --test    Run test scan (10 tickers)
-  python main.py dashboard      Generate HTML dashboard
-  python main.py bot            Listen for Telegram commands
-  python main.py api            Start REST API server
-  python main.py test           Run test suite
+  python main.py scan              Run full scan (1400+ liquid stocks)
+  python main.py scan --test       Run test scan (10 tickers)
+  python main.py dashboard         Generate HTML dashboard
+  python main.py bot               Listen for Telegram commands
+  python main.py api               Start REST API server
+  python main.py refresh-universe  Refresh market cap cache
+  python main.py test              Run test suite
         """
     )
 
-    parser.add_argument('command', choices=['scan', 'dashboard', 'bot', 'api', 'test'],
+    parser.add_argument('command', choices=['scan', 'dashboard', 'bot', 'api', 'test', 'refresh-universe'],
                         help='Command to run')
     parser.add_argument('--test', action='store_true',
                         help='Run in test mode (for scan command)')
@@ -128,6 +146,8 @@ Examples:
         run_bot()
     elif args.command == 'api':
         run_api()
+    elif args.command == 'refresh-universe':
+        refresh_universe()
     elif args.command == 'test':
         sys.exit(run_tests())
 

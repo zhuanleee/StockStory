@@ -690,6 +690,49 @@ class UniverseManager:
             logger.warning(f"Failed to fetch Polygon full universe: {e}")
             return []
 
+    def refresh_market_cap_cache(self, min_market_cap: float = 300_000_000) -> dict:
+        """
+        Force refresh the market cap cache.
+
+        Called daily before market open to ensure fresh data.
+
+        Returns:
+            dict with refresh statistics
+        """
+        import os
+        import json
+        from pathlib import Path
+
+        logger.info("Refreshing market cap cache...")
+
+        # Delete existing cache to force full refresh
+        cache_file = Path('cache') / 'market_cap_cache.json'
+        if cache_file.exists():
+            cache_file.unlink()
+            logger.info("Deleted old market cap cache")
+
+        # Fetch fresh data
+        tickers = self._fetch_polygon_full_universe(min_market_cap=min_market_cap)
+
+        # Load the newly created cache
+        stats = {
+            'total_tickers_checked': 0,
+            'tickers_above_threshold': len(tickers),
+            'min_market_cap': min_market_cap,
+            'cache_file': str(cache_file),
+        }
+
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                    stats['total_tickers_checked'] = len(cache_data.get('data', {}))
+            except Exception:
+                pass
+
+        logger.info(f"Market cap cache refreshed: {stats['tickers_above_threshold']} stocks >= ${min_market_cap/1e6:.0f}M")
+        return stats
+
     # =========================================================================
     # CHANGE TRACKING
     # =========================================================================

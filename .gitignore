@@ -49,6 +49,7 @@ ai_learning_data/
 ai_data/
 user_data/
 cache/
+!cache/market_cap_cache.json
 cache_data/
 logs/
 theme_data/
