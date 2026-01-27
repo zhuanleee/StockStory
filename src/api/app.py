@@ -148,6 +148,11 @@ def handle_help(chat_id):
     msg += "• `/mergers` → M&A deal tracker\n"
     msg += "• `/adddeal VMW AVGO 142` → Track deal\n\n"
 
+    msg += "*📋 SEC EDGAR:*\n"
+    msg += "• `/sec NVDA` → Recent SEC filings\n"
+    msg += "• `/macheck VMW` → M&A activity scan\n"
+    msg += "• `/insider NVDA` → Insider transactions\n\n"
+
     msg += "*🤖 AI:*\n"
     msg += "• `/briefing` → AI market narrative\n"
     msg += "• `/predict NVDA` → AI prediction\n"
@@ -597,6 +602,80 @@ def handle_add_deal(chat_id, args):
     except ValueError:
         send_message(chat_id, "❌ Invalid price. Use: `/adddeal VMW AVGO 142.50`")
     except Exception as e:
+        send_message(chat_id, f"❌ Error: {str(e)}")
+
+
+def handle_sec_filings(chat_id, ticker):
+    """Handle /sec TICKER - Get recent SEC filings."""
+    ticker = ticker.upper().strip()
+    if not ticker:
+        send_message(chat_id, "Usage: `/sec NVDA`")
+        return
+
+    send_message(chat_id, f"⏳ Fetching SEC filings for {ticker}...")
+    try:
+        from src.data.sec_edgar import SECEdgarClient, format_sec_filings_message
+
+        client = SECEdgarClient()
+        filings = client.get_company_filings(ticker, days_back=60)
+
+        if not filings:
+            send_message(chat_id, f"No recent SEC filings found for {ticker}")
+            return
+
+        msg = format_sec_filings_message(filings, f"SEC FILINGS: {ticker}")
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"SEC filings error: {e}")
+        send_message(chat_id, f"❌ Error: {str(e)}")
+
+
+def handle_ma_check(chat_id, ticker):
+    """Handle /macheck TICKER - Check for M&A activity."""
+    ticker = ticker.upper().strip()
+    if not ticker:
+        send_message(chat_id, "Usage: `/macheck VMW`")
+        return
+
+    send_message(chat_id, f"⏳ Analyzing M&A activity for {ticker}...")
+    try:
+        from src.data.sec_edgar import detect_ma_activity, format_ma_detection_message
+
+        result = detect_ma_activity(ticker)
+        msg = format_ma_detection_message(result)
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"M&A check error: {e}")
+        send_message(chat_id, f"❌ Error: {str(e)}")
+
+
+def handle_insider(chat_id, ticker):
+    """Handle /insider TICKER - Get insider transactions."""
+    ticker = ticker.upper().strip()
+    if not ticker:
+        send_message(chat_id, "Usage: `/insider NVDA`")
+        return
+
+    send_message(chat_id, f"⏳ Fetching insider transactions for {ticker}...")
+    try:
+        from src.data.sec_edgar import SECEdgarClient
+
+        client = SECEdgarClient()
+        transactions = client.get_insider_transactions(ticker, days_back=90)
+
+        if not transactions:
+            send_message(chat_id, f"No recent insider transactions for {ticker}")
+            return
+
+        msg = f"👤 *INSIDER TRANSACTIONS: {ticker}*\n\n"
+
+        for t in transactions[:15]:
+            msg += f"• {t['date']} - {t['description'][:40]}\n"
+
+        msg += f"\n_Showing last {len(transactions[:15])} Form 4 filings_"
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"Insider error: {e}")
         send_message(chat_id, f"❌ Error: {str(e)}")
 
 
@@ -1191,6 +1270,12 @@ def process_message(message):
         handle_mergers(chat_id)
     elif text_lower.startswith('/adddeal '):
         handle_add_deal(chat_id, text[9:].strip())
+    elif text_lower.startswith('/sec '):
+        handle_sec_filings(chat_id, text[5:].strip())
+    elif text_lower.startswith('/macheck '):
+        handle_ma_check(chat_id, text[9:].strip())
+    elif text_lower.startswith('/insider '):
+        handle_insider(chat_id, text[9:].strip())
 
     # AI
     elif text_lower == '/ai':
