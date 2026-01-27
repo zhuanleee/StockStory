@@ -1996,12 +1996,44 @@ def api_briefing():
     try:
         from ai_learning import get_daily_briefing
         briefing = get_daily_briefing()
+
+        if briefing is None:
+            # DeepSeek API likely unavailable, return fallback
+            return jsonify({
+                'ok': True,
+                'briefing': {
+                    'headline': 'Market Analysis Unavailable',
+                    'market_mood': 'unknown',
+                    'main_narrative': 'AI briefing temporarily unavailable. Check back later or ensure DEEPSEEK_API_KEY is configured.',
+                    'theme_connections': '',
+                    'sector_rotation_insight': '',
+                    'smart_money_signal': '',
+                    'key_opportunity': None,
+                    'key_risk': None,
+                    'tomorrow_watch': [],
+                    'contrarian_take': ''
+                },
+                'fallback': True,
+                'timestamp': datetime.now().isoformat()
+            })
+
+        if isinstance(briefing, dict) and briefing.get('error'):
+            return jsonify({
+                'ok': False,
+                'error': briefing.get('error'),
+                'timestamp': datetime.now().isoformat()
+            })
+
         return jsonify({
             'ok': True,
             'briefing': briefing,
             'timestamp': datetime.now().isoformat()
         })
+    except ImportError as e:
+        logger.error(f"Briefing import error: {e}")
+        return jsonify({'ok': False, 'error': f'Module not available: {e}'})
     except Exception as e:
+        logger.error(f"Briefing error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
 
 

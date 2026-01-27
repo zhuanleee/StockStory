@@ -70,7 +70,45 @@ THEME_KEYWORDS = {
 # Cache for rate limiting
 _trends_cache = {}
 _cache_expiry = {}
-CACHE_TTL = 3600  # 1 hour cache
+CACHE_TTL = 7200  # 2 hour cache (increased from 1 hour)
+
+# Rate limiting - track last request time
+_last_request_time = 0
+_request_count = 0
+_rate_limit_window_start = 0
+RATE_LIMIT_DELAY = 3.0  # 3 seconds between requests
+RATE_LIMIT_MAX_PER_HOUR = 20  # Max 20 requests per hour
+RATE_LIMIT_WINDOW = 3600  # 1 hour window
+
+
+def _check_rate_limit() -> bool:
+    """Check if we can make a request without hitting rate limits."""
+    global _request_count, _rate_limit_window_start
+
+    now = time.time()
+
+    # Reset counter if window has passed
+    if now - _rate_limit_window_start > RATE_LIMIT_WINDOW:
+        _request_count = 0
+        _rate_limit_window_start = now
+
+    return _request_count < RATE_LIMIT_MAX_PER_HOUR
+
+
+def _wait_for_rate_limit():
+    """Wait if needed to respect rate limits."""
+    global _last_request_time, _request_count
+
+    now = time.time()
+    time_since_last = now - _last_request_time
+
+    if time_since_last < RATE_LIMIT_DELAY:
+        sleep_time = RATE_LIMIT_DELAY - time_since_last
+        logger.debug(f"Rate limiting: sleeping {sleep_time:.1f}s")
+        time.sleep(sleep_time)
+
+    _last_request_time = time.time()
+    _request_count += 1
 
 
 class GoogleTrendsClient:
@@ -78,7 +116,9 @@ class GoogleTrendsClient:
     Google Trends client for market theme detection.
 
     Rate limits: Google may block if too many requests.
-    Recommendation: Cache results, limit to 10-20 queries per session.
+    - Max 20 requests per hour
+    - 3 second delay between requests
+    - 2 hour cache TTL
     """
 
     def __init__(self):
@@ -88,9 +128,9 @@ class GoogleTrendsClient:
         self.pytrends = TrendReq(
             hl='en-US',
             tz=360,
-            timeout=(10, 25),
-            retries=2,
-            backoff_factor=0.5
+            timeout=(15, 30),  # Increased timeout
+            retries=3,  # More retries
+            backoff_factor=1.0  # Longer backoff
         )
 
     def get_interest_over_time(
@@ -108,7 +148,15 @@ class GoogleTrendsClient:
         Returns:
             Dict with trend data and scores
         """
+        # Check rate limit before making request
+        if not _check_rate_limit():
+            logger.warning("Google Trends rate limit reached (20/hour). Using cached data.")
+            return None
+
         try:
+            # Wait for rate limit
+            _wait_for_rate_limit()
+
             # Limit to 5 keywords (Google limit)
             keywords = keywords[:5]
 
@@ -165,7 +213,14 @@ class GoogleTrendsClient:
             return results
 
         except Exception as e:
-            logger.error(f"Google Trends error: {e}")
+            error_str = str(e).lower()
+            if '429' in error_str or 'too many requests' in error_str or 'rate' in error_str:
+                logger.warning(f"Google Trends rate limited. Will retry later.")
+                # Mark that we hit rate limit - don't make more requests
+                global _request_count
+                _request_count = RATE_LIMIT_MAX_PER_HOUR  # Force wait until window resets
+            else:
+                logger.error(f"Google Trends error: {e}")
             return None
 
     def get_related_queries(self, keyword: str) -> Dict:

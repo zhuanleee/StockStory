@@ -262,17 +262,33 @@ class ThemeIntelligenceHub:
     def _fetch_trends_score(self, theme_id: str) -> Tuple[float, float, bool]:
         """
         Fetch Google Trends score for a theme.
+        Uses aggressive caching to avoid rate limits.
 
         Returns: (score, trend_pct, is_breakout)
         """
         try:
-            from src.data.google_trends import get_trend_score, THEME_KEYWORDS
+            from src.data.google_trends import get_trend_score, THEME_KEYWORDS, _check_rate_limit
 
             keywords = THEME_KEYWORDS.get(theme_id, [])
             if not keywords:
                 return 0, 0, False
 
+            # Check rate limit before making request
+            if not _check_rate_limit():
+                logger.debug(f"Skipping trends for {theme_id} due to rate limit")
+                # Return cached score from theme state if available
+                if theme_id in self.theme_states:
+                    state = self.theme_states[theme_id]
+                    # Use 40% of current score as fallback (trends weight)
+                    return state.current_score * 0.4, 0, False
+                return 0, 0, False
+
             result = get_trend_score(keywords[0])
+
+            if result is None or result.get('error'):
+                # Rate limited or error - use fallback
+                logger.debug(f"No trends data for {theme_id}, using fallback")
+                return 0, 0, False
 
             return (
                 result.get('score', 0),
@@ -575,14 +591,24 @@ class ThemeIntelligenceHub:
             Dict with categorized themes and alerts
         """
         import time
+        from src.data.google_trends import _check_rate_limit, RATE_LIMIT_MAX_PER_HOUR
 
         signals = []
+        themes_analyzed = 0
+        max_trends_calls = min(RATE_LIMIT_MAX_PER_HOUR, 10)  # Max 10 trends calls per run
 
         for theme_id in THEME_TICKER_MAP.keys():
             try:
-                signal = self.analyze_theme(theme_id, quick=quick)
+                # Check if we still have rate limit budget for Google Trends
+                use_trends = _check_rate_limit() and themes_analyzed < max_trends_calls
+
+                signal = self.analyze_theme(theme_id, quick=quick if use_trends else True)
                 signals.append(signal)
-                time.sleep(1)  # Rate limiting for Google
+                themes_analyzed += 1
+
+                # Only delay if we made a trends call
+                if use_trends:
+                    time.sleep(3.5)  # Increased delay for rate limiting
             except Exception as e:
                 logger.error(f"Error analyzing {theme_id}: {e}")
                 continue
