@@ -30,9 +30,10 @@ AI_LEARNING_DIR = Path('ai_learning_data')
 AI_LEARNING_DIR.mkdir(exist_ok=True)
 
 
-def call_deepseek(prompt, system_prompt=None, max_tokens=2000):
+def call_deepseek(prompt, system_prompt=None, max_tokens=2000, timeout=25):
     """Call DeepSeek API for AI analysis."""
     if not config.ai.api_key:
+        logger.warning("DeepSeek API key not configured")
         return None
 
     messages = []
@@ -53,11 +54,15 @@ def call_deepseek(prompt, system_prompt=None, max_tokens=2000):
                 "max_tokens": max_tokens,
                 "temperature": 0.3,  # Lower temperature for more consistent analysis
             },
-            timeout=60
+            timeout=timeout  # Reduced timeout for faster failure
         )
 
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
+        else:
+            logger.error(f"DeepSeek API returned {response.status_code}: {response.text[:200]}")
+    except requests.Timeout:
+        logger.error(f"DeepSeek API timeout after {timeout}s")
     except Exception as e:
         logger.error(f"DeepSeek API error: {e}")
 
@@ -658,47 +663,19 @@ def generate_market_narrative(themes, sectors, top_stocks, news_highlights, mark
     """
     Generate an AI-powered market narrative synthesizing all information.
     """
-    system_prompt = """You are an expert market analyst providing daily briefings.
-Synthesize multiple data sources into a coherent narrative.
-Be insightful, connect dots that others miss, and highlight actionable opportunities.
-Write in a professional but engaging style."""
+    system_prompt = "You are an expert market analyst. Be concise and actionable."
 
-    prompt = f"""Create a market narrative from today's data:
+    # Simplified prompt for faster response
+    prompt = f"""Market briefing from today's data:
 
-HOT THEMES:
-{json.dumps(themes[:5], indent=2) if themes else 'None detected'}
+THEMES: {json.dumps([t.get('name', t) if isinstance(t, dict) else t for t in themes[:3]], indent=0) if themes else 'None'}
+TOP STOCKS: {json.dumps([s.get('ticker', s) if isinstance(s, dict) else s for s in top_stocks[:5]], indent=0) if top_stocks else 'None'}
+SECTORS: {json.dumps([s.get('sector', s) if isinstance(s, dict) else s for s in sectors[:3]], indent=0) if sectors else 'None'}
 
-SECTOR PERFORMANCE:
-{json.dumps(sectors[:5], indent=2) if sectors else 'Not available'}
+Return JSON:
+{{"headline":"5-7 words","market_mood":"bullish/bearish/neutral","main_narrative":"2 sentences max","key_opportunity":{{"ticker":"XXX","reason":"brief"}},"key_risk":"one sentence","tomorrow_watch":["item1","item2"]}}"""
 
-TOP STOCKS:
-{json.dumps(top_stocks[:10], indent=2) if top_stocks else 'Not available'}
-
-KEY NEWS:
-{json.dumps(news_highlights[:5], indent=2) if news_highlights else 'No significant news'}
-
-Generate narrative in JSON:
-{{
-    "headline": "catchy 5-10 word summary",
-    "market_mood": "bullish/bearish/uncertain/transitioning",
-    "main_narrative": "2-3 sentence synthesis of what's happening",
-    "theme_connections": "how themes are interconnected",
-    "sector_rotation_insight": "what sector moves reveal",
-    "smart_money_signal": "what institutional behavior suggests",
-    "key_opportunity": {{
-        "description": "the best opportunity right now",
-        "tickers": ["relevant tickers"],
-        "reasoning": "why this is the opportunity"
-    }},
-    "key_risk": {{
-        "description": "biggest risk to monitor",
-        "warning_signs": ["what to watch for"]
-    }},
-    "tomorrow_watch": ["what to focus on tomorrow"],
-    "contrarian_take": "what the crowd might be missing"
-}}"""
-
-    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+    response = call_deepseek(prompt, system_prompt, max_tokens=500)
 
     if response:
         try:
@@ -709,54 +686,72 @@ Generate narrative in JSON:
     return None
 
 
-def get_daily_briefing():
-    """Generate and return today's AI market briefing."""
-    try:
-        # Load recent data
-        from self_learning import load_alert_history, get_best_strategies_for_regime
+def get_daily_briefing(fast_mode: bool = True):
+    """
+    Generate and return today's AI market briefing.
 
-        # Get themes from fast stories if available
+    Args:
+        fast_mode: If True, skip slow operations (news sentiment) for faster response
+    """
+    try:
+        # Get themes from fast stories if available (uses cache, fast)
         themes = []
         try:
             from fast_stories import run_fast_story_detection
             detection = run_fast_story_detection(use_cache=True)
             themes = detection.get('themes', [])
         except Exception as e:
-            logger.error(f"Error fetching fast stories: {e}")
+            logger.debug(f"Fast stories not available: {e}")
 
-        # Get sector data if available
+        # Get sector data - use cached if available
         sectors = []
         try:
-            from sector_rotation import run_sector_rotation_analysis
-            rotation = run_sector_rotation_analysis()
-            sectors = rotation.get('ranked', [])
-        except Exception as e:
-            logger.error(f"Error fetching sector rotation: {e}")
+            # Try to load cached sector data first
+            sector_cache_file = Path('data/sector_cache.json')
+            if sector_cache_file.exists():
+                import json
+                with open(sector_cache_file) as f:
+                    cached = json.load(f)
+                    cache_age = (datetime.now() - datetime.fromisoformat(cached.get('timestamp', '2000-01-01'))).seconds
+                    if cache_age < 3600:  # Use cache if < 1 hour old
+                        sectors = cached.get('ranked', [])
 
-        # Get top stocks from latest scan
+            if not sectors and not fast_mode:
+                from sector_rotation import run_sector_rotation_analysis
+                rotation = run_sector_rotation_analysis()
+                sectors = rotation.get('ranked', [])
+        except Exception as e:
+            logger.debug(f"Sector rotation not available: {e}")
+
+        # Get top stocks from latest scan (fast - just file read)
         top_stocks = []
         import glob
         scan_files = glob.glob('scan_*.csv')
         if scan_files:
             import pandas as pd
             latest = max(scan_files)
-            df = pd.read_csv(latest)
-            top_stocks = df.head(10).to_dict('records')
+            try:
+                df = pd.read_csv(latest)
+                top_stocks = df.head(10).to_dict('records')
+            except Exception:
+                pass
 
-        # Get news highlights
+        # Skip news in fast mode - it's the slowest part (25+ seconds)
         news = []
-        try:
-            from news_analyzer import scan_news_sentiment
-            results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA', 'META', 'AMD'][:3])
-            news = [{'ticker': r['ticker'], 'sentiment': r['overall_sentiment']}
-                   for r in results if r.get('overall_sentiment')]
-        except Exception as e:
-            logger.error(f"Error fetching news sentiment: {e}")
+        if not fast_mode:
+            try:
+                from news_analyzer import scan_news_sentiment
+                results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA'][:2])  # Reduced to 2 tickers
+                news = [{'ticker': r['ticker'], 'sentiment': r['overall_sentiment']}
+                       for r in results if r.get('overall_sentiment')]
+            except Exception as e:
+                logger.debug(f"News sentiment not available: {e}")
 
         narrative = generate_market_narrative(themes, sectors, top_stocks, news)
         return narrative
 
     except Exception as e:
+        logger.error(f"Briefing generation error: {e}")
         return {'error': str(e)}
 
 
