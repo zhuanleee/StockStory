@@ -429,7 +429,7 @@ class AsyncDataFetcher:
         """
         Async fetch sector for ticker.
 
-        Uses yfinance in executor to avoid blocking.
+        Uses Polygon.io as primary, yfinance as fallback.
         """
         # Check cache first
         cache_key = sector_cache_key(ticker)
@@ -437,7 +437,25 @@ class AsyncDataFetcher:
         if cached is not None:
             return cached
 
-        # yfinance is synchronous, run in executor
+        sector = 'Unknown'
+
+        # Try Polygon first (faster, async native)
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import PolygonProvider
+                provider = PolygonProvider(api_key=polygon_key)
+                details = await provider.get_ticker_details(ticker)
+                await provider.close()
+
+                if details and details.get('sector'):
+                    sector = details['sector']
+                    self.cache.set(cache_key, sector, ttl=CacheConfig.TTL_SECTOR)
+                    return sector
+            except Exception as e:
+                logger.debug(f"Polygon sector fetch failed for {ticker}: {e}")
+
+        # Fallback to yfinance
         loop = asyncio.get_event_loop()
         try:
             def get_sector():
@@ -459,6 +477,8 @@ class AsyncDataFetcher:
     async def fetch_news_async(self, ticker: str, days: int = 7) -> List[Dict]:
         """
         Async fetch news for ticker.
+
+        Uses Polygon.io as primary (structured API), yfinance as fallback.
         """
         # Check cache first
         cache_key = news_cache_key(ticker, days)
@@ -466,7 +486,37 @@ class AsyncDataFetcher:
         if cached is not None:
             return cached
 
-        # yfinance news is synchronous, run in executor
+        news = []
+
+        # Try Polygon first (faster, structured data, no scraping)
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import PolygonProvider
+                provider = PolygonProvider(api_key=polygon_key)
+                polygon_news = await provider.get_news(ticker, limit=10)
+                await provider.close()
+
+                if polygon_news:
+                    # Convert Polygon format to standard format
+                    news = []
+                    for article in polygon_news:
+                        news.append({
+                            'title': article.get('title', ''),
+                            'summary': article.get('summary', ''),
+                            'link': article.get('url', ''),
+                            'publisher': article.get('source', ''),
+                            'providerPublishTime': article.get('published', ''),
+                            'tickers': article.get('tickers', []),
+                            'keywords': article.get('keywords', []),
+                            'source': 'polygon',
+                        })
+                    self.cache.set(cache_key, news, ttl=CacheConfig.TTL_NEWS)
+                    return news
+            except Exception as e:
+                logger.debug(f"Polygon news fetch failed for {ticker}: {e}")
+
+        # Fallback to yfinance
         loop = asyncio.get_event_loop()
         try:
             def get_news():

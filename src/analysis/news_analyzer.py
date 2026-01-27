@@ -443,6 +443,71 @@ def scrape_reddit_sentiment(ticker):
         return []
 
 
+def fetch_polygon_news(ticker):
+    """
+    Fetch news from Polygon.io (PRIMARY - high-accuracy, structured API).
+
+    Benefits over web scraping:
+    - Structured JSON data (no HTML parsing)
+    - Reliable API (no broken scrapers)
+    - Includes keywords, related tickers
+    - Fast response times
+
+    Returns standardized headline format.
+    """
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if not polygon_key:
+        return []
+
+    try:
+        import asyncio
+        from src.data.polygon_provider import PolygonProvider
+
+        async def fetch():
+            provider = PolygonProvider(api_key=polygon_key)
+            try:
+                news = await provider.get_news(ticker, limit=15)
+                return news
+            finally:
+                await provider.close()
+
+        # Run async function
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, create a new task
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, fetch())
+                    news = future.result(timeout=15)
+            else:
+                news = asyncio.run(fetch())
+        except RuntimeError:
+            news = asyncio.run(fetch())
+
+        if not news:
+            return []
+
+        headlines = []
+        for item in news:
+            headlines.append({
+                'title': item.get('title', ''),
+                'url': item.get('url', ''),
+                'source': item.get('source', 'Polygon'),
+                'summary': item.get('summary', ''),
+                'timestamp': item.get('published', ''),
+                'provider': 'polygon',
+                'tickers': item.get('tickers', []),
+                'keywords': item.get('keywords', []),
+            })
+
+        logger.info(f"Polygon: fetched {len(headlines)} headlines for {ticker}")
+        return headlines
+    except Exception as e:
+        logger.error(f"Polygon news error for {ticker}: {e}")
+        return []
+
+
 def fetch_finnhub_news(ticker):
     """
     Fetch news from Finnhub (high-accuracy, professional source).
@@ -510,10 +575,13 @@ def aggregate_news_sources(ticker):
     Aggregate news from all sources with priority ordering.
 
     Priority (high-accuracy first):
-    1. Finnhub (professional feed)
-    2. Tiingo (curated news)
-    3. Yahoo Finance (fallback)
-    4. Google News (fallback)
+    1. Polygon.io (PRIMARY - structured API, fast, reliable)
+    2. Finnhub (professional feed)
+    3. Tiingo (curated news)
+    4. Yahoo Finance (fallback - API-based)
+
+    Web scrapers (Finviz, Google News, MarketWatch) have been deprecated
+    in favor of reliable API-based sources.
 
     Deduplicates and sorts by recency.
     """
@@ -521,37 +589,37 @@ def aggregate_news_sources(ticker):
 
     # Check which premium providers are available
     provider_status = check_provider_status()
-    logger.debug(f"Provider status: {provider_status}")
+    polygon_available = bool(os.environ.get('POLYGON_API_KEY', ''))
+    logger.debug(f"Provider status: {provider_status}, Polygon: {polygon_available}")
 
-    # Priority 1: Finnhub (best accuracy)
-    if provider_status.get('finnhub'):
+    # Priority 1: Polygon.io (PRIMARY - best reliability, structured data)
+    if polygon_available:
+        polygon_news = fetch_polygon_news(ticker)
+        all_headlines.extend(polygon_news)
+        if len(polygon_news) >= 5:
+            logger.info(f"Polygon provided sufficient news for {ticker}")
+
+    # Priority 2: Finnhub (professional accuracy)
+    if provider_status.get('finnhub') and len(all_headlines) < 10:
         finnhub_news = fetch_finnhub_news(ticker)
         all_headlines.extend(finnhub_news)
 
-    # Priority 2: Tiingo (good accuracy)
+    # Priority 3: Tiingo (curated news)
     if provider_status.get('tiingo') and len(all_headlines) < 10:
         tiingo_news = fetch_tiingo_news(ticker)
         all_headlines.extend(tiingo_news)
 
-    # Fallback to scrapers if not enough news from premium sources
+    # Priority 4: Yahoo Finance API (fallback - still API-based, not scraping)
     if len(all_headlines) < 5:
-        logger.info(f"Using fallback scrapers for {ticker} (premium sources returned {len(all_headlines)} items)")
-
-        fallback_sources = [
-            ('Yahoo Finance', scrape_yahoo_news),
-            ('Google News', scrape_google_news),
-        ]
-
-        for source_name, scraper in fallback_sources:
-            try:
-                headlines = scraper(ticker)
-                for h in headlines:
-                    if h.get('title'):
-                        h['provider'] = source_name.lower().replace(' ', '_')
-                        all_headlines.append(h)
-            except Exception as e:
-                logger.error(f"Error fetching from {source_name}: {e}")
-                continue
+        logger.info(f"Using Yahoo fallback for {ticker} (API sources returned {len(all_headlines)} items)")
+        try:
+            yahoo_news = scrape_yahoo_news(ticker)
+            for h in yahoo_news:
+                if h.get('title'):
+                    h['provider'] = 'yahoo_finance'
+                    all_headlines.append(h)
+        except Exception as e:
+            logger.error(f"Error fetching from Yahoo Finance: {e}")
 
     # Deduplicate by similarity
     unique_headlines = []

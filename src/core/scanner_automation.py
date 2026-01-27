@@ -331,7 +331,44 @@ def calculate_rs_local(df, spy_returns):
 
 
 def get_sector(ticker):
-    """Get sector for ticker using yfinance."""
+    """Get sector for ticker. Uses Polygon.io as primary, yfinance as fallback."""
+    import os
+
+    # Try Polygon first (faster, more reliable)
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            import asyncio
+            from src.data.polygon_provider import PolygonProvider
+
+            async def fetch():
+                provider = PolygonProvider(api_key=polygon_key)
+                try:
+                    details = await provider.get_ticker_details(ticker)
+                    return details.get('sector', 'Unknown') if details else 'Unknown'
+                finally:
+                    await provider.close()
+
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, fetch())
+                        sector = future.result(timeout=10)
+                else:
+                    sector = asyncio.run(fetch())
+
+                if sector and sector != 'Unknown':
+                    return sector
+            except RuntimeError:
+                sector = asyncio.run(fetch())
+                if sector and sector != 'Unknown':
+                    return sector
+        except Exception as e:
+            logger.debug(f"Polygon sector fetch failed for {ticker}: {e}")
+
+    # Fallback to yfinance
     try:
         return yf.Ticker(ticker).info.get('sector', 'Unknown')
     except Exception as e:

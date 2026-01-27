@@ -284,6 +284,147 @@ class PolygonProvider:
             return [r.get('ticker') for r in data['results'] if r.get('ticker')]
         return []
 
+    async def get_market_movers(self, direction: str = 'gainers') -> List[Dict]:
+        """
+        Get market movers (gainers or losers).
+
+        Args:
+            direction: 'gainers' or 'losers'
+
+        Returns:
+            List of top movers with price data
+        """
+        endpoint = f"/v2/snapshot/locale/us/markets/stocks/{direction}"
+
+        data = await self._request(endpoint)
+
+        if data and 'tickers' in data:
+            movers = []
+            for t in data['tickers'][:20]:  # Top 20
+                movers.append({
+                    'ticker': t.get('ticker'),
+                    'price': t.get('day', {}).get('c'),
+                    'change': t.get('todaysChange'),
+                    'change_percent': t.get('todaysChangePerc'),
+                    'volume': t.get('day', {}).get('v'),
+                    'prev_close': t.get('prevDay', {}).get('c'),
+                })
+            return movers
+        return []
+
+    async def get_all_snapshots(self, tickers: List[str] = None) -> Dict[str, Dict]:
+        """
+        Get snapshots for all tickers or specific list.
+
+        Args:
+            tickers: Optional list of tickers (if None, gets all)
+
+        Returns:
+            Dict mapping ticker -> snapshot data
+        """
+        if tickers:
+            # Fetch individual snapshots for specific tickers
+            endpoint = "/v2/snapshot/locale/us/markets/stocks/tickers"
+            params = {'tickers': ','.join(t.upper() for t in tickers[:50])}  # Max 50
+        else:
+            endpoint = "/v2/snapshot/locale/us/markets/stocks/tickers"
+            params = {}
+
+        data = await self._request(endpoint, params)
+
+        snapshots = {}
+        if data and 'tickers' in data:
+            for t in data['tickers']:
+                ticker = t.get('ticker')
+                if ticker:
+                    snapshots[ticker] = {
+                        'ticker': ticker,
+                        'price': t.get('day', {}).get('c') or t.get('prevDay', {}).get('c'),
+                        'change': t.get('todaysChange'),
+                        'change_percent': t.get('todaysChangePerc'),
+                        'volume': t.get('day', {}).get('v'),
+                        'vwap': t.get('day', {}).get('vw'),
+                        'open': t.get('day', {}).get('o'),
+                        'high': t.get('day', {}).get('h'),
+                        'low': t.get('day', {}).get('l'),
+                        'prev_close': t.get('prevDay', {}).get('c'),
+                    }
+        return snapshots
+
+    async def batch_get_ticker_details(
+        self,
+        tickers: List[str],
+        max_concurrent: int = 10,
+    ) -> Dict[str, Dict]:
+        """
+        Batch fetch ticker details for multiple tickers.
+
+        Args:
+            tickers: List of symbols
+            max_concurrent: Max concurrent requests
+
+        Returns:
+            Dict mapping ticker -> details
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results = {}
+
+        async def fetch_one(ticker: str):
+            async with semaphore:
+                details = await self.get_ticker_details(ticker)
+                if details:
+                    results[ticker] = details
+
+        await asyncio.gather(*[fetch_one(t) for t in tickers], return_exceptions=True)
+
+        return results
+
+    async def batch_get_news(
+        self,
+        tickers: List[str],
+        limit_per_ticker: int = 5,
+        max_concurrent: int = 10,
+    ) -> Dict[str, List[Dict]]:
+        """
+        Batch fetch news for multiple tickers.
+
+        Args:
+            tickers: List of symbols
+            limit_per_ticker: Max articles per ticker
+            max_concurrent: Max concurrent requests
+
+        Returns:
+            Dict mapping ticker -> list of articles
+        """
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results = {}
+
+        async def fetch_one(ticker: str):
+            async with semaphore:
+                news = await self.get_news(ticker, limit=limit_per_ticker)
+                if news:
+                    results[ticker] = news
+
+        await asyncio.gather(*[fetch_one(t) for t in tickers], return_exceptions=True)
+
+        return results
+
+    async def get_market_status(self) -> Dict:
+        """Get current market status (open/closed)."""
+        endpoint = "/v1/marketstatus/now"
+
+        data = await self._request(endpoint)
+
+        if data:
+            return {
+                'market': data.get('market', 'unknown'),
+                'exchanges': data.get('exchanges', {}),
+                'server_time': data.get('serverTime'),
+                'after_hours': data.get('afterHours', False),
+                'early_hours': data.get('earlyHours', False),
+            }
+        return {'market': 'unknown'}
+
     async def batch_get_daily_bars(
         self,
         tickers: List[str],
@@ -343,3 +484,105 @@ async def batch_get_prices(tickers: List[str], days: int = 250) -> Dict[str, pd.
     """Convenience function to batch fetch prices."""
     provider = get_polygon_provider()
     return await provider.batch_get_daily_bars(tickers, days)
+
+
+# =============================================================================
+# SYNCHRONOUS WRAPPERS (for use in non-async code)
+# =============================================================================
+
+def _run_async(coro):
+    """Helper to run async code from sync context."""
+    import concurrent.futures
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result(timeout=30)
+        else:
+            return asyncio.run(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+def get_price_data_sync(ticker: str, days: int = 250) -> Optional[pd.DataFrame]:
+    """
+    Synchronous wrapper to get price data from Polygon.
+
+    Args:
+        ticker: Stock symbol (e.g., 'AAPL', 'SPY', 'VIX' for ^VIX)
+        days: Number of days of history
+
+    Returns:
+        DataFrame with OHLCV data or None
+    """
+    # Convert common index symbols
+    ticker_map = {
+        '^VIX': 'VIX',
+        '^GSPC': 'SPY',  # S&P 500 -> use SPY as proxy
+        '^DJI': 'DIA',   # Dow -> use DIA as proxy
+        '^IXIC': 'QQQ',  # NASDAQ -> use QQQ as proxy
+    }
+    polygon_ticker = ticker_map.get(ticker, ticker.replace('^', ''))
+
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_daily_bars(polygon_ticker, days)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_ticker_details_sync(ticker: str) -> Optional[Dict]:
+    """Synchronous wrapper to get ticker details."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_ticker_details(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_news_sync(ticker: str = None, limit: int = 10) -> List[Dict]:
+    """Synchronous wrapper to get news."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_news(ticker, limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_market_movers_sync(direction: str = 'gainers') -> List[Dict]:
+    """Synchronous wrapper to get market movers."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_market_movers(direction)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_snapshot_sync(ticker: str) -> Optional[Dict]:
+    """Synchronous wrapper to get real-time snapshot."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_snapshot(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def is_polygon_configured() -> bool:
+    """Check if Polygon API is configured."""
+    return bool(os.environ.get('POLYGON_API_KEY', ''))

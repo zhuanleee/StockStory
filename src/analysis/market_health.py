@@ -130,7 +130,29 @@ def get_breadth_universe() -> list:
 
 
 def get_stock_data(ticker, period='3mo'):
-    """Fetch stock data with error handling."""
+    """
+    Fetch stock data with error handling.
+    Uses Polygon.io as primary, yfinance as fallback.
+    """
+    import os
+
+    # Convert period to days
+    period_days = {'1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '5d': 5, '1d': 1}
+    days = period_days.get(period, 90)
+
+    # Try Polygon first
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            from src.data.polygon_provider import get_price_data_sync
+            df = get_price_data_sync(ticker, days=days)
+            if df is not None and len(df) > 0:
+                df = normalize_dataframe_columns(df)
+                return ticker, df
+        except Exception as e:
+            logger.debug(f"Polygon fetch failed for {ticker}: {e}")
+
+    # Fallback to yfinance
     try:
         df = yf.download(ticker, period=period, progress=False)
         df = normalize_dataframe_columns(df)
