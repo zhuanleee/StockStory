@@ -175,7 +175,32 @@ def handle_help(chat_id):
     msg += "*🎯 Themes & Universe:*\n"
     msg += "• `/themes` → Learned theme registry\n"
     msg += "• `/universe` → Dynamic ticker universe\n"
-    msg += "• `/themehealth` → Theme system health\n"
+    msg += "• `/themehealth` → Theme system health\n\n"
+
+    msg += "*📈 Google Trends:*\n"
+    msg += "• `/trends` → Theme momentum report\n"
+    msg += "• `/trends AI chips` → Single keyword trend\n"
+    msg += "• `/thememomentum` → Quick theme overview\n\n"
+
+    msg += "*🎯 Theme Intelligence:*\n"
+    msg += "• `/themeintel` → Full multi-signal analysis\n"
+    msg += "• `/themeradar` → Quick radar view\n"
+    msg += "• `/themealerts` → Recent breakout alerts\n"
+    msg += "• `/tickertheme NVDA` → Theme boost for ticker\n\n"
+
+    msg += "*🧠 Smart Money:*\n"
+    msg += "• `/smartmoney` → Combined intelligence\n"
+    msg += "• `/discover` → Auto-discover themes\n"
+    msg += "• `/institutional` → Institutional flow\n"
+    msg += "• `/optionsflow` → Options flow signals\n"
+    msg += "• `/rotation` → Rotation forecast\n"
+    msg += "• `/peakwarnings` → Peak theme alerts\n\n"
+
+    msg += "*📊 Alternative Data:*\n"
+    msg += "• `/patents` → Patent filings analysis\n"
+    msg += "• `/patents NVDA` → Company patent lookup\n"
+    msg += "• `/contracts` → Gov contract awards\n"
+    msg += "• `/contracts nuclear` → Theme contracts\n"
 
     send_message(chat_id, msg)
 
@@ -1321,6 +1346,50 @@ def process_message(message):
     elif text_lower == '/themehealth':
         handle_themehealth(chat_id)
 
+    # Google Trends Commands
+    elif text_lower == '/trends':
+        handle_trends(chat_id)
+    elif text_lower.startswith('/trends '):
+        handle_trends(chat_id, text[8:].strip())
+    elif text_lower == '/thememomentum':
+        handle_thememomentum(chat_id)
+
+    # Theme Intelligence Hub Commands
+    elif text_lower == '/themeintel':
+        handle_themeintel(chat_id)
+    elif text_lower == '/themealerts':
+        handle_themealerts(chat_id)
+    elif text_lower == '/themeradar':
+        handle_themeradar(chat_id)
+    elif text_lower.startswith('/tickertheme '):
+        handle_tickertheme(chat_id, text[13:].strip())
+
+    # Advanced Intelligence Commands
+    elif text_lower == '/discover':
+        handle_discover(chat_id)
+    elif text_lower == '/institutional':
+        handle_institutional(chat_id)
+    elif text_lower == '/optionsflow':
+        handle_optionsflow(chat_id)
+    elif text_lower.startswith('/optionsflow '):
+        handle_optionsflow(chat_id, text[13:].strip())
+    elif text_lower == '/rotation':
+        handle_rotation(chat_id)
+    elif text_lower == '/peakwarnings':
+        handle_peakwarnings(chat_id)
+    elif text_lower == '/smartmoney':
+        handle_smartmoney(chat_id)
+
+    # Alternative Data Commands
+    elif text_lower == '/patents':
+        handle_patents(chat_id)
+    elif text_lower.startswith('/patents '):
+        handle_patents(chat_id, text[9:].strip())
+    elif text_lower == '/contracts':
+        handle_contracts(chat_id)
+    elif text_lower.startswith('/contracts '):
+        handle_contracts(chat_id, text[11:].strip())
+
     # Ticker lookup (1-5 letter word)
     elif len(text) <= 5 and text.replace('.', '').isalpha():
         handle_ticker(chat_id, text)
@@ -1377,7 +1446,10 @@ def webhook():
 
             # List of slow commands that need background processing
             slow_commands = ['/news', '/sectors', '/stories', '/scan',
-                          '/earnings', '/briefing', '/coach', '/top', '/health', '/sentiment']
+                          '/earnings', '/briefing', '/coach', '/top', '/health', '/sentiment',
+                          '/thememomentum', '/trends', '/themeintel', '/themeradar',
+                          '/discover', '/institutional', '/optionsflow', '/rotation', '/smartmoney',
+                          '/patents', '/contracts']
 
             # Check if this is a slow command
             is_slow = any(text.startswith(cmd) for cmd in slow_commands)
@@ -3133,6 +3205,561 @@ def handle_themehealth(chat_id):
         send_message(chat_id, f"Error: {e}")
 
 
+def handle_trends(chat_id, keyword=None):
+    """Handle /trends command - Google Trends theme detection."""
+    try:
+        from src.data.google_trends import (
+            get_trend_score,
+            get_theme_momentum_report,
+            format_trends_message,
+            HAS_PYTRENDS
+        )
+
+        if not HAS_PYTRENDS:
+            send_message(chat_id, "❌ *GOOGLE TRENDS*\n\npytrends not installed.")
+            return
+
+        send_message(chat_id, "📊 Fetching Google Trends data...")
+
+        if keyword:
+            # Single keyword lookup
+            result = get_trend_score(keyword)
+
+            if result.get('error'):
+                send_message(chat_id, f"❌ Error: {result['error']}")
+                return
+
+            score = result.get('score', 0)
+            status = result.get('status', 'unknown')
+            trend_pct = result.get('trend_pct', 0)
+
+            # Status emoji
+            if status == 'breakout':
+                emoji = "🔥"
+            elif status == 'rising':
+                emoji = "📈"
+            elif status == 'declining':
+                emoji = "📉"
+            else:
+                emoji = "➡️"
+
+            msg = f"📊 *GOOGLE TRENDS*\n\n"
+            msg += f"*Keyword:* `{keyword}`\n\n"
+            msg += f"• Momentum Score: *{score:.0f}/100*\n"
+            msg += f"• Status: {emoji} {status.upper()}\n"
+            msg += f"• 7-day Trend: {'+' if trend_pct > 0 else ''}{trend_pct:.1f}%\n"
+            msg += f"• Current Index: {result.get('current', 0):.0f}\n"
+            msg += f"• 30-day Avg: {result.get('avg_30d', 0):.0f}\n"
+
+            if result.get('is_breakout'):
+                msg += f"\n🚀 *BREAKOUT DETECTED!*"
+
+            send_message(chat_id, msg)
+
+        else:
+            # Full theme momentum report
+            report = get_theme_momentum_report()
+            msg = format_trends_message(report)
+            send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Google Trends import error: {e}")
+        send_message(chat_id, "❌ Google Trends module not available.")
+    except Exception as e:
+        logger.error(f"Trends command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_thememomentum(chat_id):
+    """Handle /thememomentum command - Quick theme momentum overview."""
+    try:
+        from src.data.google_trends import (
+            detect_trending_themes,
+            HAS_PYTRENDS
+        )
+
+        if not HAS_PYTRENDS:
+            send_message(chat_id, "❌ *THEME MOMENTUM*\n\npytrends not installed.")
+            return
+
+        send_message(chat_id, "📈 Analyzing theme momentum (this may take a minute)...")
+
+        themes = detect_trending_themes()
+
+        if not themes:
+            send_message(chat_id, "❌ Could not fetch theme data from Google Trends.")
+            return
+
+        msg = "📈 *THEME MOMENTUM*\n"
+        msg += "_Based on Google Search Trends_\n\n"
+
+        # Top 5 by momentum
+        msg += "*🔥 HOTTEST THEMES:*\n"
+        for t in themes[:5]:
+            emoji = "🔥" if t.get('is_breakout') else "📈" if t.get('trend_pct', 0) > 10 else "➡️"
+            score = t.get('score', 0)
+            trend = t.get('trend_pct', 0)
+            msg += f"{emoji} `{t['theme_id'].upper()}` | Score: {score:.0f} | {'+' if trend > 0 else ''}{trend:.0f}%\n"
+
+        # Breakouts
+        breakouts = [t for t in themes if t.get('is_breakout')]
+        if breakouts:
+            msg += f"\n🚀 *BREAKOUT ALERT:*\n"
+            for t in breakouts[:3]:
+                msg += f"• {t['theme_id'].upper()} - Sudden spike in search interest!\n"
+
+        # Declining
+        declining = [t for t in themes if t.get('trend_pct', 0) < -10]
+        if declining:
+            msg += f"\n📉 *COOLING OFF:*\n"
+            for t in declining[:3]:
+                msg += f"• {t['theme_id'].upper()} ({t['trend_pct']:.0f}%)\n"
+
+        msg += f"\n_Tracking {len(themes)} investment themes_"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Google Trends module not available.")
+    except Exception as e:
+        logger.error(f"Theme momentum command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_themeintel(chat_id):
+    """Handle /themeintel command - Full Theme Intelligence Hub analysis."""
+    try:
+        from src.intelligence.theme_intelligence import (
+            analyze_all_themes,
+            format_theme_intelligence_message
+        )
+
+        send_message(chat_id, "🎯 Running Theme Intelligence analysis (this takes 1-2 minutes)...")
+
+        report = analyze_all_themes(quick=True)
+        msg = format_theme_intelligence_message(report)
+        send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Theme Intel import error: {e}")
+        send_message(chat_id, "❌ Theme Intelligence module not available.")
+    except Exception as e:
+        logger.error(f"Theme Intel command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_themealerts(chat_id):
+    """Handle /themealerts command - Recent theme alerts."""
+    try:
+        from src.intelligence.theme_intelligence import (
+            get_breakout_alerts,
+            format_alerts_message
+        )
+
+        alerts = get_breakout_alerts()
+        msg = format_alerts_message(alerts)
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Theme Intelligence module not available.")
+    except Exception as e:
+        logger.error(f"Theme alerts command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_themeradar(chat_id):
+    """Handle /themeradar command - Quick theme radar view."""
+    try:
+        from src.intelligence.theme_intelligence import get_theme_radar, THEME_NAMES
+
+        radar = get_theme_radar()
+
+        if not radar.get('ok'):
+            send_message(chat_id, "❌ Could not fetch theme radar data.")
+            return
+
+        msg = "📡 *THEME RADAR*\n"
+        msg += "_Quick view of all tracked themes_\n\n"
+
+        lifecycle_emoji = {
+            'emerging': '🌱',
+            'accelerating': '🚀',
+            'peak': '🔥',
+            'declining': '📉',
+            'dead': '💀'
+        }
+
+        for item in radar.get('radar', [])[:15]:
+            emoji = lifecycle_emoji.get(item['lifecycle'], '⚪')
+            trend_arrow = '↑' if item.get('trend', 0) > 0 else '↓' if item.get('trend', 0) < 0 else '→'
+            score = item.get('score', 0)
+
+            msg += f"{emoji} `{item['theme_id'].upper()}` | {score:.0f} {trend_arrow}\n"
+
+        msg += f"\n_Last updated: {radar.get('timestamp', 'N/A')[:16]}_"
+        msg += "\n\n_Use /themeintel for full analysis_"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Theme Intelligence module not available.")
+    except Exception as e:
+        logger.error(f"Theme radar command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_tickertheme(chat_id, ticker):
+    """Handle /tickertheme command - Get theme boost for a ticker."""
+    try:
+        from src.intelligence.theme_intelligence import get_ticker_theme_boost, THEME_NAMES
+
+        ticker = ticker.upper()
+        boost_data = get_ticker_theme_boost(ticker)
+
+        msg = f"🎯 *THEME BOOST: {ticker}*\n\n"
+
+        boost = boost_data.get('boost', 0)
+        if boost > 0:
+            msg += f"*Boost:* +{boost} points 📈\n"
+        elif boost < 0:
+            msg += f"*Boost:* {boost} points 📉\n"
+        else:
+            msg += f"*Boost:* 0 points ➡️\n"
+
+        themes = boost_data.get('themes', [])
+        if themes:
+            msg += f"\n*Linked Themes:*\n"
+            for t in themes:
+                lifecycle_emoji = {
+                    'emerging': '🌱',
+                    'accelerating': '🚀',
+                    'peak': '🔥',
+                    'declining': '📉',
+                    'dead': '💀'
+                }.get(t['lifecycle'], '⚪')
+
+                msg += f"{lifecycle_emoji} {t['theme_name']} | Score: {t['score']:.0f} | Boost: {'+' if t['boost'] > 0 else ''}{t['boost']}\n"
+        else:
+            msg += f"\n_{boost_data.get('reason', 'No theme mapping')}_"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Theme Intelligence module not available.")
+    except Exception as e:
+        logger.error(f"Ticker theme command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_discover(chat_id):
+    """Handle /discover command - Auto-discover new themes."""
+    try:
+        from src.intelligence.theme_discovery import (
+            get_discovery_engine,
+            format_discovery_message
+        )
+
+        send_message(chat_id, "🔍 Running theme discovery (this may take 2-3 minutes)...")
+
+        engine = get_discovery_engine()
+        themes = engine.discover_themes()
+        report = engine.get_discovery_report()
+
+        msg = format_discovery_message(report)
+        send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Discovery import error: {e}")
+        send_message(chat_id, "❌ Theme Discovery module not available.")
+    except Exception as e:
+        logger.error(f"Discovery command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_institutional(chat_id):
+    """Handle /institutional command - Institutional flow analysis."""
+    try:
+        from src.intelligence.institutional_flow import (
+            get_flow_tracker,
+            format_institutional_message
+        )
+
+        send_message(chat_id, "🏦 Analyzing institutional flow...")
+
+        tracker = get_flow_tracker()
+        summary = tracker.get_theme_institutional_summary()
+
+        msg = format_institutional_message(summary)
+        send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Institutional import error: {e}")
+        send_message(chat_id, "❌ Institutional Flow module not available.")
+    except Exception as e:
+        logger.error(f"Institutional command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_optionsflow(chat_id, ticker=None):
+    """Handle /optionsflow command - Options flow signals."""
+    try:
+        from src.intelligence.institutional_flow import get_flow_tracker
+
+        tracker = get_flow_tracker()
+
+        if ticker:
+            signals = tracker.get_options_flow_signals([ticker.upper()])
+            title = f"OPTIONS FLOW: {ticker.upper()}"
+        else:
+            signals = tracker.get_options_flow_signals()
+            title = "OPTIONS FLOW SIGNALS"
+
+        msg = f"📊 *{title}*\n\n"
+
+        if not signals:
+            msg += "_No significant options flow detected_"
+            send_message(chat_id, msg)
+            return
+
+        # Group by sentiment
+        bullish = [s for s in signals if s.sentiment == 'bullish']
+        bearish = [s for s in signals if s.sentiment == 'bearish']
+
+        if bullish:
+            msg += "📈 *BULLISH:*\n"
+            for s in bullish[:5]:
+                msg += f"• `{s.ticker}` {s.signal_type}\n"
+                if s.premium:
+                    msg += f"  Premium: ${s.premium:,.0f}\n"
+
+        if bearish:
+            msg += "\n📉 *BEARISH:*\n"
+            for s in bearish[:5]:
+                msg += f"• `{s.ticker}` {s.signal_type}\n"
+
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Institutional Flow module not available.")
+    except Exception as e:
+        logger.error(f"Options flow command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_rotation(chat_id):
+    """Handle /rotation command - Theme rotation forecast."""
+    try:
+        from src.intelligence.rotation_predictor import (
+            get_rotation_predictor,
+            format_rotation_message
+        )
+
+        send_message(chat_id, "🔄 Generating rotation forecast...")
+
+        predictor = get_rotation_predictor()
+        forecast = predictor.get_rotation_forecast()
+
+        msg = format_rotation_message(forecast)
+        send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Rotation import error: {e}")
+        send_message(chat_id, "❌ Rotation Predictor module not available.")
+    except Exception as e:
+        logger.error(f"Rotation command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_peakwarnings(chat_id):
+    """Handle /peakwarnings command - Themes at potential peak."""
+    try:
+        from src.intelligence.rotation_predictor import (
+            get_rotation_predictor,
+            format_peak_warnings_message
+        )
+
+        predictor = get_rotation_predictor()
+        warnings = predictor.detect_peak_themes()
+
+        msg = format_peak_warnings_message(warnings)
+        send_message(chat_id, msg)
+
+    except ImportError:
+        send_message(chat_id, "❌ Rotation Predictor module not available.")
+    except Exception as e:
+        logger.error(f"Peak warnings command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_patents(chat_id, query=None):
+    """Handle /patents command - Patent intelligence."""
+    try:
+        from src.data.patents import (
+            get_patent_intelligence,
+            format_patent_message
+        )
+
+        send_message(chat_id, "📜 Fetching patent intelligence...")
+
+        intel = get_patent_intelligence()
+
+        if query:
+            # Single company or theme lookup
+            query = query.upper()
+            if len(query) <= 5:  # Likely a ticker
+                activity = intel.get_company_patents(query)
+                msg = f"📜 *PATENTS: {query}*\n\n"
+                msg += f"*Patents (2yr):* {activity.patent_count}\n"
+                msg += f"*Trend:* {activity.trend}\n"
+                msg += f"*YoY Change:* {'+' if activity.yoy_change > 0 else ''}{activity.yoy_change:.0f}%\n"
+                msg += f"*Signal:* {activity.signal_strength:.0%}\n\n"
+
+                if activity.recent_patents:
+                    msg += "*Recent Patents:*\n"
+                    for p in activity.recent_patents[:5]:
+                        msg += f"• {p.get('title', '')[:50]}...\n"
+            else:
+                # Theme lookup
+                activity = intel.get_theme_patent_activity(query.lower())
+                msg = f"📜 *PATENTS: {query}*\n\n"
+                msg += f"*Patents (2yr):* {activity.patent_count}\n"
+                msg += f"*Trend:* {activity.trend}\n"
+
+            send_message(chat_id, msg)
+        else:
+            # Full trends report
+            data = intel.get_all_themes_patent_activity()
+            msg = format_patent_message(data)
+            send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Patents import error: {e}")
+        send_message(chat_id, "❌ Patent module not available.")
+    except Exception as e:
+        logger.error(f"Patents command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_contracts(chat_id, query=None):
+    """Handle /contracts command - Government contracts intelligence."""
+    try:
+        from src.data.gov_contracts import (
+            get_contract_intelligence,
+            format_contracts_message
+        )
+
+        send_message(chat_id, "🏛️ Fetching government contract data...")
+
+        intel = get_contract_intelligence()
+
+        if query:
+            # Single company or theme lookup
+            query_upper = query.upper()
+            if len(query_upper) <= 5:  # Likely a ticker
+                activity = intel.get_company_contracts(query_upper)
+                msg = f"🏛️ *CONTRACTS: {query_upper}*\n\n"
+                msg += f"*Total Value:* ${activity.total_value/1e9:.2f}B\n"
+                msg += f"*Contracts:* {activity.contract_count}\n"
+                msg += f"*Signal:* {activity.signal_strength:.0%}\n\n"
+
+                if activity.top_agencies:
+                    msg += "*Top Agencies:*\n"
+                    for agency in activity.top_agencies[:3]:
+                        msg += f"• {agency[:40]}\n"
+
+                if activity.recent_contracts:
+                    msg += "\n*Recent Awards:*\n"
+                    for c in activity.recent_contracts[:5]:
+                        msg += f"• ${c.get('amount', 0)/1e6:.0f}M ({c.get('date', '')})\n"
+            else:
+                # Theme lookup
+                activity = intel.get_theme_contract_activity(query.lower())
+                msg = f"🏛️ *CONTRACTS: {query}*\n\n"
+                msg += f"*Total Value:* ${activity.total_value/1e9:.2f}B\n"
+                msg += f"*Contracts:* {activity.contract_count}\n"
+                msg += f"*Trend:* {activity.trend} ({activity.mom_change:+.0f}% MoM)\n"
+
+            send_message(chat_id, msg)
+        else:
+            # Full trends report
+            data = intel.get_all_themes_contract_activity()
+            msg = format_contracts_message(data)
+            send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Contracts import error: {e}")
+        send_message(chat_id, "❌ Government contracts module not available.")
+    except Exception as e:
+        logger.error(f"Contracts command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
+def handle_smartmoney(chat_id):
+    """Handle /smartmoney command - Combined institutional intelligence."""
+    try:
+        from src.intelligence.institutional_flow import get_institutional_summary
+        from src.intelligence.rotation_predictor import get_rotation_forecast, get_peak_warnings
+
+        send_message(chat_id, "🧠 Compiling smart money intelligence...")
+
+        msg = "🧠 *SMART MONEY INTELLIGENCE*\n"
+        msg += "_Combined institutional signals_\n\n"
+
+        # Institutional flow
+        inst_summary = get_institutional_summary()
+        if inst_summary.get('ok'):
+            bullish = inst_summary.get('top_bullish', [])[:3]
+            bearish = inst_summary.get('top_bearish', [])[:3]
+
+            if bullish:
+                msg += "📈 *Institutional Buying:*\n"
+                for theme_id in bullish:
+                    msg += f"• `{theme_id.upper()}`\n"
+                msg += "\n"
+
+            if bearish:
+                msg += "📉 *Institutional Selling:*\n"
+                for theme_id in bearish:
+                    msg += f"• `{theme_id.upper()}`\n"
+                msg += "\n"
+
+        # Rotation forecast
+        rotation = get_rotation_forecast()
+        if rotation.get('ok'):
+            rotating_in = rotation.get('rotating_in', [])[:2]
+            rotating_out = rotation.get('rotating_out', [])[:2]
+
+            if rotating_in:
+                msg += "🔄 *Rotating In:*\n"
+                for f in rotating_in:
+                    msg += f"• `{f['theme_id'].upper()}` ({f['rotation_probability']*100:.0f}%)\n"
+                msg += "\n"
+
+            if rotating_out:
+                msg += "🔄 *Rotating Out:*\n"
+                for f in rotating_out:
+                    msg += f"• `{f['theme_id'].upper()}` ({f['rotation_probability']*100:.0f}%)\n"
+                msg += "\n"
+
+        # Peak warnings
+        peaks = get_peak_warnings()
+        if peaks:
+            confirmed = [p for p in peaks if p.get('warning_level') in ['confirmed', 'imminent']]
+            if confirmed:
+                msg += "⚠️ *Peak Warnings:*\n"
+                for p in confirmed[:3]:
+                    msg += f"• `{p['theme_id'].upper()}` ({p['warning_level']})\n"
+
+        send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Smart money import error: {e}")
+        send_message(chat_id, "❌ Intelligence modules not available.")
+    except Exception as e:
+        logger.error(f"Smart money command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
 # =============================================================================
 # THEME & UNIVERSE API ENDPOINTS
 # =============================================================================
@@ -3697,6 +4324,585 @@ def api_sec_ma_radar():
         })
     except Exception as e:
         logger.error(f"M&A radar API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# GOOGLE TRENDS API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/trends/themes')
+def api_trends_themes():
+    """Get theme momentum report from Google Trends."""
+    try:
+        from src.data.google_trends import (
+            get_theme_momentum_report,
+            HAS_PYTRENDS
+        )
+
+        if not HAS_PYTRENDS:
+            return jsonify({
+                'ok': False,
+                'error': 'pytrends not installed'
+            })
+
+        report = get_theme_momentum_report()
+        return jsonify(report)
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Trends themes API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trends/keyword/<keyword>')
+def api_trends_keyword(keyword):
+    """Get trend score for a specific keyword."""
+    try:
+        from src.data.google_trends import get_trend_score, HAS_PYTRENDS
+
+        if not HAS_PYTRENDS:
+            return jsonify({
+                'ok': False,
+                'error': 'pytrends not installed'
+            })
+
+        result = get_trend_score(keyword)
+        return jsonify({
+            'ok': True,
+            **result
+        })
+
+    except Exception as e:
+        logger.error(f"Trends keyword API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trends/breakouts')
+def api_trends_breakouts():
+    """Get breakout searches from Google Trends."""
+    try:
+        from src.data.google_trends import get_breakout_searches, HAS_PYTRENDS
+
+        if not HAS_PYTRENDS:
+            return jsonify({
+                'ok': False,
+                'error': 'pytrends not installed'
+            })
+
+        breakouts = get_breakout_searches()
+        return jsonify({
+            'ok': True,
+            'breakouts': breakouts,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Trends breakouts API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# THEME INTELLIGENCE API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/theme-intel/radar')
+def api_theme_intel_radar():
+    """Get theme radar data for dashboard visualization."""
+    try:
+        from src.intelligence.theme_intelligence import get_theme_radar
+
+        radar = get_theme_radar()
+        return jsonify(radar)
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme radar API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/theme-intel/analyze')
+def api_theme_intel_analyze():
+    """Run full theme intelligence analysis."""
+    try:
+        from src.intelligence.theme_intelligence import analyze_all_themes
+
+        quick = request.args.get('quick', 'true').lower() == 'true'
+        report = analyze_all_themes(quick=quick)
+        return jsonify(report)
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme analyze API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/theme-intel/alerts')
+def api_theme_intel_alerts():
+    """Get recent theme alerts."""
+    try:
+        from src.intelligence.theme_intelligence import get_breakout_alerts
+        from dataclasses import asdict
+
+        alerts = get_breakout_alerts()
+        return jsonify({
+            'ok': True,
+            'alerts': [asdict(a) if hasattr(a, '__dataclass_fields__') else a for a in alerts],
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme alerts API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/theme-intel/ticker/<ticker>')
+def api_theme_intel_ticker(ticker):
+    """Get theme boost for a specific ticker."""
+    try:
+        from src.intelligence.theme_intelligence import get_ticker_theme_boost
+
+        boost_data = get_ticker_theme_boost(ticker)
+        return jsonify({
+            'ok': True,
+            **boost_data
+        })
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme ticker API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/theme-intel/theme/<theme_id>')
+def api_theme_intel_theme(theme_id):
+    """Get detailed history for a specific theme."""
+    try:
+        from src.intelligence.theme_intelligence import get_theme_hub
+
+        hub = get_theme_hub()
+        history = hub.get_theme_history(theme_id)
+        return jsonify({
+            'ok': True,
+            **history
+        })
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme history API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/theme-intel/run-analysis', methods=['POST'])
+def api_theme_intel_run():
+    """Trigger theme intelligence analysis (for scheduled jobs)."""
+    try:
+        from src.intelligence.theme_intelligence import analyze_all_themes
+
+        quick = request.json.get('quick', True) if request.json else True
+        report = analyze_all_themes(quick=quick)
+
+        return jsonify({
+            'ok': True,
+            'summary': report.get('summary', {}),
+            'alerts_count': len(report.get('alerts', [])),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Theme run API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# THEME DISCOVERY API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/discovery/report')
+def api_discovery_report():
+    """Get theme discovery report."""
+    try:
+        from src.intelligence.theme_discovery import get_discovery_report
+        return jsonify(get_discovery_report())
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Discovery report API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/discovery/run', methods=['POST'])
+def api_discovery_run():
+    """Run theme discovery."""
+    try:
+        from src.intelligence.theme_discovery import discover_themes
+        themes = discover_themes()
+        return jsonify({
+            'ok': True,
+            'discovered': len(themes),
+            'themes': themes,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Discovery run API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# INSTITUTIONAL FLOW API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/institutional/summary')
+def api_institutional_summary():
+    """Get institutional flow summary for all themes."""
+    try:
+        from src.intelligence.institutional_flow import get_institutional_summary
+        return jsonify(get_institutional_summary())
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Institutional summary API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/institutional/options-flow')
+def api_options_flow():
+    """Get options flow signals."""
+    try:
+        from src.intelligence.institutional_flow import get_options_flow
+        tickers = request.args.get('tickers')
+        if tickers:
+            tickers = [t.strip().upper() for t in tickers.split(',')]
+        signals = get_options_flow(tickers)
+        return jsonify({
+            'ok': True,
+            'signals': signals,
+            'count': len(signals),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Options flow API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/institutional/insider-clusters')
+def api_insider_clusters():
+    """Get insider buying clusters by theme."""
+    try:
+        from src.intelligence.institutional_flow import get_insider_clusters
+        clusters = get_insider_clusters()
+        return jsonify({
+            'ok': True,
+            'clusters': clusters,
+            'count': len(clusters),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Insider clusters API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# ROTATION PREDICTOR API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/rotation/forecast')
+def api_rotation_forecast():
+    """Get theme rotation forecast."""
+    try:
+        from src.intelligence.rotation_predictor import get_rotation_forecast
+        return jsonify(get_rotation_forecast())
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Rotation forecast API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/rotation/peak-warnings')
+def api_peak_warnings():
+    """Get peak warning signals."""
+    try:
+        from src.intelligence.rotation_predictor import get_peak_warnings
+        warnings = get_peak_warnings()
+        return jsonify({
+            'ok': True,
+            'warnings': warnings,
+            'count': len(warnings),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Peak warnings API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/rotation/reversions')
+def api_reversions():
+    """Get reversion candidates."""
+    try:
+        from src.intelligence.rotation_predictor import get_reversion_candidates
+        candidates = get_reversion_candidates()
+        return jsonify({
+            'ok': True,
+            'candidates': candidates,
+            'count': len(candidates),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Reversions API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/rotation/alerts')
+def api_rotation_alerts():
+    """Get rotation alerts."""
+    try:
+        from src.intelligence.rotation_predictor import get_rotation_alerts
+        alerts = get_rotation_alerts()
+        return jsonify({
+            'ok': True,
+            'alerts': alerts,
+            'count': len(alerts),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Rotation alerts API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# ALTERNATIVE DATA API (Patents & Government Contracts)
+# =============================================================================
+
+@app.route('/api/patents/themes')
+def api_patents_themes():
+    """Get patent activity for all themes."""
+    try:
+        from src.data.patents import get_patent_intelligence
+        intel = get_patent_intelligence()
+        data = intel.get_all_themes_patent_activity()
+        return jsonify({
+            'ok': True,
+            'themes': data,
+            'count': len(data),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Patents themes API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/patents/company/<ticker>')
+def api_patents_company(ticker):
+    """Get patent activity for a specific company."""
+    try:
+        from src.data.patents import get_patent_intelligence
+        intel = get_patent_intelligence()
+        data = intel.get_company_patents(ticker.upper())
+        return jsonify({
+            'ok': True,
+            'ticker': ticker.upper(),
+            'patents': data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Patents company API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/patents/theme/<theme>')
+def api_patents_theme(theme):
+    """Get patent activity for a specific theme."""
+    try:
+        from src.data.patents import get_patent_intelligence
+        intel = get_patent_intelligence()
+        data = intel.get_theme_patent_activity(theme.lower())
+        return jsonify({
+            'ok': True,
+            'theme': theme.lower(),
+            'activity': data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Patents theme API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/contracts/themes')
+def api_contracts_themes():
+    """Get government contract activity for all themes."""
+    try:
+        from src.data.gov_contracts import get_contract_intelligence
+        intel = get_contract_intelligence()
+        data = intel.get_all_themes_contract_activity()
+        return jsonify({
+            'ok': True,
+            'themes': data,
+            'count': len(data),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Contracts themes API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/contracts/company/<ticker>')
+def api_contracts_company(ticker):
+    """Get government contracts for a specific company."""
+    try:
+        from src.data.gov_contracts import get_contract_intelligence
+        intel = get_contract_intelligence()
+        data = intel.get_company_contracts(ticker.upper())
+        return jsonify({
+            'ok': True,
+            'ticker': ticker.upper(),
+            'contracts': data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Contracts company API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/contracts/theme/<theme>')
+def api_contracts_theme(theme):
+    """Get government contracts for a specific theme."""
+    try:
+        from src.data.gov_contracts import get_contract_intelligence
+        intel = get_contract_intelligence()
+        data = intel.get_theme_contract_activity(theme.lower())
+        return jsonify({
+            'ok': True,
+            'theme': theme.lower(),
+            'activity': data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Contracts theme API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/contracts/recent')
+def api_contracts_recent():
+    """Get recent large government contracts."""
+    try:
+        from src.data.gov_contracts import get_contract_intelligence
+        intel = get_contract_intelligence()
+        min_amount = float(request.args.get('min_amount', 10000000))  # Default $10M
+        days_back = int(request.args.get('days_back', 30))
+        data = intel.search_contracts(min_amount=min_amount, days_back=days_back)
+        return jsonify({
+            'ok': True,
+            'contracts': data,
+            'count': len(data),
+            'min_amount': min_amount,
+            'days_back': days_back,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Import error: {e}'})
+    except Exception as e:
+        logger.error(f"Recent contracts API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# COMBINED INTELLIGENCE API
+# =============================================================================
+
+@app.route('/api/intelligence/summary')
+def api_intelligence_summary():
+    """Get combined intelligence summary."""
+    try:
+        summary = {
+            'ok': True,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Theme Intelligence
+        try:
+            from src.intelligence.theme_intelligence import get_theme_radar
+            radar = get_theme_radar()
+            if radar.get('ok'):
+                summary['theme_radar'] = radar.get('radar', [])[:10]
+        except:
+            pass
+
+        # Institutional Flow
+        try:
+            from src.intelligence.institutional_flow import get_institutional_summary
+            inst = get_institutional_summary()
+            if inst.get('ok'):
+                summary['institutional'] = {
+                    'bullish': inst.get('top_bullish', [])[:5],
+                    'bearish': inst.get('top_bearish', [])[:5]
+                }
+        except:
+            pass
+
+        # Rotation Forecast
+        try:
+            from src.intelligence.rotation_predictor import get_rotation_forecast
+            rotation = get_rotation_forecast()
+            if rotation.get('ok'):
+                summary['rotation'] = {
+                    'in': len(rotation.get('rotating_in', [])),
+                    'out': len(rotation.get('rotating_out', [])),
+                    'rotating_in': rotation.get('rotating_in', [])[:3],
+                    'rotating_out': rotation.get('rotating_out', [])[:3]
+                }
+        except:
+            pass
+
+        # Discovery
+        try:
+            from src.intelligence.theme_discovery import get_discovery_report
+            discovery = get_discovery_report()
+            if discovery.get('ok'):
+                summary['discovery'] = {
+                    'total': discovery.get('summary', {}).get('total_discovered', 0),
+                    'validated': discovery.get('summary', {}).get('validated', 0)
+                }
+        except:
+            pass
+
+        return jsonify(summary)
+
+    except Exception as e:
+        logger.error(f"Intelligence summary API error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
 
 

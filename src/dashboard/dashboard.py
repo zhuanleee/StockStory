@@ -189,10 +189,11 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         .grid-2 { grid-template-columns: repeat(2, 1fr); }
         .grid-3 { grid-template-columns: repeat(3, 1fr); }
         .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-5 { grid-template-columns: repeat(5, 1fr); }
         .grid-sidebar { grid-template-columns: 1fr 320px; }
 
         @media (max-width: 1024px) {
-            .grid-2, .grid-3, .grid-4, .grid-sidebar { grid-template-columns: 1fr; }
+            .grid-2, .grid-3, .grid-4, .grid-5, .grid-sidebar { grid-template-columns: 1fr; }
         }
 
         /* Cards */
@@ -676,6 +677,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="tab active" data-tab="overview">Overview</div>
             <div class="tab" data-tab="scan">Scan Results</div>
             <div class="tab" data-tab="themes">Themes</div>
+            <div class="tab" data-tab="themeradar">Theme Radar</div>
             <div class="tab" data-tab="sec">SEC Intel</div>
             <div class="tab" data-tab="analytics">Analytics</div>
         </div>
@@ -862,6 +864,111 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
             <div class="grid grid-3" id="theme-cards">
                 {{THEME_CARDS}}
+            </div>
+        </div>
+
+        <!-- Theme Radar Tab (Theme Intelligence Hub) -->
+        <div id="themeradar" class="tab-content">
+            <div class="grid grid-3">
+                <!-- Theme Radar Visual -->
+                <div class="card" style="grid-column: span 2;">
+                    <div class="card-header">
+                        <div class="card-title">📡 Theme Radar</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchThemeRadar()">Refresh</button>
+                    </div>
+                    <div class="card-body" id="theme-radar-container">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;" id="theme-radar-grid">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading theme radar...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Theme Alerts -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🚨 Theme Alerts</div>
+                    </div>
+                    <div class="card-body" id="theme-alerts-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading alerts...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Lifecycle Summary -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📊 Theme Lifecycle Summary</div>
+                    <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="runThemeAnalysis()">Run Full Analysis</button>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-5" id="lifecycle-summary">
+                        <div class="stat" style="text-align: center;">
+                            <div style="font-size: 1.5rem;">🌱</div>
+                            <div class="stat-value" id="emerging-count">-</div>
+                            <div class="stat-label">Emerging</div>
+                        </div>
+                        <div class="stat" style="text-align: center;">
+                            <div style="font-size: 1.5rem;">🚀</div>
+                            <div class="stat-value green" id="accelerating-count">-</div>
+                            <div class="stat-label">Accelerating</div>
+                        </div>
+                        <div class="stat" style="text-align: center;">
+                            <div style="font-size: 1.5rem;">🔥</div>
+                            <div class="stat-value yellow" id="peak-count">-</div>
+                            <div class="stat-label">At Peak</div>
+                        </div>
+                        <div class="stat" style="text-align: center;">
+                            <div style="font-size: 1.5rem;">📉</div>
+                            <div class="stat-value red" id="declining-count">-</div>
+                            <div class="stat-label">Declining</div>
+                        </div>
+                        <div class="stat" style="text-align: center;">
+                            <div style="font-size: 1.5rem;">💀</div>
+                            <div class="stat-value" id="dead-count">-</div>
+                            <div class="stat-label">Dead</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Details Table -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📋 All Themes</div>
+                </div>
+                <div class="card-body no-padding">
+                    <div class="table-container">
+                        <table class="data-table" id="themes-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>Theme</th>
+                                    <th>Lifecycle</th>
+                                    <th>Score</th>
+                                    <th>Velocity</th>
+                                    <th>Tickers</th>
+                                </tr>
+                            </thead>
+                            <tbody id="themes-detail-body">
+                                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Click "Refresh" to load data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ticker Theme Lookup -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">🎯 Ticker Theme Boost</div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                        <input type="text" id="ticker-theme-input" placeholder="Enter ticker (e.g., NVDA)..."
+                            style="flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                        <button class="btn btn-primary" onclick="lookupTickerTheme()">Check Boost</button>
+                    </div>
+                    <div id="ticker-theme-result" style="font-size: 0.8125rem;"></div>
+                </div>
             </div>
         </div>
 
@@ -1571,6 +1678,199 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // Theme Intelligence Hub Functions
+        async function fetchThemeRadar() {
+            try {
+                const res = await fetch(`${API_BASE}/theme-intel/radar`);
+                const data = await res.json();
+
+                if (data.ok && data.radar) {
+                    const lifecycleEmoji = {
+                        'emerging': '🌱',
+                        'accelerating': '🚀',
+                        'peak': '🔥',
+                        'declining': '📉',
+                        'dead': '💀'
+                    };
+                    const lifecycleColor = {
+                        'emerging': 'var(--blue)',
+                        'accelerating': 'var(--green)',
+                        'peak': 'var(--yellow)',
+                        'declining': 'var(--red)',
+                        'dead': 'var(--text-muted)'
+                    };
+
+                    let html = '';
+                    data.radar.forEach(theme => {
+                        const emoji = lifecycleEmoji[theme.lifecycle] || '⚪';
+                        const color = lifecycleColor[theme.lifecycle] || 'var(--text-muted)';
+                        const trendArrow = theme.trend > 0 ? '↑' : theme.trend < 0 ? '↓' : '→';
+                        const trendColor = theme.trend > 0 ? 'var(--green)' : theme.trend < 0 ? 'var(--red)' : 'var(--text-muted)';
+
+                        html += `<div style="background: var(--bg-hover); border-radius: 8px; padding: 12px; border-left: 3px solid ${color};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-weight: 600;">${emoji} ${theme.theme_name}</span>
+                                <span style="color: ${trendColor};">${trendArrow}</span>
+                            </div>
+                            <div style="font-size: 1.25rem; font-weight: 700; color: ${color};">${theme.score.toFixed(0)}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${theme.lifecycle.toUpperCase()}</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">${theme.tickers.slice(0, 4).join(', ')}</div>
+                        </div>`;
+                    });
+
+                    document.getElementById('theme-radar-grid').innerHTML = html || '<div style="color: var(--text-muted);">No theme data available</div>';
+
+                    // Update lifecycle counts if summary available
+                    const lifecycleCounts = { emerging: 0, accelerating: 0, peak: 0, declining: 0, dead: 0 };
+                    data.radar.forEach(t => {
+                        if (lifecycleCounts[t.lifecycle] !== undefined) {
+                            lifecycleCounts[t.lifecycle]++;
+                        }
+                    });
+                    document.getElementById('emerging-count').textContent = lifecycleCounts.emerging;
+                    document.getElementById('accelerating-count').textContent = lifecycleCounts.accelerating;
+                    document.getElementById('peak-count').textContent = lifecycleCounts.peak;
+                    document.getElementById('declining-count').textContent = lifecycleCounts.declining;
+                    document.getElementById('dead-count').textContent = lifecycleCounts.dead;
+
+                    // Update table
+                    let tableHtml = '';
+                    data.radar.forEach(theme => {
+                        const emoji = lifecycleEmoji[theme.lifecycle] || '⚪';
+                        const color = lifecycleColor[theme.lifecycle] || 'var(--text-muted)';
+                        const trendStr = theme.trend > 0 ? `+${theme.trend.toFixed(1)}` : theme.trend.toFixed(1);
+                        const trendColor = theme.trend > 0 ? 'var(--green)' : theme.trend < 0 ? 'var(--red)' : 'var(--text-muted)';
+
+                        tableHtml += `<tr>
+                            <td><strong>${theme.theme_name}</strong></td>
+                            <td>${emoji} <span style="color: ${color};">${theme.lifecycle}</span></td>
+                            <td>${theme.score.toFixed(0)}</td>
+                            <td style="color: ${trendColor};">${trendStr}</td>
+                            <td style="font-size: 0.75rem;">${theme.tickers.slice(0, 5).join(', ')}</td>
+                        </tr>`;
+                    });
+                    document.getElementById('themes-detail-body').innerHTML = tableHtml || '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No data</td></tr>';
+                }
+            } catch (e) {
+                console.warn('Theme radar fetch failed:', e);
+                document.getElementById('theme-radar-grid').innerHTML = '<div style="color: var(--red);">Failed to load theme radar</div>';
+            }
+        }
+
+        async function fetchThemeAlerts() {
+            try {
+                const res = await fetch(`${API_BASE}/theme-intel/alerts`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    let html = '';
+                    if (!data.alerts || data.alerts.length === 0) {
+                        html = '<div style="color: var(--text-muted);">No alerts in last 24h</div>';
+                    } else {
+                        data.alerts.slice(0, 10).forEach(alert => {
+                            const typeEmoji = {
+                                'breakout': '💥',
+                                'acceleration': '🚀',
+                                'rotation_in': '📈',
+                                'rotation_out': '📉'
+                            }[alert.alert_type] || '⚪';
+                            const severityColor = {
+                                'high': 'var(--red)',
+                                'medium': 'var(--yellow)',
+                                'low': 'var(--green)'
+                            }[alert.severity] || 'var(--text-muted)';
+
+                            html += `<div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span>${typeEmoji} <strong>${alert.theme_name}</strong></span>
+                                    <span style="font-size: 0.75rem; padding: 2px 6px; background: ${severityColor}20; color: ${severityColor}; border-radius: 4px;">${alert.severity.toUpperCase()}</span>
+                                </div>
+                                <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 4px;">${alert.message}</div>
+                            </div>`;
+                        });
+                    }
+                    document.getElementById('theme-alerts-container').innerHTML = html;
+                }
+            } catch (e) {
+                console.warn('Theme alerts fetch failed:', e);
+            }
+        }
+
+        async function runThemeAnalysis() {
+            document.getElementById('theme-radar-grid').innerHTML = '<div style="color: var(--text-muted);">Running full analysis... This may take 1-2 minutes.</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/theme-intel/run-analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quick: true })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert(`Analysis complete! Found ${data.alerts_count} alerts.`);
+                    fetchThemeRadar();
+                    fetchThemeAlerts();
+                } else {
+                    alert('Analysis failed: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to run analysis');
+            }
+        }
+
+        async function lookupTickerTheme() {
+            const ticker = document.getElementById('ticker-theme-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('ticker-theme-result').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/theme-intel/ticker/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const boostColor = data.boost > 0 ? 'var(--green)' : data.boost < 0 ? 'var(--red)' : 'var(--text-muted)';
+                    const boostSign = data.boost > 0 ? '+' : '';
+
+                    let html = `<div style="margin-bottom: 12px;">
+                        <strong>${ticker}</strong> Theme Boost: <span style="color: ${boostColor}; font-weight: 700; font-size: 1.25rem;">${boostSign}${data.boost} pts</span>
+                    </div>`;
+
+                    if (data.themes && data.themes.length > 0) {
+                        html += '<div style="margin-top: 12px;">';
+                        data.themes.forEach(theme => {
+                            const lifecycleEmoji = {
+                                'emerging': '🌱',
+                                'accelerating': '🚀',
+                                'peak': '🔥',
+                                'declining': '📉',
+                                'dead': '💀'
+                            }[theme.lifecycle] || '⚪';
+                            const themeBoostColor = theme.boost > 0 ? 'var(--green)' : theme.boost < 0 ? 'var(--red)' : 'var(--text-muted)';
+
+                            html += `<div style="padding: 8px; background: var(--bg-hover); border-radius: 6px; margin-bottom: 8px;">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span>${lifecycleEmoji} ${theme.theme_name}</span>
+                                    <span style="color: ${themeBoostColor};">${theme.boost > 0 ? '+' : ''}${theme.boost}</span>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Score: ${theme.score.toFixed(0)} | ${theme.lifecycle}</div>
+                            </div>`;
+                        });
+                        html += '</div>';
+                    } else {
+                        html += `<div style="color: var(--text-muted);">${data.reason}</div>`;
+                    }
+
+                    document.getElementById('ticker-theme-result').innerHTML = html;
+                } else {
+                    document.getElementById('ticker-theme-result').innerHTML = `<div style="color: var(--red);">Error: ${data.error}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('ticker-theme-result').innerHTML = '<div style="color: var(--red);">Failed to lookup ticker</div>';
+            }
+        }
+
         async function refreshAll() {
             document.getElementById('last-update').textContent = 'Refreshing...';
 
@@ -1584,6 +1884,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchThemes(),
                 fetchMARadar(),
                 fetchDeals(),
+                fetchThemeRadar(),
+                fetchThemeAlerts(),
             ]);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {

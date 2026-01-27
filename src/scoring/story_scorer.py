@@ -1146,6 +1146,20 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
     if social.get('sec', {}).get('has_8k', False):
         composite = min(100, composite + 5)
 
+    # Theme Intelligence boost (Google Trends + multi-signal fusion)
+    theme_intel_boost = 0
+    theme_intel_data = {}
+    try:
+        from src.intelligence.theme_intelligence import get_ticker_theme_boost
+        theme_intel_data = get_ticker_theme_boost(ticker)
+        theme_intel_boost = theme_intel_data.get('boost', 0)
+        if theme_intel_boost != 0:
+            composite = max(0, min(100, composite + theme_intel_boost))
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"Theme intel boost error for {ticker}: {e}")
+
     # Story strength label
     if composite >= 80:
         story_strength = 'STRONG_STORY'
@@ -1202,6 +1216,10 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
         'ecosystem_score': ecosystem_score,
         'in_ecosystem': ecosystem_data.get('in_ecosystem', False),
         'ecosystem_themes': ecosystem_data.get('themes', []),
+
+        # Theme Intelligence (Google Trends fusion)
+        'theme_intel_boost': theme_intel_boost,
+        'theme_intel': theme_intel_data,
 
         # For sorting/filtering
         'has_theme': len(theme.get('themes', [])) > 0,
