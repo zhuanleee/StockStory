@@ -295,29 +295,67 @@ def handle_screen(chat_id, args):
 # =============================================================================
 
 def handle_scan(chat_id):
-    """Run the main scanner."""
-    send_message(chat_id, "⏳ Running scanner (this takes ~30 sec)...")
+    """Run the main scanner using AsyncScanner and save to CSV."""
+    send_message(chat_id, "⏳ Running story-first scan (this may take 1-2 minutes)...")
 
     try:
-        # Simple inline scanner
-        from screener import screen_stocks
+        import asyncio
+        from src.core.async_scanner import AsyncScanner
 
-        # Run momentum screen
-        filters = {'rs': '>3', 'above_20sma': True, 'vol_ratio': '>1'}
-        results = screen_stocks(filters)
+        # Quick scan tickers (theme stocks + majors)
+        tickers = [
+            'NVDA', 'AMD', 'AVGO', 'TSM', 'MRVL', 'ARM',  # AI/Semis
+            'MSFT', 'GOOGL', 'META', 'AMZN', 'AAPL',      # Big Tech
+            'TSLA', 'RIVN', 'LCID',                        # EV
+            'VST', 'CEG', 'SMR', 'NNE', 'OKLO',            # Nuclear
+            'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',         # Software
+            'LLY', 'NVO', 'VKTX', 'AMGN',                  # Biotech
+            'LMT', 'RTX', 'NOC', 'GD',                     # Defense
+            'JPM', 'GS', 'V', 'MA',                        # Finance
+        ]
 
-        if results:
+        async def run_scan():
+            scanner = AsyncScanner(max_concurrent=25)
+            try:
+                results = await scanner.run_scan_async(tickers)
+                return results
+            finally:
+                await scanner.close()
+
+        # Run the async scan
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            results = loop.run_until_complete(run_scan())
+        finally:
+            loop.close()
+
+        if isinstance(results, tuple):
+            df = results[0]
+        else:
+            df = results
+
+        if len(df) > 0:
             msg = "🔍 *SCAN RESULTS*\n\n"
-            for i, s in enumerate(results[:15], 1):
-                emoji = "🥇" if i <= 3 else ("🥈" if i <= 6 else "🥉")
-                msg += f"{emoji} `{s['ticker']:5}` RS: {s['rs']:+.1f}% Vol: {s['vol_ratio']:.1f}x\n"
+            for i, row in df.head(15).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                score = row.get('story_score', 0)
+                strength = row.get('story_strength', 'none')
+                theme = row.get('hottest_theme', '-') or '-'
 
-            msg += f"\n_Scanned {len(results)} stocks with positive RS_"
+                emoji = "🥇" if i < 3 else ("🥈" if i < 6 else "🥉")
+                msg += f"{emoji} `{ticker:5}` Score: {score:.0f} | {strength}\n"
+                if theme != '-':
+                    msg += f"    └ {theme}\n"
+
+            msg += f"\n_Scanned {len(df)} stocks. Results saved._"
+            msg += "\n_Dashboard updated at zhuanleee.github.io/stock\\_scanner\\_bot/_"
             send_message(chat_id, msg)
         else:
-            send_message(chat_id, "No stocks match scan criteria")
+            send_message(chat_id, "No stocks scanned. Check Polygon API key.")
 
     except Exception as e:
+        logger.error(f"Scan error: {e}")
         send_message(chat_id, f"Scan error: {str(e)}")
 
 
@@ -1249,6 +1287,80 @@ def api_scan():
 
     except Exception as e:
         logger.error(f"Scan endpoint error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/scan/trigger', methods=['POST', 'GET'])
+def api_scan_trigger():
+    """
+    Trigger a quick scan and save results to CSV.
+    This populates data for the dashboard.
+
+    Query params:
+        tickers: Comma-separated list (default: top 50 theme stocks)
+        full: If 'true', run full universe scan (slower)
+    """
+    import asyncio
+
+    tickers_param = request.args.get('tickers', '')
+    full_scan = request.args.get('full', 'false').lower() == 'true'
+
+    try:
+        from src.core.async_scanner import AsyncScanner
+
+        # Determine tickers to scan
+        if tickers_param:
+            tickers = [t.strip().upper() for t in tickers_param.split(',') if t.strip()]
+        elif full_scan:
+            from src.data.universe_manager import get_universe_manager
+            um = get_universe_manager()
+            tickers = um.get_scan_universe()
+        else:
+            # Quick scan: top theme stocks + major indices
+            tickers = [
+                'NVDA', 'AMD', 'AVGO', 'TSM', 'MRVL', 'ARM',  # AI/Semis
+                'MSFT', 'GOOGL', 'META', 'AMZN', 'AAPL',      # Big Tech
+                'TSLA', 'RIVN', 'LCID',                        # EV
+                'VST', 'CEG', 'SMR', 'NNE', 'OKLO',            # Nuclear
+                'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',         # Software
+                'LLY', 'NVO', 'VKTX', 'AMGN',                  # Biotech/GLP-1
+                'LMT', 'RTX', 'NOC', 'GD',                     # Defense
+                'JPM', 'GS', 'V', 'MA',                        # Finance
+                'XOM', 'CVX', 'OXY',                           # Energy
+                'SPY', 'QQQ',                                  # Indices
+            ]
+
+        async def run_scan():
+            scanner = AsyncScanner(max_concurrent=25)
+            try:
+                results = await scanner.run_scan_async(tickers)
+                return results
+            finally:
+                await scanner.close()
+
+        # Run the async scan
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            results = loop.run_until_complete(run_scan())
+        finally:
+            loop.close()
+
+        if isinstance(results, tuple):
+            df = results[0]
+        else:
+            df = results
+
+        return jsonify({
+            'ok': True,
+            'scanned': len(df),
+            'tickers': tickers[:10],  # Show first 10
+            'message': f'Scan complete. {len(df)} stocks saved to CSV.',
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Scan trigger error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
 
 
