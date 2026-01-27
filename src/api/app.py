@@ -1341,6 +1341,31 @@ def api_ticker(ticker):
                 'timestamp': datetime.now().isoformat()
             })
 
+        # Last resort: try to get basic details from Polygon
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import get_ticker_details_sync, get_previous_close_sync
+                details = get_ticker_details_sync(ticker)
+                prev = get_previous_close_sync(ticker)
+
+                if details or prev:
+                    result = {
+                        'ok': True,
+                        'stock': {
+                            'ticker': ticker,
+                            'name': details.get('name', ticker) if details else ticker,
+                            'sector': details.get('sector', 'Unknown') if details else 'Unknown',
+                            'price': prev.get('close', 0) if prev else 0,
+                            'change_pct': 0,
+                            'volume': prev.get('volume', 0) if prev else 0,
+                        },
+                        'source': 'polygon_basic',
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    return jsonify(result)
+            except Exception as e:
+                logger.warning(f"Polygon basic fetch failed: {e}")
+
         return jsonify({'ok': False, 'error': 'No data available'})
 
     except Exception as e:

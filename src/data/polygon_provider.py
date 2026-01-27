@@ -1606,6 +1606,18 @@ def get_ticker_details_sync(ticker: str) -> Optional[Dict]:
     return _run_async(fetch())
 
 
+def get_previous_close_sync(ticker: str) -> Optional[Dict]:
+    """Synchronous wrapper to get previous close data."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_previous_close(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
 def get_news_sync(ticker: str = None, limit: int = 10) -> List[Dict]:
     """Synchronous wrapper to get news."""
     async def fetch():
