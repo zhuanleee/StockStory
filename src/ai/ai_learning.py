@@ -722,30 +722,195 @@ Return optimized weights in JSON (must sum to 1.0):
 
 
 # =============================================================================
-# 5. AI MARKET NARRATOR
+# 5. AI MARKET NARRATOR (Enhanced with Real-Time Data)
 # =============================================================================
 
-def generate_market_narrative(themes, sectors, top_stocks, news_highlights, market_data=None):
+def fetch_realtime_market_data():
     """
-    Generate an AI-powered market narrative synthesizing all information.
+    Fetch real-time market data for briefing.
+    Returns: dict with SPY, QQQ, VIX, and market status
+    """
+    import yfinance as yf
+    from concurrent.futures import ThreadPoolExecutor
+    import pandas as pd
+
+    market_data = {
+        'spy': None,
+        'qqq': None,
+        'vix': None,
+        'market_status': 'unknown',
+        'timestamp': datetime.now().isoformat()
+    }
+
+    def fetch_ticker(ticker):
+        try:
+            # Use Ticker object for more reliable data access
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period='2d')
+
+            if hist is not None and len(hist) >= 1:
+                # Get close prices - hist['Close'] is always a Series with Ticker.history()
+                close = hist['Close']
+                current = float(close.iloc[-1])
+                prev = float(close.iloc[-2]) if len(close) >= 2 else current
+                change_pct = ((current - prev) / prev) * 100 if prev else 0
+
+                return {
+                    'price': round(current, 2),
+                    'change_pct': round(change_pct, 2)
+                }
+        except Exception as e:
+            logger.debug(f"Ticker fetch error for {ticker}: {e}")
+        return None
+
+    try:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                'spy': executor.submit(fetch_ticker, 'SPY'),
+                'qqq': executor.submit(fetch_ticker, 'QQQ'),
+                'vix': executor.submit(fetch_ticker, '^VIX')
+            }
+
+            for key, future in futures.items():
+                try:
+                    result = future.result(timeout=8)
+                    if result:
+                        market_data[key] = result
+                except Exception as e:
+                    logger.debug(f"Future error for {key}: {e}")
+
+        # Determine market status based on time (EST)
+        from datetime import time as dt_time
+        now = datetime.now()
+        market_open = dt_time(9, 30)
+        market_close = dt_time(16, 0)
+        if now.weekday() < 5 and market_open <= now.time() <= market_close:
+            market_data['market_status'] = 'open'
+        else:
+            market_data['market_status'] = 'closed'
+
+    except Exception as e:
+        logger.debug(f"Error fetching market data: {e}")
+
+    return market_data
+
+
+def fetch_news_with_xai(tickers=['NVDA', 'AAPL', 'TSLA', 'SPY'], max_headlines=10):
+    """
+    Fetch news headlines and use X AI for fast sentiment interpretation.
+    Much faster than traditional sentiment analysis (~3s vs 25s).
+    """
+    import feedparser
+
+    headlines = []
+
+    # Quick RSS feed fetch for market news
+    feeds = [
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US',
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US',
+    ]
+
+    try:
+        for feed_url in feeds[:2]:  # Limit to 2 feeds for speed
+            try:
+                feed = feedparser.parse(feed_url)
+                for entry in feed.entries[:5]:
+                    headlines.append(entry.title)
+            except:
+                continue
+
+        if not headlines:
+            return {'sentiment': 'neutral', 'headlines': [], 'summary': 'No news available'}
+
+        # Use X AI for fast interpretation (prefer_xai=True for speed)
+        prompt = f"""Analyze these market headlines and return JSON:
+Headlines: {json.dumps(headlines[:max_headlines])}
+
+Return exactly: {{"sentiment":"bullish/bearish/neutral","key_news":"most important headline","market_impact":"one sentence"}}"""
+
+        response = call_ai(prompt, "Be a concise market analyst.", max_tokens=200, timeout=10, prefer_xai=True)
+
+        if response:
+            try:
+                result = json.loads(response)
+                result['headlines'] = headlines[:5]
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        return {
+            'sentiment': 'neutral',
+            'headlines': headlines[:5],
+            'summary': 'Headlines fetched but AI interpretation unavailable'
+        }
+
+    except Exception as e:
+        logger.debug(f"News fetch error: {e}")
+        return {'sentiment': 'neutral', 'headlines': [], 'summary': str(e)}
+
+
+def generate_market_narrative(themes, sectors, top_stocks, news_data, market_data=None):
+    """
+    Generate an AI-powered market narrative with real-time data.
     """
     system_prompt = "You are an expert market analyst. Be concise and actionable."
 
-    # Simplified prompt for faster response
-    prompt = f"""Market briefing from today's data:
+    # Build market context from real-time data
+    market_context = ""
+    if market_data:
+        spy = market_data.get('spy', {})
+        vix = market_data.get('vix', {})
+        if spy:
+            market_context += f"SPY: ${spy.get('price', 'N/A')} ({spy.get('change_pct', 0):+.2f}%) "
+        if vix:
+            market_context += f"VIX: {vix.get('price', 'N/A')} "
+        market_context += f"Market: {market_data.get('market_status', 'unknown')}"
 
-THEMES: {json.dumps([t.get('name', t) if isinstance(t, dict) else t for t in themes[:3]], indent=0) if themes else 'None'}
-TOP STOCKS: {json.dumps([s.get('ticker', s) if isinstance(s, dict) else s for s in top_stocks[:5]], indent=0) if top_stocks else 'None'}
-SECTORS: {json.dumps([s.get('sector', s) if isinstance(s, dict) else s for s in sectors[:3]], indent=0) if sectors else 'None'}
+    # Build news context
+    news_context = ""
+    if news_data and isinstance(news_data, dict):
+        news_context = f"News sentiment: {news_data.get('sentiment', 'neutral')}"
+        if news_data.get('key_news'):
+            news_context += f" | Key: {news_data.get('key_news', '')[:50]}"
+
+    prompt = f"""Real-time market briefing:
+
+MARKET: {market_context if market_context else 'Data unavailable'}
+NEWS: {news_context if news_context else 'No news'}
+THEMES: {json.dumps([t.get('name', t) if isinstance(t, dict) else t for t in (themes or [])[:3]])}
+TOP STOCKS: {json.dumps([s.get('ticker', s) if isinstance(s, dict) else s for s in (top_stocks or [])[:5]])}
 
 Return JSON:
-{{"headline":"5-7 words","market_mood":"bullish/bearish/neutral","main_narrative":"2 sentences max","key_opportunity":{{"ticker":"XXX","reason":"brief"}},"key_risk":"one sentence","tomorrow_watch":["item1","item2"]}}"""
+{{"headline":"5-7 words","market_mood":"bullish/bearish/neutral","main_narrative":"2 sentences with specific prices/levels","spy_view":"brief SPY outlook","key_opportunity":{{"ticker":"XXX","reason":"brief"}},"key_risk":"one sentence","tomorrow_watch":["item1","item2"]}}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=500)
+    response = call_deepseek(prompt, system_prompt, max_tokens=600)
 
     if response:
         try:
-            return json.loads(response)
+            # Strip markdown code block if present
+            text = response.strip()
+            if text.startswith('```json'):
+                text = text[7:]
+            elif text.startswith('```'):
+                text = text[3:]
+            if text.endswith('```'):
+                text = text[:-3]
+            text = text.strip()
+
+            result = json.loads(text)
+            # Add real-time data to response
+            if market_data:
+                result['realtime_data'] = {
+                    'spy': market_data.get('spy'),
+                    'qqq': market_data.get('qqq'),
+                    'vix': market_data.get('vix'),
+                    'market_status': market_data.get('market_status'),
+                    'timestamp': market_data.get('timestamp')
+                }
+            if news_data and isinstance(news_data, dict):
+                result['news_sentiment'] = news_data.get('sentiment')
+                result['top_headlines'] = news_data.get('headlines', [])[:3]
+            return result
         except json.JSONDecodeError:
             return {'raw_narrative': response}
 
@@ -754,71 +919,106 @@ Return JSON:
 
 def get_daily_briefing(fast_mode: bool = True):
     """
-    Generate and return today's AI market briefing.
+    Generate and return today's AI market briefing with real-time data.
 
     Args:
-        fast_mode: If True, skip slow operations (news sentiment) for faster response
+        fast_mode: If True, use fast parallel fetching (recommended)
     """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    import glob
+    import traceback
+
+    market_data = None
+    news_data = None
+    themes = []
+    top_stocks = []
+    errors = []
+
     try:
-        # Get themes from fast stories if available (uses cache, fast)
-        themes = []
-        try:
-            from fast_stories import run_fast_story_detection
-            detection = run_fast_story_detection(use_cache=True)
-            themes = detection.get('themes', [])
-        except Exception as e:
-            logger.debug(f"Fast stories not available: {e}")
+        # Parallel fetch: market data, news, themes, stocks
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            # Start all fetches in parallel
+            market_future = executor.submit(fetch_realtime_market_data)
+            news_future = executor.submit(fetch_news_with_xai)
 
-        # Get sector data - use cached if available
-        sectors = []
-        try:
-            # Try to load cached sector data first
-            sector_cache_file = Path('data/sector_cache.json')
-            if sector_cache_file.exists():
-                import json
-                with open(sector_cache_file) as f:
-                    cached = json.load(f)
-                    cache_age = (datetime.now() - datetime.fromisoformat(cached.get('timestamp', '2000-01-01'))).seconds
-                    if cache_age < 3600:  # Use cache if < 1 hour old
-                        sectors = cached.get('ranked', [])
+            # Themes from fast stories (uses cache)
+            def get_themes():
+                try:
+                    from fast_stories import run_fast_story_detection
+                    detection = run_fast_story_detection(use_cache=True)
+                    return detection.get('themes', [])
+                except Exception as e:
+                    logger.debug(f"Theme fetch error: {e}")
+                    return []
 
-            if not sectors and not fast_mode:
-                from sector_rotation import run_sector_rotation_analysis
-                rotation = run_sector_rotation_analysis()
-                sectors = rotation.get('ranked', [])
-        except Exception as e:
-            logger.debug(f"Sector rotation not available: {e}")
+            # Top stocks from scan file
+            def get_top_stocks():
+                scan_files = glob.glob('scan_*.csv')
+                if scan_files:
+                    import pandas as pd
+                    try:
+                        df = pd.read_csv(max(scan_files))
+                        return df.head(10).to_dict('records')
+                    except Exception as e:
+                        logger.debug(f"Scan file read error: {e}")
+                return []
 
-        # Get top stocks from latest scan (fast - just file read)
-        top_stocks = []
-        import glob
-        scan_files = glob.glob('scan_*.csv')
-        if scan_files:
-            import pandas as pd
-            latest = max(scan_files)
+            themes_future = executor.submit(get_themes)
+            stocks_future = executor.submit(get_top_stocks)
+
+            # Collect results (with timeouts)
             try:
-                df = pd.read_csv(latest)
-                top_stocks = df.head(10).to_dict('records')
-            except Exception:
-                pass
-
-        # Skip news in fast mode - it's the slowest part (25+ seconds)
-        news = []
-        if not fast_mode:
-            try:
-                from news_analyzer import scan_news_sentiment
-                results = scan_news_sentiment(['NVDA', 'AAPL', 'TSLA'][:2])  # Reduced to 2 tickers
-                news = [{'ticker': r['ticker'], 'sentiment': r['overall_sentiment']}
-                       for r in results if r.get('overall_sentiment')]
+                market_data = market_future.result(timeout=10)
+            except FuturesTimeout:
+                errors.append("market_data_timeout")
+                logger.warning("Market data fetch timed out")
             except Exception as e:
-                logger.debug(f"News sentiment not available: {e}")
+                errors.append(f"market_data_error: {e}")
 
-        narrative = generate_market_narrative(themes, sectors, top_stocks, news)
-        return narrative
+            try:
+                news_data = news_future.result(timeout=15)
+            except FuturesTimeout:
+                errors.append("news_timeout")
+                logger.warning("News fetch timed out")
+            except Exception as e:
+                errors.append(f"news_error: {e}")
+
+            try:
+                themes = themes_future.result(timeout=8)
+            except FuturesTimeout:
+                errors.append("themes_timeout")
+            except Exception as e:
+                errors.append(f"themes_error: {e}")
+
+            try:
+                top_stocks = stocks_future.result(timeout=5)
+            except FuturesTimeout:
+                errors.append("stocks_timeout")
+            except Exception as e:
+                errors.append(f"stocks_error: {e}")
+
+        # Generate narrative with available data
+        narrative = generate_market_narrative(themes, [], top_stocks, news_data, market_data)
+
+        if narrative:
+            # Add any fetch errors as warnings
+            if errors:
+                narrative['_fetch_warnings'] = errors
+            return narrative
+        else:
+            return {
+                'error': 'AI narrative generation failed',
+                'market_data': market_data,
+                'news_data': news_data,
+                '_fetch_warnings': errors
+            }
 
     except Exception as e:
-        logger.error(f"Briefing generation error: {e}")
-        return {'error': str(e)}
+        logger.error(f"Briefing generation error: {e}\n{traceback.format_exc()}")
+        return {
+            'error': f'Briefing generation failed: {str(e)}',
+            '_fetch_warnings': errors
+        }
 
 
 # =============================================================================
