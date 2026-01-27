@@ -88,6 +88,8 @@ def get_earnings_info(ticker):
     """
     Get comprehensive earnings info for a ticker.
 
+    Uses Polygon API as primary source, yfinance as fallback.
+
     Returns dict with:
     - next_date: Next earnings date
     - eps_estimate: Expected EPS
@@ -95,6 +97,8 @@ def get_earnings_info(ticker):
     - historical_surprise: Average surprise %
     - beat_rate: % of times company beat estimates
     """
+    import os
+
     result = {
         'ticker': ticker,
         'next_date': None,
@@ -106,6 +110,38 @@ def get_earnings_info(ticker):
         'high_impact': ticker in HIGH_IMPACT_TICKERS,
     }
 
+    # Try Polygon first for financial data
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            from src.data.polygon_provider import get_financials_sync
+
+            financials = get_financials_sync(ticker, timeframe='quarterly', limit=8)
+
+            if financials:
+                # Get latest quarter EPS and revenue
+                latest = financials[0]
+                result['eps_actual'] = latest.get('eps_diluted')
+                result['revenue_actual'] = latest.get('revenue')
+                result['net_income'] = latest.get('net_income')
+
+                # Calculate beat rate from historical data
+                if len(financials) >= 4:
+                    # We have historical data but no estimates from Polygon
+                    # Track EPS growth instead
+                    eps_values = [f.get('eps_diluted') for f in financials if f.get('eps_diluted')]
+                    if len(eps_values) >= 2:
+                        current = eps_values[0]
+                        previous = eps_values[1]
+                        if previous and previous != 0:
+                            yoy_growth = (current - previous) / abs(previous) * 100
+                            result['eps_growth'] = round(yoy_growth, 1)
+
+                logger.debug(f"Got Polygon financials for {ticker}")
+        except Exception as e:
+            logger.debug(f"Polygon financials failed for {ticker}: {e}")
+
+    # Fallback to yfinance for earnings dates and estimates
     try:
         stock = yf.Ticker(ticker)
 
@@ -130,64 +166,62 @@ def get_earnings_info(ticker):
                     if result['next_date']:
                         result['days_until'] = (result['next_date'] - datetime.now().date()).days
 
-        # Get earnings estimates
-        try:
-            earnings_est = stock.earnings_estimate
-            if earnings_est is not None and not earnings_est.empty:
-                if 'avg' in earnings_est.index:
-                    # Current quarter estimate
-                    if '0q' in earnings_est.columns:
-                        result['eps_estimate'] = float(earnings_est.loc['avg', '0q'])
-                    elif len(earnings_est.columns) > 0:
-                        result['eps_estimate'] = float(earnings_est.loc['avg'].iloc[0])
-        except (KeyError, IndexError, TypeError, ValueError) as e:
-            logger.debug(f"Could not get earnings estimate for {ticker}: {e}")
-            pass
+        # Get earnings estimates (yfinance still better for estimates)
+        if result.get('eps_estimate') is None:
+            try:
+                earnings_est = stock.earnings_estimate
+                if earnings_est is not None and not earnings_est.empty:
+                    if 'avg' in earnings_est.index:
+                        if '0q' in earnings_est.columns:
+                            result['eps_estimate'] = float(earnings_est.loc['avg', '0q'])
+                        elif len(earnings_est.columns) > 0:
+                            result['eps_estimate'] = float(earnings_est.loc['avg'].iloc[0])
+            except (KeyError, IndexError, TypeError, ValueError) as e:
+                logger.debug(f"Could not get earnings estimate for {ticker}: {e}")
 
         # Get revenue estimates
-        try:
-            rev_est = stock.revenue_estimate
-            if rev_est is not None and not rev_est.empty:
-                if 'avg' in rev_est.index:
-                    if '0q' in rev_est.columns:
-                        result['revenue_estimate'] = float(rev_est.loc['avg', '0q'])
-                    elif len(rev_est.columns) > 0:
-                        result['revenue_estimate'] = float(rev_est.loc['avg'].iloc[0])
-        except (KeyError, IndexError, TypeError, ValueError) as e:
-            logger.debug(f"Could not get revenue estimate for {ticker}: {e}")
-            pass
+        if result.get('revenue_estimate') is None:
+            try:
+                rev_est = stock.revenue_estimate
+                if rev_est is not None and not rev_est.empty:
+                    if 'avg' in rev_est.index:
+                        if '0q' in rev_est.columns:
+                            result['revenue_estimate'] = float(rev_est.loc['avg', '0q'])
+                        elif len(rev_est.columns) > 0:
+                            result['revenue_estimate'] = float(rev_est.loc['avg'].iloc[0])
+            except (KeyError, IndexError, TypeError, ValueError) as e:
+                logger.debug(f"Could not get revenue estimate for {ticker}: {e}")
 
         # Get historical earnings for beat/miss analysis
-        try:
-            earnings_hist = stock.earnings_history
-            if earnings_hist is not None and len(earnings_hist) > 0:
-                surprises = []
-                beats = 0
-                total = 0
+        if result.get('beat_rate') is None:
+            try:
+                earnings_hist = stock.earnings_history
+                if earnings_hist is not None and len(earnings_hist) > 0:
+                    surprises = []
+                    beats = 0
+                    total = 0
 
-                for _, row in earnings_hist.iterrows():
-                    if 'epsActual' in row and 'epsEstimate' in row:
-                        actual = row.get('epsActual')
-                        estimate = row.get('epsEstimate')
+                    for _, row in earnings_hist.iterrows():
+                        if 'epsActual' in row and 'epsEstimate' in row:
+                            actual = row.get('epsActual')
+                            estimate = row.get('epsEstimate')
 
-                        if actual is not None and estimate is not None and estimate != 0:
-                            surprise = (actual - estimate) / abs(estimate) * 100
-                            surprises.append(surprise)
-                            total += 1
-                            if actual > estimate:
-                                beats += 1
+                            if actual is not None and estimate is not None and estimate != 0:
+                                surprise = (actual - estimate) / abs(estimate) * 100
+                                surprises.append(surprise)
+                                total += 1
+                                if actual > estimate:
+                                    beats += 1
 
-                if surprises:
-                    result['historical_surprise'] = round(sum(surprises) / len(surprises), 1)
-                if total > 0:
-                    result['beat_rate'] = round(beats / total * 100, 0)
-        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
-            logger.debug(f"Could not get earnings history for {ticker}: {e}")
-            pass
+                    if surprises:
+                        result['historical_surprise'] = round(sum(surprises) / len(surprises), 1)
+                    if total > 0:
+                        result['beat_rate'] = round(beats / total * 100, 0)
+            except (KeyError, IndexError, TypeError, ValueError, AttributeError) as e:
+                logger.debug(f"Could not get earnings history for {ticker}: {e}")
 
     except Exception as e:
         logger.debug(f"Failed to get earnings info for {ticker}: {e}")
-        pass
 
     return result
 

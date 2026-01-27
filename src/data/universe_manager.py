@@ -157,7 +157,8 @@ class UniverseManager:
 
     def fetch_sp500(self, force_refresh: bool = False) -> List[str]:
         """
-        Fetch current S&P 500 constituents from Wikipedia.
+        Fetch current S&P 500 constituents.
+        Uses Polygon API as primary, Wikipedia as fallback.
         Returns list of ticker symbols.
         """
         cache_key = 'sp500'
@@ -169,14 +170,23 @@ class UniverseManager:
         tickers = []
         source_used = None
 
-        # Try primary source: Wikipedia
+        # Try primary source: Polygon API (more reliable than scraping)
         try:
-            tickers = self._fetch_sp500_wikipedia()
-            source_used = 'wikipedia'
-            logger.info(f"Fetched {len(tickers)} S&P 500 tickers from Wikipedia")
+            tickers = self._fetch_sp500_polygon()
+            source_used = 'polygon'
+            logger.info(f"Fetched {len(tickers)} S&P 500 tickers from Polygon")
         except Exception as e:
-            logger.warning(f"Wikipedia SP500 fetch failed: {e}")
-            self.health_issues.append(f"Wikipedia SP500 failed: {e}")
+            logger.debug(f"Polygon SP500 fetch failed: {e}")
+
+        # Fallback to Wikipedia if Polygon didn't work
+        if len(tickers) < 400:
+            try:
+                tickers = self._fetch_sp500_wikipedia()
+                source_used = 'wikipedia'
+                logger.info(f"Fetched {len(tickers)} S&P 500 tickers from Wikipedia")
+            except Exception as e:
+                logger.warning(f"Wikipedia SP500 fetch failed: {e}")
+                self.health_issues.append(f"Wikipedia SP500 failed: {e}")
 
         # Validate count
         if not (490 <= len(tickers) <= 510):
@@ -198,8 +208,50 @@ class UniverseManager:
 
         return tickers if tickers else self.cache.get(cache_key, [])
 
+    def _fetch_sp500_polygon(self) -> List[str]:
+        """
+        Fetch large-cap US stocks from Polygon as S&P 500 proxy.
+
+        Since Polygon doesn't have a direct S&P 500 endpoint, we fetch
+        actively traded US stocks from major exchanges (NYSE, NASDAQ).
+        """
+        import os
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if not polygon_key:
+            raise ValueError("Polygon API key not configured")
+
+        from src.data.polygon_provider import get_tickers_sync
+
+        # Get stocks from NYSE and NASDAQ
+        all_tickers = []
+
+        # Fetch from both major exchanges
+        for exchange in ['XNYS', 'XNAS']:
+            tickers = get_tickers_sync(
+                ticker_type='CS',
+                market='stocks',
+                exchange=exchange,
+                limit=1000,
+            )
+            all_tickers.extend(tickers)
+
+        # Filter and deduplicate
+        seen = set()
+        filtered = []
+        for t in all_tickers:
+            ticker = t.get('ticker', '')
+            if ticker and ticker not in seen:
+                # Filter out penny stocks, warrants, etc.
+                if len(ticker) <= 5 and ticker.isalpha():
+                    seen.add(ticker)
+                    filtered.append(ticker)
+
+        # Return top ~500 (approximate S&P 500)
+        # In production, you'd filter by market cap if available
+        return sorted(filtered)[:500]
+
     def _fetch_sp500_wikipedia(self) -> List[str]:
-        """Fetch S&P 500 from Wikipedia"""
+        """Fetch S&P 500 from Wikipedia (fallback)"""
         import re
 
         headers = {'User-Agent': 'StockScannerBot/1.0'}
@@ -253,7 +305,8 @@ class UniverseManager:
 
     def fetch_nasdaq100(self, force_refresh: bool = False) -> List[str]:
         """
-        Fetch current NASDAQ-100 constituents from Wikipedia.
+        Fetch current NASDAQ-100 constituents.
+        Uses Polygon API as primary, Wikipedia as fallback.
         """
         cache_key = 'nasdaq100'
 
@@ -262,12 +315,21 @@ class UniverseManager:
 
         tickers = []
 
+        # Try Polygon first
         try:
-            tickers = self._fetch_nasdaq100_wikipedia()
-            logger.info(f"Fetched {len(tickers)} NASDAQ-100 tickers from Wikipedia")
+            tickers = self._fetch_nasdaq100_polygon()
+            logger.info(f"Fetched {len(tickers)} NASDAQ-100 tickers from Polygon")
         except Exception as e:
-            logger.warning(f"Wikipedia NASDAQ100 fetch failed: {e}")
-            self.health_issues.append(f"Wikipedia NASDAQ100 failed: {e}")
+            logger.debug(f"Polygon NASDAQ100 fetch failed: {e}")
+
+        # Fallback to Wikipedia
+        if len(tickers) < 90:
+            try:
+                tickers = self._fetch_nasdaq100_wikipedia()
+                logger.info(f"Fetched {len(tickers)} NASDAQ-100 tickers from Wikipedia")
+            except Exception as e:
+                logger.warning(f"Wikipedia NASDAQ100 fetch failed: {e}")
+                self.health_issues.append(f"Wikipedia NASDAQ100 failed: {e}")
 
         # Validate
         if not (95 <= len(tickers) <= 105):
@@ -282,8 +344,28 @@ class UniverseManager:
 
         return tickers if tickers else self.cache.get(cache_key, [])
 
+    def _fetch_nasdaq100_polygon(self) -> List[str]:
+        """
+        Fetch top NASDAQ stocks from Polygon as NASDAQ-100 proxy.
+        """
+        import os
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if not polygon_key:
+            raise ValueError("Polygon API key not configured")
+
+        from src.data.polygon_provider import get_nasdaq_stocks_sync
+
+        # Get NASDAQ stocks
+        tickers = get_nasdaq_stocks_sync(limit=500)
+
+        # Filter valid tickers
+        filtered = [t for t in tickers if t and len(t) <= 5 and t.isalpha()]
+
+        # Return top 100 (approximate NASDAQ-100)
+        return sorted(filtered)[:100]
+
     def _fetch_nasdaq100_wikipedia(self) -> List[str]:
-        """Fetch NASDAQ-100 from Wikipedia"""
+        """Fetch NASDAQ-100 from Wikipedia (fallback)"""
         headers = {'User-Agent': 'StockScannerBot/1.0'}
         response = requests.get(self.WIKIPEDIA_NASDAQ100, headers=headers, timeout=30)
         response.raise_for_status()

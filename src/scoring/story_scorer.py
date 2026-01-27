@@ -606,14 +606,17 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
     """
     Detect upcoming catalysts for a ticker.
 
+    Uses Polygon API for dividends/splits, yfinance for earnings.
+
     Returns:
         - score: 0-100 catalyst proximity score
         - catalysts: list of detected catalysts
         - next_catalyst: nearest upcoming catalyst
     """
+    import os
     catalysts = []
 
-    # Check for earnings date
+    # Check for earnings date (yfinance)
     try:
         stock = yf.Ticker(ticker)
         cal = stock.calendar
@@ -633,6 +636,56 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
                             })
     except Exception as e:
         logger.debug(f"Could not get earnings for {ticker}: {e}")
+
+    # Check for upcoming dividends (Polygon)
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            from src.data.polygon_provider import get_dividends_sync, get_stock_splits_sync
+
+            # Check dividends
+            dividends = get_dividends_sync(ticker, limit=5)
+            for div in dividends:
+                ex_date = div.get('ex_dividend_date')
+                if ex_date:
+                    try:
+                        ex_date_obj = datetime.strptime(ex_date, '%Y-%m-%d').date()
+                        days_away = (ex_date_obj - datetime.now().date()).days
+                        if 0 <= days_away <= 14:
+                            catalysts.append({
+                                'type': 'dividend',
+                                'date': ex_date,
+                                'days_away': days_away,
+                                'impact': 'low',
+                                'amount': div.get('cash_amount'),
+                                'pay_date': div.get('pay_date'),
+                            })
+                            break  # Only add nearest dividend
+                    except ValueError:
+                        pass
+
+            # Check stock splits
+            splits = get_stock_splits_sync(ticker, limit=5)
+            for split in splits:
+                exec_date = split.get('execution_date')
+                if exec_date:
+                    try:
+                        exec_date_obj = datetime.strptime(exec_date, '%Y-%m-%d').date()
+                        days_away = (exec_date_obj - datetime.now().date()).days
+                        if -7 <= days_away <= 30:  # Include recent splits
+                            catalysts.append({
+                                'type': 'split',
+                                'date': exec_date,
+                                'days_away': days_away,
+                                'impact': 'medium',
+                                'ratio': split.get('ratio_str'),
+                                'is_forward': split.get('is_forward_split'),
+                            })
+                            break  # Only add nearest split
+                    except ValueError:
+                        pass
+        except Exception as e:
+            logger.debug(f"Polygon catalyst check failed for {ticker}: {e}")
 
     # Check news for catalyst keywords
     if news_data:

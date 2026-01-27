@@ -771,6 +771,719 @@ class PolygonProvider:
             'has_unusual_activity': pc_ratio > 1.5 or pc_ratio < 0.5,
         }
 
+    # =========================================================================
+    # FINANCIALS & EARNINGS DATA
+    # =========================================================================
+
+    async def get_financials(
+        self,
+        ticker: str,
+        timeframe: str = 'quarterly',
+        limit: int = 10,
+    ) -> List[Dict]:
+        """
+        Get company financial statements.
+
+        Args:
+            ticker: Stock symbol
+            timeframe: 'annual' or 'quarterly'
+            limit: Number of periods to return
+
+        Returns:
+            List of financial statement data
+        """
+        endpoint = f"/vX/reference/financials"
+        params = {
+            'ticker': ticker.upper(),
+            'timeframe': timeframe,
+            'limit': limit,
+            'sort': 'filing_date',
+            'order': 'desc',
+        }
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return []
+
+        financials = []
+        for item in data['results']:
+            fin = item.get('financials', {})
+            income = fin.get('income_statement', {})
+            balance = fin.get('balance_sheet', {})
+            cash_flow = fin.get('cash_flow_statement', {})
+
+            financials.append({
+                'ticker': ticker.upper(),
+                'period': item.get('fiscal_period'),
+                'fiscal_year': item.get('fiscal_year'),
+                'filing_date': item.get('filing_date'),
+                'timeframe': timeframe,
+                # Income Statement
+                'revenue': income.get('revenues', {}).get('value'),
+                'gross_profit': income.get('gross_profit', {}).get('value'),
+                'operating_income': income.get('operating_income_loss', {}).get('value'),
+                'net_income': income.get('net_income_loss', {}).get('value'),
+                'eps_basic': income.get('basic_earnings_per_share', {}).get('value'),
+                'eps_diluted': income.get('diluted_earnings_per_share', {}).get('value'),
+                # Balance Sheet
+                'total_assets': balance.get('assets', {}).get('value'),
+                'total_liabilities': balance.get('liabilities', {}).get('value'),
+                'total_equity': balance.get('equity', {}).get('value'),
+                'cash': balance.get('cash', {}).get('value'),
+                # Cash Flow
+                'operating_cash_flow': cash_flow.get('net_cash_flow_from_operating_activities', {}).get('value'),
+                'investing_cash_flow': cash_flow.get('net_cash_flow_from_investing_activities', {}).get('value'),
+                'financing_cash_flow': cash_flow.get('net_cash_flow_from_financing_activities', {}).get('value'),
+            })
+
+        return financials
+
+    async def get_earnings_history(self, ticker: str, limit: int = 8) -> List[Dict]:
+        """
+        Get earnings history with EPS surprises.
+
+        Args:
+            ticker: Stock symbol
+            limit: Number of quarters
+
+        Returns:
+            List of earnings with actual vs estimate
+        """
+        financials = await self.get_financials(ticker, 'quarterly', limit)
+
+        earnings = []
+        for fin in financials:
+            if fin.get('eps_diluted') is not None:
+                earnings.append({
+                    'ticker': ticker.upper(),
+                    'period': fin.get('period'),
+                    'fiscal_year': fin.get('fiscal_year'),
+                    'filing_date': fin.get('filing_date'),
+                    'eps_actual': fin.get('eps_diluted'),
+                    'revenue': fin.get('revenue'),
+                    'net_income': fin.get('net_income'),
+                })
+
+        return earnings
+
+    # =========================================================================
+    # DIVIDENDS DATA
+    # =========================================================================
+
+    async def get_dividends(
+        self,
+        ticker: str = None,
+        ex_dividend_date_gte: str = None,
+        ex_dividend_date_lte: str = None,
+        limit: int = 50,
+    ) -> List[Dict]:
+        """
+        Get dividend data.
+
+        Args:
+            ticker: Stock symbol (optional, gets all if not specified)
+            ex_dividend_date_gte: Min ex-dividend date (YYYY-MM-DD)
+            ex_dividend_date_lte: Max ex-dividend date (YYYY-MM-DD)
+            limit: Max results
+
+        Returns:
+            List of dividend records
+        """
+        endpoint = "/v3/reference/dividends"
+        params = {'limit': limit, 'order': 'desc', 'sort': 'ex_dividend_date'}
+
+        if ticker:
+            params['ticker'] = ticker.upper()
+        if ex_dividend_date_gte:
+            params['ex_dividend_date.gte'] = ex_dividend_date_gte
+        if ex_dividend_date_lte:
+            params['ex_dividend_date.lte'] = ex_dividend_date_lte
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return []
+
+        dividends = []
+        for d in data['results']:
+            dividends.append({
+                'ticker': d.get('ticker'),
+                'cash_amount': d.get('cash_amount'),
+                'currency': d.get('currency', 'USD'),
+                'declaration_date': d.get('declaration_date'),
+                'ex_dividend_date': d.get('ex_dividend_date'),
+                'pay_date': d.get('pay_date'),
+                'record_date': d.get('record_date'),
+                'frequency': d.get('frequency'),  # 1=annual, 2=semi, 4=quarterly, 12=monthly
+                'dividend_type': d.get('dividend_type'),  # CD=cash, SC=special cash
+            })
+
+        return dividends
+
+    async def get_upcoming_dividends(self, days_ahead: int = 14) -> List[Dict]:
+        """
+        Get stocks with upcoming ex-dividend dates.
+
+        Args:
+            days_ahead: Number of days to look ahead
+
+        Returns:
+            List of upcoming dividends
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        future = (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+
+        return await self.get_dividends(
+            ex_dividend_date_gte=today,
+            ex_dividend_date_lte=future,
+            limit=100,
+        )
+
+    async def get_dividend_yield(self, ticker: str, current_price: float = None) -> Dict:
+        """
+        Calculate dividend yield for a ticker.
+
+        Args:
+            ticker: Stock symbol
+            current_price: Current stock price (fetched if not provided)
+
+        Returns:
+            Dividend yield data
+        """
+        # Get recent dividends
+        dividends = await self.get_dividends(ticker, limit=12)
+
+        if not dividends:
+            return {
+                'ticker': ticker.upper(),
+                'annual_dividend': 0,
+                'yield_percent': 0,
+                'frequency': 'none',
+                'next_ex_date': None,
+            }
+
+        # Get current price if not provided
+        if current_price is None:
+            snapshot = await self.get_snapshot(ticker)
+            current_price = snapshot.get('price', 0) if snapshot else 0
+
+        # Calculate annual dividend (sum of last 4 quarters or annualize)
+        annual_dividend = 0
+        frequency = dividends[0].get('frequency', 4)
+
+        if frequency == 4:  # Quarterly
+            annual_dividend = sum(d.get('cash_amount', 0) for d in dividends[:4])
+        elif frequency == 12:  # Monthly
+            annual_dividend = sum(d.get('cash_amount', 0) for d in dividends[:12])
+        elif frequency == 2:  # Semi-annual
+            annual_dividend = sum(d.get('cash_amount', 0) for d in dividends[:2])
+        elif frequency == 1:  # Annual
+            annual_dividend = dividends[0].get('cash_amount', 0) if dividends else 0
+
+        yield_percent = (annual_dividend / current_price * 100) if current_price > 0 else 0
+
+        return {
+            'ticker': ticker.upper(),
+            'annual_dividend': round(annual_dividend, 4),
+            'yield_percent': round(yield_percent, 2),
+            'frequency': {1: 'annual', 2: 'semi-annual', 4: 'quarterly', 12: 'monthly'}.get(frequency, 'unknown'),
+            'last_amount': dividends[0].get('cash_amount') if dividends else None,
+            'last_ex_date': dividends[0].get('ex_dividend_date') if dividends else None,
+        }
+
+    # =========================================================================
+    # STOCK SPLITS DATA
+    # =========================================================================
+
+    async def get_stock_splits(
+        self,
+        ticker: str = None,
+        execution_date_gte: str = None,
+        execution_date_lte: str = None,
+        limit: int = 50,
+    ) -> List[Dict]:
+        """
+        Get stock split data.
+
+        Args:
+            ticker: Stock symbol (optional)
+            execution_date_gte: Min execution date (YYYY-MM-DD)
+            execution_date_lte: Max execution date (YYYY-MM-DD)
+            limit: Max results
+
+        Returns:
+            List of stock split records
+        """
+        endpoint = "/v3/reference/splits"
+        params = {'limit': limit, 'order': 'desc', 'sort': 'execution_date'}
+
+        if ticker:
+            params['ticker'] = ticker.upper()
+        if execution_date_gte:
+            params['execution_date.gte'] = execution_date_gte
+        if execution_date_lte:
+            params['execution_date.lte'] = execution_date_lte
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return []
+
+        splits = []
+        for s in data['results']:
+            split_from = s.get('split_from', 1)
+            split_to = s.get('split_to', 1)
+            ratio = split_to / split_from if split_from > 0 else 1
+
+            splits.append({
+                'ticker': s.get('ticker'),
+                'execution_date': s.get('execution_date'),
+                'split_from': split_from,
+                'split_to': split_to,
+                'ratio': ratio,
+                'ratio_str': f"{split_to}:{split_from}",
+                'is_forward_split': ratio > 1,  # Forward split increases shares
+                'is_reverse_split': ratio < 1,  # Reverse split decreases shares
+            })
+
+        return splits
+
+    async def get_upcoming_splits(self, days_ahead: int = 30) -> List[Dict]:
+        """
+        Get stocks with upcoming splits.
+
+        Args:
+            days_ahead: Number of days to look ahead
+
+        Returns:
+            List of upcoming splits
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        future = (datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+
+        return await self.get_stock_splits(
+            execution_date_gte=today,
+            execution_date_lte=future,
+            limit=100,
+        )
+
+    async def get_recent_splits(self, days_back: int = 30) -> List[Dict]:
+        """
+        Get recent stock splits.
+
+        Args:
+            days_back: Number of days to look back
+
+        Returns:
+            List of recent splits
+        """
+        today = datetime.now().strftime('%Y-%m-%d')
+        past = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+
+        return await self.get_stock_splits(
+            execution_date_gte=past,
+            execution_date_lte=today,
+            limit=100,
+        )
+
+    # =========================================================================
+    # TECHNICAL INDICATORS
+    # =========================================================================
+
+    async def get_sma(
+        self,
+        ticker: str,
+        window: int = 50,
+        timespan: str = 'day',
+        limit: int = 100,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get Simple Moving Average.
+
+        Args:
+            ticker: Stock symbol
+            window: SMA window period
+            timespan: 'day', 'week', 'month'
+            limit: Number of data points
+
+        Returns:
+            DataFrame with SMA values
+        """
+        endpoint = f"/v1/indicators/sma/{ticker.upper()}"
+        params = {
+            'timespan': timespan,
+            'window': window,
+            'limit': limit,
+            'order': 'desc',
+        }
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data or 'values' not in data['results']:
+            return None
+
+        values = data['results']['values']
+        if not values:
+            return None
+
+        df = pd.DataFrame(values)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df = df.set_index('timestamp')
+        df = df.rename(columns={'value': f'SMA_{window}'})
+
+        return df.sort_index()
+
+    async def get_ema(
+        self,
+        ticker: str,
+        window: int = 20,
+        timespan: str = 'day',
+        limit: int = 100,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get Exponential Moving Average.
+
+        Args:
+            ticker: Stock symbol
+            window: EMA window period
+            timespan: 'day', 'week', 'month'
+            limit: Number of data points
+
+        Returns:
+            DataFrame with EMA values
+        """
+        endpoint = f"/v1/indicators/ema/{ticker.upper()}"
+        params = {
+            'timespan': timespan,
+            'window': window,
+            'limit': limit,
+            'order': 'desc',
+        }
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data or 'values' not in data['results']:
+            return None
+
+        values = data['results']['values']
+        if not values:
+            return None
+
+        df = pd.DataFrame(values)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df = df.set_index('timestamp')
+        df = df.rename(columns={'value': f'EMA_{window}'})
+
+        return df.sort_index()
+
+    async def get_rsi(
+        self,
+        ticker: str,
+        window: int = 14,
+        timespan: str = 'day',
+        limit: int = 100,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get Relative Strength Index.
+
+        Args:
+            ticker: Stock symbol
+            window: RSI window period (default 14)
+            timespan: 'day', 'week', 'month'
+            limit: Number of data points
+
+        Returns:
+            DataFrame with RSI values
+        """
+        endpoint = f"/v1/indicators/rsi/{ticker.upper()}"
+        params = {
+            'timespan': timespan,
+            'window': window,
+            'limit': limit,
+            'order': 'desc',
+        }
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data or 'values' not in data['results']:
+            return None
+
+        values = data['results']['values']
+        if not values:
+            return None
+
+        df = pd.DataFrame(values)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df = df.set_index('timestamp')
+        df = df.rename(columns={'value': 'RSI'})
+
+        return df.sort_index()
+
+    async def get_macd(
+        self,
+        ticker: str,
+        short_window: int = 12,
+        long_window: int = 26,
+        signal_window: int = 9,
+        timespan: str = 'day',
+        limit: int = 100,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get MACD (Moving Average Convergence Divergence).
+
+        Args:
+            ticker: Stock symbol
+            short_window: Short EMA period (default 12)
+            long_window: Long EMA period (default 26)
+            signal_window: Signal line period (default 9)
+            timespan: 'day', 'week', 'month'
+            limit: Number of data points
+
+        Returns:
+            DataFrame with MACD, signal, and histogram
+        """
+        endpoint = f"/v1/indicators/macd/{ticker.upper()}"
+        params = {
+            'timespan': timespan,
+            'short_window': short_window,
+            'long_window': long_window,
+            'signal_window': signal_window,
+            'limit': limit,
+            'order': 'desc',
+        }
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data or 'values' not in data['results']:
+            return None
+
+        values = data['results']['values']
+        if not values:
+            return None
+
+        df = pd.DataFrame(values)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df = df.set_index('timestamp')
+        df = df.rename(columns={
+            'value': 'MACD',
+            'signal': 'MACD_Signal',
+            'histogram': 'MACD_Histogram',
+        })
+
+        return df.sort_index()
+
+    async def get_technical_summary(self, ticker: str) -> Dict:
+        """
+        Get a technical analysis summary for a ticker.
+
+        Returns:
+            Dict with key technical indicators and signals
+        """
+        # Fetch indicators concurrently
+        sma_20, sma_50, sma_200, rsi, macd = await asyncio.gather(
+            self.get_sma(ticker, window=20, limit=1),
+            self.get_sma(ticker, window=50, limit=1),
+            self.get_sma(ticker, window=200, limit=1),
+            self.get_rsi(ticker, limit=1),
+            self.get_macd(ticker, limit=1),
+            return_exceptions=True,
+        )
+
+        # Get current price
+        snapshot = await self.get_snapshot(ticker)
+        current_price = snapshot.get('price', 0) if snapshot else 0
+
+        # Extract latest values
+        sma_20_val = sma_20.iloc[-1]['SMA_20'] if sma_20 is not None and not isinstance(sma_20, Exception) and len(sma_20) > 0 else None
+        sma_50_val = sma_50.iloc[-1]['SMA_50'] if sma_50 is not None and not isinstance(sma_50, Exception) and len(sma_50) > 0 else None
+        sma_200_val = sma_200.iloc[-1]['SMA_200'] if sma_200 is not None and not isinstance(sma_200, Exception) and len(sma_200) > 0 else None
+        rsi_val = rsi.iloc[-1]['RSI'] if rsi is not None and not isinstance(rsi, Exception) and len(rsi) > 0 else None
+        macd_val = macd.iloc[-1]['MACD'] if macd is not None and not isinstance(macd, Exception) and len(macd) > 0 else None
+        macd_signal = macd.iloc[-1]['MACD_Signal'] if macd is not None and not isinstance(macd, Exception) and len(macd) > 0 else None
+
+        # Generate signals
+        signals = []
+
+        if current_price and sma_20_val:
+            if current_price > sma_20_val:
+                signals.append('ABOVE_SMA20')
+            else:
+                signals.append('BELOW_SMA20')
+
+        if current_price and sma_50_val:
+            if current_price > sma_50_val:
+                signals.append('ABOVE_SMA50')
+            else:
+                signals.append('BELOW_SMA50')
+
+        if current_price and sma_200_val:
+            if current_price > sma_200_val:
+                signals.append('ABOVE_SMA200')
+            else:
+                signals.append('BELOW_SMA200')
+
+        if rsi_val:
+            if rsi_val > 70:
+                signals.append('RSI_OVERBOUGHT')
+            elif rsi_val < 30:
+                signals.append('RSI_OVERSOLD')
+
+        if macd_val is not None and macd_signal is not None:
+            if macd_val > macd_signal:
+                signals.append('MACD_BULLISH')
+            else:
+                signals.append('MACD_BEARISH')
+
+        # Determine trend
+        trend = 'neutral'
+        if sma_20_val and sma_50_val and sma_200_val:
+            if sma_20_val > sma_50_val > sma_200_val:
+                trend = 'strong_uptrend'
+            elif sma_20_val > sma_50_val:
+                trend = 'uptrend'
+            elif sma_20_val < sma_50_val < sma_200_val:
+                trend = 'strong_downtrend'
+            elif sma_20_val < sma_50_val:
+                trend = 'downtrend'
+
+        return {
+            'ticker': ticker.upper(),
+            'price': current_price,
+            'sma_20': round(sma_20_val, 2) if sma_20_val else None,
+            'sma_50': round(sma_50_val, 2) if sma_50_val else None,
+            'sma_200': round(sma_200_val, 2) if sma_200_val else None,
+            'rsi': round(rsi_val, 1) if rsi_val else None,
+            'macd': round(macd_val, 4) if macd_val else None,
+            'macd_signal': round(macd_signal, 4) if macd_signal else None,
+            'trend': trend,
+            'signals': signals,
+        }
+
+    # =========================================================================
+    # TICKER UNIVERSE & REFERENCE DATA
+    # =========================================================================
+
+    async def get_tickers(
+        self,
+        ticker_type: str = 'CS',  # CS=Common Stock
+        market: str = 'stocks',
+        exchange: str = None,
+        active: bool = True,
+        limit: int = 1000,
+        search: str = None,
+    ) -> List[Dict]:
+        """
+        Get list of tickers with filtering.
+
+        Args:
+            ticker_type: 'CS' (common stock), 'ETF', 'ADRC', etc.
+            market: 'stocks', 'crypto', 'fx', 'otc'
+            exchange: Filter by exchange (e.g., 'XNAS' for NASDAQ, 'XNYS' for NYSE)
+            active: Only active tickers
+            limit: Max results (up to 1000)
+            search: Search term for ticker or name
+
+        Returns:
+            List of ticker information
+        """
+        endpoint = "/v3/reference/tickers"
+        params = {
+            'type': ticker_type,
+            'market': market,
+            'active': str(active).lower(),
+            'limit': limit,
+            'order': 'asc',
+            'sort': 'ticker',
+        }
+
+        if exchange:
+            params['exchange'] = exchange
+        if search:
+            params['search'] = search
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return []
+
+        tickers = []
+        for t in data['results']:
+            tickers.append({
+                'ticker': t.get('ticker'),
+                'name': t.get('name'),
+                'market': t.get('market'),
+                'locale': t.get('locale'),
+                'type': t.get('type'),
+                'active': t.get('active'),
+                'currency': t.get('currency_name'),
+                'exchange': t.get('primary_exchange'),
+                'cik': t.get('cik'),
+                'composite_figi': t.get('composite_figi'),
+            })
+
+        return tickers
+
+    async def get_us_stocks(
+        self,
+        min_market_cap: float = None,
+        exchange: str = None,
+        limit: int = 1000,
+    ) -> List[str]:
+        """
+        Get list of US stock tickers.
+
+        Args:
+            min_market_cap: Minimum market cap filter (requires additional API call)
+            exchange: 'XNAS' (NASDAQ), 'XNYS' (NYSE), 'XASE' (AMEX)
+            limit: Max tickers to return
+
+        Returns:
+            List of ticker symbols
+        """
+        tickers = await self.get_tickers(
+            ticker_type='CS',
+            market='stocks',
+            exchange=exchange,
+            active=True,
+            limit=limit,
+        )
+
+        return [t['ticker'] for t in tickers if t.get('ticker')]
+
+    async def get_nasdaq_stocks(self, limit: int = 1000) -> List[str]:
+        """Get NASDAQ-listed stocks."""
+        return await self.get_us_stocks(exchange='XNAS', limit=limit)
+
+    async def get_nyse_stocks(self, limit: int = 1000) -> List[str]:
+        """Get NYSE-listed stocks."""
+        return await self.get_us_stocks(exchange='XNYS', limit=limit)
+
+    async def get_etfs(self, limit: int = 500) -> List[Dict]:
+        """Get list of ETFs."""
+        return await self.get_tickers(
+            ticker_type='ETF',
+            market='stocks',
+            active=True,
+            limit=limit,
+        )
+
+    async def search_tickers(self, query: str, limit: int = 20) -> List[Dict]:
+        """
+        Search for tickers by name or symbol.
+
+        Args:
+            query: Search term
+            limit: Max results
+
+        Returns:
+            List of matching tickers
+        """
+        return await self.get_tickers(
+            search=query,
+            limit=limit,
+        )
+
     async def batch_get_daily_bars(
         self,
         tickers: List[str],
@@ -1019,6 +1732,259 @@ def get_options_contracts_sync(
                 expiration_date_lte=expiration_date_lte,
                 limit=limit,
             )
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# FINANCIALS & EARNINGS SYNC WRAPPERS
+# =============================================================================
+
+def get_financials_sync(ticker: str, timeframe: str = 'quarterly', limit: int = 10) -> List[Dict]:
+    """Synchronous wrapper to get company financials."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_financials(ticker, timeframe, limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_earnings_history_sync(ticker: str, limit: int = 8) -> List[Dict]:
+    """Synchronous wrapper to get earnings history."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_earnings_history(ticker, limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# DIVIDENDS SYNC WRAPPERS
+# =============================================================================
+
+def get_dividends_sync(ticker: str = None, limit: int = 50) -> List[Dict]:
+    """Synchronous wrapper to get dividend data."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_dividends(ticker, limit=limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_upcoming_dividends_sync(days_ahead: int = 14) -> List[Dict]:
+    """Synchronous wrapper to get upcoming dividends."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_upcoming_dividends(days_ahead)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_dividend_yield_sync(ticker: str) -> Dict:
+    """Synchronous wrapper to get dividend yield."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_dividend_yield(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# STOCK SPLITS SYNC WRAPPERS
+# =============================================================================
+
+def get_stock_splits_sync(ticker: str = None, limit: int = 50) -> List[Dict]:
+    """Synchronous wrapper to get stock splits."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_stock_splits(ticker, limit=limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_upcoming_splits_sync(days_ahead: int = 30) -> List[Dict]:
+    """Synchronous wrapper to get upcoming stock splits."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_upcoming_splits(days_ahead)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_recent_splits_sync(days_back: int = 30) -> List[Dict]:
+    """Synchronous wrapper to get recent stock splits."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_recent_splits(days_back)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# TECHNICAL INDICATORS SYNC WRAPPERS
+# =============================================================================
+
+def get_sma_sync(ticker: str, window: int = 50) -> Optional[pd.DataFrame]:
+    """Synchronous wrapper to get SMA."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_sma(ticker, window)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_ema_sync(ticker: str, window: int = 20) -> Optional[pd.DataFrame]:
+    """Synchronous wrapper to get EMA."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_ema(ticker, window)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_rsi_sync(ticker: str, window: int = 14) -> Optional[pd.DataFrame]:
+    """Synchronous wrapper to get RSI."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_rsi(ticker, window)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_macd_sync(ticker: str) -> Optional[pd.DataFrame]:
+    """Synchronous wrapper to get MACD."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_macd(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_technical_summary_sync(ticker: str) -> Dict:
+    """Synchronous wrapper to get technical analysis summary."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_technical_summary(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# TICKER UNIVERSE SYNC WRAPPERS
+# =============================================================================
+
+def get_tickers_sync(
+    ticker_type: str = 'CS',
+    market: str = 'stocks',
+    exchange: str = None,
+    limit: int = 1000,
+) -> List[Dict]:
+    """Synchronous wrapper to get tickers."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_tickers(ticker_type, market, exchange, limit=limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_us_stocks_sync(exchange: str = None, limit: int = 1000) -> List[str]:
+    """Synchronous wrapper to get US stock tickers."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_us_stocks(exchange=exchange, limit=limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_nasdaq_stocks_sync(limit: int = 1000) -> List[str]:
+    """Synchronous wrapper to get NASDAQ stocks."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_nasdaq_stocks(limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_nyse_stocks_sync(limit: int = 1000) -> List[str]:
+    """Synchronous wrapper to get NYSE stocks."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_nyse_stocks(limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_etfs_sync(limit: int = 500) -> List[Dict]:
+    """Synchronous wrapper to get ETFs."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_etfs(limit)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def search_tickers_sync(query: str, limit: int = 20) -> List[Dict]:
+    """Synchronous wrapper to search tickers."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.search_tickers(query, limit)
         finally:
             await provider.close()
 
