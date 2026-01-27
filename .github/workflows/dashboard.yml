@@ -10,6 +10,9 @@ on:
     paths:
       - 'dashboard.py'
 
+permissions:
+  contents: write
+
 jobs:
   update-dashboard:
     runs-on: ubuntu-latest
