@@ -299,8 +299,7 @@ def handle_scan(chat_id):
     send_message(chat_id, "⏳ Running story-first scan (this may take 1-2 minutes)...")
 
     try:
-        import asyncio
-        from src.core.async_scanner import AsyncScanner
+        import concurrent.futures
 
         # Quick scan tickers (theme stocks + majors)
         tickers = [
@@ -314,21 +313,29 @@ def handle_scan(chat_id):
             'JPM', 'GS', 'V', 'MA',                        # Finance
         ]
 
-        async def run_scan():
-            scanner = AsyncScanner(max_concurrent=25)
-            try:
-                results = await scanner.run_scan_async(tickers)
-                return results
-            finally:
-                await scanner.close()
+        def run_async_scan(ticker_list):
+            """Run async scan in a separate thread with its own event loop."""
+            import asyncio
+            from src.core.async_scanner import AsyncScanner
 
-        # Run the async scan
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            results = loop.run_until_complete(run_scan())
-        finally:
-            loop.close()
+            async def scan():
+                scanner = AsyncScanner(max_concurrent=25)
+                try:
+                    return await scanner.run_scan_async(ticker_list)
+                finally:
+                    await scanner.close()
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(scan())
+            finally:
+                loop.close()
+
+        # Run in thread pool to avoid event loop conflicts
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_async_scan, tickers)
+            results = future.result(timeout=180)  # 3 min timeout
 
         if isinstance(results, tuple):
             df = results[0]
@@ -354,6 +361,8 @@ def handle_scan(chat_id):
         else:
             send_message(chat_id, "No stocks scanned. Check Polygon API key.")
 
+    except concurrent.futures.TimeoutError:
+        send_message(chat_id, "Scan timed out after 3 minutes. Try again later.")
     except Exception as e:
         logger.error(f"Scan error: {e}")
         send_message(chat_id, f"Scan error: {str(e)}")
@@ -1300,14 +1309,12 @@ def api_scan_trigger():
         tickers: Comma-separated list (default: top 50 theme stocks)
         full: If 'true', run full universe scan (slower)
     """
-    import asyncio
+    import concurrent.futures
 
     tickers_param = request.args.get('tickers', '')
     full_scan = request.args.get('full', 'false').lower() == 'true'
 
     try:
-        from src.core.async_scanner import AsyncScanner
-
         # Determine tickers to scan
         if tickers_param:
             tickers = [t.strip().upper() for t in tickers_param.split(',') if t.strip()]
@@ -1330,21 +1337,29 @@ def api_scan_trigger():
                 'SPY', 'QQQ',                                  # Indices
             ]
 
-        async def run_scan():
-            scanner = AsyncScanner(max_concurrent=25)
-            try:
-                results = await scanner.run_scan_async(tickers)
-                return results
-            finally:
-                await scanner.close()
+        def run_async_scan(ticker_list):
+            """Run async scan in a separate thread with its own event loop."""
+            import asyncio
+            from src.core.async_scanner import AsyncScanner
 
-        # Run the async scan
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            results = loop.run_until_complete(run_scan())
-        finally:
-            loop.close()
+            async def scan():
+                scanner = AsyncScanner(max_concurrent=25)
+                try:
+                    return await scanner.run_scan_async(ticker_list)
+                finally:
+                    await scanner.close()
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(scan())
+            finally:
+                loop.close()
+
+        # Run in thread pool to avoid event loop conflicts with gunicorn
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_async_scan, tickers)
+            results = future.result(timeout=300)  # 5 min timeout
 
         if isinstance(results, tuple):
             df = results[0]
@@ -1359,6 +1374,8 @@ def api_scan_trigger():
             'timestamp': datetime.now().isoformat()
         })
 
+    except concurrent.futures.TimeoutError:
+        return jsonify({'ok': False, 'error': 'Scan timed out after 5 minutes'})
     except Exception as e:
         logger.error(f"Scan trigger error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
