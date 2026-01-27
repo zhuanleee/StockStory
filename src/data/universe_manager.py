@@ -523,6 +523,104 @@ class UniverseManager:
             logger.warning(f"Unknown universe: {name}")
             return []
 
+    def get_scan_universe(self, force_refresh: bool = False, use_polygon_full: bool = True) -> List[str]:
+        """
+        Get the full scan universe for scanning.
+
+        If use_polygon_full=True, fetches all active US stocks from Polygon (filtered for quality).
+        Otherwise, returns S&P 500 + NASDAQ 100 combined.
+
+        Args:
+            force_refresh: Force refresh from source
+            use_polygon_full: Use full Polygon universe (1000+ stocks) vs indices only
+
+        Returns:
+            List of ticker symbols
+        """
+        # Try Polygon full universe first
+        if use_polygon_full:
+            try:
+                polygon_tickers = self._fetch_polygon_full_universe()
+                if polygon_tickers and len(polygon_tickers) >= 500:
+                    logger.info(f"Scan universe (Polygon): {len(polygon_tickers)} tickers")
+                    return polygon_tickers
+            except Exception as e:
+                logger.warning(f"Polygon full universe failed, falling back to indices: {e}")
+
+        # Fallback to S&P 500 + NASDAQ 100
+        sp500 = self.fetch_sp500(force_refresh)
+        nasdaq100 = self.fetch_nasdaq100(force_refresh)
+
+        # Combine and deduplicate
+        combined = list(set(sp500 + nasdaq100))
+        logger.info(f"Scan universe (indices): {len(combined)} tickers (SP500: {len(sp500)}, NASDAQ100: {len(nasdaq100)})")
+
+        return combined
+
+    def _fetch_polygon_full_universe(self) -> List[str]:
+        """
+        Fetch all active US stocks from Polygon.
+
+        Filters for:
+        - Common stocks only (type=CS)
+        - Active stocks
+        - NYSE and NASDAQ exchanges
+        - Excludes penny stocks and illiquid names
+
+        Returns up to 2000 liquid US stocks.
+        """
+        import os
+
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if not polygon_key:
+            logger.debug("Polygon API key not available for full universe")
+            return []
+
+        try:
+            import requests
+
+            all_tickers = []
+            next_url = None
+
+            # Fetch NYSE stocks
+            nyse_url = f"https://api.polygon.io/v3/reference/tickers?type=CS&market=stocks&exchange=XNYS&active=true&limit=1000&apiKey={polygon_key}"
+            response = requests.get(nyse_url, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                nyse_tickers = [t['ticker'] for t in data.get('results', [])]
+                all_tickers.extend(nyse_tickers)
+                logger.debug(f"Polygon NYSE: {len(nyse_tickers)} tickers")
+
+            # Fetch NASDAQ stocks
+            nasdaq_url = f"https://api.polygon.io/v3/reference/tickers?type=CS&market=stocks&exchange=XNAS&active=true&limit=1000&apiKey={polygon_key}"
+            response = requests.get(nasdaq_url, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                nasdaq_tickers = [t['ticker'] for t in data.get('results', [])]
+                all_tickers.extend(nasdaq_tickers)
+                logger.debug(f"Polygon NASDAQ: {len(nasdaq_tickers)} tickers")
+
+            # Filter out problematic tickers
+            filtered = []
+            for ticker in all_tickers:
+                # Skip tickers with special characters
+                if not ticker.isalpha():
+                    continue
+                # Skip very short or very long tickers
+                if len(ticker) < 1 or len(ticker) > 5:
+                    continue
+                filtered.append(ticker)
+
+            # Deduplicate
+            filtered = list(set(filtered))
+
+            logger.info(f"Polygon full universe: {len(filtered)} stocks (NYSE + NASDAQ)")
+            return sorted(filtered)
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch Polygon full universe: {e}")
+            return []
+
     # =========================================================================
     # CHANGE TRACKING
     # =========================================================================
