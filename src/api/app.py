@@ -301,16 +301,15 @@ def handle_scan(chat_id):
     try:
         import concurrent.futures
 
-        # Quick scan tickers (theme stocks + majors)
+        # Quick scan: top 20 theme stocks (fits in Railway timeout)
         tickers = [
-            'NVDA', 'AMD', 'AVGO', 'TSM', 'MRVL', 'ARM',  # AI/Semis
-            'MSFT', 'GOOGL', 'META', 'AMZN', 'AAPL',      # Big Tech
-            'TSLA', 'RIVN', 'LCID',                        # EV
-            'VST', 'CEG', 'SMR', 'NNE', 'OKLO',            # Nuclear
-            'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',         # Software
-            'LLY', 'NVO', 'VKTX', 'AMGN',                  # Biotech
-            'LMT', 'RTX', 'NOC', 'GD',                     # Defense
-            'JPM', 'GS', 'V', 'MA',                        # Finance
+            'NVDA', 'AMD', 'AVGO', 'TSM',     # AI/Semis
+            'MSFT', 'GOOGL', 'META', 'AAPL',  # Big Tech
+            'TSLA', 'VST', 'CEG',             # EV/Nuclear
+            'PLTR', 'CRWD', 'NET',            # Software
+            'LLY', 'NVO',                     # Biotech/GLP-1
+            'LMT', 'JPM', 'XOM',              # Defense/Finance/Energy
+            'SPY',                            # Index
         ]
 
         def run_async_scan(ticker_list):
@@ -1323,18 +1322,15 @@ def api_scan_trigger():
             um = get_universe_manager()
             tickers = um.get_scan_universe()
         else:
-            # Quick scan: top theme stocks + major indices
+            # Quick scan: top 20 theme stocks (fits in Railway timeout)
             tickers = [
-                'NVDA', 'AMD', 'AVGO', 'TSM', 'MRVL', 'ARM',  # AI/Semis
-                'MSFT', 'GOOGL', 'META', 'AMZN', 'AAPL',      # Big Tech
-                'TSLA', 'RIVN', 'LCID',                        # EV
-                'VST', 'CEG', 'SMR', 'NNE', 'OKLO',            # Nuclear
-                'PLTR', 'SNOW', 'DDOG', 'NET', 'CRWD',         # Software
-                'LLY', 'NVO', 'VKTX', 'AMGN',                  # Biotech/GLP-1
-                'LMT', 'RTX', 'NOC', 'GD',                     # Defense
-                'JPM', 'GS', 'V', 'MA',                        # Finance
-                'XOM', 'CVX', 'OXY',                           # Energy
-                'SPY', 'QQQ',                                  # Indices
+                'NVDA', 'AMD', 'AVGO', 'TSM',     # AI/Semis
+                'MSFT', 'GOOGL', 'META', 'AAPL',  # Big Tech
+                'TSLA', 'VST', 'CEG',             # EV/Nuclear
+                'PLTR', 'CRWD', 'NET',            # Software
+                'LLY', 'NVO',                     # Biotech/GLP-1
+                'LMT', 'JPM', 'XOM',              # Defense/Finance/Energy
+                'SPY',                            # Index
             ]
 
         def run_async_scan(ticker_list):
