@@ -13,14 +13,14 @@ Story Score Components:
 - Technical Confirmation (25%): RS, trend, volume combined
 
 Data Sources:
-- Yahoo Finance (yfinance) - Primary news & fundamentals
+- Polygon.io - Primary price data & fundamentals
+- Finnhub - Professional news (free tier)
+- Google News RSS - Fallback news source
+- DeepSeek AI - Sentiment analysis
 - StockTwits - Social sentiment & retail buzz
 - Reddit (r/wallstreetbets, r/stocks) - Retail momentum
 - SEC EDGAR - Institutional filings (13F, 8-K)
-- Finnhub - Professional news (if API key configured)
 """
-
-import yfinance as yf
 import requests
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -33,6 +33,28 @@ from utils import get_logger, normalize_dataframe_columns
 import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
+
+# Import DeepSeek sentiment (replaces yfinance for news)
+try:
+    from src.sentiment.deepseek_sentiment import (
+        fetch_news_free,
+        calculate_sentiment_score as deepseek_sentiment_score,
+    )
+    HAS_DEEPSEEK_SENTIMENT = True
+except ImportError:
+    HAS_DEEPSEEK_SENTIMENT = False
+    logger.debug("DeepSeek sentiment not available")
+
+# Import Polygon provider for price data (replaces yfinance)
+try:
+    from src.data.polygon_provider import (
+        get_aggregates_sync,
+        get_ticker_details_sync,
+    )
+    HAS_POLYGON = True
+except ImportError:
+    HAS_POLYGON = False
+    logger.debug("Polygon provider not available")
 
 # Try to import learned theme registry
 try:
@@ -606,7 +628,7 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
     """
     Detect upcoming catalysts for a ticker.
 
-    Uses Polygon API for dividends/splits, yfinance for earnings.
+    Uses Polygon API for dividends/splits and news-based earnings detection.
 
     Returns:
         - score: 0-100 catalyst proximity score
@@ -616,26 +638,23 @@ def detect_catalysts(ticker: str, news_data: list = None) -> dict:
     import os
     catalysts = []
 
-    # Check for earnings date (yfinance)
-    try:
-        stock = yf.Ticker(ticker)
-        cal = stock.calendar
-        if cal is not None and not cal.empty:
-            if 'Earnings Date' in cal.index:
-                earnings_dates = cal.loc['Earnings Date']
-                if hasattr(earnings_dates, '__iter__') and len(earnings_dates) > 0:
-                    next_earnings = earnings_dates[0] if hasattr(earnings_dates[0], 'date') else earnings_dates
-                    if hasattr(next_earnings, 'date'):
-                        days_to_earnings = (next_earnings.date() - datetime.now().date()).days
-                        if 0 <= days_to_earnings <= 30:
-                            catalysts.append({
-                                'type': 'earnings',
-                                'date': str(next_earnings.date()),
-                                'days_away': days_to_earnings,
-                                'impact': 'high',
-                            })
-    except Exception as e:
-        logger.debug(f"Could not get earnings for {ticker}: {e}")
+    # Check for earnings mentions in news (keyword-based detection)
+    if news_data:
+        earnings_keywords = ['earnings', 'quarterly results', 'q1', 'q2', 'q3', 'q4',
+                           'fiscal', 'revenue report', 'guidance']
+        for article in news_data[:10]:
+            title = article.get('title', '').lower()
+            if any(kw in title for kw in earnings_keywords):
+                # Check if it mentions upcoming vs past
+                if any(word in title for word in ['upcoming', 'ahead', 'preview', 'expect', 'tomorrow', 'next week']):
+                    catalysts.append({
+                        'type': 'earnings',
+                        'date': 'upcoming',
+                        'days_away': 7,  # Approximate
+                        'impact': 'high',
+                        'source': 'news',
+                    })
+                    break
 
     # Check for upcoming dividends (Polygon)
     polygon_key = os.environ.get('POLYGON_API_KEY', '')
@@ -744,11 +763,13 @@ def calculate_news_momentum(ticker: str, news_data: list = None) -> dict:
         - momentum: 'accelerating', 'stable', 'declining'
     """
     if not news_data:
-        # Try to fetch news
-        try:
-            stock = yf.Ticker(ticker)
-            news_data = stock.news or []
-        except Exception:
+        # Try to fetch news from free sources
+        if HAS_DEEPSEEK_SENTIMENT:
+            try:
+                news_data = fetch_news_free(ticker, limit=20)
+            except Exception:
+                news_data = []
+        else:
             news_data = []
 
     if not news_data:
@@ -815,16 +836,39 @@ def calculate_sentiment_score(ticker: str, news_data: list = None) -> dict:
     """
     Calculate sentiment from news headlines.
 
+    Uses DeepSeek AI for sentiment analysis if available, otherwise falls back
+    to keyword-based sentiment scoring.
+
     Returns:
         - score: 0-100 (50 = neutral, >50 = bullish, <50 = bearish)
         - sentiment: 'bullish', 'bearish', 'neutral'
         - confidence: how confident we are in the sentiment
     """
-    if not news_data:
+    # Try DeepSeek sentiment first (more accurate)
+    if HAS_DEEPSEEK_SENTIMENT:
         try:
-            stock = yf.Ticker(ticker)
-            news_data = stock.news or []
-        except Exception:
+            result = deepseek_sentiment_score(ticker, news_data)
+            sentiment = 'bullish' if result['score'] >= 60 else 'bearish' if result['score'] <= 40 else 'neutral'
+            confidence = 'high' if result.get('article_count', 0) >= 10 else 'medium' if result.get('article_count', 0) >= 5 else 'low'
+            return {
+                'score': result['score'],
+                'sentiment': sentiment,
+                'confidence': confidence,
+                'label': result.get('label', sentiment),
+                'positive_ratio': result.get('positive_ratio', 0.5),
+                'article_count': result.get('article_count', 0),
+            }
+        except Exception as e:
+            logger.debug(f"DeepSeek sentiment failed for {ticker}: {e}")
+
+    # Fallback to keyword-based sentiment
+    if not news_data:
+        if HAS_DEEPSEEK_SENTIMENT:
+            try:
+                news_data = fetch_news_free(ticker, limit=15)
+            except Exception:
+                news_data = []
+        else:
             news_data = []
 
     if not news_data:
@@ -917,8 +961,15 @@ def calculate_technical_confirmation(ticker: str, price_data=None) -> dict:
     """
     try:
         if price_data is None:
-            df = yf.download(ticker, period='3mo', progress=False)
-            df = normalize_dataframe_columns(df)
+            # Use Polygon for price data
+            if HAS_POLYGON:
+                df = get_aggregates_sync(ticker, days=90)
+                if df is not None:
+                    df = normalize_dataframe_columns(df)
+                else:
+                    return {'score': 50, 'rs': 0, 'trend': 'unknown', 'volume': 1}
+            else:
+                return {'score': 50, 'rs': 0, 'trend': 'unknown', 'volume': 1}
         else:
             df = price_data
 
@@ -973,11 +1024,18 @@ def calculate_technical_confirmation(ticker: str, price_data=None) -> dict:
         ret_20d = (current / safe_float(close.iloc[-20]) - 1) * 100 if len(close) >= 20 else 0
 
         try:
-            spy = yf.download('SPY', period='1mo', progress=False)
-            spy = normalize_dataframe_columns(spy)
-            spy_close = spy['Close']
-            spy_ret = (safe_float(spy_close.iloc[-1]) / safe_float(spy_close.iloc[-20]) - 1) * 100
-            rs = ret_20d - spy_ret
+            # Use Polygon for SPY data
+            if HAS_POLYGON:
+                spy = get_aggregates_sync('SPY', days=30)
+                if spy is not None:
+                    spy = normalize_dataframe_columns(spy)
+                    spy_close = spy['Close']
+                    spy_ret = (safe_float(spy_close.iloc[-1]) / safe_float(spy_close.iloc[-20]) - 1) * 100
+                    rs = ret_20d - spy_ret
+                else:
+                    rs = ret_20d
+            else:
+                rs = ret_20d
         except Exception:
             rs = ret_20d
 
@@ -1019,19 +1077,29 @@ def calculate_story_score(ticker: str, news_data: list = None, price_data=None, 
     """
     # Get news if not provided
     if news_data is None:
-        try:
-            stock = yf.Ticker(ticker)
-            raw_news = stock.news or []
+        if HAS_DEEPSEEK_SENTIMENT:
+            try:
+                news_data = fetch_news_free(ticker, limit=20)
+            except Exception:
+                news_data = []
+        else:
             news_data = []
-            for item in raw_news:
-                content = item.get('content', item)
-                news_data.append({
-                    'title': content.get('title', ''),
-                    'summary': content.get('summary', ''),
-                    'pubDate': content.get('pubDate', ''),
-                })
-        except Exception:
-            news_data = []
+
+    # Ensure news_data is a list
+    if news_data is None:
+        news_data = []
+
+    # Backwards compatibility: handle old yfinance format if present
+    if news_data and len(news_data) > 0 and isinstance(news_data[0], dict) and 'content' in news_data[0]:
+        processed_news = []
+        for item in news_data:
+            content = item.get('content', item)
+            processed_news.append({
+                'title': content.get('title', ''),
+                'summary': content.get('summary', ''),
+                'pubDate': content.get('pubDate', ''),
+            })
+        news_data = processed_news
 
     # Calculate all components
     theme = calculate_theme_heat(ticker, news_data)

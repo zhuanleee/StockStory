@@ -137,6 +137,7 @@ def handle_help(chat_id):
     msg += "*📈 Intelligence:*\n"
     msg += "• `/stories` → Hot themes\n"
     msg += "• `/news` → News sentiment\n"
+    msg += "• `/sentiment NVDA` → AI sentiment analysis\n"
     msg += "• `/sectors` → Sector rotation\n"
     msg += "• `/health` → Fear & Greed + Breadth\n"
     msg += "• `/earnings` → Earnings calendar\n"
@@ -430,6 +431,62 @@ def handle_news(chat_id):
         send_message(chat_id, msg)
     except Exception as e:
         send_message(chat_id, f"News error: {str(e)}")
+
+
+def handle_sentiment(chat_id, ticker):
+    """Handle /sentiment TICKER command - DeepSeek AI sentiment analysis."""
+    ticker = ticker.upper().strip()
+    if not ticker:
+        send_message(chat_id, "Usage: `/sentiment NVDA`")
+        return
+
+    send_message(chat_id, f"⏳ Analyzing sentiment for {ticker}...")
+    try:
+        from src.sentiment.deepseek_sentiment import get_sentiment_signal
+
+        signal = get_sentiment_signal(ticker, num_articles=15)
+
+        if signal.get('error'):
+            send_message(chat_id, f"❌ {signal['error']}")
+            return
+
+        # Format response
+        bias = signal.get('bias', 'neutral')
+        if bias == 'bullish':
+            emoji = '🟢'
+            bias_text = 'BULLISH'
+        elif bias == 'bearish':
+            emoji = '🔴'
+            bias_text = 'BEARISH'
+        else:
+            emoji = '⚪'
+            bias_text = 'NEUTRAL'
+
+        strength = signal.get('strength', 'weak').upper()
+        score = signal.get('signal', 0)
+        articles = signal.get('article_count', 0)
+        pos_ratio = signal.get('positive_ratio', 0)
+
+        msg = f"{emoji} *SENTIMENT: {ticker}*\n\n"
+        msg += f"*Signal:* `{score:+.3f}` ({-1} to +1 scale)\n"
+        msg += f"*Bias:* {bias_text} ({strength})\n"
+        msg += f"*Articles:* {articles} analyzed\n"
+        msg += f"*Positive:* {signal.get('positive_count', 0)} ({pos_ratio:.0%})\n"
+        msg += f"*Negative:* {signal.get('negative_count', 0)}\n\n"
+
+        # Show top headlines
+        headlines = signal.get('headlines', [])[:5]
+        if headlines:
+            msg += "*Recent Headlines:*\n"
+            for h in headlines:
+                h_emoji = '🟢' if h.get('label') == 'positive' else '🔴' if h.get('label') == 'negative' else '⚪'
+                title = h.get('title', '')[:60]
+                msg += f"{h_emoji} {title}...\n"
+
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"Sentiment error for {ticker}: {e}")
+        send_message(chat_id, f"❌ Sentiment error: {str(e)}")
 
 
 def handle_sectors(chat_id):
@@ -1005,6 +1062,8 @@ def process_message(message):
         handle_stories(chat_id)
     elif text_lower == '/news':
         handle_news(chat_id)
+    elif text_lower.startswith('/sentiment '):
+        handle_sentiment(chat_id, text[11:].strip())
     elif text_lower == '/sectors':
         handle_sectors(chat_id)
     elif text_lower == '/health':
@@ -1114,7 +1173,7 @@ def webhook():
 
             # List of slow commands that need background processing
             slow_commands = ['/news', '/sectors', '/stories', '/scan',
-                          '/earnings', '/briefing', '/coach', '/top', '/health']
+                          '/earnings', '/briefing', '/coach', '/top', '/health', '/sentiment']
 
             # Check if this is a slow command
             is_slow = any(text.startswith(cmd) for cmd in slow_commands)

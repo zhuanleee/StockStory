@@ -2006,3 +2006,7 @@ def search_tickers_sync(query: str, limit: int = 20) -> List[Dict]:
 def is_polygon_configured() -> bool:
     """Check if Polygon API is configured."""
     return bool(os.environ.get('POLYGON_API_KEY', ''))
+
+
+# Aliases for backward compatibility
+get_aggregates_sync = get_price_data_sync
