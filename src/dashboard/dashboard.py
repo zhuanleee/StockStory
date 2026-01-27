@@ -1976,7 +1976,7 @@ def generate_dashboard(output_path: str = None) -> bool:
                     </div>
                     <div class="card-body">
                         <div class="theme-stocks">
-                            {''.join([f'<div class="theme-stock" onclick="showTicker(\'{t}\')"><div class="theme-stock-ticker">{t}</div></div>' for t in data.get('tickers', [])[:6]])}
+                            {''.join([f'<div class="theme-stock" onclick="showTicker(&apos;{t}&apos;)"><div class="theme-stock-ticker">{t}</div></div>' for t in data.get('tickers', [])[:6]])}
                         </div>
                     </div>
                 </div>'''
