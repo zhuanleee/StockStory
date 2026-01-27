@@ -6,6 +6,8 @@
 
 An institutional-grade stock scanner with real-time data from **Polygon.io**, AI-powered analysis via **DeepSeek**, and **Telegram** integration. Features story-first analysis, theme detection, options flow tracking, and self-evolving intelligence.
 
+**Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
+
 ## Highlights
 
 - **Real-time Data** - Polygon.io integration for stocks, options, news, and fundamentals
@@ -56,6 +58,8 @@ An institutional-grade stock scanner with real-time data from **Polygon.io**, AI
 - **Accuracy Tracking** - Monitor prediction quality over time
 
 ## Telegram Commands
+
+Use [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot) on Telegram:
 
 ### Market Analysis
 | Command | Description |
