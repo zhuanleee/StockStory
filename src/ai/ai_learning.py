@@ -112,27 +112,59 @@ def call_xai(prompt, system_prompt=None, max_tokens=2000, timeout=25):
     return None
 
 
-def call_ai(prompt, system_prompt=None, max_tokens=2000, timeout=25, prefer_xai=False):
+def call_ai(prompt, system_prompt=None, max_tokens=2000, timeout=25, prefer_xai=False, task_type="default"):
     """
-    Call AI API with automatic fallback.
+    Call AI API with intelligent routing based on task complexity.
+
+    Routing Strategy (based on A/B stress testing):
+    - DeepSeek: Faster on simple/quick tasks (sentiment, calculations, quick queries)
+    - X AI (Grok): 39% faster on heavy tasks (large data, complex reasoning, portfolios)
 
     Args:
         prompt: The prompt to send
         system_prompt: Optional system prompt
         max_tokens: Maximum response tokens
         timeout: Request timeout in seconds
-        prefer_xai: If True, try X AI first, then DeepSeek
+        prefer_xai: If True, force X AI first (overrides auto-routing)
+        task_type: Task category for smart routing:
+            - "simple": Quick sentiment, calculations (use DeepSeek)
+            - "heavy": Large data, complex analysis (use X AI)
+            - "news": News synthesis (use X AI)
+            - "portfolio": Portfolio/trade analysis (use X AI)
+            - "narrative": Market narrative (use X AI)
+            - "default": Auto-detect based on max_tokens
 
     Returns:
         AI response text or None
     """
-    if prefer_xai:
+    # Smart routing based on task type
+    use_xai_first = prefer_xai
+
+    if not use_xai_first:
+        # Auto-route based on task type
+        heavy_tasks = ["heavy", "news", "portfolio", "narrative", "catalyst", "theme", "strategy"]
+        simple_tasks = ["simple", "sentiment", "calculation", "quick"]
+
+        if task_type in heavy_tasks:
+            use_xai_first = True
+        elif task_type in simple_tasks:
+            use_xai_first = False
+        elif task_type == "default":
+            # Auto-detect: heavy if max_tokens > 400 (complex output expected)
+            use_xai_first = max_tokens > 400
+
+    if use_xai_first:
         result = call_xai(prompt, system_prompt, max_tokens, timeout)
         if result:
             return result
+        # Fallback to DeepSeek
         return call_deepseek(prompt, system_prompt, max_tokens, timeout)
     else:
-        return call_deepseek(prompt, system_prompt, max_tokens, timeout)
+        result = call_deepseek(prompt, system_prompt, max_tokens, timeout)
+        if result:
+            return result
+        # Fallback to X AI
+        return call_xai(prompt, system_prompt, max_tokens, timeout)
 
 
 # =============================================================================
@@ -198,7 +230,7 @@ Respond in JSON:
     "reasoning": "brief explanation"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="simple")
 
     if response:
         try:
@@ -360,7 +392,7 @@ Provide analysis in JSON:
     "similar_setups": "how to handle similar setups in future"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="portfolio")
 
     if response:
         try:
@@ -415,7 +447,7 @@ Synthesize into JSON:
     "rules_to_add": ["new trading rules based on lessons"]
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="portfolio")
 
     if response:
         try:
@@ -498,7 +530,7 @@ Respond in JSON:
     "target_suggestion": "price or percentage"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="portfolio")
 
     if response:
         try:
@@ -640,7 +672,7 @@ Provide recommendations in JSON:
     "avoid_areas": ["what to avoid in current conditions"]
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="strategy")
 
     if response:
         try:
@@ -700,7 +732,7 @@ Return optimized weights in JSON (must sum to 1.0):
     "regime_specific": "are these weights optimized for current regime"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="strategy")
 
     if response:
         try:
@@ -920,7 +952,7 @@ TOP STOCKS: {json.dumps([s.get('ticker', s) if isinstance(s, dict) else s for s 
 Return JSON:
 {{"headline":"5-7 words","market_mood":"bullish/bearish/neutral","main_narrative":"2 sentences with specific prices/levels","spy_view":"brief SPY outlook","key_opportunity":{{"ticker":"XXX","reason":"brief"}},"key_risk":"one sentence","tomorrow_watch":["item1","item2"]}}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=600)
+    response = call_ai(prompt, system_prompt, max_tokens=600, task_type="narrative")
 
     if response:
         try:
@@ -1120,7 +1152,7 @@ Detect anomalies and respond in JSON:
     "watch_for": ["follow-up signals to monitor"]
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="simple")
 
     if response:
         try:
@@ -1233,7 +1265,7 @@ Extract predictions in JSON:
     "quality_score": 1-10
 }}"""
 
-    response = call_deepseek(prompt, system_prompt)
+    response = call_ai(prompt, system_prompt, task_type="simple")
 
     if response:
         try:
@@ -1390,7 +1422,7 @@ Provide coaching in JSON:
     "encouragement": "motivational closing message"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=2000)
+    response = call_ai(prompt, system_prompt, max_tokens=2000, task_type="heavy")
 
     if response:
         try:
@@ -1436,7 +1468,7 @@ Respond in JSON:
     "suggestion": "one thing to consider"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=300)
+    response = call_ai(prompt, system_prompt, max_tokens=300, task_type="simple")
 
     if response:
         try:
@@ -1679,7 +1711,7 @@ Provide REAL-TIME analysis in JSON:
     "reasoning": "brief explanation of analysis"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+    response = call_ai(prompt, system_prompt, max_tokens=1500, task_type="catalyst")
 
     if response:
         try:
@@ -1853,7 +1885,7 @@ Provide lifecycle analysis in JSON:
     "watch_list": ["signals to monitor for changes"]
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+    response = call_ai(prompt, system_prompt, max_tokens=1500, task_type="theme")
 
     if response:
         try:
@@ -1955,7 +1987,7 @@ Predict rotation in JSON:
     "contrarian_view": "what the crowd is missing"
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+    response = call_ai(prompt, system_prompt, max_tokens=1500, task_type="theme")
 
     if response:
         try:
@@ -2090,7 +2122,7 @@ Provide options flow analysis in JSON:
     "follow_flow": ["what to watch for confirmation"]
 }}"""
 
-    response = call_deepseek(prompt, system_prompt, max_tokens=1500)
+    response = call_ai(prompt, system_prompt, max_tokens=1500, task_type="portfolio")
 
     if response:
         try:
