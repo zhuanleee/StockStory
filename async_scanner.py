@@ -576,9 +576,14 @@ class AsyncStoryScorer:
         price_data: pd.DataFrame = None,
     ) -> Dict:
         """
-        Async story scoring with parallel data fetching.
+        Async STORY-FIRST scoring with parallel data fetching.
 
-        Combines social buzz, news momentum, and technical signals.
+        Story-First Philosophy:
+        - Story Quality (50%): Theme strength, freshness, clarity
+        - Catalyst Strength (35%): Type, recency, magnitude
+        - Confirmation (15%): Technical validation only
+
+        The best trades are driven by narratives, not just technicals.
         """
         # Fetch social buzz, news, and sector concurrently
         social_task = self.get_social_buzz_score_async(ticker)
@@ -600,20 +605,113 @@ class AsyncStoryScorer:
         if isinstance(sector, Exception):
             sector = 'Unknown'
 
-        # Calculate news momentum score
-        news_score = 0
-        if len(news) > 10:
-            news_score = 30
-        elif len(news) > 5:
-            news_score = 20
-        elif len(news) > 0:
-            news_score = 10
+        # Get theme data from registry
+        theme_data = []
+        try:
+            from theme_registry import get_theme_membership_for_scoring
+            theme_data = get_theme_membership_for_scoring(ticker) or []
+        except ImportError:
+            pass
 
-        # Get sentiment from news headlines
-        sentiment_score = 0
+        # Calculate technical data from price data
+        price = 0
+        rs_composite = 0
+        vol_ratio = 1.0
+        above_20 = False
+        above_50 = False
+        above_200 = False
+        in_squeeze = False
+        breakout_up = False
+        distance_from_20sma_pct = None
+
+        if price_data is not None and len(price_data) > 20:
+            try:
+                close = price_data['Close'] if 'Close' in price_data.columns else price_data.get('close', price_data.iloc[:, 0])
+                volume = price_data['Volume'] if 'Volume' in price_data.columns else price_data.get('volume', pd.Series([0]))
+
+                current = float(close.iloc[-1])
+                price = current
+
+                # Moving averages
+                sma20 = float(close.rolling(20).mean().iloc[-1])
+                above_20 = current > sma20
+
+                # Distance from 20 SMA (for buyability)
+                if sma20 > 0:
+                    distance_from_20sma_pct = abs((current - sma20) / sma20 * 100)
+
+                if len(close) > 50:
+                    sma50 = float(close.rolling(50).mean().iloc[-1])
+                    above_50 = current > sma50
+
+                if len(close) > 200:
+                    sma200 = float(close.rolling(200).mean().iloc[-1])
+                    above_200 = current > sma200
+
+                # RS composite (price vs 50 days ago)
+                if len(close) > 50:
+                    pct_change = (current - float(close.iloc[-50])) / float(close.iloc[-50]) * 100
+                    rs_composite = round(pct_change, 1)
+
+                # Volume ratio
+                if len(volume) > 20:
+                    avg_vol = float(volume.iloc[-20:].mean())
+                    if avg_vol > 0:
+                        vol_ratio = round(float(volume.iloc[-1]) / avg_vol, 2)
+
+                # Bollinger Bands for squeeze detection
+                if len(close) > 20:
+                    bb_std = close.rolling(20).std()
+                    upper_band = sma20 + (2 * float(bb_std.iloc[-1]))
+                    lower_band = sma20 - (2 * float(bb_std.iloc[-1]))
+                    band_width = (upper_band - lower_band) / sma20 * 100
+
+                    # Check for squeeze (narrow bands)
+                    if len(close) > 70:
+                        avg_width = float(((close.rolling(20).mean() + 2 * close.rolling(20).std()) -
+                                     (close.rolling(20).mean() - 2 * close.rolling(20).std())).rolling(50).mean().iloc[-1])
+                    else:
+                        avg_width = band_width
+
+                    if avg_width > 0:
+                        width_pct = (band_width / avg_width) * 100
+                        in_squeeze = width_pct <= 50
+                        breakout_up = current > upper_band
+
+            except Exception as e:
+                logger.debug(f"Technical data error for {ticker}: {e}")
+
+        # =====================================================
+        # STORY-FIRST SCORING
+        # =====================================================
+        from story_scoring import calculate_story_score, StoryScore
+
+        # Prepare price data dict for story scorer
+        price_dict = {
+            'above_20': above_20,
+            'above_50': above_50,
+            'above_200': above_200,
+            'vol_ratio': vol_ratio,
+            'distance_from_20sma_pct': distance_from_20sma_pct,
+            'breakout_up': breakout_up,
+            'in_squeeze': in_squeeze,
+        }
+
+        # Get SEC data from social buzz
+        sec_data = social_buzz.get('sec', {})
+
+        # Calculate story-first score
+        story_result = calculate_story_score(
+            ticker=ticker,
+            news=news,
+            sec_data=sec_data,
+            theme_data=theme_data,
+            price_data=price_dict,
+        )
+
+        # Determine sentiment label from news
         bullish_words = ['beat', 'surge', 'gain', 'rise', 'jump', 'high', 'record', 'growth', 'strong', 'upgrade', 'buy']
         bearish_words = ['miss', 'drop', 'fall', 'low', 'down', 'weak', 'concern', 'risk', 'decline', 'downgrade', 'sell']
-
         bullish_count = 0
         bearish_count = 0
         for article in news[:10]:
@@ -624,136 +722,25 @@ class AsyncStoryScorer:
                 bearish_count += 1
 
         if bullish_count > bearish_count * 2:
-            sentiment_score = 30
             sentiment_label = 'bullish'
         elif bearish_count > bullish_count * 2:
-            sentiment_score = -10
             sentiment_label = 'bearish'
         else:
-            sentiment_score = 10
             sentiment_label = 'neutral'
-
-        # Calculate technical score from price data
-        technical_score = 0
-        price = 0
-        rs_composite = 0
-        vol_ratio = 1.0
-        above_20 = False
-        above_50 = False
-        above_200 = False
-        in_squeeze = False
-        breakout_up = False
-
-        if price_data is not None and len(price_data) > 20:
-            try:
-                close = price_data['Close'] if 'Close' in price_data.columns else price_data.get('close', price_data.iloc[:, 0])
-                high = price_data['High'] if 'High' in price_data.columns else price_data.get('high', close)
-                low = price_data['Low'] if 'Low' in price_data.columns else price_data.get('low', close)
-                volume = price_data['Volume'] if 'Volume' in price_data.columns else price_data.get('volume', pd.Series([0]))
-
-                current = float(close.iloc[-1])
-                price = current
-
-                # Moving averages
-                sma20 = close.rolling(20).mean().iloc[-1]
-                above_20 = current > sma20
-                if above_20:
-                    technical_score += 10
-
-                if len(close) > 50:
-                    sma50 = close.rolling(50).mean().iloc[-1]
-                    above_50 = current > sma50
-                    if above_50:
-                        technical_score += 10
-
-                if len(close) > 200:
-                    sma200 = close.rolling(200).mean().iloc[-1]
-                    above_200 = current > sma200
-
-                # RS composite (price vs 50 days ago)
-                if len(close) > 50:
-                    pct_change = (current - close.iloc[-50]) / close.iloc[-50] * 100
-                    rs_composite = round(pct_change, 1)
-                    if pct_change > 10:
-                        technical_score += 10
-
-                # Volume ratio
-                if len(volume) > 20:
-                    avg_vol = volume.iloc[-20:].mean()
-                    if avg_vol > 0:
-                        vol_ratio = round(float(volume.iloc[-1]) / avg_vol, 2)
-
-                # Bollinger Bands for squeeze detection
-                if len(close) > 20:
-                    bb_std = close.rolling(20).std()
-                    upper_band = sma20 + (2 * bb_std.iloc[-1])
-                    lower_band = sma20 - (2 * bb_std.iloc[-1])
-                    band_width = (upper_band - lower_band) / sma20 * 100
-
-                    # Check for squeeze (narrow bands)
-                    avg_width = ((close.rolling(20).mean() + 2 * close.rolling(20).std()) -
-                                 (close.rolling(20).mean() - 2 * close.rolling(20).std())).rolling(50).mean().iloc[-1] if len(close) > 70 else band_width
-                    if avg_width > 0:
-                        width_pct = (band_width / avg_width) * 100
-                        in_squeeze = width_pct <= 50
-                        breakout_up = current > upper_band
-
-                technical_score = min(30, technical_score)
-            except Exception as e:
-                logger.debug(f"Technical score error for {ticker}: {e}")
-
-        # Combine scores
-        # Theme score placeholder (will integrate with theme_registry)
-        theme_score = 0
-        try:
-            from theme_registry import get_theme_membership_for_scoring
-            theme_data = get_theme_membership_for_scoring(ticker)
-            if theme_data and theme_data.get('themes'):
-                theme_score = 30  # Has theme membership
-                if any(t.get('role') == 'driver' for t in theme_data.get('themes', [])):
-                    theme_score = 50  # Is a theme driver
-        except ImportError:
-            pass
-
-        # Catalyst score placeholder
-        catalyst_score = 0
-        if social_buzz.get('sec', {}).get('has_8k'):
-            catalyst_score = 20
-
-        # Calculate final story score (weighted)
-        story_score = (
-            theme_score * 0.25 +
-            catalyst_score * 0.20 +
-            news_score * 0.15 +
-            sentiment_score * 0.15 +
-            technical_score * 0.25
-        )
-
-        story_score = max(0, min(100, story_score))
-
-        # Determine strength label
-        if story_score >= 70:
-            story_strength = 'strong'
-        elif story_score >= 50:
-            story_strength = 'moderate'
-        elif story_score >= 30:
-            story_strength = 'weak'
-        else:
-            story_strength = 'none'
 
         return {
             'ticker': ticker,
-            'story_score': round(story_score, 1),
-            'composite_score': round(story_score, 1),  # Alias for dashboard
-            'story_strength': story_strength,
+            'story_score': round(story_result.total_score, 1),
+            'composite_score': round(story_result.total_score, 1),  # Alias for dashboard
+            'story_strength': story_result.story_strength,
             'story_stage': 'unknown',
-            'hottest_theme': None,
+            'hottest_theme': story_result.primary_theme,
             'theme_role': None,
-            'has_theme': theme_score > 0,
-            'has_catalyst': catalyst_score > 0,
-            'is_early_stage': False,
-            'next_catalyst': None,
-            'news_trend': 'stable' if len(news) < 5 else 'accelerating',
+            'has_theme': story_result.theme_strength > 0,
+            'has_catalyst': story_result.catalyst_type_score > 0,
+            'is_early_stage': story_result.theme_freshness >= 80,
+            'next_catalyst': story_result.primary_catalyst,
+            'news_trend': 'accelerating' if len(news) >= 5 else 'stable',
             'sentiment_label': sentiment_label,
             # Dashboard-required fields
             'price': price,
@@ -765,12 +752,29 @@ class AsyncStoryScorer:
             'in_squeeze': in_squeeze,
             'breakout_up': breakout_up,
             'sector': sector,
-            # Detailed scores
-            'theme': {'score': theme_score},
-            'catalyst': {'score': catalyst_score},
-            'news_momentum': {'score': news_score, 'count': len(news)},
-            'sentiment': {'score': sentiment_score, 'label': sentiment_label},
-            'technical': {'score': technical_score},
+            # Story-First score breakdown
+            'story_quality': {
+                'score': round(story_result.story_quality_score, 1),
+                'theme_strength': round(story_result.theme_strength, 1),
+                'theme_freshness': round(story_result.theme_freshness, 1),
+                'story_clarity': round(story_result.story_clarity, 1),
+                'institutional': round(story_result.institutional_narrative, 1),
+            },
+            'catalyst': {
+                'score': round(story_result.catalyst_score, 1),
+                'type': story_result.catalyst_type,
+                'type_score': round(story_result.catalyst_type_score, 1),
+                'recency': round(story_result.catalyst_recency_multiplier, 2),
+                'description': story_result.primary_catalyst,
+            },
+            'confirmation': {
+                'score': round(story_result.confirmation_score, 1),
+                'trend': round(story_result.trend_score, 1),
+                'volume': round(story_result.volume_score, 1),
+                'buyability': round(story_result.buyability_score, 1),
+            },
+            'news_momentum': {'score': len(news) * 3, 'count': len(news)},
+            'sentiment': {'score': 0, 'label': sentiment_label},
             'social_buzz': social_buzz,
         }
 

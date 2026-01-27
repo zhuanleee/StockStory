@@ -1347,15 +1347,15 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
             <!-- Ecosystem Intelligence Section -->
             <div class="grid" style="margin-bottom: 24px;" id="ecosystem-section">
-                <!-- In-Play Watchlist -->
+                <!-- Story Stocks In Play -->
                 <div class="col-12">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
-                                <span class="card-title-icon">👁️</span>
-                                In Play Now
+                                <span class="card-title-icon">📖</span>
+                                Story Stocks In Play
                             </div>
-                            <button class="action-btn" onclick="fetchInPlay()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                            <span class="card-badge" style="font-size: 0.7rem;">Story 50% | Catalyst 35% | Technical 15%</span>
                         </div>
                         <div class="card-body">
                             <div class="inplay-bar" id="inplay-bar">
@@ -1412,20 +1412,19 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
-                                <span class="card-title-icon">🏆</span>
-                                Top Momentum Stocks
+                                <span class="card-title-icon">🔥</span>
+                                Top Story Stocks
                             </div>
-                            <span class="card-badge">Live Rankings</span>
+                            <span class="card-badge">Story-First Rankings</span>
                         </div>
                         <table class="table">
                             <thead>
                                 <tr>
                                     <th style="width: 50px;">#</th>
                                     <th>Ticker</th>
-                                    <th>Price</th>
-                                    <th>RS vs SPY</th>
-                                    <th>Volume</th>
-                                    <th style="width: 150px;">Score</th>
+                                    <th>Theme</th>
+                                    <th>Catalyst</th>
+                                    <th style="width: 150px;">Story Score</th>
                                     <th>Signal</th>
                                 </tr>
                             </thead>
@@ -2516,35 +2515,56 @@ def generate_dashboard():
             for i, row in df.head(10).iterrows():
                 rank = i + 1
                 ticker = row.get('ticker', 'N/A')
-                price = f"${row.get('price', 0):.2f}" if 'price' in row else '-'
 
-                rs = row.get('rs_composite', 0)
-                rs_class = 'positive' if rs > 0 else 'negative'
-                rs_str = f"{rs:+.1f}%"
+                # Theme (from story-first scoring)
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val)[:20] if pd.notna(theme_val) and theme_val else '-'
 
-                vol = row.get('vol_ratio', 1)
-                vol_str = f"{vol:.1f}x"
+                # Catalyst (from story-first scoring)
+                catalyst_val = row.get('next_catalyst', '')
+                if pd.notna(catalyst_val) and catalyst_val:
+                    catalyst = str(catalyst_val)[:25]
+                else:
+                    catalyst = '-'
 
-                score = row.get('composite_score', 0)
+                # Story score and strength
+                score = row.get('composite_score', row.get('story_score', 0))
+                strength = row.get('story_strength', 'none')
 
+                # Color based on story strength
+                strength_colors = {
+                    'hot': 'var(--green)',
+                    'developing': 'var(--blue)',
+                    'watchlist': 'var(--orange)',
+                    'waiting': 'var(--text-dim)',
+                    'none': 'var(--text-dim)',
+                }
+                score_color = strength_colors.get(strength, 'var(--text-dim)')
+
+                # Signal based on story + technicals
                 signal = ''
-                if row.get('breakout_up'):
+                if strength == 'hot':
+                    signal = '<span style="color: var(--green);">🔥 Hot</span>'
+                elif strength == 'developing':
+                    signal = '<span style="color: var(--blue);">📈 Developing</span>'
+                elif row.get('breakout_up'):
                     signal = '<span style="color: var(--green);">🚀 Breakout</span>'
                 elif row.get('in_squeeze'):
                     signal = '<span style="color: var(--purple);">⏳ Squeeze</span>'
+                elif row.get('is_early_stage'):
+                    signal = '<span style="color: var(--orange);">🌅 Early</span>'
 
                 rows.append(f'''
                 <tr>
                     <td>{rank}</td>
                     <td class="ticker">{ticker}</td>
-                    <td>{price}</td>
-                    <td class="{rs_class}">{rs_str}</td>
-                    <td>{vol_str}</td>
+                    <td style="font-size: 0.8rem;">{theme}</td>
+                    <td style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{catalyst}</td>
                     <td>
                         <div class="score-container">
-                            <span>{score:.0f}</span>
+                            <span style="color: {score_color};">{score:.0f}</span>
                             <div class="score-bar">
-                                <div class="score-fill" style="width: {min(score, 100)}%;"></div>
+                                <div class="score-fill" style="width: {min(score, 100)}%; background: {score_color};"></div>
                             </div>
                         </div>
                     </td>
@@ -2575,22 +2595,39 @@ def generate_dashboard():
                 if sector_rows:
                     data['SECTOR_ROWS'] = ''.join(sector_rows)
 
-            # Generate In-Play stocks (top momentum stocks)
+            # Generate In-Play stocks (top story stocks)
             inplay_cards = []
             for _, row in df.head(8).iterrows():
                 ticker = row.get('ticker', 'N/A')
                 score = row.get('composite_score', row.get('story_score', 0))
+                strength = row.get('story_strength', 'none')
                 theme_val = row.get('hottest_theme', '')
-                theme = str(theme_val)[:15] if pd.notna(theme_val) and theme_val else 'Momentum'
-                rs = row.get('rs_composite', 0) or 0
+                theme = str(theme_val)[:15] if pd.notna(theme_val) and theme_val else 'No Theme'
 
-                score_class = 'green' if score >= 50 else ('orange' if score >= 30 else 'blue')
+                # Story strength colors
+                strength_colors = {
+                    'hot': 'green',
+                    'developing': 'blue',
+                    'watchlist': 'orange',
+                    'waiting': 'text-dim',
+                    'none': 'text-dim',
+                }
+                strength_labels = {
+                    'hot': '🔥 Hot',
+                    'developing': '📈 Dev',
+                    'watchlist': '👀 Watch',
+                    'waiting': '⏸️ Wait',
+                    'none': '-',
+                }
+                score_class = strength_colors.get(strength, 'blue')
+                strength_label = strength_labels.get(strength, '-')
+
                 inplay_cards.append(f'''
                 <div class="inplay-card">
                     <div class="inplay-ticker">{ticker}</div>
                     <div class="inplay-score" style="color: var(--{score_class});">{score:.0f}</div>
                     <div class="inplay-theme">{theme}</div>
-                    <div class="inplay-eco" style="font-size: 0.7rem;">RS: {rs:+.1f}%</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">{strength_label}</div>
                 </div>
                 ''')
             if inplay_cards:
