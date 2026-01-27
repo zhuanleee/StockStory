@@ -534,6 +534,74 @@ class AsyncDataFetcher:
         except Exception:
             return []
 
+    async def fetch_options_flow_async(self, ticker: str) -> Dict:
+        """
+        Async fetch options flow data for ticker.
+
+        Uses Polygon.io for real-time options chain analysis.
+        """
+        # Check cache first (short TTL for options data)
+        cache_key = f"options:{ticker}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Try Polygon for options data
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import PolygonProvider
+                provider = PolygonProvider(api_key=polygon_key)
+                flow = await provider.get_options_flow_summary(ticker)
+                await provider.close()
+
+                if flow:
+                    result = {
+                        'put_call_ratio': flow.get('put_call_ratio', 1.0),
+                        'sentiment': flow.get('sentiment', 'neutral'),
+                        'sentiment_score': flow.get('sentiment_score', 50),
+                        'total_call_volume': flow.get('total_call_volume', 0),
+                        'total_put_volume': flow.get('total_put_volume', 0),
+                        'unusual_activity': flow.get('has_unusual_activity', False),
+                        'source': 'polygon',
+                    }
+                    # Short cache TTL for options (5 minutes)
+                    self.cache.set(cache_key, result, ttl=300)
+                    return result
+            except Exception as e:
+                logger.debug(f"Polygon options fetch failed for {ticker}: {e}")
+
+        # Return neutral if no data available
+        return {
+            'put_call_ratio': 1.0,
+            'sentiment': 'neutral',
+            'sentiment_score': 50,
+            'total_call_volume': 0,
+            'total_put_volume': 0,
+            'unusual_activity': False,
+            'source': 'none',
+        }
+
+    async def fetch_unusual_options_async(self, ticker: str) -> Dict:
+        """
+        Async fetch unusual options activity for ticker.
+
+        Identifies high volume/OI ratios and flow imbalances.
+        """
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if not polygon_key:
+            return {'unusual_activity': False, 'signals': [], 'unusual_contracts': []}
+
+        try:
+            from src.data.polygon_provider import PolygonProvider
+            provider = PolygonProvider(api_key=polygon_key)
+            analysis = await provider.analyze_unusual_options(ticker)
+            await provider.close()
+            return analysis
+        except Exception as e:
+            logger.debug(f"Unusual options fetch failed for {ticker}: {e}")
+            return {'unusual_activity': False, 'signals': [], 'unusual_contracts': []}
+
 
 # =============================================================================
 # ASYNC STORY SCORER

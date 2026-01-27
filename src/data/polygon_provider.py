@@ -425,6 +425,352 @@ class PolygonProvider:
             }
         return {'market': 'unknown'}
 
+    # =========================================================================
+    # OPTIONS DATA
+    # =========================================================================
+
+    async def get_options_chain(
+        self,
+        underlying: str,
+        expiration_date: str = None,
+        strike_price: float = None,
+        contract_type: str = None,
+    ) -> Dict:
+        """
+        Get options chain snapshot for an underlying asset.
+
+        Args:
+            underlying: Stock symbol (e.g., 'AAPL')
+            expiration_date: Filter by expiration (YYYY-MM-DD)
+            strike_price: Filter by strike price
+            contract_type: 'call' or 'put'
+
+        Returns:
+            Dict with options chain data including calls, puts, and summary stats
+        """
+        endpoint = f"/v3/snapshot/options/{underlying.upper()}"
+        params = {}
+
+        if expiration_date:
+            params['expiration_date'] = expiration_date
+        if strike_price:
+            params['strike_price'] = strike_price
+        if contract_type:
+            params['contract_type'] = contract_type
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return {'calls': [], 'puts': [], 'summary': {}}
+
+        calls = []
+        puts = []
+        total_call_volume = 0
+        total_put_volume = 0
+        total_call_oi = 0
+        total_put_oi = 0
+
+        for option in data['results']:
+            details = option.get('details', {})
+            day = option.get('day', {})
+            greeks = option.get('greeks', {})
+            underlying_asset = option.get('underlying_asset', {})
+
+            contract = {
+                'ticker': details.get('ticker'),
+                'contract_type': details.get('contract_type'),
+                'strike': details.get('strike_price'),
+                'expiration': details.get('expiration_date'),
+                'last_price': day.get('close'),
+                'bid': option.get('last_quote', {}).get('bid'),
+                'ask': option.get('last_quote', {}).get('ask'),
+                'volume': day.get('volume', 0),
+                'open_interest': option.get('open_interest', 0),
+                'implied_volatility': option.get('implied_volatility'),
+                'delta': greeks.get('delta'),
+                'gamma': greeks.get('gamma'),
+                'theta': greeks.get('theta'),
+                'vega': greeks.get('vega'),
+                'underlying_price': underlying_asset.get('price'),
+            }
+
+            if details.get('contract_type') == 'call':
+                calls.append(contract)
+                total_call_volume += day.get('volume', 0)
+                total_call_oi += option.get('open_interest', 0)
+            else:
+                puts.append(contract)
+                total_put_volume += day.get('volume', 0)
+                total_put_oi += option.get('open_interest', 0)
+
+        # Calculate put/call ratios
+        pc_volume_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 0
+        pc_oi_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+
+        return {
+            'underlying': underlying.upper(),
+            'calls': sorted(calls, key=lambda x: (x.get('expiration', ''), x.get('strike', 0))),
+            'puts': sorted(puts, key=lambda x: (x.get('expiration', ''), x.get('strike', 0))),
+            'summary': {
+                'total_call_volume': total_call_volume,
+                'total_put_volume': total_put_volume,
+                'total_call_oi': total_call_oi,
+                'total_put_oi': total_put_oi,
+                'put_call_volume_ratio': round(pc_volume_ratio, 2),
+                'put_call_oi_ratio': round(pc_oi_ratio, 2),
+                'sentiment': 'bearish' if pc_volume_ratio > 1.2 else ('bullish' if pc_volume_ratio < 0.7 else 'neutral'),
+            }
+        }
+
+    async def get_options_contracts(
+        self,
+        underlying: str = None,
+        contract_type: str = None,
+        expiration_date_gte: str = None,
+        expiration_date_lte: str = None,
+        strike_price_gte: float = None,
+        strike_price_lte: float = None,
+        limit: int = 100,
+    ) -> List[Dict]:
+        """
+        Search for options contracts.
+
+        Args:
+            underlying: Filter by underlying ticker
+            contract_type: 'call' or 'put'
+            expiration_date_gte: Min expiration date (YYYY-MM-DD)
+            expiration_date_lte: Max expiration date (YYYY-MM-DD)
+            strike_price_gte: Min strike price
+            strike_price_lte: Max strike price
+            limit: Max results
+
+        Returns:
+            List of matching options contracts
+        """
+        endpoint = "/v3/reference/options/contracts"
+        params = {'limit': limit}
+
+        if underlying:
+            params['underlying_ticker'] = underlying.upper()
+        if contract_type:
+            params['contract_type'] = contract_type
+        if expiration_date_gte:
+            params['expiration_date.gte'] = expiration_date_gte
+        if expiration_date_lte:
+            params['expiration_date.lte'] = expiration_date_lte
+        if strike_price_gte:
+            params['strike_price.gte'] = strike_price_gte
+        if strike_price_lte:
+            params['strike_price.lte'] = strike_price_lte
+
+        data = await self._request(endpoint, params)
+
+        if not data or 'results' not in data:
+            return []
+
+        contracts = []
+        for c in data['results']:
+            contracts.append({
+                'ticker': c.get('ticker'),
+                'underlying': c.get('underlying_ticker'),
+                'contract_type': c.get('contract_type'),
+                'strike': c.get('strike_price'),
+                'expiration': c.get('expiration_date'),
+                'exercise_style': c.get('exercise_style'),
+                'shares_per_contract': c.get('shares_per_contract', 100),
+            })
+
+        return contracts
+
+    async def get_option_quote(self, options_ticker: str) -> Optional[Dict]:
+        """
+        Get quote for a specific options contract.
+
+        Args:
+            options_ticker: Options ticker (e.g., 'O:AAPL250117C00150000')
+
+        Returns:
+            Quote data for the option
+        """
+        endpoint = f"/v3/quotes/{options_ticker}"
+
+        data = await self._request(endpoint)
+
+        if data and 'results' in data and data['results']:
+            q = data['results'][0] if isinstance(data['results'], list) else data['results']
+            return {
+                'ticker': options_ticker,
+                'bid': q.get('bid_price'),
+                'ask': q.get('ask_price'),
+                'bid_size': q.get('bid_size'),
+                'ask_size': q.get('ask_size'),
+                'mid': (q.get('bid_price', 0) + q.get('ask_price', 0)) / 2,
+                'timestamp': q.get('sip_timestamp'),
+            }
+        return None
+
+    async def get_options_aggregates(
+        self,
+        options_ticker: str,
+        multiplier: int = 1,
+        timespan: str = 'day',
+        from_date: str = None,
+        to_date: str = None,
+        limit: int = 50,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Get historical OHLCV data for an options contract.
+
+        Args:
+            options_ticker: Options ticker (e.g., 'O:AAPL250117C00150000')
+            multiplier: Timespan multiplier
+            timespan: 'minute', 'hour', 'day', 'week'
+            from_date: Start date (YYYY-MM-DD)
+            to_date: End date (YYYY-MM-DD)
+            limit: Max results
+
+        Returns:
+            DataFrame with options OHLCV data
+        """
+        if to_date is None:
+            to_date = datetime.now().strftime('%Y-%m-%d')
+        if from_date is None:
+            from_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+
+        endpoint = f"/v2/aggs/ticker/{options_ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+
+        data = await self._request(endpoint, {'limit': limit, 'sort': 'asc'})
+
+        if not data or 'results' not in data:
+            return None
+
+        results = data['results']
+        if not results:
+            return None
+
+        df = pd.DataFrame(results)
+        df = df.rename(columns={
+            'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close',
+            'v': 'Volume', 't': 'Timestamp'
+        })
+        df['Date'] = pd.to_datetime(df['Timestamp'], unit='ms')
+        df = df.set_index('Date')
+
+        return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+
+    async def analyze_unusual_options(
+        self,
+        ticker: str,
+        volume_threshold: float = 2.0,
+    ) -> Dict:
+        """
+        Analyze options for unusual activity.
+
+        Looks for:
+        - High volume vs open interest (potential new positions)
+        - Large put/call imbalances
+        - Near-expiry high volume
+
+        Args:
+            ticker: Stock symbol
+            volume_threshold: Volume/OI ratio threshold for "unusual"
+
+        Returns:
+            Analysis of unusual options activity
+        """
+        chain = await self.get_options_chain(ticker)
+
+        if not chain.get('calls') and not chain.get('puts'):
+            return {'unusual_activity': False, 'signals': []}
+
+        signals = []
+        unusual_contracts = []
+
+        # Analyze each contract for unusual activity
+        for contract in chain.get('calls', []) + chain.get('puts', []):
+            volume = contract.get('volume', 0)
+            oi = contract.get('open_interest', 1)  # Avoid division by zero
+
+            # High volume relative to open interest
+            if volume > 0 and oi > 0:
+                vol_oi_ratio = volume / oi
+                if vol_oi_ratio >= volume_threshold:
+                    unusual_contracts.append({
+                        'ticker': contract.get('ticker'),
+                        'type': contract.get('contract_type'),
+                        'strike': contract.get('strike'),
+                        'expiration': contract.get('expiration'),
+                        'volume': volume,
+                        'open_interest': oi,
+                        'vol_oi_ratio': round(vol_oi_ratio, 2),
+                        'implied_volatility': contract.get('implied_volatility'),
+                        'signal': 'HIGH_VOL_VS_OI',
+                    })
+
+        # Overall flow analysis
+        summary = chain.get('summary', {})
+        pc_ratio = summary.get('put_call_volume_ratio', 1.0)
+
+        if pc_ratio > 1.5:
+            signals.append({
+                'type': 'BEARISH_FLOW',
+                'description': f'High put/call ratio: {pc_ratio:.2f}',
+                'strength': 'strong' if pc_ratio > 2.0 else 'moderate',
+            })
+        elif pc_ratio < 0.5:
+            signals.append({
+                'type': 'BULLISH_FLOW',
+                'description': f'Low put/call ratio: {pc_ratio:.2f}',
+                'strength': 'strong' if pc_ratio < 0.3 else 'moderate',
+            })
+
+        # Sort unusual contracts by vol/oi ratio
+        unusual_contracts.sort(key=lambda x: x.get('vol_oi_ratio', 0), reverse=True)
+
+        return {
+            'ticker': ticker,
+            'unusual_activity': len(unusual_contracts) > 0 or len(signals) > 0,
+            'unusual_contracts': unusual_contracts[:10],  # Top 10
+            'signals': signals,
+            'summary': summary,
+            'total_unusual_contracts': len(unusual_contracts),
+        }
+
+    async def get_options_flow_summary(self, ticker: str) -> Dict:
+        """
+        Get a summary of options flow for quick analysis.
+
+        Returns:
+            Simplified options flow data for the ticker
+        """
+        chain = await self.get_options_chain(ticker)
+        summary = chain.get('summary', {})
+
+        # Determine overall sentiment from options flow
+        pc_ratio = summary.get('put_call_volume_ratio', 1.0)
+
+        if pc_ratio > 1.3:
+            sentiment = 'bearish'
+            sentiment_score = min(100, int((pc_ratio - 1.0) * 100))
+        elif pc_ratio < 0.7:
+            sentiment = 'bullish'
+            sentiment_score = min(100, int((1.0 - pc_ratio) * 100))
+        else:
+            sentiment = 'neutral'
+            sentiment_score = 50
+
+        return {
+            'ticker': ticker,
+            'put_call_ratio': round(pc_ratio, 2),
+            'sentiment': sentiment,
+            'sentiment_score': sentiment_score,
+            'total_call_volume': summary.get('total_call_volume', 0),
+            'total_put_volume': summary.get('total_put_volume', 0),
+            'total_call_oi': summary.get('total_call_oi', 0),
+            'total_put_oi': summary.get('total_put_oi', 0),
+            'has_unusual_activity': pc_ratio > 1.5 or pc_ratio < 0.5,
+        }
+
     async def batch_get_daily_bars(
         self,
         tickers: List[str],
@@ -577,6 +923,102 @@ def get_snapshot_sync(ticker: str) -> Optional[Dict]:
         provider = PolygonProvider()
         try:
             return await provider.get_snapshot(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+# =============================================================================
+# OPTIONS SYNCHRONOUS WRAPPERS
+# =============================================================================
+
+def get_options_chain_sync(
+    underlying: str,
+    expiration_date: str = None,
+    contract_type: str = None,
+) -> Dict:
+    """
+    Synchronous wrapper to get options chain.
+
+    Args:
+        underlying: Stock symbol (e.g., 'AAPL')
+        expiration_date: Filter by expiration (YYYY-MM-DD)
+        contract_type: 'call' or 'put'
+
+    Returns:
+        Options chain with calls, puts, and summary
+    """
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_options_chain(
+                underlying, expiration_date, contract_type=contract_type
+            )
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_options_flow_sync(ticker: str) -> Dict:
+    """
+    Synchronous wrapper to get options flow summary.
+
+    Returns simplified options flow data including:
+    - Put/call ratio
+    - Sentiment (bullish/bearish/neutral)
+    - Volume and open interest totals
+    """
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_options_flow_summary(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_unusual_options_sync(ticker: str, volume_threshold: float = 2.0) -> Dict:
+    """
+    Synchronous wrapper to detect unusual options activity.
+
+    Args:
+        ticker: Stock symbol
+        volume_threshold: Volume/OI ratio for "unusual" (default 2.0x)
+
+    Returns:
+        Analysis of unusual options activity
+    """
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.analyze_unusual_options(ticker, volume_threshold)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_options_contracts_sync(
+    underlying: str,
+    contract_type: str = None,
+    expiration_date_gte: str = None,
+    expiration_date_lte: str = None,
+    limit: int = 100,
+) -> List[Dict]:
+    """Synchronous wrapper to search for options contracts."""
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_options_contracts(
+                underlying=underlying,
+                contract_type=contract_type,
+                expiration_date_gte=expiration_date_gte,
+                expiration_date_lte=expiration_date_lte,
+                limit=limit,
+            )
         finally:
             await provider.close()
 

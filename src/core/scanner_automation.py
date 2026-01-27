@@ -1471,11 +1471,46 @@ def detect_insider_buying(tickers, min_buy_pct=1.0):
 
 
 # ============================================================
-# 3. OPTIONS FLOW (Simplified - uses Finviz data)
+# 3. OPTIONS FLOW (Uses Polygon.io API)
 # ============================================================
 
-def scrape_options_data(ticker):
-    """Get options-related metrics from Finviz."""
+def get_options_data(ticker):
+    """
+    Get options flow data from Polygon.io API.
+
+    Returns:
+        Dict with options flow metrics including:
+        - put_call_ratio: Volume-based P/C ratio
+        - sentiment: bullish/bearish/neutral
+        - total volumes and open interest
+        - unusual_activity: Boolean flag for unusual options activity
+    """
+    import os
+
+    # Try Polygon first
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            from src.data.polygon_provider import get_options_flow_sync
+
+            flow = get_options_flow_sync(ticker)
+
+            if flow:
+                return {
+                    'put_call_ratio': flow.get('put_call_ratio', 1.0),
+                    'sentiment': flow.get('sentiment', 'neutral'),
+                    'sentiment_score': flow.get('sentiment_score', 50),
+                    'total_call_volume': flow.get('total_call_volume', 0),
+                    'total_put_volume': flow.get('total_put_volume', 0),
+                    'total_call_oi': flow.get('total_call_oi', 0),
+                    'total_put_oi': flow.get('total_put_oi', 0),
+                    'unusual_activity': flow.get('has_unusual_activity', False),
+                    'source': 'polygon',
+                }
+        except Exception as e:
+            logger.debug(f"Polygon options fetch failed for {ticker}: {e}")
+
+    # Fallback to basic Finviz scraping for short interest only
     import requests
     try:
         url = f"https://finviz.com/quote.ashx?t={ticker}"
@@ -1507,11 +1542,41 @@ def scrape_options_data(ticker):
             'short_float': short_float,
             'short_ratio': short_ratio,
             'short_float_pct': short_float_pct,
-            'high_short': short_float_pct > 15,  # >15% short is notable
+            'high_short': short_float_pct > 15,
+            'source': 'finviz',
         }
     except Exception as e:
-        logger.debug(f"Failed to scrape options data for {ticker}: {e}")
+        logger.debug(f"Failed to get options data for {ticker}: {e}")
         return None
+
+
+def get_unusual_options(ticker, volume_threshold=2.0):
+    """
+    Get unusual options activity from Polygon.io.
+
+    Args:
+        ticker: Stock symbol
+        volume_threshold: Volume/OI ratio for unusual activity
+
+    Returns:
+        Dict with unusual options activity analysis
+    """
+    import os
+
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if not polygon_key:
+        return None
+
+    try:
+        from src.data.polygon_provider import get_unusual_options_sync
+        return get_unusual_options_sync(ticker, volume_threshold)
+    except Exception as e:
+        logger.debug(f"Failed to get unusual options for {ticker}: {e}")
+        return None
+
+
+# Backward compatibility alias
+scrape_options_data = get_options_data
 
 
 # ============================================================
