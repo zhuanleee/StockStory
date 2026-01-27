@@ -1229,6 +1229,54 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             } catch (e) { console.warn('Parameters fetch failed:', e); }
         }
 
+        async function fetchCorrelations() {
+            try {
+                const res = await fetch(`${API_BASE}/evolution/correlations`);
+                const data = await res.json();
+                if (data.ok && data.correlations) {
+                    const corrs = Object.entries(data.correlations).slice(0, 5);
+                    if (corrs.length === 0) {
+                        document.getElementById('correlations-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No correlations discovered yet</div>';
+                        return;
+                    }
+                    document.getElementById('correlations-container').innerHTML = corrs.map(([pair, value]) => `
+                        <div class="sidebar-item">
+                            <span class="sidebar-label">${pair}</span>
+                            <span class="sidebar-value" style="color: ${value >= 0.5 ? 'var(--green)' : value <= -0.5 ? 'var(--red)' : 'var(--text)'};">${(value * 100).toFixed(0)}%</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) { console.warn('Correlations fetch failed:', e); }
+        }
+
+        async function fetchThemes() {
+            try {
+                const res = await fetch(`${API_BASE}/themes/list`);
+                const data = await res.json();
+                if (data.ok && data.themes) {
+                    window.themesData = data.themes;
+                }
+            } catch (e) { console.warn('Themes fetch failed:', e); }
+        }
+
+        function selectTheme(themeName) {
+            // Highlight selected pill
+            document.querySelectorAll('.theme-pill').forEach(pill => {
+                pill.classList.toggle('active', pill.textContent.includes(themeName));
+            });
+
+            // Show theme stocks
+            const themes = window.themesData || {};
+            const theme = themes[themeName];
+            if (theme && theme.tickers) {
+                document.getElementById('theme-stocks-grid').innerHTML = theme.tickers.slice(0, 12).map(ticker => `
+                    <div class="theme-stock" onclick="showTicker('${ticker}')">
+                        <div class="theme-stock-ticker">${ticker}</div>
+                    </div>
+                `).join('');
+            }
+        }
+
         async function fetchBriefing() {
             document.getElementById('briefing-container').innerHTML = '<div style="color: var(--text-muted);">Generating AI briefing...</div>';
             try {
@@ -1253,6 +1301,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchEarnings(),
                 fetchEvolution(),
                 fetchParameters(),
+                fetchCorrelations(),
+                fetchThemes(),
             ]);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
@@ -1287,9 +1337,9 @@ def generate_dashboard(output_path: str = None) -> bool:
         # Get bot username from config
         try:
             from config import config
-            bot_username = getattr(config.telegram, 'bot_username', 'stock_scanner_bot')
+            bot_username = getattr(config.telegram, 'bot_username', 'Stocks_Story_Bot')
         except Exception:
-            bot_username = 'stock_scanner_bot'
+            bot_username = 'Stocks_Story_Bot'
 
         # Load scan data if available
         scan_data = []
