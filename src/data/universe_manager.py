@@ -523,7 +523,8 @@ class UniverseManager:
             logger.warning(f"Unknown universe: {name}")
             return []
 
-    def get_scan_universe(self, force_refresh: bool = False, use_polygon_full: bool = True) -> List[str]:
+    def get_scan_universe(self, force_refresh: bool = False, use_polygon_full: bool = True,
+                          min_market_cap: float = 300_000_000) -> List[str]:
         """
         Get the full scan universe for scanning.
 
@@ -532,7 +533,8 @@ class UniverseManager:
 
         Args:
             force_refresh: Force refresh from source
-            use_polygon_full: Use full Polygon universe (1000+ stocks) vs indices only
+            use_polygon_full: Use full Polygon universe vs indices only
+            min_market_cap: Minimum market cap filter (default $300M)
 
         Returns:
             List of ticker symbols
@@ -540,9 +542,9 @@ class UniverseManager:
         # Try Polygon full universe first
         if use_polygon_full:
             try:
-                polygon_tickers = self._fetch_polygon_full_universe()
-                if polygon_tickers and len(polygon_tickers) >= 500:
-                    logger.info(f"Scan universe (Polygon): {len(polygon_tickers)} tickers")
+                polygon_tickers = self._fetch_polygon_full_universe(min_market_cap=min_market_cap)
+                if polygon_tickers and len(polygon_tickers) >= 100:
+                    logger.info(f"Scan universe (Polygon): {len(polygon_tickers)} tickers (min mcap: ${min_market_cap/1e6:.0f}M)")
                     return polygon_tickers
             except Exception as e:
                 logger.warning(f"Polygon full universe failed, falling back to indices: {e}")
@@ -557,30 +559,50 @@ class UniverseManager:
 
         return combined
 
-    def _fetch_polygon_full_universe(self) -> List[str]:
+    def _fetch_polygon_full_universe(self, min_market_cap: float = 300_000_000) -> List[str]:
         """
-        Fetch all active US stocks from Polygon.
+        Fetch all active US stocks from Polygon filtered by market cap.
 
         Filters for:
         - Common stocks only (type=CS)
         - Active stocks
         - NYSE and NASDAQ exchanges
+        - Market cap >= min_market_cap (default $300M)
         - Excludes penny stocks and illiquid names
 
-        Returns up to 2000 liquid US stocks.
+        Returns liquid US stocks meeting criteria.
         """
         import os
+        import json
+        from pathlib import Path
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         polygon_key = os.environ.get('POLYGON_API_KEY', '')
         if not polygon_key:
             logger.debug("Polygon API key not available for full universe")
             return []
 
+        # Cache file for market cap data (refresh daily)
+        cache_file = Path('cache') / 'market_cap_cache.json'
+        cache_file.parent.mkdir(exist_ok=True)
+
+        # Load cached market cap data
+        market_cap_cache = {}
+        cache_age_hours = 999
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                    market_cap_cache = cache_data.get('data', {})
+                    cache_time = cache_data.get('timestamp', 0)
+                    cache_age_hours = (time.time() - cache_time) / 3600
+            except Exception:
+                pass
+
         try:
             import requests
 
             all_tickers = []
-            next_url = None
 
             # Fetch NYSE stocks
             nyse_url = f"https://api.polygon.io/v3/reference/tickers?type=CS&market=stocks&exchange=XNYS&active=true&limit=1000&apiKey={polygon_key}"
@@ -601,7 +623,7 @@ class UniverseManager:
                 logger.debug(f"Polygon NASDAQ: {len(nasdaq_tickers)} tickers")
 
             # Filter out problematic tickers
-            filtered = []
+            candidate_tickers = []
             for ticker in all_tickers:
                 # Skip tickers with special characters
                 if not ticker.isalpha():
@@ -609,13 +631,60 @@ class UniverseManager:
                 # Skip very short or very long tickers
                 if len(ticker) < 1 or len(ticker) > 5:
                     continue
-                filtered.append(ticker)
+                candidate_tickers.append(ticker)
 
             # Deduplicate
-            filtered = list(set(filtered))
+            candidate_tickers = list(set(candidate_tickers))
+            logger.debug(f"Candidate tickers after basic filter: {len(candidate_tickers)}")
 
-            logger.info(f"Polygon full universe: {len(filtered)} stocks (NYSE + NASDAQ)")
-            return sorted(filtered)
+            # Fetch market cap for tickers not in cache or if cache is stale (>24h)
+            tickers_needing_mcap = []
+            if cache_age_hours > 24:
+                tickers_needing_mcap = candidate_tickers
+            else:
+                tickers_needing_mcap = [t for t in candidate_tickers if t not in market_cap_cache]
+
+            if tickers_needing_mcap:
+                logger.info(f"Fetching market cap for {len(tickers_needing_mcap)} tickers...")
+
+                def fetch_market_cap(ticker):
+                    try:
+                        url = f"https://api.polygon.io/v3/reference/tickers/{ticker}?apiKey={polygon_key}"
+                        resp = requests.get(url, timeout=10)
+                        if resp.status_code == 200:
+                            result = resp.json().get('results', {})
+                            return ticker, result.get('market_cap', 0)
+                    except Exception:
+                        pass
+                    return ticker, 0
+
+                # Fetch in parallel (all tickers - unlimited rate limit)
+                tickers_to_fetch = tickers_needing_mcap
+                with ThreadPoolExecutor(max_workers=50) as executor:
+                    futures = {executor.submit(fetch_market_cap, t): t for t in tickers_to_fetch}
+                    for future in as_completed(futures):
+                        try:
+                            ticker, mcap = future.result()
+                            market_cap_cache[ticker] = mcap
+                        except Exception:
+                            pass
+
+                # Save updated cache
+                try:
+                    with open(cache_file, 'w') as f:
+                        json.dump({'timestamp': time.time(), 'data': market_cap_cache}, f)
+                except Exception:
+                    pass
+
+            # Filter by market cap
+            filtered_tickers = []
+            for ticker in candidate_tickers:
+                mcap = market_cap_cache.get(ticker, 0)
+                if mcap >= min_market_cap:
+                    filtered_tickers.append(ticker)
+
+            logger.info(f"Polygon universe: {len(filtered_tickers)} stocks with market cap >= ${min_market_cap/1e6:.0f}M")
+            return sorted(filtered_tickers)
 
         except Exception as e:
             logger.warning(f"Failed to fetch Polygon full universe: {e}")
