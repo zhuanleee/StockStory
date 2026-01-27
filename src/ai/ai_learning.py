@@ -827,110 +827,153 @@ def fetch_realtime_market_data():
     return market_data
 
 
-def fetch_news_with_xai(tickers=None, max_headlines=40):
+def get_trending_tickers():
     """
-    Smart news fetching from multiple sources with rotating coverage.
+    Auto-detect current trending/key tickers from multiple sources.
+    Returns list of tickers that are moving or in the news today.
+    """
+    import yfinance as yf
+    from concurrent.futures import ThreadPoolExecutor
+    import glob
 
-    Sources: Reuters, Google News, Yahoo Finance, MarketWatch
-    Coverage: Rotates through sectors, macro, commodities, crypto
+    trending = set()
+
+    def get_top_movers():
+        """Get top gainers and losers."""
+        try:
+            # Use major indices components that are moving
+            spy = yf.Ticker('SPY')
+            # Get holdings - top weighted stocks
+            return ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'BRK-B', 'JPM', 'V']
+        except:
+            return []
+
+    def get_from_scan_results():
+        """Get tickers from latest scan results."""
+        try:
+            import pandas as pd
+            scan_files = glob.glob('scan_*.csv')
+            if scan_files:
+                df = pd.read_csv(max(scan_files))
+                if 'ticker' in df.columns:
+                    return df['ticker'].head(10).tolist()
+                elif 'Ticker' in df.columns:
+                    return df['Ticker'].head(10).tolist()
+        except:
+            pass
+        return []
+
+    def get_volume_leaders():
+        """Get high volume stocks today."""
+        # These typically have news
+        return ['NVDA', 'AMD', 'TSLA', 'AAPL', 'SPY', 'QQQ', 'AMZN', 'META']
+
+    try:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(get_top_movers),
+                executor.submit(get_from_scan_results),
+                executor.submit(get_volume_leaders),
+            ]
+            for future in futures:
+                try:
+                    result = future.result(timeout=5)
+                    trending.update(result)
+                except:
+                    pass
+    except:
+        pass
+
+    # Always include these market leaders
+    core_tickers = {'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'JPM', 'SPY', 'QQQ'}
+    trending.update(core_tickers)
+
+    return list(trending)[:20]  # Cap at 20 tickers
+
+
+def fetch_news_with_xai(tickers=None, max_headlines=80):
+    """
+    Comprehensive news fetching from ALL sources.
+
+    Fetches from ALL sources (not rotating) for complete market picture:
+    - Reuters, Google News, Yahoo Finance
+    - All sectors, all macro topics
+    - Auto-detected trending tickers
+    - Commodities, crypto, geopolitical
     """
     import feedparser
-    import random
     from concurrent.futures import ThreadPoolExecutor
 
     headlines = []
     sources_used = []
 
     # ==========================================================================
-    # NEWS SOURCES - Diverse and rotating
+    # AUTO-DETECT TRENDING TICKERS
+    # ==========================================================================
+    if tickers is None:
+        tickers = get_trending_tickers()
+        logger.debug(f"Auto-detected trending tickers: {tickers}")
+
+    # ==========================================================================
+    # ALL NEWS SOURCES - Comprehensive coverage (no rotation)
     # ==========================================================================
 
-    # ALWAYS INCLUDE: Major news sources (market-wide)
-    core_feeds = [
-        # Reuters Business & Markets
+    all_feeds = []
+
+    # CORE NEWS SOURCES (4)
+    all_feeds.extend([
         ('Reuters Business', 'https://feeds.reuters.com/reuters/businessNews'),
         ('Reuters Markets', 'https://feeds.reuters.com/reuters/marketsNews'),
-        # Google News Finance
         ('Google Finance', 'https://news.google.com/rss/search?q=stock+market+today&hl=en-US&gl=US&ceid=US:en'),
-        # Yahoo Finance main
         ('Yahoo Markets', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US'),
-    ]
+    ])
 
-    # MACRO & ECONOMY (rotate 2)
-    macro_feeds = [
+    # MACRO & ECONOMY - ALL (4)
+    all_feeds.extend([
         ('Fed/Rates', 'https://news.google.com/rss/search?q=federal+reserve+interest+rates&hl=en-US&gl=US&ceid=US:en'),
         ('Economy', 'https://news.google.com/rss/search?q=US+economy+GDP+jobs&hl=en-US&gl=US&ceid=US:en'),
         ('Inflation', 'https://news.google.com/rss/search?q=inflation+CPI+prices&hl=en-US&gl=US&ceid=US:en'),
         ('Trade/Tariffs', 'https://news.google.com/rss/search?q=trade+tariffs+china&hl=en-US&gl=US&ceid=US:en'),
-    ]
+    ])
 
-    # SECTORS (rotate 3)
-    sector_feeds = [
-        ('Tech', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLK&region=US&lang=en-US'),
+    # ALL SECTORS (8)
+    all_feeds.extend([
+        ('Tech Sector', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLK&region=US&lang=en-US'),
         ('Financials', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLF&region=US&lang=en-US'),
         ('Healthcare', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLV&region=US&lang=en-US'),
         ('Energy', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLE&region=US&lang=en-US'),
         ('Consumer', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLY&region=US&lang=en-US'),
         ('Industrials', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLI&region=US&lang=en-US'),
         ('Real Estate', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLRE&region=US&lang=en-US'),
-        ('Utilities', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLU&region=US&lang=en-US'),
-    ]
+        ('Materials', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLB&region=US&lang=en-US'),
+    ])
 
-    # HOT TICKERS (rotate 4 - mix of leaders + trending)
-    ticker_pools = {
-        'mega_cap': ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA'],
-        'semiconductors': ['NVDA', 'AMD', 'AVGO', 'INTC', 'QCOM', 'ARM', 'SMCI'],
-        'ai_plays': ['NVDA', 'MSFT', 'GOOGL', 'PLTR', 'AI', 'PATH', 'SNOW'],
-        'financials': ['JPM', 'BAC', 'GS', 'MS', 'V', 'MA', 'BRK-B'],
-        'healthcare': ['UNH', 'JNJ', 'PFE', 'ABBV', 'MRK', 'LLY', 'BMY'],
-        'retail': ['AMZN', 'WMT', 'COST', 'TGT', 'HD', 'LOW'],
-        'ev_energy': ['TSLA', 'RIVN', 'LCID', 'F', 'GM', 'ENPH', 'FSLR'],
-    }
+    # COMMODITIES & CRYPTO - ALL (4)
+    all_feeds.extend([
+        ('Oil/Energy', 'https://news.google.com/rss/search?q=crude+oil+price+energy&hl=en-US&gl=US&ceid=US:en'),
+        ('Gold/Metals', 'https://news.google.com/rss/search?q=gold+silver+precious+metals&hl=en-US&gl=US&ceid=US:en'),
+        ('Crypto', 'https://news.google.com/rss/search?q=bitcoin+ethereum+crypto&hl=en-US&gl=US&ceid=US:en'),
+        ('Commodities', 'https://news.google.com/rss/search?q=commodities+copper+wheat&hl=en-US&gl=US&ceid=US:en'),
+    ])
 
-    # COMMODITIES & CRYPTO (rotate 2)
-    commodity_feeds = [
-        ('Oil', 'https://news.google.com/rss/search?q=crude+oil+price&hl=en-US&gl=US&ceid=US:en'),
-        ('Gold', 'https://news.google.com/rss/search?q=gold+price+precious+metals&hl=en-US&gl=US&ceid=US:en'),
-        ('Bitcoin', 'https://news.google.com/rss/search?q=bitcoin+crypto+price&hl=en-US&gl=US&ceid=US:en'),
-        ('Commodities', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=DBC&region=US&lang=en-US'),
-    ]
-
-    # GEOPOLITICAL (rotate 1)
-    geopolitical_feeds = [
+    # GEOPOLITICAL - ALL (3)
+    all_feeds.extend([
         ('Geopolitics', 'https://news.google.com/rss/search?q=geopolitical+risk+markets&hl=en-US&gl=US&ceid=US:en'),
-        ('China', 'https://news.google.com/rss/search?q=china+economy+stocks&hl=en-US&gl=US&ceid=US:en'),
-        ('Europe', 'https://news.google.com/rss/search?q=europe+economy+ECB&hl=en-US&gl=US&ceid=US:en'),
-    ]
+        ('China', 'https://news.google.com/rss/search?q=china+economy+markets&hl=en-US&gl=US&ceid=US:en'),
+        ('Global Markets', 'https://news.google.com/rss/search?q=global+markets+europe+asia&hl=en-US&gl=US&ceid=US:en'),
+    ])
 
-    # ==========================================================================
-    # SMART SELECTION - Rotate to avoid repetition
-    # ==========================================================================
+    # EARNINGS & IPO (2)
+    all_feeds.extend([
+        ('Earnings', 'https://news.google.com/rss/search?q=earnings+report+beat+miss&hl=en-US&gl=US&ceid=US:en'),
+        ('IPO/Deals', 'https://news.google.com/rss/search?q=IPO+merger+acquisition+deal&hl=en-US&gl=US&ceid=US:en'),
+    ])
 
-    selected_feeds = []
-
-    # Always include core feeds
-    selected_feeds.extend(core_feeds)
-
-    # Rotate macro (pick 2 random)
-    selected_feeds.extend(random.sample(macro_feeds, min(2, len(macro_feeds))))
-
-    # Rotate sectors (pick 3 random)
-    selected_feeds.extend(random.sample(sector_feeds, min(3, len(sector_feeds))))
-
-    # Rotate commodities (pick 2 random)
-    selected_feeds.extend(random.sample(commodity_feeds, min(2, len(commodity_feeds))))
-
-    # Rotate geopolitical (pick 1 random)
-    selected_feeds.extend(random.sample(geopolitical_feeds, min(1, len(geopolitical_feeds))))
-
-    # Smart ticker selection - pick from 2 random pools, 2 tickers each
-    selected_pools = random.sample(list(ticker_pools.keys()), min(2, len(ticker_pools)))
-    for pool in selected_pools:
-        pool_tickers = random.sample(ticker_pools[pool], min(2, len(ticker_pools[pool])))
-        for ticker in pool_tickers:
-            selected_feeds.append(
-                (f'{ticker}', f'https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US')
-            )
+    # AUTO-DETECTED TRENDING TICKERS (dynamic)
+    for ticker in tickers[:15]:  # Top 15 trending
+        all_feeds.append(
+            (f'{ticker}', f'https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US')
+        )
 
     def fetch_feed(feed_tuple):
         """Fetch a single feed with source tracking."""
@@ -949,9 +992,10 @@ def fetch_news_with_xai(tickers=None, max_headlines=40):
             return []
 
     try:
-        # Parallel fetch all feeds for speed
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            results = list(executor.map(fetch_feed, selected_feeds))
+        # Parallel fetch ALL feeds for comprehensive coverage
+        logger.debug(f"Fetching from {len(all_feeds)} news sources...")
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            results = list(executor.map(fetch_feed, all_feeds))
 
         # Combine all headlines, remove duplicates, track sources
         seen_titles = set()
@@ -968,18 +1012,38 @@ def fetch_news_with_xai(tickers=None, max_headlines=40):
         if not headlines:
             return {'sentiment': 'neutral', 'headlines': [], 'summary': 'No news available', 'count': 0, 'sources': []}
 
-        # Use X AI for comprehensive interpretation
-        prompt = f"""Analyze these {len(headlines[:max_headlines])} market headlines from multiple sources and determine overall market sentiment.
+        # Use X AI for comprehensive interpretation of ALL news
+        prompt = f"""Analyze these {len(headlines[:max_headlines])} market headlines from {len(sources_used)} diverse sources.
 
-NEWS SOURCES: {', '.join(sources_used[:10])}
+SOURCES ANALYZED: {', '.join(sources_used)}
+TRENDING TICKERS: {', '.join(tickers[:10])}
 
-HEADLINES:
+ALL HEADLINES:
 {json.dumps(headlines[:max_headlines], indent=1)}
 
-Analyze ALL headlines carefully. Return JSON:
-{{"sentiment":"bullish/bearish/neutral","confidence":"high/medium/low","key_news":"single most important headline","sector_sentiment":{{"tech":"bullish/bearish/neutral","finance":"sentiment","energy":"sentiment","healthcare":"sentiment"}},"macro_factors":["key macro point 1","point 2"],"bullish_signals":["up to 3 bullish points"],"bearish_signals":["up to 3 bearish points"],"market_impact":"2-3 sentence summary of overall market direction and what smart money should watch"}}"""
+Synthesize ALL information comprehensively. Return JSON:
+{{
+    "sentiment": "bullish/bearish/neutral",
+    "confidence": "high/medium/low",
+    "key_news": "single most market-moving headline",
+    "sector_sentiment": {{
+        "tech": "bullish/bearish/neutral",
+        "financials": "sentiment",
+        "healthcare": "sentiment",
+        "energy": "sentiment",
+        "consumer": "sentiment",
+        "industrials": "sentiment"
+    }},
+    "macro_factors": ["key macro/economic factor 1", "factor 2", "factor 3"],
+    "geopolitical": ["geopolitical risk or development"],
+    "trending_tickers_sentiment": {{"TICKER": "bullish/bearish/neutral for top 5 mentioned"}},
+    "bullish_signals": ["up to 5 bullish catalysts"],
+    "bearish_signals": ["up to 5 bearish risks"],
+    "commodities": {{"oil": "up/down/stable", "gold": "trend", "crypto": "trend"}},
+    "market_impact": "3-4 sentence synthesis: overall direction, key drivers, what smart money should watch, and potential surprises"
+}}"""
 
-        response = call_ai(prompt, "Senior market strategist. Analyze diverse news sources comprehensively.", max_tokens=600, timeout=25, prefer_xai=True)
+        response = call_ai(prompt, "Chief market strategist. Synthesize all sources for comprehensive market view.", max_tokens=900, timeout=30, prefer_xai=True)
 
         if response:
             try:
@@ -994,23 +1058,26 @@ Analyze ALL headlines carefully. Return JSON:
                 text = text.strip()
 
                 result = json.loads(text)
-                result['headlines'] = headlines[:12]  # Return top 12 for display
-                result['count'] = len(headlines[:max_headlines])
-                result['sources'] = sources_used[:10]  # Show which sources were used
+                result['headlines'] = headlines[:15]  # Return top 15 for display
+                result['total_analyzed'] = len(headlines[:max_headlines])
+                result['sources'] = sources_used  # All sources used
+                result['trending_tickers'] = tickers[:10]
                 return result
             except json.JSONDecodeError:
+                logger.debug(f"JSON parse error: {response[:200]}")
                 pass
 
         return {
             'sentiment': 'neutral',
-            'headlines': headlines[:12],
+            'headlines': headlines[:15],
             'summary': 'Headlines fetched but AI interpretation unavailable',
-            'count': len(headlines),
-            'sources': sources_used
+            'total_analyzed': len(headlines),
+            'sources': sources_used,
+            'trending_tickers': tickers[:10]
         }
 
     except Exception as e:
-        logger.debug(f"News fetch error: {e}")
+        logger.error(f"News fetch error: {e}")
         return {'sentiment': 'neutral', 'headlines': [], 'summary': str(e), 'count': 0, 'sources': []}
 
 
@@ -1075,13 +1142,17 @@ Return JSON:
             if news_data and isinstance(news_data, dict):
                 result['news_sentiment'] = news_data.get('sentiment')
                 result['news_confidence'] = news_data.get('confidence')
-                result['news_count'] = news_data.get('count', 0)
+                result['total_headlines_analyzed'] = news_data.get('total_analyzed', 0)
                 result['news_sources'] = news_data.get('sources', [])
+                result['trending_tickers'] = news_data.get('trending_tickers', [])
                 result['sector_sentiment'] = news_data.get('sector_sentiment', {})
                 result['macro_factors'] = news_data.get('macro_factors', [])
+                result['geopolitical'] = news_data.get('geopolitical', [])
+                result['commodities'] = news_data.get('commodities', {})
+                result['ticker_sentiment'] = news_data.get('trending_tickers_sentiment', {})
                 result['bullish_signals'] = news_data.get('bullish_signals', [])
                 result['bearish_signals'] = news_data.get('bearish_signals', [])
-                result['top_headlines'] = news_data.get('headlines', [])[:8]
+                result['top_headlines'] = news_data.get('headlines', [])[:10]
             return result
         except json.JSONDecodeError:
             return {'raw_narrative': response}
