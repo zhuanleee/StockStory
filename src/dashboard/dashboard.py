@@ -1,0 +1,2934 @@
+#!/usr/bin/env python3
+"""
+Stock Scanner Web Dashboard
+
+Modern, interactive dashboard that displays:
+- Top stocks with scores
+- Hot themes/stories
+- Sector rotation
+- News sentiment
+- Market breadth
+- AI insights
+
+Generates static HTML for GitHub Pages.
+Syncs with Telegram bot data.
+"""
+
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
+# Try to import dependencies, fail gracefully
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+
+DASHBOARD_HTML = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Scanner Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-card-hover: #1a1a25;
+            --bg-accent: #1e1e2e;
+            --border: #2a2a3a;
+            --text: #e4e4e7;
+            --text-dim: #71717a;
+            --green: #22c55e;
+            --green-dim: rgba(34, 197, 94, 0.15);
+            --red: #ef4444;
+            --red-dim: rgba(239, 68, 68, 0.15);
+            --blue: #3b82f6;
+            --blue-dim: rgba(59, 130, 246, 0.15);
+            --purple: #a855f7;
+            --purple-dim: rgba(168, 85, 247, 0.15);
+            --orange: #f97316;
+            --orange-dim: rgba(249, 115, 22, 0.15);
+            --yellow: #eab308;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        /* Navbar */
+        .navbar {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .navbar-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .logo-icon {
+            font-size: 1.5rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 8px;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-accent);
+            color: var(--text);
+        }
+
+        .nav-link.active {
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .telegram-btn {
+            background: linear-gradient(135deg, #0088cc, #00a8e8);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .telegram-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 136, 204, 0.4);
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--blue);
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .stat-value.green { color: var(--green); }
+        .stat-value.red { color: var(--red); }
+        .stat-value.blue { color: var(--blue); }
+        .stat-value.purple { color: var(--purple); }
+        .stat-value.orange { color: var(--orange); }
+
+        .stat-change {
+            font-size: 0.875rem;
+            margin-top: 4px;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 20px;
+        }
+
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+        .col-12 { grid-column: span 12; }
+
+        @media (max-width: 1200px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title-icon {
+            font-size: 1.25rem;
+        }
+
+        .card-badge {
+            background: var(--bg-accent);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .card-body {
+            padding: 20px 24px;
+        }
+
+        /* Tables */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+        }
+
+        .table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .table tr:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .ticker {
+            font-weight: 600;
+            color: var(--blue);
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
+        /* Score Bar */
+        .score-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .score-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-accent);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .score-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--green), var(--blue));
+        }
+
+        /* Theme Tags */
+        .themes-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .theme-tag {
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s;
+            cursor: default;
+        }
+
+        .theme-tag:hover {
+            transform: scale(1.05);
+        }
+
+        .theme-hot {
+            background: var(--orange-dim);
+            color: var(--orange);
+            border: 1px solid var(--orange);
+        }
+
+        .theme-warm {
+            background: var(--yellow);
+            background: rgba(234, 179, 8, 0.15);
+            color: var(--yellow);
+            border: 1px solid var(--yellow);
+        }
+
+        .theme-neutral {
+            background: var(--bg-accent);
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+
+        .theme-count {
+            background: rgba(255,255,255,0.15);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+
+        /* Sentiment Bars */
+        .sentiment-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sentiment-row:last-child {
+            border-bottom: none;
+        }
+
+        .sentiment-ticker {
+            width: 60px;
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .sentiment-bar-container {
+            flex: 1;
+            display: flex;
+            height: 24px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 0 16px;
+        }
+
+        .sentiment-bullish {
+            background: var(--green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .sentiment-bearish {
+            background: var(--red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .sentiment-label {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .sentiment-label.bullish { background: var(--green-dim); color: var(--green); }
+        .sentiment-label.bearish { background: var(--red-dim); color: var(--red); }
+        .sentiment-label.neutral { background: var(--bg-accent); color: var(--text-dim); }
+
+        /* Breadth Meters */
+        .breadth-item {
+            margin-bottom: 16px;
+        }
+
+        .breadth-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .breadth-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.875rem;
+        }
+
+        .breadth-bar {
+            height: 12px;
+            background: var(--bg-accent);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .breadth-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        /* AI Insights */
+        .ai-insight {
+            background: linear-gradient(135deg, var(--purple-dim), var(--blue-dim));
+            border: 1px solid var(--purple);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .ai-insight:last-child {
+            margin-bottom: 0;
+        }
+
+        .ai-insight-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .ai-insight-text {
+            color: var(--text-dim);
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+
+        /* Command Card */
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .command-item {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .command-item:hover {
+            border-color: var(--blue);
+            background: var(--blue-dim);
+        }
+
+        .command-name {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+            color: var(--blue);
+            margin-bottom: 6px;
+        }
+
+        .command-desc {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 24px;
+            color: var(--text-dim);
+            font-size: 0.875rem;
+        }
+
+        .footer a {
+            color: var(--blue);
+            text-decoration: none;
+        }
+
+        /* Pulse Animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        /* Refresh timestamp */
+        .refresh-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* Fear & Greed Gauge */
+        .gauge-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .gauge-svg {
+            width: 100%;
+            max-width: 200px;
+        }
+
+        .gauge-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-top: -20px;
+        }
+
+        .gauge-label {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .gauge-legend {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 12px;
+        }
+
+        /* Component Items */
+        .component-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .component-item:last-child {
+            border-bottom: none;
+        }
+
+        .component-name {
+            flex: 0 0 110px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .component-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-accent);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .component-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease, background 0.3s;
+        }
+
+        .component-score {
+            flex: 0 0 35px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        .health-score {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .health-label {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .health-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            text-align: left;
+        }
+
+        .health-metric {
+            background: var(--bg-accent);
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .metric-label {
+            display: block;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        /* Ecosystem-specific styles */
+        .ecosystem-supplier { color: #60a5fa; }
+        .ecosystem-customer { color: #34d399; }
+        .ecosystem-competitor { color: #f472b6; }
+        .ecosystem-infrastructure { color: #a78bfa; }
+
+        .gap-hot { color: #ef4444; }
+        .gap-warm { color: #f59e0b; }
+        .gap-cool { color: #22c55e; }
+
+        .opportunity-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .opportunity-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--blue);
+        }
+
+        .opportunity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .opportunity-ticker {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--blue);
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .opportunity-gap {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: white;
+        }
+
+        .opportunity-detail {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            margin: 4px 0;
+        }
+
+        .subtheme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .subtheme-card {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .subtheme-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .subtheme-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .subtheme-status {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .status-hot { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status-warm { background: rgba(249, 115, 22, 0.2); color: #f97316; }
+        .status-early { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+
+        .subtheme-tickers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .subtheme-ticker {
+            background: var(--bg-card);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .inplay-bar {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 8px 0;
+        }
+
+        .inplay-card {
+            min-width: 120px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .inplay-ticker {
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+            margin-bottom: 4px;
+        }
+
+        .inplay-score {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .inplay-theme {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+
+        .inplay-eco {
+            font-size: 0.75rem;
+            color: var(--blue);
+            margin-top: 4px;
+        }
+
+        .wave-tier {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-left: 3px solid var(--border);
+            margin-bottom: 8px;
+        }
+
+        .wave-tier.complete { border-color: var(--green); }
+        .wave-tier.in-progress { border-color: var(--blue); }
+        .wave-tier.pending { border-color: var(--text-dim); }
+
+        .wave-tier-num {
+            font-size: 1.2rem;
+            font-weight: 700;
+            width: 32px;
+        }
+
+        .wave-tier-info {
+            flex: 1;
+        }
+
+        .wave-tier-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .wave-tier-tickers {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        .wave-tier-status {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+
+        /* Evolution Engine Styles */
+        .evolution-card {
+            background: linear-gradient(135deg, var(--bg-card), var(--purple-dim));
+            border: 1px solid var(--purple);
+        }
+
+        .evolution-cycle {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--purple);
+        }
+
+        .evolution-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .evolution-metric:last-child {
+            border-bottom: none;
+        }
+
+        .evolution-metric-label {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .evolution-metric-value {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .weight-change-positive {
+            color: var(--green);
+        }
+
+        .weight-change-negative {
+            color: var(--red);
+        }
+
+        .discovered-theme-card {
+            background: var(--bg-accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+
+        .theme-stage {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .stage-early {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--green);
+        }
+
+        .stage-middle {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--blue);
+        }
+
+        .stage-peak {
+            background: rgba(249, 115, 22, 0.2);
+            color: var(--orange);
+        }
+
+        .stage-fading {
+            background: rgba(113, 113, 122, 0.2);
+            color: var(--text-dim);
+        }
+
+        .correlation-pair {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-accent);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .correlation-value {
+            background: var(--blue-dim);
+            color: var(--blue);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .accuracy-gauge {
+            text-align: center;
+            padding: 16px;
+        }
+
+        .accuracy-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .accuracy-ci {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .calibration-good {
+            color: var(--green);
+        }
+
+        .calibration-bad {
+            color: var(--red);
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="logo">
+                <span class="logo-icon">📊</span>
+                <span>Stock Scanner</span>
+            </div>
+            <div class="nav-links">
+                <a href="#overview" class="nav-link active">Overview</a>
+                <a href="#evolution-section" class="nav-link">Evolution</a>
+                <a href="#themes" class="nav-link">Themes</a>
+                <a href="#sentiment" class="nav-link">Sentiment</a>
+                <a href="#commands" class="nav-link">Commands</a>
+            </div>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="refresh-info">
+                    <div class="live-dot"></div>
+                    <span>Updated {{LAST_UPDATE}}</span>
+                </div>
+                <a href="https://t.me/{{BOT_USERNAME}}" class="telegram-btn" target="_blank">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.139-5.062 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.242-1.865-.442-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.015 3.333-1.386 4.025-1.627 4.477-1.635.099-.002.321.023.465.141.121.1.154.234.17.33.015.097.035.311.019.48z"/>
+                    </svg>
+                    Open Bot
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Stats Overview -->
+        <section id="overview">
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-label">Stocks Scanned</div>
+                    <div class="stat-value blue" id="total-scanned">{{TOTAL_SCANNED}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Active Breakouts</div>
+                    <div class="stat-value green">{{BREAKOUTS}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">In Squeeze</div>
+                    <div class="stat-value purple">{{SQUEEZES}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Market Breadth</div>
+                    <div class="stat-value {{BREADTH_CLASS}}">{{BREADTH}}%</div>
+                    <div class="stat-change">Above 50 SMA</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Hot Themes</div>
+                    <div class="stat-value orange" id="hot-themes-count">{{HOT_THEMES}}</div>
+                </div>
+            </div>
+
+            <!-- Refresh Bar -->
+            <div class="refresh-bar">
+                <span style="color: var(--text-dim); font-size: 0.875rem;">Last refresh: <span id="last-update">--:--</span></span>
+                <button id="refresh-btn" class="action-btn" onclick="refreshAll()">🔄 Refresh Data</button>
+            </div>
+
+            <!-- Fear & Greed + Health Section -->
+            <div class="grid" style="margin-bottom: 24px;">
+                <!-- Fear & Greed Gauge -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Fear & Greed Index
+                            </div>
+                            <button class="action-btn" onclick="fetchHealth()" style="padding: 6px 12px; font-size: 0.75rem;">Update</button>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="gauge-container" id="fear-greed-gauge">
+                                <svg viewBox="0 0 200 120" class="gauge-svg">
+                                    <!-- Background arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#2a2a3a" stroke-width="20" stroke-linecap="round"/>
+                                    <!-- Gradient definitions -->
+                                    <defs>
+                                        <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" style="stop-color:#ef4444"/>
+                                            <stop offset="25%" style="stop-color:#f97316"/>
+                                            <stop offset="50%" style="stop-color:#eab308"/>
+                                            <stop offset="75%" style="stop-color:#84cc16"/>
+                                            <stop offset="100%" style="stop-color:#22c55e"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <!-- Colored arc -->
+                                    <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGradient)" stroke-width="20" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="125.6" id="gauge-fill"/>
+                                    <!-- Needle -->
+                                    <line x1="100" y1="100" x2="100" y2="30" stroke="#fff" stroke-width="3" stroke-linecap="round" id="gauge-needle" transform="rotate(-90, 100, 100)"/>
+                                    <circle cx="100" cy="100" r="8" fill="#fff"/>
+                                </svg>
+                                <div class="gauge-value" id="fg-score">--</div>
+                                <div class="gauge-label" id="fg-label">Loading...</div>
+                            </div>
+                            <div class="gauge-legend">
+                                <span style="color: #ef4444;">Extreme Fear</span>
+                                <span style="color: #eab308;">Neutral</span>
+                                <span style="color: #22c55e;">Extreme Greed</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Health Components -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📈</span>
+                                Fear & Greed Components
+                            </div>
+                        </div>
+                        <div class="card-body" id="fg-components">
+                            <div class="component-item">
+                                <span class="component-name">VIX Level</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Market Momentum</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Put/Call Ratio</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Safe Haven</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Junk Bonds</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                            <div class="component-item">
+                                <span class="component-name">Volatility</span>
+                                <div class="component-bar"><div class="component-fill" style="width: 50%;"></div></div>
+                                <span class="component-score">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Health Traffic Light -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🚦</span>
+                                Market Health
+                            </div>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="health-score" id="health-score">--</div>
+                            <div class="health-label" id="health-label">Loading...</div>
+
+                            <div class="health-metrics" id="health-metrics">
+                                <div class="health-metric">
+                                    <span class="metric-label">Breadth Score</span>
+                                    <span class="metric-value" id="breadth-score">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">A/D Ratio</span>
+                                    <span class="metric-value" id="ad-ratio">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">New Highs</span>
+                                    <span class="metric-value" id="new-highs">--</span>
+                                </div>
+                                <div class="health-metric">
+                                    <span class="metric-label">New Lows</span>
+                                    <span class="metric-value" id="new-lows">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evolution Engine Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="evolution-section">
+                <!-- Evolution Status -->
+                <div class="col-4">
+                    <div class="card evolution-card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧬</span>
+                                Evolution Engine
+                            </div>
+                            <button class="action-btn" onclick="fetchEvolution()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body" style="text-align: center;">
+                            <div class="evolution-cycle" id="evolution-cycle">--</div>
+                            <div style="color: var(--text-dim); margin-bottom: 16px;">Learning Cycle</div>
+
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Last Evolution</span>
+                                <span class="evolution-metric-value" id="last-evolution">--</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Overall Accuracy</span>
+                                <span class="evolution-metric-value" id="overall-accuracy">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Calibration</span>
+                                <span class="evolution-metric-value" id="calibration-score">--%</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Discovered Themes</span>
+                                <span class="evolution-metric-value" id="discovered-themes-count">0</span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">Correlations</span>
+                                <span class="evolution-metric-value" id="correlations-count">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Adaptive Weights -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚖️</span>
+                                Adaptive Weights
+                            </div>
+                        </div>
+                        <div class="card-body" id="adaptive-weights">
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">theme_heat</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">catalyst</span>
+                                <span class="evolution-metric-value">18% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">technical</span>
+                                <span class="evolution-metric-value">25% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">ecosystem</span>
+                                <span class="evolution-metric-value">10% <span class="weight-change-positive">--</span></span>
+                            </div>
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">sentiment</span>
+                                <span class="evolution-metric-value">7% <span class="weight-change-positive">--</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discovered Themes -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔮</span>
+                                Auto-Discovered Themes
+                            </div>
+                        </div>
+                        <div class="card-body" id="discovered-themes-list">
+                            <p style="color: var(--text-dim); text-align: center;">No themes discovered yet</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Learned Correlations -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔗</span>
+                                Learned Correlations
+                            </div>
+                        </div>
+                        <div class="card-body" id="learned-correlations">
+                            <p style="color: var(--text-dim); text-align: center;">Run scans to build correlation data</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Accuracy Metrics -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Validation Metrics
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="accuracy-gauge">
+                                <div class="accuracy-value" id="accuracy-display">--%</div>
+                                <div class="accuracy-ci" id="accuracy-ci">95% CI: [--%, --%]</div>
+                            </div>
+                            <div id="calibration-buckets">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">Calibration data builds over time</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameter Learning Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="parameter-section">
+                <!-- Parameter Learning Status -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">⚙️</span>
+                                Parameter Learning
+                            </div>
+                            <button class="action-btn" onclick="fetchParameters()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="param-stats" id="param-stats">
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--blue);" id="param-total">124</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Total Params</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--green);" id="param-learned">0</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Learned</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--purple);" id="param-progress">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Progress</div>
+                                    </div>
+                                    <div class="stat-item" style="text-align: center; padding: 12px; background: var(--bg-accent); border-radius: 8px;">
+                                        <div style="font-size: 1.8rem; font-weight: 700; color: var(--orange);" id="param-confidence">0%</div>
+                                        <div style="font-size: 0.75rem; color: var(--text-dim);">Avg Confidence</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Health -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🏥</span>
+                                System Health
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="param-health">
+                                <div style="text-align: center; padding: 20px;">
+                                    <div style="font-size: 3rem; margin-bottom: 10px;" id="health-icon">✅</div>
+                                    <div style="font-size: 1.2rem; font-weight: 600;" id="health-status">Healthy</div>
+                                    <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 8px;" id="health-issues">No issues detected</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- A/B Experiments -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🧪</span>
+                                A/B Experiments
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="experiments-list">
+                                <p style="color: var(--text-dim); text-align: center; font-size: 0.85rem;">No active experiments</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ecosystem Intelligence Section -->
+            <div class="grid" style="margin-bottom: 24px;" id="ecosystem-section">
+                <!-- Story Stocks In Play -->
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📖</span>
+                                Story Stocks In Play
+                            </div>
+                            <span class="card-badge" style="font-size: 0.7rem;">Story 50% | Catalyst 35% | Technical 15%</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="inplay-bar" id="inplay-bar">
+                                {{INPLAY_HTML}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ecosystem Opportunities -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Ecosystem Opportunities
+                            </div>
+                            <span class="card-badge">Lagging Plays</span>
+                        </div>
+                        <div class="card-body" id="opportunities-list">
+                            {{OPPORTUNITIES_HTML}}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-Themes Grid -->
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🎯</span>
+                                Active Sub-Themes
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="subtheme-grid" id="subtheme-grid">
+                                {{SUBTHEMES_HTML}}
+                                <div class="subtheme-card">
+                                    <div class="subtheme-header">
+                                        <span class="subtheme-name">Loading...</span>
+                                        <span class="subtheme-status status-warm">--</span>
+                                    </div>
+                                    <div class="subtheme-tickers"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <!-- Top Stocks -->
+                <div class="col-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔥</span>
+                                Top Story Stocks
+                            </div>
+                            <span class="card-badge">Story-First Rankings</span>
+                        </div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Ticker</th>
+                                    <th>Theme</th>
+                                    <th>Catalyst</th>
+                                    <th style="width: 150px;">Story Score</th>
+                                    <th>Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stocks-table">
+                                {{TOP_STOCKS_ROWS}}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Market Breadth -->
+                <div class="col-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📊</span>
+                                Market Breadth
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 20 SMA</span>
+                                    <span class="{{ABOVE_20_CLASS}}">{{ABOVE_20}}%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: {{ABOVE_20}}%; background: var(--blue);"></div>
+                                </div>
+                            </div>
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 50 SMA</span>
+                                    <span class="{{ABOVE_50_CLASS}}">{{ABOVE_50}}%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: {{ABOVE_50}}%; background: var(--green);"></div>
+                                </div>
+                            </div>
+                            <div class="breadth-item">
+                                <div class="breadth-label">
+                                    <span>Above 200 SMA</span>
+                                    <span class="{{ABOVE_200_CLASS}}">{{ABOVE_200}}%</span>
+                                </div>
+                                <div class="breadth-bar">
+                                    <div class="breadth-fill" style="width: {{ABOVE_200}}%; background: var(--purple);"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sector Leaders -->
+                    <div class="card" style="margin-top: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📈</span>
+                                Sector Leaders
+                            </div>
+                        </div>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Sector</th>
+                                    <th>RS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{SECTOR_ROWS}}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hot Themes -->
+        <section id="themes" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🔥</span>
+                                Hot Themes & Stories
+                            </div>
+                            <span class="card-badge">Auto-detected</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="themes-container" id="themes-content">
+                                {{THEMES_HTML}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sentiment -->
+        <section id="sentiment" style="margin-top: 24px;">
+            <div class="grid">
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">📰</span>
+                                News Sentiment
+                            </div>
+                        </div>
+                        <div class="card-body" id="sentiment-content">
+                            {{SENTIMENT_HTML}}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span class="card-title-icon">🤖</span>
+                                AI Insights
+                            </div>
+                            <button class="action-btn" onclick="fetchBriefing()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh AI</button>
+                        </div>
+                        <div class="card-body" id="ai-content">
+                            {{AI_INSIGHTS_HTML}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bot Commands -->
+        <section id="commands" style="margin-top: 24px;">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <span class="card-title-icon">⌨️</span>
+                        Telegram Bot Commands
+                    </div>
+                    <a href="https://t.me/{{BOT_USERNAME}}" class="telegram-btn" target="_blank">
+                        Open in Telegram
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="command-grid">
+                        <div class="command-item">
+                            <div class="command-name">/scan</div>
+                            <div class="command-desc">Run full momentum scanner</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/stories</div>
+                            <div class="command-desc">Detect hot themes</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/news</div>
+                            <div class="command-desc">News sentiment analysis</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/sectors</div>
+                            <div class="command-desc">Sector rotation</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/earnings</div>
+                            <div class="command-desc">Earnings calendar</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/briefing</div>
+                            <div class="command-desc">AI market narrative</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/predict NVDA</div>
+                            <div class="command-desc">AI trade prediction</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/screen</div>
+                            <div class="command-desc">Custom stock screener</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">NVDA</div>
+                            <div class="command-desc">Full stock analysis</div>
+                        </div>
+                        <div class="command-item">
+                            <div class="command-name">/backtest NVDA</div>
+                            <div class="command-desc">Signal accuracy test</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer class="footer">
+        <p>Stock Scanner Bot Dashboard | Auto-updates every 6 hours</p>
+        <p style="margin-top: 8px;">
+            <a href="https://github.com/zhuanleee/stock_scanner_bot">GitHub</a> ·
+            <a href="https://t.me/{{BOT_USERNAME}}">Telegram Bot</a>
+        </p>
+    </footer>
+
+    <script>
+        const API_BASE = 'https://web-production-46562.up.railway.app/api';
+
+        // Loading state helper
+        function setLoading(elementId, loading) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                if (loading) {
+                    el.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-dim);"><div class="spinner"></div>Loading...</div>';
+                }
+            }
+        }
+
+        // Fetch stories/themes
+        async function fetchStories() {
+            try {
+                setLoading('themes-content', true);
+                const res = await fetch(`${API_BASE}/stories`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    const container = document.getElementById('themes-content');
+                    if (data.themes.length === 0) {
+                        container.innerHTML = '<span class="theme-tag theme-neutral">No themes detected</span>';
+                        return;
+                    }
+
+                    container.innerHTML = data.themes.slice(0, 12).map(t => {
+                        const heat = t.heat || 'WARM';
+                        const heatClass = heat === 'HOT' ? 'theme-hot' : (heat === 'WARM' ? 'theme-warm' : 'theme-neutral');
+                        const icon = heat === 'HOT' ? '🔥' : '📈';
+                        return `<div class="theme-tag ${heatClass}">
+                            <span>${icon} ${t.name}</span>
+                            <span class="theme-count">${t.mention_count || 0}</span>
+                        </div>`;
+                    }).join('');
+
+                    // Update hot themes count
+                    const hotCount = data.themes.filter(t => t.heat === 'HOT').length;
+                    document.getElementById('hot-themes-count').textContent = hotCount || data.themes.length;
+                }
+            } catch (e) {
+                console.error('Stories error:', e);
+            }
+        }
+
+        // Fetch scan results
+        async function fetchScan() {
+            try {
+                setLoading('stocks-table', true);
+                const res = await fetch(`${API_BASE}/scan`);
+                const data = await res.json();
+
+                if (data.ok && data.stocks) {
+                    const tbody = document.getElementById('stocks-table');
+                    document.getElementById('total-scanned').textContent = data.total;
+
+                    if (data.stocks.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-dim);">No stocks found</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = data.stocks.slice(0, 10).map((s, i) => {
+                        const rs = s.rs || 0;
+                        const rsClass = rs > 0 ? 'positive' : 'negative';
+                        const vol = s.vol_ratio || 1;
+                        const score = s.score || 50;
+
+                        return `<tr>
+                            <td>${i + 1}</td>
+                            <td class="ticker" style="cursor: pointer;" onclick="analyzeTicker('${s.ticker}')">${s.ticker}</td>
+                            <td>$${(s.price || 0).toFixed(2)}</td>
+                            <td class="${rsClass}">${rs > 0 ? '+' : ''}${rs.toFixed(1)}%</td>
+                            <td>${vol.toFixed(1)}x</td>
+                            <td>
+                                <div class="score-container">
+                                    <span>${score.toFixed(0)}</span>
+                                    <div class="score-bar">
+                                        <div class="score-fill" style="width: ${Math.min(score, 100)}%;"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>${s.above_20sma ? '✅' : '❌'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Scan error:', e);
+            }
+        }
+
+        // Fetch news sentiment
+        async function fetchNews() {
+            try {
+                setLoading('sentiment-content', true);
+                const res = await fetch(`${API_BASE}/news`);
+                const data = await res.json();
+
+                if (data.ok && data.sentiment) {
+                    const container = document.getElementById('sentiment-content');
+
+                    container.innerHTML = data.sentiment.slice(0, 6).map(s => {
+                        const bullish = s.bullish || 0;
+                        const bearish = s.bearish || 0;
+                        const total = bullish + bearish || 1;
+                        const bullPct = Math.round((bullish / total) * 100);
+                        const bearPct = 100 - bullPct;
+
+                        const labelClass = bullPct > 60 ? 'bullish' : (bullPct < 40 ? 'bearish' : 'neutral');
+                        const labelText = bullPct > 60 ? 'Bullish' : (bullPct < 40 ? 'Bearish' : 'Neutral');
+
+                        return `<div class="sentiment-row">
+                            <span class="sentiment-ticker">${s.ticker}</span>
+                            <div class="sentiment-bar-container">
+                                <div class="sentiment-bullish" style="width: ${bullPct}%;">${bullPct}%</div>
+                                <div class="sentiment-bearish" style="width: ${bearPct}%;">${bearPct}%</div>
+                            </div>
+                            <span class="sentiment-label ${labelClass}">${labelText}</span>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('News error:', e);
+            }
+        }
+
+        // Fetch stocks in play
+        async function fetchInPlay() {
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/in-play?min_score=70`);
+                const data = await res.json();
+
+                if (data.ok && data.in_play) {
+                    const container = document.getElementById('inplay-bar');
+                    container.innerHTML = data.in_play.slice(0, 10).map(stock => {
+                        const scoreColor = stock.score >= 80 ? 'var(--green)' : (stock.score >= 70 ? 'var(--yellow)' : 'var(--text)');
+                        const themes = stock.themes || [];
+                        const theme = themes[0] || 'N/A';
+
+                        return `<div class="inplay-card" onclick="fetchEcosystem('${stock.ticker}')">
+                            <div class="inplay-ticker">${stock.ticker}</div>
+                            <div class="inplay-score" style="color: ${scoreColor};">${stock.score.toFixed(0)}</div>
+                            <div class="inplay-theme">${theme}</div>
+                            <div class="inplay-eco">Eco: ${stock.ecosystem_strength || '--'}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('In-play error:', e);
+            }
+        }
+
+        // Fetch ecosystem opportunities
+        async function fetchOpportunities() {
+            try {
+                const res = await fetch(`${API_BASE}/ecosystem/opportunities?min_gap=10`);
+                const data = await res.json();
+
+                if (data.ok && data.opportunities) {
+                    const container = document.getElementById('opportunities-list');
+
+                    if (data.opportunities.length === 0) {
+                        container.innerHTML = `<div class="opportunity-card">
+                            <div class="opportunity-header">
+                                <span class="opportunity-ticker">No opportunities</span>
+                            </div>
+                            <div class="opportunity-detail">No lagging suppliers found with gap > 10</div>
+                        </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.opportunities.slice(0, 5).map((opp, i) => {
+                        const gapClass = opp.gap >= 25 ? 'gap-hot' : (opp.gap >= 15 ? 'gap-warm' : 'gap-cool');
+                        return `<div class="opportunity-card">
+                            <div class="opportunity-header">
+                                <span class="opportunity-ticker">#${i+1} ${opp.ticker}</span>
+                                <span class="opportunity-gap">GAP: ${opp.gap.toFixed(0)}</span>
+                            </div>
+                            <div class="opportunity-detail">Driver: ${opp.driver} (${opp.driver_score || '--'})</div>
+                            <div class="opportunity-detail">${opp.sub_theme || 'Ecosystem'} | ${opp.relationship || 'Supplier'}</div>
+                            <div class="opportunity-detail" style="color: var(--text); margin-top: 6px;">${opp.message || opp.signal || ''}</div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Opportunities error:', e);
+                document.getElementById('opportunities-list').innerHTML = `<div class="opportunity-card">
+                    <div class="opportunity-detail">Error loading opportunities</div>
+                </div>`;
+            }
+        }
+
+        // Fetch themes lifecycle and sub-themes
+        async function fetchThemesLifecycle() {
+            try {
+                const res = await fetch(`${API_BASE}/themes/lifecycle`);
+                const data = await res.json();
+
+                if (data.ok && data.sub_themes) {
+                    const container = document.getElementById('subtheme-grid');
+
+                    if (data.sub_themes.length === 0) {
+                        container.innerHTML = `<div class="subtheme-card">
+                            <div class="subtheme-name">No active sub-themes</div>
+                        </div>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.sub_themes.slice(0, 6).map(st => {
+                        const status = st.is_emerging ? 'hot' : (st.avg_score > 70 ? 'warm' : 'early');
+                        const statusText = status === 'hot' ? 'HOT' : (status === 'warm' ? 'WARM' : 'EARLY');
+                        const tickers = st.tickers || [];
+
+                        return `<div class="subtheme-card">
+                            <div class="subtheme-header">
+                                <span class="subtheme-name">${st.name || 'Unknown'}</span>
+                                <span class="subtheme-status status-${status}">${statusText}</span>
+                            </div>
+                            <div class="subtheme-tickers">
+                                ${tickers.slice(0, 4).map(t => `<span class="subtheme-ticker">${t}</span>`).join('')}
+                            </div>
+                            <div style="color: var(--text-dim); font-size: 0.75rem; margin-top: 6px;">
+                                Momentum: ${st.momentum >= 0 ? '+' : ''}${(st.momentum || 0).toFixed(1)}
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('Themes lifecycle error:', e);
+            }
+        }
+
+        // Fetch ecosystem for a specific ticker
+        async function fetchEcosystem(ticker) {
+            try {
+                const res = await fetch(`${API_BASE}/ecosystem/${ticker}?depth=2`);
+                const data = await res.json();
+
+                if (data.ok && data.ecosystem) {
+                    const eco = data.ecosystem;
+                    const content = document.getElementById('modal-content');
+                    const modal = document.getElementById('ticker-modal');
+
+                    modal.style.display = 'flex';
+
+                    const suppliersHtml = (eco.suppliers || []).slice(0, 5).map(s =>
+                        `<span class="subtheme-ticker ecosystem-supplier">${s.ticker}</span>`
+                    ).join('');
+
+                    const competitorsHtml = (eco.competitors || []).slice(0, 5).map(c =>
+                        `<span class="subtheme-ticker ecosystem-competitor">${c.ticker}</span>`
+                    ).join('');
+
+                    content.innerHTML = `
+                        <h2 style="margin-bottom: 20px;">🔗 ${ticker} Ecosystem</h2>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">SUPPLIERS</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${suppliersHtml || 'None found'}</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">COMPETITORS</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${competitorsHtml || 'None found'}</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-dim);">SUB-THEMES</div>
+                            <div>${Object.keys(eco.sub_themes || {}).join(', ') || 'None'}</div>
+                        </div>
+                        <div style="color: var(--text-dim); font-size: 0.85rem;">
+                            Network: ${eco.node_count || 0} stocks, ${eco.edge_count || 0} relationships
+                        </div>
+                        <button onclick="closeModal()" class="action-btn" style="margin-top: 20px;">Close</button>
+                    `;
+                }
+            } catch (e) {
+                console.error('Ecosystem error:', e);
+            }
+        }
+
+        // Fetch market health (Fear & Greed + Breadth)
+        async function fetchHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/health`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    // Update Fear & Greed gauge
+                    const fg = data.fear_greed;
+                    const score = fg.score;
+
+                    document.getElementById('fg-score').textContent = score.toFixed(0);
+                    document.getElementById('fg-score').style.color = fg.color;
+                    document.getElementById('fg-label').textContent = fg.label;
+                    document.getElementById('fg-label').style.color = fg.color;
+
+                    // Rotate needle (0 = -90deg, 100 = 90deg)
+                    const rotation = -90 + (score / 100 * 180);
+                    document.getElementById('gauge-needle').setAttribute('transform', `rotate(${rotation}, 100, 100)`);
+
+                    // Update gauge fill
+                    const dashoffset = 251.2 - (score / 100 * 251.2);
+                    document.getElementById('gauge-fill').setAttribute('stroke-dashoffset', dashoffset);
+
+                    // Update components
+                    const compContainer = document.getElementById('fg-components');
+                    const components = fg.components || {};
+                    const compOrder = ['vix', 'momentum', 'put_call', 'safe_haven', 'junk_bond', 'volatility'];
+
+                    compContainer.innerHTML = compOrder.map(key => {
+                        const comp = components[key] || { score: 50, label: key };
+                        const score = comp.score || 50;
+                        const color = score >= 60 ? 'var(--green)' : (score >= 40 ? 'var(--yellow)' : 'var(--red)');
+
+                        return `<div class="component-item">
+                            <span class="component-name">${comp.label || key}</span>
+                            <div class="component-bar">
+                                <div class="component-fill" style="width: ${score}%; background: ${color};"></div>
+                            </div>
+                            <span class="component-score" style="color: ${color};">${score.toFixed(0)}</span>
+                        </div>`;
+                    }).join('');
+
+                    const overall = data.overall_score;
+                    document.getElementById('health-score').textContent = overall.toFixed(0);
+                    document.getElementById('health-score').style.color = data.overall_color;
+                    document.getElementById('health-label').textContent = data.overall_label;
+                    document.getElementById('health-label').style.color = data.overall_color;
+
+                    // Update breadth metrics
+                    const br = data.breadth;
+                    document.getElementById('breadth-score').textContent = br.breadth_score.toFixed(0);
+                    document.getElementById('ad-ratio').textContent = br.advance_decline_ratio.toFixed(2);
+                    document.getElementById('new-highs').textContent = br.new_highs;
+                    document.getElementById('new-lows').textContent = br.new_lows;
+
+                    // Update breadth bars in sidebar
+                    if (document.getElementById('above-20-pct')) {
+                        document.getElementById('above-20-pct').textContent = br.above_20sma + '%';
+                        document.getElementById('above-50-pct').textContent = br.above_50sma + '%';
+                        document.getElementById('above-200-pct').textContent = br.above_200sma + '%';
+                    }
+                }
+            } catch (e) {
+                console.error('Health error:', e);
+                document.getElementById('fg-label').textContent = 'Error loading';
+            }
+        }
+
+        // Fetch AI briefing
+        async function fetchBriefing() {
+            try {
+                setLoading('ai-content', true);
+                const res = await fetch(`${API_BASE}/briefing`);
+                const data = await res.json();
+
+                if (data.ok && data.briefing) {
+                    const b = data.briefing;
+                    const container = document.getElementById('ai-content');
+
+                    container.innerHTML = `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">📊 ${b.headline || 'Market Update'}</div>
+                            <div class="ai-insight-text">${b.main_narrative || 'No narrative available'}</div>
+                        </div>
+                        ${b.key_opportunity ? `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">💡 Opportunity</div>
+                            <div class="ai-insight-text">${b.key_opportunity.description || ''}</div>
+                        </div>` : ''}
+                    `;
+                }
+            } catch (e) {
+                document.getElementById('ai-content').innerHTML = `
+                    <div class="ai-insight">
+                        <div class="ai-insight-header">💡 Getting Started</div>
+                        <div class="ai-insight-text">Click "Refresh AI" or use /briefing in Telegram.</div>
+                    </div>`;
+            }
+        }
+
+        // Analyze single ticker
+        async function analyzeTicker(ticker) {
+            const modal = document.getElementById('ticker-modal');
+            const content = document.getElementById('modal-content');
+
+            modal.style.display = 'flex';
+            content.innerHTML = '<div style="text-align: center; padding: 40px;">Loading...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/ticker/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const rsClass = data.rs > 0 ? 'positive' : 'negative';
+                    content.innerHTML = `
+                        <h2 style="margin-bottom: 20px;">${data.ticker}</h2>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                            <div class="stat-card">
+                                <div class="stat-label">Price</div>
+                                <div class="stat-value">$${data.price.toFixed(2)}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">RS vs SPY</div>
+                                <div class="stat-value ${rsClass}">${data.rs > 0 ? '+' : ''}${data.rs.toFixed(1)}%</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Volume</div>
+                                <div class="stat-value">${data.vol_ratio.toFixed(1)}x</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Trend</div>
+                                <div class="stat-value">${data.above_20sma ? '✅ Above SMA' : '❌ Below SMA'}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 20px; display: flex; gap: 10px;">
+                            <button onclick="getPrediction('${ticker}')" class="action-btn">🤖 AI Predict</button>
+                            <button onclick="closeModal()" class="action-btn secondary">Close</button>
+                        </div>
+                        <div id="prediction-result" style="margin-top: 20px;"></div>
+                    `;
+                } else {
+                    content.innerHTML = `<p>Error: ${data.error}</p><button onclick="closeModal()" class="action-btn">Close</button>`;
+                }
+            } catch (e) {
+                content.innerHTML = `<p>Error loading data</p><button onclick="closeModal()" class="action-btn">Close</button>`;
+            }
+        }
+
+        // Get AI prediction
+        async function getPrediction(ticker) {
+            const resultDiv = document.getElementById('prediction-result');
+            resultDiv.innerHTML = '<div style="text-align: center;">🤖 Analyzing...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/predict/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.prediction) {
+                    const p = data.prediction;
+                    const prob = p.success_probability || 50;
+                    const color = prob >= 60 ? 'var(--green)' : (prob >= 40 ? 'var(--yellow)' : 'var(--red)');
+
+                    resultDiv.innerHTML = `
+                        <div class="ai-insight">
+                            <div class="ai-insight-header">🎯 AI Prediction: ${prob}% Success</div>
+                            <div class="ai-insight-text">
+                                <strong>Recommendation:</strong> ${p.recommendation || 'N/A'}<br><br>
+                                ${(p.key_bullish_factors || []).slice(0, 2).map(f => `✅ ${f}`).join('<br>')}
+                                ${(p.key_risk_factors || []).slice(0, 2).map(f => `<br>⚠️ ${f}`).join('')}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<p style="color: var(--text-dim);">Prediction unavailable</p>';
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<p style="color: var(--red);">Error getting prediction</p>';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('ticker-modal').style.display = 'none';
+        }
+
+        // Fetch Evolution Engine data
+        async function fetchEvolution() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/evolution/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    document.getElementById('evolution-cycle').textContent = `#${status.evolution_cycle || 0}`;
+
+                    if (status.last_evolution) {
+                        const lastDate = new Date(status.last_evolution);
+                        const hoursAgo = Math.round((Date.now() - lastDate) / 3600000);
+                        document.getElementById('last-evolution').textContent = hoursAgo < 24 ? `${hoursAgo}h ago` : lastDate.toLocaleDateString();
+                    }
+
+                    const metrics = status.validation_metrics || {};
+                    if (metrics.overall_accuracy) {
+                        document.getElementById('overall-accuracy').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').textContent = `${metrics.overall_accuracy.toFixed(1)}%`;
+                        document.getElementById('accuracy-display').style.color = metrics.overall_accuracy >= 60 ? 'var(--green)' : 'var(--orange)';
+                    }
+                    if (metrics.calibration_score) {
+                        const cal = (metrics.calibration_score * 100).toFixed(0);
+                        document.getElementById('calibration-score').textContent = `${cal}%`;
+                        document.getElementById('calibration-score').className = 'evolution-metric-value ' + (cal >= 80 ? 'calibration-good' : 'calibration-bad');
+                    }
+                    if (metrics.confidence_interval_95) {
+                        const ci = metrics.confidence_interval_95;
+                        document.getElementById('accuracy-ci').textContent = `95% CI: [${ci[0].toFixed(1)}%, ${ci[1].toFixed(1)}%]`;
+                    }
+
+                    document.getElementById('discovered-themes-count').textContent = status.discovered_themes_count || 0;
+                    document.getElementById('correlations-count').textContent = status.correlations_count || 0;
+                }
+
+                // Fetch weights
+                const weightsRes = await fetch(`${API_BASE}/evolution/weights`);
+                const weights = await weightsRes.json();
+
+                if (weights.ok) {
+                    const current = weights.current || {};
+                    const changes = weights.changes || {};
+                    const container = document.getElementById('adaptive-weights');
+
+                    container.innerHTML = Object.entries(current).slice(0, 6).map(([key, value]) => {
+                        const change = changes[key] || 0;
+                        const changeClass = change > 0 ? 'weight-change-positive' : (change < 0 ? 'weight-change-negative' : '');
+                        const changeStr = change !== 0 ? (change > 0 ? `+${change.toFixed(1)}pp` : `${change.toFixed(1)}pp`) : '';
+                        return `
+                            <div class="evolution-metric">
+                                <span class="evolution-metric-label">${key}</span>
+                                <span class="evolution-metric-value">${(value * 100).toFixed(1)}% <span class="${changeClass}">${changeStr}</span></span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch discovered themes
+                const themesRes = await fetch(`${API_BASE}/evolution/themes`);
+                const themes = await themesRes.json();
+
+                if (themes.ok && themes.active_themes && themes.active_themes.length > 0) {
+                    const container = document.getElementById('discovered-themes-list');
+                    container.innerHTML = themes.active_themes.slice(0, 4).map(theme => {
+                        const stage = theme.lifecycle_stage || 'unknown';
+                        const stageClass = stage === 'early' ? 'stage-early' : (stage === 'middle' ? 'stage-middle' : (stage === 'peak' ? 'stage-peak' : 'stage-fading'));
+                        const confidence = ((theme.confidence || 0.7) * 100).toFixed(0);
+                        const stocks = (theme.stocks || []).slice(0, 4).join(', ');
+                        return `
+                            <div class="discovered-theme-card">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600;">${theme.name}</span>
+                                    <span class="theme-stage ${stageClass}">${stage}</span>
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                    Confidence: ${confidence}% | ${stocks}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Fetch correlations
+                const corrRes = await fetch(`${API_BASE}/evolution/correlations`);
+                const corr = await corrRes.json();
+
+                if (corr.ok && corr.pairs && Object.keys(corr.pairs).length > 0) {
+                    const container = document.getElementById('learned-correlations');
+                    const pairs = Object.entries(corr.pairs).slice(0, 6);
+                    container.innerHTML = pairs.map(([key, data]) => {
+                        const t1 = data.ticker1 || key.split('_')[0];
+                        const t2 = data.ticker2 || key.split('_')[1];
+                        const r = (data.correlation || 0).toFixed(2);
+                        return `
+                            <div class="correlation-pair">
+                                <span style="font-family: monospace; font-weight: 600;">${t1}</span>
+                                <span style="color: var(--text-dim);">↔</span>
+                                <span style="font-family: monospace; font-weight: 600;">${t2}</span>
+                                <span class="correlation-value">r=${r}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+            } catch (e) {
+                console.warn('Evolution fetch failed:', e.message);
+            }
+        }
+
+        // Fetch Parameter Learning data
+        async function fetchParameters() {
+            try {
+                // Fetch status
+                const statusRes = await fetch(`${API_BASE}/parameters/status`);
+                const status = await statusRes.json();
+
+                if (status.ok) {
+                    const params = status.parameters || {};
+                    document.getElementById('param-total').textContent = params.total || 0;
+                    document.getElementById('param-learned').textContent = params.learned || 0;
+                    document.getElementById('param-progress').textContent = `${((params.learning_progress || 0) * 100).toFixed(0)}%`;
+                    document.getElementById('param-confidence').textContent = `${((params.avg_confidence || 0) * 100).toFixed(0)}%`;
+                }
+
+                // Fetch health
+                const healthRes = await fetch(`${API_BASE}/parameters/health`);
+                const health = await healthRes.json();
+
+                if (health.ok) {
+                    const healthStatus = health.status || 'unknown';
+                    const issues = health.issues || [];
+
+                    let icon = '✅';
+                    let statusText = 'Healthy';
+                    if (healthStatus === 'critical') {
+                        icon = '🔴';
+                        statusText = 'Critical';
+                    } else if (healthStatus === 'degraded') {
+                        icon = '⚠️';
+                        statusText = 'Degraded';
+                    }
+
+                    document.getElementById('health-icon').textContent = icon;
+                    document.getElementById('health-status').textContent = statusText;
+                    document.getElementById('health-issues').textContent = issues.length > 0 ? `${issues.length} issues detected` : 'No issues detected';
+                }
+
+                // Fetch experiments
+                const expRes = await fetch(`${API_BASE}/parameters/experiments`);
+                const exp = await expRes.json();
+
+                if (exp.ok && exp.experiments && exp.experiments.length > 0) {
+                    const container = document.getElementById('experiments-list');
+                    container.innerHTML = exp.experiments.slice(0, 3).map(e => `
+                        <div style="padding: 10px; background: var(--bg-accent); border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; font-size: 0.9rem;">${e.parameter}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-dim);">
+                                Samples: ${e.total_samples} | Variants: ${e.variants.length}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+            } catch (e) {
+                console.warn('Parameters fetch failed:', e.message);
+            }
+        }
+
+        // Refresh all data
+        async function refreshAll() {
+            const btn = document.getElementById('refresh-btn');
+            const lastUpdate = document.getElementById('last-update');
+
+            if (!btn) {
+                console.error('Refresh button not found');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Refreshing...';
+
+            try {
+                // Set a timeout for slow API responses
+                const timeout = (ms) => new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout')), ms)
+                );
+
+                const fetchWithTimeout = async (fn) => {
+                    try {
+                        await Promise.race([fn(), timeout(30000)]);
+                    } catch (e) {
+                        console.warn('Fetch failed:', e.message);
+                    }
+                };
+
+                await Promise.all([
+                    fetchWithTimeout(fetchHealth),
+                    fetchWithTimeout(fetchStories),
+                    fetchWithTimeout(fetchScan),
+                    fetchWithTimeout(fetchNews),
+                    fetchWithTimeout(fetchBriefing),
+                    fetchWithTimeout(fetchInPlay),
+                    fetchWithTimeout(fetchOpportunities),
+                    fetchWithTimeout(fetchThemesLifecycle),
+                    fetchWithTimeout(fetchEvolution),
+                    fetchWithTimeout(fetchParameters)
+                ]);
+
+                lastUpdate.textContent = new Date().toLocaleTimeString();
+                btn.textContent = '✅ Updated!';
+
+                setTimeout(() => {
+                    btn.textContent = '🔄 Refresh Data';
+                }, 2000);
+
+            } catch (e) {
+                console.error('Refresh error:', e);
+                btn.textContent = '❌ Error - Try Again';
+
+                setTimeout(() => {
+                    btn.textContent = '🔄 Refresh Data';
+                }, 3000);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Smooth scroll for nav links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href.startsWith('#')) {
+                    e.preventDefault();
+                    document.querySelector(href).scrollIntoView({ behavior: 'smooth' });
+                    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+                }
+            });
+        });
+
+        // Update active nav on scroll
+        window.addEventListener('scroll', () => {
+            const sections = ['overview', 'evolution-section', 'themes', 'sentiment', 'commands'];
+            let current = 'overview';
+
+            sections.forEach(id => {
+                const section = document.getElementById(id);
+                if (section && window.scrollY >= section.offsetTop - 100) {
+                    current = id;
+                }
+            });
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+            });
+        });
+
+        // Close modal on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial load is from static HTML, user can refresh for live data
+        });
+    </script>
+
+    <style>
+        /* Additional styles for interactive elements */
+        .action-btn {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .action-btn.secondary {
+            background: var(--bg-accent);
+        }
+
+        #ticker-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .refresh-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .refresh-bar .action-btn {
+            min-width: 140px;
+        }
+    </style>
+
+    <!-- Ticker Modal -->
+    <div id="ticker-modal" onclick="if(event.target === this) closeModal()">
+        <div id="modal-content"></div>
+    </div>
+</body>
+</html>
+'''
+
+
+def generate_dashboard():
+    """Generate the dashboard HTML with current data."""
+    import glob
+
+    # Initialize default values
+    data = {
+        'LAST_UPDATE': datetime.now().strftime('%Y-%m-%d %H:%M UTC'),
+        'BOT_USERNAME': os.environ.get('BOT_USERNAME', 'Stocks_Story_Bot'),
+        'TOTAL_SCANNED': '0',
+        'BREAKOUTS': '0',
+        'SQUEEZES': '0',
+        'BREADTH': '50',
+        'BREADTH_CLASS': '',
+        'HOT_THEMES': '0',
+        'ABOVE_20': '50',
+        'ABOVE_50': '50',
+        'ABOVE_200': '50',
+        'ABOVE_20_CLASS': '',
+        'ABOVE_50_CLASS': '',
+        'ABOVE_200_CLASS': '',
+        'TOP_STOCKS_ROWS': '<tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Run /scan to populate data</td></tr>',
+        'THEMES_HTML': '<span class="theme-tag theme-neutral">No themes detected yet</span>',
+        'SECTOR_ROWS': '<tr><td colspan="2" style="color: var(--text-dim);">No data</td></tr>',
+        'SENTIMENT_HTML': '<p style="color: var(--text-dim);">Run /news to get sentiment data</p>',
+        'AI_INSIGHTS_HTML': '<div class="ai-insight"><div class="ai-insight-header">💡 Getting Started</div><div class="ai-insight-text">Use /briefing in Telegram to get AI-powered market insights.</div></div>',
+        'INPLAY_HTML': '<div class="inplay-card"><div class="inplay-ticker">--</div><div class="inplay-score">--</div><div class="inplay-theme">Run scan first</div></div>',
+        'OPPORTUNITIES_HTML': '<div class="opportunity-card"><div class="opportunity-header"><span class="opportunity-ticker">--</span><span class="opportunity-gap">--</span></div><div class="opportunity-detail">Run scan to find opportunities</div></div>',
+        'SUBTHEMES_HTML': '<div class="subtheme-card"><div class="subtheme-header"><span class="subtheme-name">No sub-themes</span><span class="subtheme-status status-warm">--</span></div></div>',
+    }
+
+    # Try to load scan data
+    scan_files = glob.glob('scan_*.csv')
+    if scan_files and pd:
+        try:
+            latest = max(scan_files)
+            df = pd.read_csv(latest)
+
+            total = len(df)
+            data['TOTAL_SCANNED'] = str(total)
+
+            # Count breakouts and squeezes
+            if 'breakout_up' in df.columns:
+                data['BREAKOUTS'] = str(int(df['breakout_up'].sum()))
+            if 'in_squeeze' in df.columns:
+                data['SQUEEZES'] = str(int(df['in_squeeze'].sum()))
+
+            # Calculate breadth
+            if 'above_20' in df.columns:
+                above_20 = int(df['above_20'].sum() / total * 100) if total > 0 else 50
+                data['ABOVE_20'] = str(above_20)
+                data['ABOVE_20_CLASS'] = 'positive' if above_20 > 50 else 'negative'
+
+            if 'above_50' in df.columns:
+                above_50 = int(df['above_50'].sum() / total * 100) if total > 0 else 50
+                data['ABOVE_50'] = str(above_50)
+                data['BREADTH'] = str(above_50)
+                data['ABOVE_50_CLASS'] = 'positive' if above_50 > 50 else 'negative'
+                data['BREADTH_CLASS'] = 'green' if above_50 > 60 else ('red' if above_50 < 40 else '')
+
+            if 'above_200' in df.columns:
+                above_200 = int(df['above_200'].sum() / total * 100) if total > 0 else 50
+                data['ABOVE_200'] = str(above_200)
+                data['ABOVE_200_CLASS'] = 'positive' if above_200 > 50 else 'negative'
+
+            # Top stocks table
+            rows = []
+            for i, row in df.head(10).iterrows():
+                rank = i + 1
+                ticker = row.get('ticker', 'N/A')
+
+                # Theme (from story-first scoring)
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val)[:20] if pd.notna(theme_val) and theme_val else '-'
+
+                # Catalyst (from story-first scoring)
+                catalyst_val = row.get('next_catalyst', '')
+                if pd.notna(catalyst_val) and catalyst_val:
+                    catalyst = str(catalyst_val)[:25]
+                else:
+                    catalyst = '-'
+
+                # Story score and strength
+                score = row.get('composite_score', row.get('story_score', 0))
+                strength = row.get('story_strength', 'none')
+
+                # Color based on story strength
+                strength_colors = {
+                    'hot': 'var(--green)',
+                    'developing': 'var(--blue)',
+                    'watchlist': 'var(--orange)',
+                    'waiting': 'var(--text-dim)',
+                    'none': 'var(--text-dim)',
+                }
+                score_color = strength_colors.get(strength, 'var(--text-dim)')
+
+                # Signal based on story + technicals
+                signal = ''
+                if strength == 'hot':
+                    signal = '<span style="color: var(--green);">🔥 Hot</span>'
+                elif strength == 'developing':
+                    signal = '<span style="color: var(--blue);">📈 Developing</span>'
+                elif row.get('breakout_up'):
+                    signal = '<span style="color: var(--green);">🚀 Breakout</span>'
+                elif row.get('in_squeeze'):
+                    signal = '<span style="color: var(--purple);">⏳ Squeeze</span>'
+                elif row.get('is_early_stage'):
+                    signal = '<span style="color: var(--orange);">🌅 Early</span>'
+
+                rows.append(f'''
+                <tr>
+                    <td>{rank}</td>
+                    <td class="ticker">{ticker}</td>
+                    <td style="font-size: 0.8rem;">{theme}</td>
+                    <td style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{catalyst}</td>
+                    <td>
+                        <div class="score-container">
+                            <span style="color: {score_color};">{score:.0f}</span>
+                            <div class="score-bar">
+                                <div class="score-fill" style="width: {min(score, 100)}%; background: {score_color};"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>{signal}</td>
+                </tr>
+                ''')
+
+            if rows:
+                data['TOP_STOCKS_ROWS'] = ''.join(rows)
+
+            # Sector data
+            if 'sector' in df.columns and 'rs_composite' in df.columns:
+                sector_df = df.groupby('sector').agg({
+                    'rs_composite': 'mean'
+                }).sort_values('rs_composite', ascending=False)
+
+                sector_rows = []
+                for sector, row in sector_df.head(6).iterrows():
+                    rs = row['rs_composite']
+                    rs_class = 'positive' if rs > 0 else 'negative'
+                    sector_rows.append(f'''
+                    <tr>
+                        <td>{sector}</td>
+                        <td class="{rs_class}">{rs:+.1f}%</td>
+                    </tr>
+                    ''')
+
+                if sector_rows:
+                    data['SECTOR_ROWS'] = ''.join(sector_rows)
+
+            # Generate In-Play stocks (top story stocks)
+            inplay_cards = []
+            for _, row in df.head(8).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                score = row.get('composite_score', row.get('story_score', 0))
+                strength = row.get('story_strength', 'none')
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val)[:15] if pd.notna(theme_val) and theme_val else 'No Theme'
+
+                # Story strength colors
+                strength_colors = {
+                    'hot': 'green',
+                    'developing': 'blue',
+                    'watchlist': 'orange',
+                    'waiting': 'text-dim',
+                    'none': 'text-dim',
+                }
+                strength_labels = {
+                    'hot': '🔥 Hot',
+                    'developing': '📈 Dev',
+                    'watchlist': '👀 Watch',
+                    'waiting': '⏸️ Wait',
+                    'none': '-',
+                }
+                score_class = strength_colors.get(strength, 'blue')
+                strength_label = strength_labels.get(strength, '-')
+
+                inplay_cards.append(f'''
+                <div class="inplay-card">
+                    <div class="inplay-ticker">{ticker}</div>
+                    <div class="inplay-score" style="color: var(--{score_class});">{score:.0f}</div>
+                    <div class="inplay-theme">{theme}</div>
+                    <div class="inplay-eco" style="font-size: 0.7rem;">{strength_label}</div>
+                </div>
+                ''')
+            if inplay_cards:
+                data['INPLAY_HTML'] = ''.join(inplay_cards)
+
+            # Generate Ecosystem Opportunities (stocks with themes that are lagging)
+            opportunities = []
+            theme_stocks = df[df['has_theme'] == True] if 'has_theme' in df.columns else pd.DataFrame()
+            lagging = theme_stocks[theme_stocks['rs_composite'] < 0] if not theme_stocks.empty and 'rs_composite' in theme_stocks.columns else pd.DataFrame()
+
+            for _, row in lagging.head(5).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                rs = row.get('rs_composite', 0) or 0
+                theme_val = row.get('hottest_theme', '')
+                theme = str(theme_val) if pd.notna(theme_val) and theme_val else 'Theme Play'
+                gap = abs(rs)
+
+                opportunities.append(f'''
+                <div class="opportunity-card">
+                    <div class="opportunity-header">
+                        <span class="opportunity-ticker">{ticker}</span>
+                        <span class="opportunity-gap">{gap:.1f}% gap</span>
+                    </div>
+                    <div class="opportunity-detail">{theme} | Lagging beneficiary</div>
+                </div>
+                ''')
+
+            if not opportunities:
+                # Show top breakout/squeeze candidates if no lagging theme stocks
+                breakouts = df[df['breakout_up'] == True] if 'breakout_up' in df.columns else pd.DataFrame()
+                squeezes = df[df['in_squeeze'] == True] if 'in_squeeze' in df.columns else pd.DataFrame()
+
+                for _, row in breakouts.head(2).iterrows():
+                    ticker = row.get('ticker', 'N/A')
+                    rs = row.get('rs_composite', 0)
+                    opportunities.append(f'''
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">{ticker}</span>
+                            <span class="opportunity-gap">🚀 Breakout</span>
+                        </div>
+                        <div class="opportunity-detail">RS: {rs:+.1f}% | Breaking resistance</div>
+                    </div>
+                    ''')
+
+                for _, row in squeezes.head(3).iterrows():
+                    ticker = row.get('ticker', 'N/A')
+                    vol = row.get('vol_ratio', 1)
+                    opportunities.append(f'''
+                    <div class="opportunity-card">
+                        <div class="opportunity-header">
+                            <span class="opportunity-ticker">{ticker}</span>
+                            <span class="opportunity-gap">⏳ Squeeze</span>
+                        </div>
+                        <div class="opportunity-detail">Vol: {vol:.1f}x | Compression setup</div>
+                    </div>
+                    ''')
+
+            if opportunities:
+                data['OPPORTUNITIES_HTML'] = ''.join(opportunities)
+
+        except Exception as e:
+            print(f"Error loading scan data: {e}")
+
+    # Try to load stories/themes
+    themes_loaded = False
+    try:
+        from fast_stories import run_fast_story_detection
+        stories = run_fast_story_detection(use_cache=True)
+
+        themes = stories.get('themes', [])
+        if themes:
+            themes_loaded = True
+            hot_count = len([t for t in themes if t.get('heat') == 'HOT'])
+            data['HOT_THEMES'] = str(hot_count) if hot_count else str(len(themes))
+
+            theme_tags = []
+            for t in themes[:12]:
+                name = t.get('name', 'Unknown')
+                heat = t.get('heat', 'WARM')
+                count = t.get('mention_count', 0)
+
+                heat_class = 'theme-hot' if heat == 'HOT' else ('theme-warm' if heat == 'WARM' else 'theme-neutral')
+
+                plays = t.get('primary_plays', [])[:3]
+                plays_str = ' '.join([f'<span style="opacity: 0.7;">{p}</span>' for p in plays])
+
+                theme_tags.append(f'''
+                <div class="theme-tag {heat_class}">
+                    <span>{'🔥' if heat == 'HOT' else '📈'} {name}</span>
+                    <span class="theme-count">{count}</span>
+                </div>
+                ''')
+
+            data['THEMES_HTML'] = ''.join(theme_tags)
+    except Exception as e:
+        print(f"Stories error: {e}")
+
+    # Fallback to theme_registry if fast_stories didn't return themes
+    if not themes_loaded:
+        try:
+            from theme_registry import ThemeRegistry
+            registry = ThemeRegistry()
+            active_themes = registry.get_active_themes()
+
+            if active_themes:
+                data['HOT_THEMES'] = str(len(active_themes))
+                theme_tags = []
+                for theme in active_themes[:12]:
+                    # Handle LearnedTheme objects
+                    name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                    stage = getattr(theme, 'stage', None)
+                    stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                    members = getattr(theme, 'members', {})
+
+                    # Map stage to heat
+                    if stage_str == 'peak':
+                        heat_class = 'theme-hot'
+                        icon = '🔥'
+                    elif stage_str in ['early', 'middle']:
+                        heat_class = 'theme-warm'
+                        icon = '📈'
+                    else:
+                        heat_class = 'theme-neutral'
+                        icon = '📊'
+
+                    theme_tags.append(f'''
+                    <div class="theme-tag {heat_class}">
+                        <span>{icon} {name}</span>
+                        <span class="theme-count">{len(members)}</span>
+                    </div>
+                    ''')
+
+                data['THEMES_HTML'] = ''.join(theme_tags)
+
+                # Generate sub-themes HTML
+                subtheme_cards = []
+                for theme in active_themes[:6]:
+                    name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                    stage = getattr(theme, 'stage', None)
+                    stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                    members = getattr(theme, 'members', {})
+
+                    # Stage styling
+                    if stage_str == 'peak':
+                        status_class = 'status-hot'
+                    elif stage_str == 'early':
+                        status_class = 'status-early'
+                    else:
+                        status_class = 'status-warm'
+
+                    # Get member tickers
+                    member_tickers = list(members.keys())[:5]
+                    tickers_html = ''.join([f'<span class="subtheme-ticker">{t}</span>' for t in member_tickers])
+
+                    subtheme_cards.append(f'''
+                    <div class="subtheme-card">
+                        <div class="subtheme-header">
+                            <span class="subtheme-name">{name[:20]}</span>
+                            <span class="subtheme-status {status_class}">{stage_str.upper()}</span>
+                        </div>
+                        <div class="subtheme-tickers">{tickers_html if tickers_html else '<span style="color: var(--text-dim);">No members</span>'}</div>
+                    </div>
+                    ''')
+
+                if subtheme_cards:
+                    data['SUBTHEMES_HTML'] = ''.join(subtheme_cards)
+
+        except Exception as e:
+            print(f"Theme registry fallback error: {e}")
+
+    # Always generate sub-themes from theme_registry (independent of fast_stories)
+    try:
+        from theme_registry import ThemeRegistry
+        registry = ThemeRegistry()
+        active_themes = registry.get_active_themes()
+
+        if active_themes:
+            subtheme_cards = []
+            for theme in active_themes[:6]:
+                name = getattr(theme.template, 'name', 'Unknown') if hasattr(theme, 'template') else str(theme)
+                stage = getattr(theme, 'stage', None)
+                stage_str = stage.value if hasattr(stage, 'value') else str(stage) if stage else 'early'
+                members = getattr(theme, 'members', {})
+
+                # Stage styling
+                if stage_str == 'peak':
+                    status_class = 'status-hot'
+                elif stage_str == 'early':
+                    status_class = 'status-early'
+                else:
+                    status_class = 'status-warm'
+
+                # Get member tickers
+                member_tickers = list(members.keys())[:5]
+                tickers_html = ''.join([f'<span class="subtheme-ticker">{t}</span>' for t in member_tickers])
+
+                subtheme_cards.append(f'''
+                <div class="subtheme-card">
+                    <div class="subtheme-header">
+                        <span class="subtheme-name">{name[:20]}</span>
+                        <span class="subtheme-status {status_class}">{stage_str.upper()}</span>
+                    </div>
+                    <div class="subtheme-tickers">{tickers_html if tickers_html else '<span style="color: var(--text-dim);">No members</span>'}</div>
+                </div>
+                ''')
+
+            if subtheme_cards:
+                data['SUBTHEMES_HTML'] = ''.join(subtheme_cards)
+    except Exception as e:
+        print(f"Sub-themes generation error: {e}")
+
+    # Try to load sentiment
+    try:
+        sentiment_file = Path('dashboard_data/sentiment.json')
+        if sentiment_file.exists():
+            with open(sentiment_file) as f:
+                sentiments = json.load(f)
+
+            sent_rows = []
+            for s in sentiments[:6]:
+                ticker = s.get('ticker', '')
+                bullish = s.get('bullish_pct', 50)
+                bearish = 100 - bullish
+
+                label_class = 'bullish' if bullish > 60 else ('bearish' if bullish < 40 else 'neutral')
+                label_text = 'Bullish' if bullish > 60 else ('Bearish' if bullish < 40 else 'Neutral')
+
+                sent_rows.append(f'''
+                <div class="sentiment-row">
+                    <span class="sentiment-ticker">{ticker}</span>
+                    <div class="sentiment-bar-container">
+                        <div class="sentiment-bullish" style="width: {bullish}%;">{bullish:.0f}%</div>
+                        <div class="sentiment-bearish" style="width: {bearish}%;">{bearish:.0f}%</div>
+                    </div>
+                    <span class="sentiment-label {label_class}">{label_text}</span>
+                </div>
+                ''')
+
+            if sent_rows:
+                data['SENTIMENT_HTML'] = ''.join(sent_rows)
+    except Exception as e:
+        print(f"Sentiment error: {e}")
+
+    # Try to load AI insights
+    try:
+        ai_file = Path('dashboard_data/ai_insights.json')
+        if ai_file.exists():
+            with open(ai_file) as f:
+                insights = json.load(f)
+
+            insight_html = []
+            for ins in insights[:3]:
+                title = ins.get('title', 'Insight')
+                text = ins.get('text', '')
+                insight_html.append(f'''
+                <div class="ai-insight">
+                    <div class="ai-insight-header">💡 {title}</div>
+                    <div class="ai-insight-text">{text}</div>
+                </div>
+                ''')
+
+            if insight_html:
+                data['AI_INSIGHTS_HTML'] = ''.join(insight_html)
+    except Exception as e:
+        print(f"AI insights error: {e}")
+
+    # Generate HTML
+    html = DASHBOARD_HTML
+    for key, value in data.items():
+        html = html.replace('{{' + key + '}}', str(value))
+
+    # Save to docs folder
+    output_dir = Path('docs')
+    output_dir.mkdir(exist_ok=True)
+
+    output_path = output_dir / 'index.html'
+    with open(output_path, 'w') as f:
+        f.write(html)
+
+    print(f"Dashboard generated: {output_path}")
+    return output_path
+
+
+def save_sentiment_data(sentiments):
+    """Save sentiment data for dashboard."""
+    output_dir = Path('dashboard_data')
+    output_dir.mkdir(exist_ok=True)
+
+    with open(output_dir / 'sentiment.json', 'w') as f:
+        json.dump(sentiments, f)
+
+
+def save_ai_insights(insights):
+    """Save AI insights for dashboard."""
+    output_dir = Path('dashboard_data')
+    output_dir.mkdir(exist_ok=True)
+
+    with open(output_dir / 'ai_insights.json', 'w') as f:
+        json.dump(insights, f)
+
+
+if __name__ == '__main__':
+    generate_dashboard()

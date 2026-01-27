@@ -121,20 +121,33 @@ DEEPSEEK_API_KEY=your_deepseek_api_key  # Optional, for AI features
 ### Running Locally
 
 ```bash
-# Start the bot
-python app.py
+# Using main entry point (recommended)
+python main.py scan           # Full scan (500+ tickers)
+python main.py scan --test    # Test scan (10 tickers)
+python main.py dashboard      # Generate dashboard
+python main.py bot            # Telegram bot listener
+python main.py api            # Start Flask API
+python main.py test           # Run tests
 
-# Or run a scan directly
-python scanner_automation.py
+# Or use helper scripts
+./scripts/run_scan.sh
+./scripts/generate_dashboard.sh
+./scripts/start_api.sh
 ```
 
 ### Running with Async Scanner
 
 ```python
-from scanner_automation import run_scan_with_async
+from src.core.async_scanner import AsyncScanner
+import asyncio
 
-# Run async scan (17x faster)
-results, price_data = run_scan_with_async()
+async def scan():
+    scanner = AsyncScanner(max_concurrent=50)
+    results = await scanner.run_scan_async(tickers)
+    return results
+
+# Run async scan
+results = asyncio.run(scan())
 ```
 
 ## Deployment
@@ -155,32 +168,117 @@ Automated workflows in `.github/workflows/`:
 
 ```
 stock_scanner_bot/
-├── app.py                 # Main Flask app + Telegram bot
-├── async_scanner.py       # High-performance async scanning
-├── scanner_automation.py  # Core scanning orchestration
-├── story_scorer.py        # Story-first scoring system
-├── theme_registry.py      # Theme tracking and management
-├── theme_learner.py       # AI theme discovery
-├── deepseek_intelligence.py  # DeepSeek AI integration
-├── evolution_engine.py    # Self-learning system
-├── parameter_learning.py  # Auto-tuning parameters
-├── cache_manager.py       # Caching infrastructure
-├── config.py              # Configuration management
-├── utils/                 # Utility modules
-├── tests/                 # Test suite
-└── docs/                  # Dashboard HTML
+├── main.py                       # Main entry point
+├── src/                          # Source code (organized by module)
+│   ├── core/                     # Core scanning engine
+│   │   ├── async_scanner.py      # Async parallel scanning
+│   │   ├── scanner_automation.py # Scan orchestration
+│   │   ├── screener.py           # Technical filters
+│   │   └── story_scoring.py      # Story-first scoring
+│   │
+│   ├── scoring/                  # Scoring systems
+│   │   ├── story_scorer.py       # Legacy story scorer
+│   │   ├── signal_ranker.py      # Signal ranking
+│   │   └── param_helper.py       # Parameter helpers
+│   │
+│   ├── themes/                   # Theme management
+│   │   ├── theme_registry.py     # Theme database (17 themes)
+│   │   ├── theme_learner.py      # Auto-discover themes
+│   │   └── fast_stories.py       # Quick story detection
+│   │
+│   ├── learning/                 # Self-learning system
+│   │   ├── parameter_learning.py # Bayesian optimization
+│   │   ├── self_learning.py      # Outcome tracking
+│   │   └── evolution_engine.py   # Adaptive scoring
+│   │
+│   ├── ai/                       # AI intelligence
+│   │   ├── deepseek_intelligence.py
+│   │   ├── ai_learning.py
+│   │   └── ai_ecosystem_generator.py
+│   │
+│   ├── data/                     # Data management
+│   │   ├── universe_manager.py   # Stock universe (515 tickers)
+│   │   ├── cache_manager.py      # File-based caching
+│   │   └── storage.py            # Persistence
+│   │
+│   ├── analysis/                 # Market analysis
+│   │   ├── news_analyzer.py      # News processing
+│   │   ├── market_health.py      # Market internals
+│   │   └── sector_rotation.py    # Sector analysis
+│   │
+│   ├── api/                      # Web API
+│   │   └── app.py                # Flask application
+│   │
+│   ├── bot/                      # Telegram bot
+│   │   ├── bot_listener.py       # Command handler
+│   │   └── story_alerts.py       # Alert generation
+│   │
+│   └── dashboard/                # Dashboard
+│       ├── dashboard.py          # HTML generator
+│       └── charts.py             # Chart generation
+│
+├── config/                       # Configuration
+│   └── config.py
+├── scripts/                      # Helper scripts
+├── tests/                        # Test suite
+├── utils/                        # Utilities
+├── docs/                         # Dashboard output (GitHub Pages)
+└── .github/workflows/            # GitHub Actions
 ```
+
+**Note:** Backward-compatible wrapper files exist in the root directory for legacy imports.
 
 ## Key Concepts
 
-### Story-First Analysis
+### Story-First Scoring System
+
+```
+Story Score = Story Quality (50%) + Catalyst (35%) + Technical Confirmation (15%)
+```
+
 Traditional scanners focus on technical indicators. This scanner prioritizes **stories**:
 - What theme is the stock part of?
 - Is there an upcoming catalyst?
 - Is news momentum accelerating?
 - What's the social sentiment?
 
-Technical analysis confirms, but story drives alpha.
+Technical analysis confirms, but **story drives alpha**.
+
+#### Score Components
+
+| Component | Weight | Elements |
+|-----------|--------|----------|
+| **Story Quality** | 50% | Theme strength (40%), freshness (20%), clarity (20%), institutional (20%) |
+| **Catalyst** | 35% | Catalyst type score × recency multiplier |
+| **Confirmation** | 15% | Trend, volume, buyability |
+
+#### Theme Tiers
+
+| Tier | Score | Themes |
+|------|-------|--------|
+| MEGA | 100 | AI, GLP-1/Obesity Drugs |
+| STRONG | 80 | Nuclear, Defense, Data Centers |
+| MODERATE | 60 | Cybersecurity, Reshoring, Crypto |
+| WEAK | 30 | EV, Cannabis, SPACs |
+
+#### Catalyst Types
+
+| Tier | Score | Types |
+|------|-------|-------|
+| 1 | 80-100 | FDA approval, Major contract, Acquisition target |
+| 2 | 50-79 | Analyst upgrade, Insider buying, Partnership |
+| 3 | 30-49 | Earnings beat, SEC 8-K, Social buzz |
+| 4 | 0-29 | News mention, No catalyst |
+
+#### Story Strength Labels
+
+| Score | Label | Action |
+|-------|-------|--------|
+| 75+ | Hot | Strong narrative, ready to trade |
+| 55-74 | Developing | Building momentum, watch closely |
+| 40-54 | Watchlist | Story exists, needs confirmation |
+| 25-39 | Waiting | Weak/old story |
+| <25 | None | No story, avoid |
 
 ### Theme Detection
 Themes are market narratives that drive stock movements:
