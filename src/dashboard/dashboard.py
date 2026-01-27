@@ -1104,7 +1104,12 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         function renderTopPicks(stocks) {
             const top = stocks.slice(0, 10);
             if (top.length === 0) {
-                document.getElementById('top-picks').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div>No opportunities found</div></div>';
+                document.getElementById('top-picks').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <div style="margin-bottom: 8px;">No scan data available</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">Run /scan on Telegram or wait for scheduled scan</div>
+                    </div>`;
                 return;
             }
 
