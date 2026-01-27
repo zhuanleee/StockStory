@@ -795,58 +795,95 @@ def fetch_realtime_market_data():
     return market_data
 
 
-def fetch_news_with_xai(tickers=['NVDA', 'AAPL', 'TSLA', 'SPY'], max_headlines=10):
+def fetch_news_with_xai(tickers=['NVDA', 'AAPL', 'TSLA', 'SPY'], max_headlines=30):
     """
     Fetch news headlines and use X AI for fast sentiment interpretation.
-    Much faster than traditional sentiment analysis (~3s vs 25s).
+    Comprehensive mode: 6+ feeds, 30+ headlines for broader market view.
     """
     import feedparser
+    from concurrent.futures import ThreadPoolExecutor
 
     headlines = []
 
-    # Quick RSS feed fetch for market news
+    # Comprehensive RSS feeds for broad market coverage
     feeds = [
-        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US',
+        # Market indices
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US',  # S&P 500
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^DJI&region=US&lang=en-US',   # Dow Jones
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=^IXIC&region=US&lang=en-US',  # Nasdaq
+        # Tech leaders
         'https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US',
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL&region=US&lang=en-US',
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=MSFT&region=US&lang=en-US',
+        # Other sectors
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=TSLA&region=US&lang=en-US',
+        'https://feeds.finance.yahoo.com/rss/2.0/headline?s=XLF&region=US&lang=en-US',    # Financials
     ]
 
+    def fetch_feed(feed_url):
+        """Fetch a single feed."""
+        try:
+            feed = feedparser.parse(feed_url)
+            return [entry.title for entry in feed.entries[:5]]
+        except:
+            return []
+
     try:
-        for feed_url in feeds[:2]:  # Limit to 2 feeds for speed
-            try:
-                feed = feedparser.parse(feed_url)
-                for entry in feed.entries[:5]:
-                    headlines.append(entry.title)
-            except:
-                continue
+        # Parallel fetch all feeds for speed
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(fetch_feed, feeds))
+
+        # Combine all headlines, remove duplicates while preserving order
+        seen = set()
+        for feed_headlines in results:
+            for title in feed_headlines:
+                if title not in seen:
+                    seen.add(title)
+                    headlines.append(title)
 
         if not headlines:
-            return {'sentiment': 'neutral', 'headlines': [], 'summary': 'No news available'}
+            return {'sentiment': 'neutral', 'headlines': [], 'summary': 'No news available', 'count': 0}
 
-        # Use X AI for fast interpretation (prefer_xai=True for speed)
-        prompt = f"""Analyze these market headlines and return JSON:
-Headlines: {json.dumps(headlines[:max_headlines])}
+        # Use X AI for comprehensive interpretation
+        prompt = f"""Analyze these {len(headlines[:max_headlines])} market headlines and determine overall market sentiment.
 
-Return exactly: {{"sentiment":"bullish/bearish/neutral","key_news":"most important headline","market_impact":"one sentence"}}"""
+Headlines:
+{json.dumps(headlines[:max_headlines], indent=1)}
 
-        response = call_ai(prompt, "Be a concise market analyst.", max_tokens=200, timeout=10, prefer_xai=True)
+Return JSON:
+{{"sentiment":"bullish/bearish/neutral","confidence":"high/medium/low","key_news":"single most important headline","bullish_signals":["up to 3 bullish points"],"bearish_signals":["up to 3 bearish points"],"market_impact":"2 sentence summary of overall market direction"}}"""
+
+        response = call_ai(prompt, "Be a concise market analyst. Weigh all headlines to determine net sentiment.", max_tokens=400, timeout=20, prefer_xai=True)
 
         if response:
             try:
-                result = json.loads(response)
-                result['headlines'] = headlines[:5]
+                # Strip markdown if present
+                text = response.strip()
+                if text.startswith('```json'):
+                    text = text[7:]
+                elif text.startswith('```'):
+                    text = text[3:]
+                if text.endswith('```'):
+                    text = text[:-3]
+                text = text.strip()
+
+                result = json.loads(text)
+                result['headlines'] = headlines[:10]  # Return top 10 for display
+                result['count'] = len(headlines[:max_headlines])
                 return result
             except json.JSONDecodeError:
                 pass
 
         return {
             'sentiment': 'neutral',
-            'headlines': headlines[:5],
-            'summary': 'Headlines fetched but AI interpretation unavailable'
+            'headlines': headlines[:10],
+            'summary': 'Headlines fetched but AI interpretation unavailable',
+            'count': len(headlines)
         }
 
     except Exception as e:
         logger.debug(f"News fetch error: {e}")
-        return {'sentiment': 'neutral', 'headlines': [], 'summary': str(e)}
+        return {'sentiment': 'neutral', 'headlines': [], 'summary': str(e), 'count': 0}
 
 
 def generate_market_narrative(themes, sectors, top_stocks, news_data, market_data=None):
@@ -909,7 +946,11 @@ Return JSON:
                 }
             if news_data and isinstance(news_data, dict):
                 result['news_sentiment'] = news_data.get('sentiment')
-                result['top_headlines'] = news_data.get('headlines', [])[:3]
+                result['news_confidence'] = news_data.get('confidence')
+                result['news_count'] = news_data.get('count', 0)
+                result['bullish_signals'] = news_data.get('bullish_signals', [])
+                result['bearish_signals'] = news_data.get('bearish_signals', [])
+                result['top_headlines'] = news_data.get('headlines', [])[:5]
             return result
         except json.JSONDecodeError:
             return {'raw_narrative': response}
@@ -976,7 +1017,7 @@ def get_daily_briefing(fast_mode: bool = True):
                 errors.append(f"market_data_error: {e}")
 
             try:
-                news_data = news_future.result(timeout=15)
+                news_data = news_future.result(timeout=25)
             except FuturesTimeout:
                 errors.append("news_timeout")
                 logger.warning("News fetch timed out")
