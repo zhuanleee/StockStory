@@ -143,6 +143,11 @@ def handle_help(chat_id):
     msg += "• `/earnings` → Earnings calendar\n"
     msg += "• `/backtest NVDA` → Signal accuracy\n\n"
 
+    msg += "*🔄 Corporate Actions:*\n"
+    msg += "• `/spinoffs` → Stock splits & spinoffs\n"
+    msg += "• `/mergers` → M&A deal tracker\n"
+    msg += "• `/adddeal VMW AVGO 142` → Track deal\n\n"
+
     msg += "*🤖 AI:*\n"
     msg += "• `/briefing` → AI market narrative\n"
     msg += "• `/predict NVDA` → AI prediction\n"
@@ -487,6 +492,112 @@ def handle_sentiment(chat_id, ticker):
     except Exception as e:
         logger.error(f"Sentiment error for {ticker}: {e}")
         send_message(chat_id, f"❌ Sentiment error: {str(e)}")
+
+
+def handle_spinoffs(chat_id):
+    """Handle /spinoffs command - Track spinoff opportunities."""
+    send_message(chat_id, "⏳ Checking spinoffs...")
+    try:
+        from src.data.polygon_provider import get_stock_splits_sync
+
+        splits = get_stock_splits_sync(limit=50)
+
+        # Filter for recent/upcoming splits (spinoffs are included)
+        msg = "🔄 *RECENT & UPCOMING STOCK SPLITS/SPINOFFS*\n\n"
+
+        if not splits:
+            msg += "_No recent splits found_\n\n"
+        else:
+            count = 0
+            for split in splits[:15]:
+                ticker = split.get('ticker', '?')
+                exec_date = split.get('execution_date', 'TBD')
+                ratio = split.get('split_ratio', '?')
+
+                msg += f"• *{ticker}* - {exec_date}\n"
+                msg += f"  Ratio: {ratio}\n\n"
+                count += 1
+
+            if count == 0:
+                msg += "_No splits found_\n\n"
+
+        msg += "*Why track splits/spinoffs?*\n"
+        msg += "• Splits attract retail buyers (bullish)\n"
+        msg += "• Spinoffs outperform by 10-15% year 1\n"
+        msg += "• Index fund selling creates opportunities"
+
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"Spinoffs error: {e}")
+        send_message(chat_id, f"❌ Spinoffs error: {str(e)}")
+
+
+def handle_mergers(chat_id):
+    """Handle /mergers command - Track M&A arbitrage opportunities."""
+    send_message(chat_id, "⏳ Checking M&A deals...")
+    try:
+        from src.analysis.corporate_actions import DealTracker
+
+        tracker = DealTracker()
+        deals = tracker.get_active_deals()
+
+        msg = "🤝 *M&A DEAL TRACKER*\n\n"
+
+        if not deals:
+            msg += "_No deals being tracked_\n\n"
+            msg += "*To add a deal:*\n"
+            msg += "`/adddeal TARGET ACQUIRER PRICE`\n"
+            msg += "Example: `/adddeal VMW AVGO 142.50`\n\n"
+        else:
+            for deal in deals[:10]:
+                target = deal.get('target', '?')
+                acquirer = deal.get('acquirer', '?')
+                deal_price = deal.get('deal_price', 0)
+                status = deal.get('status', 'pending')
+
+                emoji = "🟢" if status == 'approved' else "🟡"
+                msg += f"{emoji} *{target}* ← {acquirer}\n"
+                msg += f"   Deal: ${deal_price:.2f} | Status: {status}\n\n"
+
+        msg += "*Merger Arbitrage Strategy:*\n"
+        msg += "• Spread > 5% = attractive\n"
+        msg += "• Spread < 2% = deal likely closing\n"
+        msg += "• Watch for regulatory risks"
+
+        send_message(chat_id, msg)
+    except Exception as e:
+        logger.error(f"Mergers error: {e}")
+        send_message(chat_id, f"❌ Mergers error: {str(e)}")
+
+
+def handle_add_deal(chat_id, args):
+    """Handle /adddeal TARGET ACQUIRER PRICE - Add M&A deal to track."""
+    parts = args.strip().split()
+    if len(parts) < 3:
+        send_message(chat_id, "Usage: `/adddeal TARGET ACQUIRER PRICE`\nExample: `/adddeal VMW AVGO 142.50`")
+        return
+
+    try:
+        target = parts[0].upper()
+        acquirer = parts[1].upper()
+        price = float(parts[2])
+
+        from src.analysis.corporate_actions import DealTracker
+
+        tracker = DealTracker()
+        deal = tracker.add_deal(target, acquirer, price)
+
+        msg = f"✅ *Deal Added*\n\n"
+        msg += f"Target: *{target}*\n"
+        msg += f"Acquirer: *{acquirer}*\n"
+        msg += f"Deal Price: ${price:.2f}\n\n"
+        msg += "Use `/mergers` to view all deals"
+
+        send_message(chat_id, msg)
+    except ValueError:
+        send_message(chat_id, "❌ Invalid price. Use: `/adddeal VMW AVGO 142.50`")
+    except Exception as e:
+        send_message(chat_id, f"❌ Error: {str(e)}")
 
 
 def handle_sectors(chat_id):
@@ -1072,6 +1183,14 @@ def process_message(message):
         handle_earnings(chat_id)
     elif text_lower.startswith('/backtest '):
         handle_backtest(chat_id, text[10:].strip())
+
+    # Corporate Actions
+    elif text_lower == '/spinoffs':
+        handle_spinoffs(chat_id)
+    elif text_lower == '/mergers':
+        handle_mergers(chat_id)
+    elif text_lower.startswith('/adddeal '):
+        handle_add_deal(chat_id, text[9:].strip())
 
     # AI
     elif text_lower == '/ai':
