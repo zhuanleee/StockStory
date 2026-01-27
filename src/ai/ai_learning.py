@@ -33,8 +33,8 @@ AI_LEARNING_DIR.mkdir(exist_ok=True)
 def call_deepseek(prompt, system_prompt=None, max_tokens=2000, timeout=25):
     """Call DeepSeek API for AI analysis."""
     if not config.ai.api_key:
-        logger.warning("DeepSeek API key not configured")
-        return None
+        logger.debug("DeepSeek API key not configured, trying X AI...")
+        return call_xai(prompt, system_prompt, max_tokens, timeout)
 
     messages = []
     if system_prompt:
@@ -49,24 +49,90 @@ def call_deepseek(prompt, system_prompt=None, max_tokens=2000, timeout=25):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "deepseek-chat",
+                "model": config.ai.model,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.3,  # Lower temperature for more consistent analysis
+                "temperature": config.ai.temperature,
             },
-            timeout=timeout  # Reduced timeout for faster failure
+            timeout=timeout
         )
 
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
             logger.error(f"DeepSeek API returned {response.status_code}: {response.text[:200]}")
+            # Fallback to X AI on error
+            return call_xai(prompt, system_prompt, max_tokens, timeout)
     except requests.Timeout:
-        logger.error(f"DeepSeek API timeout after {timeout}s")
+        logger.error(f"DeepSeek API timeout after {timeout}s, trying X AI...")
+        return call_xai(prompt, system_prompt, max_tokens, timeout)
     except Exception as e:
-        logger.error(f"DeepSeek API error: {e}")
+        logger.error(f"DeepSeek API error: {e}, trying X AI...")
+        return call_xai(prompt, system_prompt, max_tokens, timeout)
 
     return None
+
+
+def call_xai(prompt, system_prompt=None, max_tokens=2000, timeout=25):
+    """Call X AI (Grok) API for AI analysis."""
+    if not config.ai.xai_api_key:
+        logger.warning("X AI API key not configured")
+        return None
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    try:
+        response = requests.post(
+            config.ai.xai_api_url,
+            headers={
+                "Authorization": f"Bearer {config.ai.xai_api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": config.ai.xai_model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": config.ai.temperature,
+            },
+            timeout=timeout
+        )
+
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        else:
+            logger.error(f"X AI API returned {response.status_code}: {response.text[:200]}")
+    except requests.Timeout:
+        logger.error(f"X AI API timeout after {timeout}s")
+    except Exception as e:
+        logger.error(f"X AI API error: {e}")
+
+    return None
+
+
+def call_ai(prompt, system_prompt=None, max_tokens=2000, timeout=25, prefer_xai=False):
+    """
+    Call AI API with automatic fallback.
+
+    Args:
+        prompt: The prompt to send
+        system_prompt: Optional system prompt
+        max_tokens: Maximum response tokens
+        timeout: Request timeout in seconds
+        prefer_xai: If True, try X AI first, then DeepSeek
+
+    Returns:
+        AI response text or None
+    """
+    if prefer_xai:
+        result = call_xai(prompt, system_prompt, max_tokens, timeout)
+        if result:
+            return result
+        return call_deepseek(prompt, system_prompt, max_tokens, timeout)
+    else:
+        return call_deepseek(prompt, system_prompt, max_tokens, timeout)
 
 
 # =============================================================================

@@ -135,18 +135,36 @@ class BacktestConfig:
 
 @dataclass(frozen=True)
 class AIConfig:
-    """AI/DeepSeek configuration."""
+    """AI configuration for DeepSeek and X AI (Grok)."""
+    # DeepSeek (primary)
     api_key: str = field(default_factory=lambda: _get_env('DEEPSEEK_API_KEY'))
     api_url: str = "https://api.deepseek.com/v1/chat/completions"
     model: str = "deepseek-chat"
+
+    # X AI / Grok (secondary/fallback)
+    xai_api_key: str = field(default_factory=lambda: _get_env('XAI_API_KEY'))
+    xai_api_url: str = "https://api.x.ai/v1/chat/completions"
+    xai_model: str = "grok-4-1-fast-reasoning"
+
+    # Shared settings
     temperature: float = 0.3
     default_max_tokens: int = 500
-    request_timeout: int = 60
+    request_timeout: int = 25
 
     @property
     def is_configured(self) -> bool:
-        """Check if AI is properly configured."""
+        """Check if any AI is properly configured."""
+        return bool(self.api_key) or bool(self.xai_api_key)
+
+    @property
+    def has_deepseek(self) -> bool:
+        """Check if DeepSeek is configured."""
         return bool(self.api_key)
+
+    @property
+    def has_xai(self) -> bool:
+        """Check if X AI is configured."""
+        return bool(self.xai_api_key)
 
 
 @dataclass(frozen=True)
