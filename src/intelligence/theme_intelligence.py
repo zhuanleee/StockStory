@@ -795,11 +795,15 @@ class ThemeIntelligenceHub:
     def get_theme_radar_data(self) -> Dict:
         """
         Get data formatted for dashboard theme radar visualization.
+        Returns all themes, using history data if available, defaults otherwise.
         """
         themes_data = self.history.get('themes', {})
 
         radar_data = []
-        for theme_id, data in themes_data.items():
+
+        # Include ALL themes from THEME_TICKER_MAP, not just ones in history
+        for theme_id in THEME_TICKER_MAP.keys():
+            data = themes_data.get(theme_id, {})
             score_history = data.get('score_history', [])
 
             # Get trend direction from recent history
@@ -808,14 +812,15 @@ class ThemeIntelligenceHub:
             else:
                 trend = 0
 
+            # Use defaults for themes not yet analyzed
             radar_data.append({
                 'theme_id': theme_id,
                 'theme_name': THEME_NAMES.get(theme_id, theme_id),
-                'score': data.get('fused_score', 0),
-                'lifecycle': data.get('lifecycle', 'dead'),
+                'score': data.get('fused_score', 20),  # Default score
+                'lifecycle': data.get('lifecycle', 'unknown'),
                 'trend': trend,
                 'tickers': THEME_TICKER_MAP.get(theme_id, [])[:5],
-                'last_updated': data.get('last_updated', '')
+                'last_updated': data.get('last_updated', 'Not analyzed yet')
             })
 
         # Sort by score
@@ -824,7 +829,9 @@ class ThemeIntelligenceHub:
         return {
             'ok': True,
             'timestamp': datetime.now().isoformat(),
-            'radar': radar_data
+            'radar': radar_data,
+            'total_themes': len(radar_data),
+            'analyzed_themes': len(themes_data)
         }
 
     def get_theme_history(self, theme_id: str) -> Dict:
