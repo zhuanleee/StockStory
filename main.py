@@ -19,6 +19,10 @@ import asyncio
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 
 def run_scan(test_mode=False):
     """Run the async stock scanner."""
@@ -27,32 +31,35 @@ def run_scan(test_mode=False):
     async def scan():
         scanner = AsyncScanner(max_concurrent=50)
 
-        if test_mode:
-            tickers = ['NVDA', 'AMD', 'AAPL', 'MSFT', 'META', 'GOOGL', 'AMZN', 'TSLA', 'NFLX', 'CRM']
-            print(f"Running TEST scan on {len(tickers)} tickers...")
-        else:
-            from src.data.universe_manager import get_universe_manager
-            um = get_universe_manager()
-            tickers = um.get_scan_universe()
-            print(f"Running FULL scan on {len(tickers)} tickers...")
+        try:
+            if test_mode:
+                tickers = ['NVDA', 'AMD', 'AAPL', 'MSFT', 'META', 'GOOGL', 'AMZN', 'TSLA', 'NFLX', 'CRM']
+                print(f"Running TEST scan on {len(tickers)} tickers...")
+            else:
+                from src.data.universe_manager import get_universe_manager
+                um = get_universe_manager()
+                tickers = um.get_scan_universe()
+                print(f"Running FULL scan on {len(tickers)} tickers...")
 
-        results = await scanner.run_scan_async(tickers)
+            results = await scanner.run_scan_async(tickers)
 
-        if isinstance(results, tuple):
-            df = results[0]
-        else:
-            df = results
+            if isinstance(results, tuple):
+                df = results[0]
+            else:
+                df = results
 
-        print(f"\nScan complete: {len(df)} stocks analyzed")
-        print("\nTop 10 by Story Score:")
-        for i, row in df.head(10).iterrows():
-            ticker = row.get('ticker', 'N/A')
-            score = row.get('story_score', 0)
-            theme = row.get('hottest_theme', '-') or '-'
-            strength = row.get('story_strength', 'none')
-            print(f"  {i+1:2}. {ticker:6} | Score: {score:5.1f} | {strength:10} | {theme}")
+            print(f"\nScan complete: {len(df)} stocks analyzed")
+            print("\nTop 10 by Story Score:")
+            for i, row in df.head(10).iterrows():
+                ticker = row.get('ticker', 'N/A')
+                score = row.get('story_score', 0)
+                theme = row.get('hottest_theme', '-') or '-'
+                strength = row.get('story_strength', 'none')
+                print(f"  {i+1:2}. {ticker:6} | Score: {score:5.1f} | {strength:10} | {theme}")
 
-        return df
+            return df
+        finally:
+            await scanner.close()
 
     return asyncio.run(scan())
 

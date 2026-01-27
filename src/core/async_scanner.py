@@ -9,6 +9,7 @@ import asyncio
 import aiohttp
 import time
 import re
+import os
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -817,6 +818,64 @@ class AsyncScanner:
             'start_time': None,
         }
 
+    async def _fetch_price_data(self, tickers: List[str]) -> Dict[str, pd.DataFrame]:
+        """
+        Fetch price data for multiple tickers.
+        Uses Polygon.io if available, falls back to yfinance.
+        """
+        price_data_dict = {}
+
+        # Try Polygon first (faster, more reliable)
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import PolygonProvider
+                logger.info("Using Polygon.io for price data...")
+
+                provider = PolygonProvider(api_key=polygon_key)
+                price_data_dict = await provider.batch_get_daily_bars(
+                    tickers + ['SPY'],
+                    days=250,
+                    max_concurrent=20,
+                )
+                await provider.close()
+
+                if len(price_data_dict) >= len(tickers) * 0.8:
+                    logger.info(f"Polygon fetched {len(price_data_dict)} tickers")
+                    return price_data_dict
+                else:
+                    logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)}, falling back to yfinance")
+            except Exception as e:
+                logger.warning(f"Polygon error, falling back to yfinance: {e}")
+
+        # Fallback to yfinance
+        try:
+            logger.info("Using yfinance for price data...")
+            price_data = yf.download(
+                tickers + ['SPY'],
+                period='1y',
+                group_by='ticker',
+                progress=False,
+                threads=True,
+            )
+
+            for ticker in tickers:
+                try:
+                    if isinstance(price_data.columns, pd.MultiIndex):
+                        df = price_data[ticker]
+                    else:
+                        df = price_data
+                    if len(df) > 0:
+                        price_data_dict[ticker] = df
+                except Exception:
+                    pass
+
+            logger.info(f"yfinance fetched {len(price_data_dict)} tickers")
+        except Exception as e:
+            logger.warning(f"Price data fetch error: {e}")
+
+        return price_data_dict
+
     async def scan_ticker(
         self,
         ticker: str,
@@ -868,31 +927,7 @@ class AsyncScanner:
         # Fetch price data if not provided
         if price_data_dict is None:
             logger.info("Fetching price data...")
-            try:
-                # Use yfinance batch download (most efficient)
-                price_data = yf.download(
-                    tickers + ['SPY'],
-                    period='1y',
-                    group_by='ticker',
-                    progress=False,
-                    threads=True,
-                )
-
-                # Convert to dict format
-                price_data_dict = {}
-                for ticker in tickers:
-                    try:
-                        if isinstance(price_data.columns, pd.MultiIndex):
-                            df = price_data[ticker]
-                        else:
-                            df = price_data
-                        if len(df) > 0:
-                            price_data_dict[ticker] = df
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.warning(f"Price data fetch error: {e}")
-                price_data_dict = {}
+            price_data_dict = await self._fetch_price_data(tickers)
 
         # Create scan tasks
         tasks = []
