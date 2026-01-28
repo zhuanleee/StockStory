@@ -202,9 +202,13 @@ class ThemeDiscoveryEngine:
             logger.error(f"AI call failed: {e}")
             return None
 
-    def _gather_realtime_data(self, tickers: List[str] = None) -> Dict[str, Any]:
+    def _gather_realtime_data(self, tickers: List[str] = None, fast_mode: bool = True) -> Dict[str, Any]:
         """
         Gather real-time market data for AI analysis.
+
+        Args:
+            tickers: Optional list of tickers to focus on
+            fast_mode: If True, skip slow external API calls (default True to avoid timeout)
 
         Collects:
         - Recent news and sentiment
@@ -224,13 +228,18 @@ class ThemeDiscoveryEngine:
         }
 
         try:
-            # Get high story score stocks
+            # Get high story score stocks (fast - local file read)
             story_scores = self._get_story_scores()
             if story_scores:
                 top_scorers = sorted(story_scores.items(), key=lambda x: x[1], reverse=True)[:20]
                 data['high_story_scores'] = [
                     {'ticker': t, 'story_score': float(s)} for t, s in top_scorers if s >= 50
                 ]
+
+            # Skip slow external API calls in fast_mode
+            if fast_mode:
+                logger.info("Fast mode: skipping slow external API calls")
+                return data
 
             # Get recent news
             try:
