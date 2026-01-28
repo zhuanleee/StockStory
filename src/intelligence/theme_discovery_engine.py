@@ -249,13 +249,13 @@ class ThemeDiscoveryEngine:
             except Exception as e:
                 logger.debug(f"News fetch failed: {e}")
 
-            # Get top movers
+            # Get top movers (limited to reduce API calls)
             try:
                 import yfinance as yf
-                check_tickers = tickers or [t for t, s in (story_scores.items() if story_scores else [])][:30]
+                check_tickers = tickers or [t for t, s in (story_scores.items() if story_scores else [])][:10]
 
                 if check_tickers:
-                    for ticker in check_tickers[:15]:
+                    for ticker in check_tickers[:5]:  # Reduced from 15 to avoid timeout
                         try:
                             stock = yf.Ticker(ticker)
                             hist = stock.history(period='5d')
@@ -275,10 +275,10 @@ class ThemeDiscoveryEngine:
             except Exception as e:
                 logger.debug(f"Movers fetch failed: {e}")
 
-            # Get social buzz from StockTwits
+            # Get social buzz from StockTwits (limited to reduce API calls)
             try:
                 from story_scorer import fetch_stocktwits_sentiment
-                for ticker in (tickers or list(story_scores.keys()))[:10]:
+                for ticker in (tickers or list(story_scores.keys()))[:3]:  # Reduced from 10
                     try:
                         buzz = fetch_stocktwits_sentiment(ticker)
                         if buzz and buzz.get('message_count', 0) > 5:
@@ -293,12 +293,12 @@ class ThemeDiscoveryEngine:
             except Exception as e:
                 logger.debug(f"Social buzz fetch failed: {e}")
 
-            # Get recent SEC filings
+            # Get recent SEC filings (limited to reduce API calls)
             try:
                 from src.data.sec_edgar import SECEdgarClient
                 client = SECEdgarClient()
 
-                for ticker in (tickers or list(story_scores.keys()))[:10]:
+                for ticker in (tickers or list(story_scores.keys()))[:3]:  # Reduced from 10
                     try:
                         filings = client.get_recent_filings(ticker, days_back=7)
                         if filings:
@@ -314,21 +314,14 @@ class ThemeDiscoveryEngine:
             except Exception as e:
                 logger.debug(f"SEC filings fetch failed: {e}")
 
-            # Get sector performance
+            # Get sector performance (limited to key sectors to reduce API calls)
             try:
                 sector_etfs = {
                     'Technology': 'XLK',
                     'Healthcare': 'XLV',
-                    'Financials': 'XLF',
                     'Energy': 'XLE',
-                    'Industrials': 'XLI',
-                    'Materials': 'XLB',
-                    'Utilities': 'XLU',
-                    'Consumer Discretionary': 'XLY',
-                    'Consumer Staples': 'XLP',
-                    'Real Estate': 'XLRE',
-                    'Communication Services': 'XLC'
-                }
+                    'Industrials': 'XLI'
+                }  # Reduced from 11 sectors
 
                 import yfinance as yf
                 for sector, etf in sector_etfs.items():
