@@ -260,8 +260,11 @@ Return as JSON:
     ]
 }}"""
 
+        # x_search tool requires grok-4 family models
+        model = os.environ.get('XAI_X_SEARCH_MODEL', 'grok-4-1-fast')
+
         payload = {
-            "model": os.environ.get('XAI_MODEL', 'grok-2-latest'),
+            "model": model,
             "tools": [{"type": "x_search"}],
             "input": [
                 {
@@ -271,7 +274,7 @@ Return as JSON:
             ],
         }
 
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp = requests.post(url, json=payload, headers=headers, timeout=90)
 
         if resp.status_code != 200:
             logger.warning(f"xAI x_search failed for {ticker}: {resp.status_code}")
