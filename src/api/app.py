@@ -1422,6 +1422,38 @@ def home():
     })
 
 
+@app.route('/dashboard')
+def serve_dashboard():
+    """Serve the interactive dashboard."""
+    try:
+        from flask import Response
+        from src.dashboard.dashboard import DASHBOARD_HTML
+
+        # Get API base URL for the dashboard
+        api_base = request.url_root.rstrip('/') + '/api'
+
+        # Replace the default API_BASE in the HTML
+        html = DASHBOARD_HTML.replace(
+            "const API_BASE = 'https://web-production-46562.up.railway.app/api';",
+            f"const API_BASE = '{api_base}';"
+        )
+
+        # Apply any template variables
+        html = html.replace('{INITIAL_SCAN_DATA}', '[]')
+        html = html.replace('{TOP_THEMES}', '')
+        html = html.replace('{ALL_THEMES}', '')
+        html = html.replace('{THEME_STOCKS}', '')
+        html = html.replace('{THEME_CARDS}', '')
+        html = html.replace('{THEME_OPTIONS}', '')
+        html = html.replace('{TELEGRAM_BOT_USERNAME}', 'Stocks_Story_Bot')
+
+        return Response(html, mimetype='text/html')
+
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle incoming Telegram webhook."""
