@@ -5744,9 +5744,17 @@ def api_supplychain_ai_discover():
     """
     try:
         from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+        import json
 
         engine = get_theme_discovery_engine()
         result = engine.get_ai_opportunities()
+
+        # Ensure result is JSON serializable
+        try:
+            json.dumps(result)
+        except TypeError as te:
+            logger.error(f"AI discovery serialization error: {te}")
+            return jsonify({'ok': False, 'error': f'Serialization error: {te}'}), 500
 
         return jsonify({
             'ok': True,
@@ -5755,7 +5763,7 @@ def api_supplychain_ai_discover():
     except ImportError as e:
         return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
     except Exception as e:
-        logger.error(f"AI discovery error: {e}")
+        logger.error(f"AI discovery error: {e}", exc_info=True)
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
@@ -5772,6 +5780,7 @@ def api_supplychain_ai_analyze():
     """
     try:
         from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+        import json
 
         engine = get_theme_discovery_engine()
         result = engine.analyze_with_ai()
@@ -5786,6 +5795,13 @@ def api_supplychain_ai_analyze():
                 'raw_response': result.get('raw_response', '')[:200]
             }), 500
 
+        # Ensure result is JSON serializable
+        try:
+            json.dumps(result)
+        except TypeError as te:
+            logger.error(f"AI analyze serialization error: {te}")
+            return jsonify({'ok': False, 'error': f'Serialization error: {te}'}), 500
+
         return jsonify({
             'ok': True,
             **result
@@ -5793,7 +5809,7 @@ def api_supplychain_ai_analyze():
     except ImportError as e:
         return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
     except Exception as e:
-        logger.error(f"AI analyze error: {e}")
+        logger.error(f"AI analyze error: {e}", exc_info=True)
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
