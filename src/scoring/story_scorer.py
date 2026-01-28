@@ -483,10 +483,11 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     logger.info(f"[SOCIAL] SEC done for {ticker}")
 
     # Reddit via xAI web_search (with fallback to direct API)
+    # DEBUG: Use use_xai=False to test if xAI is causing the issue
     reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
     try:
         logger.info(f"[SOCIAL] Fetching Reddit for {ticker}")
-        reddit = fetch_reddit_mentions(ticker)
+        reddit = fetch_reddit_mentions(ticker, use_xai=False)  # Temporarily disable xAI
         logger.info(f"[SOCIAL] Reddit done for {ticker}: {reddit.get('mention_count', 0)} mentions")
     except Exception as e:
         logger.error(f"[SOCIAL] Reddit fetch failed for {ticker}: {type(e).__name__}: {e}")
