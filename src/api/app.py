@@ -1449,7 +1449,10 @@ def serve_dashboard():
         from src.dashboard.dashboard import DASHBOARD_HTML
 
         # Get API base URL for the dashboard
-        api_base = request.url_root.rstrip('/') + '/api'
+        # Handle reverse proxy (Railway) - check X-Forwarded-Proto header
+        proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+        host = request.host
+        api_base = f"{proto}://{host}/api"
 
         # Replace the default API_BASE in the HTML
         html = DASHBOARD_HTML.replace(
