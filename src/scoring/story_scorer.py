@@ -475,7 +475,7 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
 
     Sources:
         - StockTwits: Retail trader sentiment
-        - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options
+        - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options (via xAI web_search)
         - X/Twitter: Via xAI x_search (engagement-weighted)
         - SEC: 8-K filings, insider activity
 
@@ -484,31 +484,24 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         - sources: breakdown by source
         - trending: bool
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     # Quick fetches (non-xAI)
     stocktwits = fetch_stocktwits_sentiment(ticker)
     sec = fetch_sec_filings(ticker)
 
-    # xAI calls in parallel (Reddit + X both use xAI, can take 30-60s each)
+    # Reddit via xAI web_search (with fallback to direct API)
     reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
+    try:
+        reddit = fetch_reddit_mentions(ticker)
+    except Exception as e:
+        logger.debug(f"Reddit fetch failed for {ticker}: {e}")
+
+    # X/Twitter via xAI x_search (optional)
     x_data = {'post_count': 0, 'engagement_score': 0, 'sentiment': 'unknown'}
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {}
-        futures['reddit'] = executor.submit(fetch_reddit_mentions, ticker)
-        if include_x:
-            futures['x'] = executor.submit(fetch_x_sentiment, ticker, 7)
-
-        for key, future in futures.items():
-            try:
-                result = future.result(timeout=90)
-                if key == 'reddit':
-                    reddit = result
-                elif key == 'x':
-                    x_data = result
-            except Exception as e:
-                logger.debug(f"{key} fetch failed for {ticker}: {e}")
+    if include_x:
+        try:
+            x_data = fetch_x_sentiment(ticker, days_back=7)
+        except Exception as e:
+            logger.debug(f"X sentiment fetch failed for {ticker}: {e}")
 
     # Calculate component scores using learned thresholds
     st_score = 0
