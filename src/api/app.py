@@ -5762,6 +5762,24 @@ def api_supplychain_ai_debug():
         json.dumps(realtime_data)
         debug_info['steps'].append('5. JSON serialization OK')
 
+        # Step 6: Test fallback static analysis
+        debug_info['steps'].append('6. Testing fallback static analysis...')
+        fallback = engine._fallback_static_analysis()
+        debug_info['fallback_count'] = len(fallback)
+        debug_info['steps'].append(f'6. Fallback returned {len(fallback)} opportunities')
+
+        # Step 7: Test full get_ai_opportunities
+        debug_info['steps'].append('7. Testing get_ai_opportunities...')
+        result = engine.get_ai_opportunities()
+        debug_info['result_keys'] = list(result.keys())
+        debug_info['result_source'] = result.get('source', 'unknown')
+        debug_info['steps'].append(f'7. get_ai_opportunities returned source: {result.get("source")}')
+
+        # Step 8: Serialize result
+        debug_info['steps'].append('8. Serializing result...')
+        json.dumps(result)
+        debug_info['steps'].append('8. Result serialization OK')
+
         debug_info['ok'] = True
         return jsonify(debug_info)
 
