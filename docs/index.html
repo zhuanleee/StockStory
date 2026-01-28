@@ -1525,16 +1525,16 @@
                     // Connect to same origin (API server) with Socket.IO
                     const serverUrl = API_BASE.replace('/api', '');
                     const isSecure = window.location.protocol === 'https:';
-                    console.log('Connecting to sync server:', serverUrl, 'secure:', isSecure);
+                    console.log('Connecting to sync server:', serverUrl);
 
                     this.socket = io(serverUrl, {
-                        transports: ['websocket', 'polling'],
+                        transports: ['polling', 'websocket'],  // Try polling first
                         secure: isSecure,
                         reconnection: true,
-                        reconnectionAttempts: 10,
-                        reconnectionDelay: 2000,
+                        reconnectionAttempts: 3,  // Reduced attempts
+                        reconnectionDelay: 3000,
                         reconnectionDelayMax: 10000,
-                        timeout: 20000,
+                        timeout: 10000,
                     });
 
                     // Connection events
@@ -1548,28 +1548,40 @@
                     this.socket.on('sync_event', (data) => this.handleSyncEvent(data));
                     this.socket.on('status', (data) => this.handleStatus(data));
                     this.socket.on('heartbeat_ack', () => {});
-                    this.socket.on('error', (data) => console.error('Sync error:', data));
+                    this.socket.on('error', (data) => console.debug('Sync error:', data));
 
                 } catch (e) {
-                    console.warn('Failed to connect to sync server:', e);
-                    this.updateSyncStatus('error');
+                    console.debug('Sync server unavailable');
+                    this.updateSyncStatus('unavailable');
                 }
             }
 
             onConnect() {
-                console.log('Socket.IO connected');
+                console.log('Real-time sync connected');
                 this.connected = true;
+                this.failCount = 0;
                 this.updateSyncStatus('connected');
             }
 
             onDisconnect(reason) {
-                console.log('Socket.IO disconnected:', reason);
+                console.debug('Sync disconnected:', reason);
                 this.connected = false;
                 this.updateSyncStatus('disconnected');
             }
 
             onError(error) {
-                console.warn('Socket.IO error:', error.message || error);
+                this.failCount = (this.failCount || 0) + 1;
+                if (this.failCount <= 2) {
+                    console.debug('Sync connection attempt', this.failCount);
+                }
+                if (this.failCount >= 3) {
+                    // Give up quietly - sync is optional
+                    this.updateSyncStatus('unavailable');
+                    if (this.socket) {
+                        this.socket.disconnect();
+                    }
+                    return;
+                }
                 this.updateSyncStatus('error');
             }
 
