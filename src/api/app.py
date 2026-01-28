@@ -5640,8 +5640,10 @@ def api_social_sentiment(ticker):
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        logger.error(f"Social sentiment error for {ticker}: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Social sentiment error for {ticker}: {e}\n{tb}")
+        return jsonify({'ok': False, 'error': str(e), 'error_type': type(e).__name__, 'traceback': tb[:1000]}), 500
 
 
 @app.route('/api/social/x/<ticker>')
