@@ -33,10 +33,10 @@ def init_socketio(app, **kwargs):
         'https://web-production-46562.up.railway.app',
     ]
 
-    # Default config for production
+    # Default config for production with eventlet
     default_config = {
         'cors_allowed_origins': allowed_origins,
-        'async_mode': 'threading',
+        'async_mode': 'eventlet',
         'ping_timeout': 60,
         'ping_interval': 25,
     }
