@@ -65,6 +65,31 @@ except ImportError:
 
 
 # =============================================================================
+# XAI CLIENT HELPER - Shared client to avoid multiple instantiations
+# =============================================================================
+
+_xai_client = None
+
+def _get_xai_client():
+    """Get or create a shared xAI client."""
+    global _xai_client
+    import os
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        return None
+    if _xai_client is None:
+        from xai_sdk import Client
+        _xai_client = Client(api_key=api_key)
+    return _xai_client
+
+
+def _reset_xai_client():
+    """Reset the client (useful between requests)."""
+    global _xai_client
+    _xai_client = None
+
+
+# =============================================================================
 # ADDITIONAL DATA SOURCES - Social & Institutional
 # =============================================================================
 
@@ -134,17 +159,15 @@ def fetch_reddit_mentions(ticker: str, days_back: int = 7, use_xai: bool = True)
     if not use_xai:
         return _fetch_reddit_direct(ticker)
 
-    api_key = os.environ.get('XAI_API_KEY', '')
-    if not api_key:
-        logger.debug(f"XAI_API_KEY not set, using direct Reddit API for {ticker}")
+    client = _get_xai_client()
+    if not client:
+        logger.debug(f"XAI client not available, using direct Reddit API for {ticker}")
         return _fetch_reddit_direct(ticker)
 
     try:
-        from xai_sdk import Client
         from xai_sdk.chat import user
         from xai_sdk.tools import web_search
 
-        client = Client(api_key=api_key)
         chat = client.chat.create(
             model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
             tools=[web_search()],
@@ -264,9 +287,9 @@ def _fetch_reddit_direct(ticker: str) -> dict:
 
 def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
     """
-    Fetch sentiment from X/Twitter using xAI SDK with web_search tool.
+    Fetch sentiment from X/Twitter using xAI SDK with x_search tool.
 
-    Uses xai_sdk with web_search capability and date filtering.
+    Uses xai_sdk with x_search capability for real-time X/Twitter data.
     Analyzes posts mentioning the stock ticker and determines sentiment.
 
     Returns:
@@ -279,9 +302,9 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
     import math
     from datetime import datetime, timedelta
 
-    api_key = os.environ.get('XAI_API_KEY', '')
-    if not api_key:
-        logger.debug(f"XAI_API_KEY not set, skipping X sentiment for {ticker}")
+    client = _get_xai_client()
+    if not client:
+        logger.debug(f"XAI client not available, skipping X sentiment for {ticker}")
         return {
             'post_count': 0,
             'engagement_score': 0,
@@ -291,20 +314,16 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
         }
 
     try:
-        # Try using xai_sdk first
-        try:
-            from xai_sdk import Client
-            from xai_sdk.chat import user
-            from xai_sdk.tools import x_search
+        from xai_sdk.chat import user
+        from xai_sdk.tools import x_search
 
-            client = Client(api_key=api_key)
-            chat = client.chat.create(
-                model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
-                tools=[x_search()],
-            )
+        chat = client.chat.create(
+            model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+            tools=[x_search()],
+        )
 
-            # Search prompt for stock sentiment - include date range in query
-            search_prompt = f"""Search X/Twitter for recent posts (last {days_back} days) about ${ticker} stock.
+        # Search prompt for stock sentiment - include date range in query
+        search_prompt = f"""Search X/Twitter for recent posts (last {days_back} days) about ${ticker} stock.
 
 Find posts discussing ${ticker} as an investment. Analyze the overall sentiment.
 
@@ -321,14 +340,9 @@ Return a JSON summary:
     ]
 }}"""
 
-            chat.append(user(search_prompt))
-            response = chat.sample()
-            output_text = response.content
-
-        except ImportError:
-            logger.debug("xai_sdk not available, falling back to HTTP API")
-            # Fallback to direct HTTP if SDK not available
-            return _fetch_x_sentiment_http(ticker, days_back)
+        chat.append(user(search_prompt))
+        response = chat.sample()
+        output_text = response.content
 
         # Parse response
         import json as json_module
@@ -471,6 +485,9 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         - sources: breakdown by source
         - trending: bool
     """
+    # Reset xAI client for fresh state each request
+    _reset_xai_client()
+
     # Quick fetches (non-xAI)
     logger.info(f"[SOCIAL] Starting social buzz for {ticker}, include_x={include_x}")
 
@@ -483,11 +500,10 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     logger.info(f"[SOCIAL] SEC done for {ticker}")
 
     # Reddit via xAI web_search (with fallback to direct API)
-    # DEBUG: Use use_xai=False to test if xAI is causing the issue
     reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
     try:
         logger.info(f"[SOCIAL] Fetching Reddit for {ticker}")
-        reddit = fetch_reddit_mentions(ticker, use_xai=False)  # Temporarily disable xAI
+        reddit = fetch_reddit_mentions(ticker, use_xai=True)  # Use shared xAI client
         logger.info(f"[SOCIAL] Reddit done for {ticker}: {reddit.get('mention_count', 0)} mentions")
     except Exception as e:
         logger.error(f"[SOCIAL] Reddit fetch failed for {ticker}: {type(e).__name__}: {e}")
