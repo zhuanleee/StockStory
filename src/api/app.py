@@ -5630,12 +5630,21 @@ def api_social_sentiment(ticker):
         ticker = ticker.upper()
         # X/Twitter enabled by default (disable with ?include_x=false)
         include_x = request.args.get('include_x', 'true').lower() == 'true'
+
+        # Debug: Add timing
+        import time
+        start_time = time.time()
+
         result = get_social_buzz_score(ticker, include_x=include_x)
+
+        elapsed = time.time() - start_time
+        logger.info(f"Social sentiment for {ticker} completed in {elapsed:.1f}s")
 
         return jsonify({
             'ok': True,
             'ticker': ticker,
             'x_enabled': include_x,
+            'elapsed_seconds': round(elapsed, 1),
             **result,
             'timestamp': datetime.now().isoformat()
         })
