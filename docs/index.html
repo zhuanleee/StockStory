@@ -1884,31 +1884,33 @@
                 const res = await fetch(`${API_BASE}/health`);
                 const data = await res.json();
                 if (data.ok) {
-                    const h = data.health || {};
+                    const fg = data.fear_greed || {};
+                    const breadth = data.breadth || {};
+                    const raw = data.raw_data || {};
 
-                    // Market pulse
-                    const spy = h.spy_change || 0;
-                    const qqq = h.qqq_change || 0;
+                    // Market pulse - calculate from raw data
+                    const spy = raw.spy_20d_return || 0;
+                    const qqq = spy;  // Use SPY as proxy
                     document.getElementById('spy-change').textContent = (spy >= 0 ? '+' : '') + spy.toFixed(2) + '%';
                     document.getElementById('spy-change').className = 'pulse-value ' + (spy >= 0 ? 'up' : 'down');
                     document.getElementById('qqq-change').textContent = (qqq >= 0 ? '+' : '') + qqq.toFixed(2) + '%';
                     document.getElementById('qqq-change').className = 'pulse-value ' + (qqq >= 0 ? 'up' : 'down');
-                    document.getElementById('vix-value').textContent = (h.vix || 0).toFixed(1);
+                    document.getElementById('vix-value').textContent = (raw.vix || 0).toFixed(1);
 
                     // Fear & Greed
-                    const fg = h.fear_greed || 50;
-                    document.getElementById('fg-value').textContent = fg.toFixed(0);
-                    document.getElementById('fear-greed').textContent = fg.toFixed(0);
-                    const fgLabel = fg <= 25 ? 'Extreme Fear' : fg <= 45 ? 'Fear' : fg <= 55 ? 'Neutral' : fg <= 75 ? 'Greed' : 'Extreme Greed';
+                    const fgScore = fg.score || data.overall_score || 50;
+                    document.getElementById('fg-value').textContent = fgScore.toFixed(0);
+                    document.getElementById('fear-greed').textContent = fgScore.toFixed(0);
+                    const fgLabel = fg.label || (fgScore <= 25 ? 'Extreme Fear' : fgScore <= 45 ? 'Fear' : fgScore <= 55 ? 'Neutral' : fgScore <= 75 ? 'Greed' : 'Extreme Greed');
                     document.getElementById('fg-label').textContent = fgLabel;
-                    const rotation = (fg - 50) * 1.8; // -90 to 90 degrees
+                    const rotation = (fgScore - 50) * 1.8; // -90 to 90 degrees
                     document.getElementById('gauge-needle').style.setProperty('--rotation', rotation + 'deg');
 
-                    // Health metrics
-                    document.getElementById('breadth-score').textContent = (h.breadth_score || 0).toFixed(0) + '%';
-                    document.getElementById('adv-dec').textContent = (h.adv_dec_ratio || 0).toFixed(2);
-                    document.getElementById('hi-lo').textContent = `${h.new_highs || 0} / ${h.new_lows || 0}`;
-                    document.getElementById('put-call').textContent = (h.put_call || 0).toFixed(2);
+                    // Health metrics from breadth
+                    document.getElementById('breadth-score').textContent = (breadth.breadth_score || 0).toFixed(0) + '%';
+                    document.getElementById('adv-dec').textContent = (breadth.advance_decline_ratio || 0).toFixed(2);
+                    document.getElementById('hi-lo').textContent = `${breadth.new_highs || 0} / ${breadth.new_lows || 0}`;
+                    document.getElementById('put-call').textContent = (raw.vix_term_ratio || 0).toFixed(2);
                 }
             } catch (e) { console.warn('Health fetch failed:', e); }
         }
