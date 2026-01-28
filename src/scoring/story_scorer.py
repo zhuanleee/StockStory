@@ -499,14 +499,50 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     sec = fetch_sec_filings(ticker)
     logger.info(f"[SOCIAL] SEC done for {ticker}")
 
-    # Reddit via xAI web_search (with fallback to direct API)
+    # Reddit via xAI web_search (inline to debug)
     reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
     try:
         logger.info(f"[SOCIAL] Fetching Reddit for {ticker}")
-        reddit = fetch_reddit_mentions(ticker, use_xai=True)  # Use shared xAI client
+        import os as reddit_os
+        reddit_api_key = reddit_os.environ.get('XAI_API_KEY', '')
+        if reddit_api_key:
+            from xai_sdk import Client as RedditClient
+            from xai_sdk.chat import user as reddit_user
+            from xai_sdk.tools import web_search as reddit_web_search
+
+            reddit_client = RedditClient(api_key=reddit_api_key)
+            reddit_chat = reddit_client.chat.create(
+                model=reddit_os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+                tools=[reddit_web_search()],
+            )
+
+            reddit_prompt = f"""Search Reddit for recent posts about ${ticker} stock.
+Focus on: r/wallstreetbets, r/stocks, r/investing
+Return JSON: {{"posts_found": 5, "bullish_posts": 3, "bearish_posts": 1, "overall_sentiment": "bullish", "hot_posts": [{{"title": "example", "subreddit": "wallstreetbets"}}]}}"""
+
+            reddit_chat.append(reddit_user(reddit_prompt))
+            reddit_response = reddit_chat.sample()
+            reddit_text = reddit_response.content
+
+            import json as reddit_json
+            reddit_match = re.search(r'\{[\s\S]*\}', reddit_text or '')
+            if reddit_match:
+                reddit_data = reddit_json.loads(reddit_match.group())
+                reddit = {
+                    'mention_count': reddit_data.get('posts_found', 0),
+                    'total_score': reddit_data.get('total_upvotes', 0),
+                    'total_comments': reddit_data.get('total_comments', 0),
+                    'sentiment': reddit_data.get('overall_sentiment', 'neutral'),
+                    'bullish_count': reddit_data.get('bullish_posts', 0),
+                    'bearish_count': reddit_data.get('bearish_posts', 0),
+                    'hot_posts': reddit_data.get('hot_posts', [])[:3],
+                }
+        else:
+            reddit = _fetch_reddit_direct(ticker)
         logger.info(f"[SOCIAL] Reddit done for {ticker}: {reddit.get('mention_count', 0)} mentions")
     except Exception as e:
         logger.error(f"[SOCIAL] Reddit fetch failed for {ticker}: {type(e).__name__}: {e}")
+        reddit = _fetch_reddit_direct(ticker)
 
     # X/Twitter via xAI x_search (optional)
     x_data = {'post_count': 0, 'engagement_score': 0, 'sentiment': 'unknown'}
