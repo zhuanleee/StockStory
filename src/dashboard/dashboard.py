@@ -868,6 +868,17 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         </div>
                     </div>
 
+                    <!-- Supply Chain Opportunities -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">🔗 Supply Chain</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchSupplyChain()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="supplychain-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading lagging opportunities...</div>
+                        </div>
+                    </div>
+
                     <!-- Upcoming Earnings -->
                     <div class="card sidebar-card">
                         <div class="card-header">
@@ -2132,6 +2143,77 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 }
             } catch (e) {
                 console.warn('Conviction detail fetch failed:', e);
+            }
+        }
+
+        // Supply Chain Discovery Functions
+        async function fetchSupplyChain() {
+            try {
+                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Scanning supply chains...</div>';
+
+                const res = await fetch(`${API_BASE}/supplychain/themes`);
+                const data = await res.json();
+
+                if (data.ok && data.themes && data.themes.length > 0) {
+                    let html = '';
+                    const stageEmoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'};
+
+                    for (const theme of data.themes.slice(0, 5)) {
+                        const emoji = stageEmoji[theme.lifecycle_stage] || '⚪';
+                        html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showSupplyChainDetail('${theme.theme_id}')">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <span style="font-weight: 600;">${emoji} ${theme.theme_name}</span>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">${theme.laggard_count} lagging plays</div>
+                                </div>
+                                <span style="color: var(--green); font-size: 0.8rem;">${theme.opportunity_score.toFixed(0)}</span>
+                            </div>
+                        </div>`;
+                    }
+
+                    html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 8px;">Total: ${data.total_opportunities} opportunities</div>`;
+                    document.getElementById('supplychain-container').innerHTML = html;
+                } else {
+                    document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No lagging plays found. Run a scan first.</div>';
+                }
+            } catch (e) {
+                console.warn('Supply chain fetch failed:', e);
+                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Could not load supply chain data</div>';
+            }
+        }
+
+        async function showSupplyChainDetail(themeId) {
+            try {
+                const res = await fetch(`${API_BASE}/supplychain/${themeId}`);
+                const data = await res.json();
+
+                if (data.ok && data.theme) {
+                    const theme = data.theme;
+                    let msg = `🔗 SUPPLY CHAIN: ${theme.theme_name}\\n`;
+                    msg += `Stage: ${theme.lifecycle_stage.toUpperCase()}\\n`;
+                    msg += `Opportunity: ${theme.opportunity_score.toFixed(0)}/100\\n\\n`;
+
+                    msg += `Lagging Plays (${theme.laggard_count} stocks):\\n`;
+
+                    // Show suppliers that haven't moved
+                    const allNodes = [...(theme.suppliers || []), ...(theme.equipment || []), ...(theme.materials || []), ...(theme.beneficiaries || []), ...(theme.infrastructure || [])];
+                    const laggards = allNodes.filter(n => !n.has_moved).sort((a, b) => b.opportunity_score - a.opportunity_score).slice(0, 8);
+
+                    for (const node of laggards) {
+                        const perf = node.price_performance_30d >= 0 ? '+' + node.price_performance_30d.toFixed(1) : node.price_performance_30d.toFixed(1);
+                        msg += `• ${node.ticker} (${node.role}): Story ${node.story_score.toFixed(0)}, 30d: ${perf}%\\n`;
+                    }
+
+                    msg += `\\nValidation:\\n`;
+                    msg += `• Patents: ${theme.patent_validation.toFixed(0)}/100\\n`;
+                    msg += `• Contracts: ${theme.contract_validation.toFixed(0)}/100\\n`;
+                    msg += `• Insider: ${theme.insider_validation.toFixed(0)}/100\\n`;
+                    msg += `\\n${theme.estimated_runway}`;
+
+                    alert(msg);
+                }
+            } catch (e) {
+                console.warn('Supply chain detail fetch failed:', e);
             }
         }
 
@@ -3787,6 +3869,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchHealth(),
                 fetchScan(),
                 fetchConvictionAlerts(),
+                fetchSupplyChain(),
                 fetchEarnings(),
                 fetchEvolution(),
                 fetchParameters(),

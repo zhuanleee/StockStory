@@ -222,6 +222,8 @@ def handle_help(chat_id):
     msg += "*🧠 Smart Money:*\n"
     msg += "• `/conviction NVDA` → Multi-signal conviction score\n"
     msg += "• `/conviction` → High-conviction alerts\n"
+    msg += "• `/supplychain` → Supply chain opportunities\n"
+    msg += "• `/supplychain ai_infrastructure` → Theme supply chain\n"
     msg += "• `/smartmoney` → Combined intelligence\n"
     msg += "• `/discover` → Auto-discover themes\n"
     msg += "• `/institutional` → Institutional flow\n"
@@ -1440,6 +1442,12 @@ def process_message(message):
     elif text_lower.startswith('/contracts '):
         handle_contracts(chat_id, text[11:].strip())
 
+    # Supply Chain Discovery
+    elif text_lower == '/supplychain':
+        handle_supplychain(chat_id)
+    elif text_lower.startswith('/supplychain '):
+        handle_supplychain(chat_id, text[13:].strip())
+
     # System Commands
     elif text_lower == '/apistatus':
         handle_apistatus(chat_id)
@@ -1544,7 +1552,7 @@ def webhook():
                           '/earnings', '/briefing', '/coach', '/top', '/health', '/sentiment',
                           '/thememomentum', '/trends', '/themeintel', '/themeradar',
                           '/discover', '/institutional', '/optionsflow', '/rotation', '/smartmoney',
-                          '/patents', '/contracts']
+                          '/patents', '/contracts', '/supplychain', '/conviction']
 
             # Check if this is a slow command
             is_slow = any(text.startswith(cmd) for cmd in slow_commands)
@@ -4137,6 +4145,100 @@ def handle_conviction(chat_id, ticker=None):
         send_message(chat_id, f"Error: {e}")
 
 
+def handle_supplychain(chat_id, theme_or_ticker=None):
+    """
+    Handle /supplychain command - Supply chain theme discovery.
+
+    Finds lagging plays by analyzing supply chains of hot themes.
+    Key insight: Theme leaders move first, supply chain follows.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+
+        if theme_or_ticker:
+            # Analyze specific theme or discover chain for a ticker
+            theme_or_ticker = theme_or_ticker.lower().replace(' ', '_')
+            send_message(chat_id, f"🔗 Analyzing supply chain for `{theme_or_ticker}`...")
+
+            theme = engine.analyze_supply_chain(theme_or_ticker)
+
+            if not theme:
+                send_message(chat_id, f"❌ Could not analyze supply chain for `{theme_or_ticker}`")
+                return
+
+            msg = f"🔗 *SUPPLY CHAIN: {theme.theme_name}*\n"
+            msg += f"_{theme.lifecycle_stage.upper()} stage_\n\n"
+
+            # Show lagging plays (the opportunities)
+            laggards = engine.find_lagging_plays(theme_or_ticker)
+
+            if laggards:
+                msg += "📈 *Lagging Opportunities:*\n"
+                msg += "_These stocks haven't moved yet_\n\n"
+
+                for node in laggards[:8]:
+                    perf_emoji = '🟢' if node.price_performance_30d > 5 else '🟡' if node.price_performance_30d > 0 else '🔴'
+                    msg += f"• `{node.ticker}` ({node.role})\n"
+                    msg += f"  Story: {node.story_score:.0f} | 30d: {perf_emoji}{node.price_performance_30d:+.1f}%\n"
+                    msg += f"  Opportunity: {node.opportunity_score:.0f}/100\n\n"
+            else:
+                msg += "_No lagging opportunities found - theme may be mature_\n\n"
+
+            # Validation scores
+            msg += "*📊 Validation:*\n"
+            msg += f"• Patents: {theme.patent_validation:.0f}/100\n"
+            msg += f"• Contracts: {theme.contract_validation:.0f}/100\n"
+            msg += f"• Insider: {theme.insider_validation:.0f}/100\n\n"
+
+            msg += f"_{theme.estimated_runway}_"
+
+            send_message(chat_id, msg)
+
+        else:
+            # Discover emerging themes with lagging plays
+            send_message(chat_id, "🔗 Discovering supply chain opportunities...")
+
+            summary = engine.get_discovery_summary()
+
+            if not summary.get('themes'):
+                msg = "🔗 *SUPPLY CHAIN DISCOVERY*\n\n"
+                msg += "_No emerging themes with lagging plays found._\n"
+                msg += "Run a scan first to populate story scores."
+                send_message(chat_id, msg)
+                return
+
+            msg = "🔗 *SUPPLY CHAIN OPPORTUNITIES*\n"
+            msg += "_Find laggards before they move_\n\n"
+
+            for theme_data in summary['themes'][:4]:
+                stage_emoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'}.get(theme_data['lifecycle_stage'], '⚪')
+
+                msg += f"{stage_emoji} *{theme_data['theme_name']}*\n"
+                msg += f"  Opportunity: {theme_data['opportunity_score']:.0f}/100\n"
+                msg += f"  Laggards: {theme_data['laggard_count']} stocks\n"
+
+                # Show top laggards
+                if theme_data.get('top_laggards'):
+                    laggard_tickers = [l['ticker'] for l in theme_data['top_laggards'][:3]]
+                    msg += f"  Top: `{', '.join(laggard_tickers)}`\n"
+
+                msg += "\n"
+
+            msg += f"Total opportunities: {summary['total_opportunities']}\n\n"
+            msg += "_Use `/supplychain THEME` for details_"
+
+            send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Supply chain import error: {e}")
+        send_message(chat_id, "❌ Supply chain discovery not available.")
+    except Exception as e:
+        logger.error(f"Supply chain command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
 # =============================================================================
 # THEME & UNIVERSE API ENDPOINTS
 # =============================================================================
@@ -5449,6 +5551,125 @@ def api_conviction_alerts():
         return jsonify({'ok': False, 'error': f'Scanner not available: {e}'}), 503
     except Exception as e:
         logger.error(f"Conviction alerts error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# SUPPLY CHAIN DISCOVERY API
+# =============================================================================
+
+@app.route('/api/supplychain/themes')
+def api_supplychain_themes():
+    """
+    Get discovered themes with supply chain opportunities.
+
+    Returns themes with lagging plays that haven't moved yet.
+    Key insight: Leaders move first, supply chain follows.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+        summary = engine.get_discovery_summary()
+
+        return jsonify({
+            'ok': True,
+            'themes': summary.get('themes', []),
+            'total_opportunities': summary.get('total_opportunities', 0),
+            'themes_analyzed': summary.get('themes_analyzed', 0),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Supply chain themes error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/supplychain/<theme_id>')
+def api_supplychain_analyze(theme_id):
+    """
+    Analyze supply chain for a specific theme.
+
+    Returns full supply chain breakdown with opportunity scores.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+        theme = engine.analyze_supply_chain(theme_id)
+
+        if not theme:
+            return jsonify({'ok': False, 'error': f'Theme not found: {theme_id}'}), 404
+
+        return jsonify({
+            'ok': True,
+            'theme': theme.to_dict(),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Supply chain analyze error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/supplychain/<theme_id>/laggards')
+def api_supplychain_laggards(theme_id):
+    """
+    Get lagging plays for a theme.
+
+    These are stocks that are part of a hot theme but haven't moved yet.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+        from dataclasses import asdict
+
+        engine = get_theme_discovery_engine()
+        laggards = engine.find_lagging_plays(theme_id)
+
+        return jsonify({
+            'ok': True,
+            'theme_id': theme_id,
+            'laggards': [asdict(l) for l in laggards],
+            'count': len(laggards),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Supply chain laggards error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/supplychain/known-themes')
+def api_supplychain_known_themes():
+    """
+    Get list of known themes with pre-mapped supply chains.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+        themes = list(engine.SUPPLY_CHAIN_MAP.keys())
+
+        return jsonify({
+            'ok': True,
+            'themes': [
+                {
+                    'id': theme_id,
+                    'name': theme_id.replace('_', ' ').title(),
+                    'members': sum(len(v) for v in engine.SUPPLY_CHAIN_MAP[theme_id].values())
+                }
+                for theme_id in themes
+            ],
+            'count': len(themes),
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Supply chain known themes error: {e}")
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
