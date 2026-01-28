@@ -220,6 +220,8 @@ def handle_help(chat_id):
     msg += "• `/tickertheme NVDA` → Theme boost for ticker\n\n"
 
     msg += "*🧠 Smart Money:*\n"
+    msg += "• `/conviction NVDA` → Multi-signal conviction score\n"
+    msg += "• `/conviction` → High-conviction alerts\n"
     msg += "• `/smartmoney` → Combined intelligence\n"
     msg += "• `/discover` → Auto-discover themes\n"
     msg += "• `/institutional` → Institutional flow\n"
@@ -1423,6 +1425,10 @@ def process_message(message):
         handle_peakwarnings(chat_id)
     elif text_lower == '/smartmoney':
         handle_smartmoney(chat_id)
+    elif text_lower == '/conviction':
+        handle_conviction(chat_id)
+    elif text_lower.startswith('/conviction '):
+        handle_conviction(chat_id, text[12:].strip())
 
     # Alternative Data Commands
     elif text_lower == '/patents':
@@ -4016,6 +4022,121 @@ def handle_smartmoney(chat_id):
         send_message(chat_id, f"Error: {e}")
 
 
+def handle_conviction(chat_id, ticker=None):
+    """
+    Handle /conviction command - Multi-signal conviction scoring.
+
+    Prioritizes hard data:
+    1. Insider Activity (25%)
+    2. Options Flow (25%)
+    3. Patents (12%)
+    4. Gov Contracts (13%)
+    5. Sentiment (10%) - validation only
+    6. Technical (15%) - entry timing
+    """
+    try:
+        from src.intelligence.hard_data_scanner import get_hard_data_scanner
+
+        scanner = get_hard_data_scanner()
+
+        if ticker:
+            # Single ticker analysis
+            ticker = ticker.upper()
+            send_message(chat_id, f"🎯 Analyzing {ticker} conviction signals...")
+
+            result = scanner.scan_ticker(ticker)
+
+            # Build detailed message
+            rec_emoji = {
+                'STRONG BUY': '🟢🟢',
+                'BUY': '🟢',
+                'WATCH': '🟡',
+                'HOLD': '⚪',
+                'AVOID': '🔴'
+            }
+
+            msg = f"🎯 *CONVICTION: {ticker}*\n\n"
+            msg += f"*Score:* {result.conviction_score:.0f}/100 {rec_emoji.get(result.recommendation, '')}\n"
+            msg += f"*Recommendation:* {result.recommendation}\n\n"
+
+            # Signal breakdown
+            msg += "*📊 Signal Breakdown:*\n"
+
+            if result.insider and result.insider.score > 0:
+                emoji = '✅' if 'bullish' in result.insider.signal else '⚪' if 'neutral' in result.insider.signal else '❌'
+                msg += f"{emoji} Insider: {result.insider.score:.0f}/100 ({result.insider.signal})\n"
+
+            if result.options and result.options.score > 0:
+                emoji = '✅' if 'bullish' in result.options.signal else '⚪' if 'neutral' in result.options.signal else '❌'
+                msg += f"{emoji} Options: {result.options.score:.0f}/100 ({result.options.signal})\n"
+
+            if result.patents and result.patents.score > 0:
+                emoji = '✅' if 'bullish' in result.patents.signal else '⚪'
+                msg += f"{emoji} Patents: {result.patents.score:.0f}/100 ({result.patents.signal})\n"
+
+            if result.contracts and result.contracts.score > 0:
+                emoji = '✅' if 'bullish' in result.contracts.signal else '⚪'
+                msg += f"{emoji} Contracts: {result.contracts.score:.0f}/100 ({result.contracts.signal})\n"
+
+            if result.sentiment and result.sentiment.score > 0:
+                if result.sentiment.is_euphoric:
+                    emoji = '⚠️'
+                elif 'bullish' in result.sentiment.signal:
+                    emoji = '✅'
+                else:
+                    emoji = '⚪'
+                msg += f"{emoji} Sentiment: {result.sentiment.score:.0f}/100 ({result.sentiment.signal})\n"
+
+            if result.technical and result.technical.score > 0:
+                emoji = '✅' if result.technical.signal == 'buyable' else '🟡' if result.technical.signal == 'watchable' else '⚪'
+                msg += f"{emoji} Technical: {result.technical.score:.0f}/100 ({result.technical.signal})\n"
+
+            # Warnings
+            if result.warnings:
+                msg += f"\n⚠️ *Warnings:*\n"
+                for w in result.warnings:
+                    msg += f"• {w}\n"
+
+            # Summary
+            msg += f"\n✅ Bullish signals: {result.bullish_signals}"
+            msg += f"\n❌ Bearish signals: {result.bearish_signals}"
+
+            send_message(chat_id, msg)
+
+        else:
+            # High conviction alerts
+            send_message(chat_id, "🎯 Scanning for high-conviction setups...")
+
+            results = scanner.get_high_conviction_alerts(min_score=65)
+
+            if results:
+                msg = "🎯 *HIGH CONVICTION ALERTS*\n"
+                msg += "_Multi-signal alignment (Hard Data First)_\n\n"
+
+                for r in results[:8]:
+                    rec_emoji = {'STRONG BUY': '🟢🟢', 'BUY': '🟢', 'WATCH': '🟡'}.get(r.recommendation, '⚪')
+                    msg += f"{rec_emoji} *{r.ticker}*: {r.conviction_score:.0f}/100\n"
+                    msg += f"   {r.recommendation} • {r.bullish_signals} bullish signals\n"
+                    if r.reasoning:
+                        msg += f"   _{r.reasoning[0]}_\n"
+                    msg += "\n"
+
+                msg += "_Use `/conviction TICKER` for detailed breakdown_"
+            else:
+                msg = "🎯 *HIGH CONVICTION ALERTS*\n\n"
+                msg += "No high-conviction setups found at this time.\n"
+                msg += "Signals need to align (insider + options + patents/contracts)."
+
+            send_message(chat_id, msg)
+
+    except ImportError as e:
+        logger.error(f"Conviction import error: {e}")
+        send_message(chat_id, "❌ Conviction scanner not available.")
+    except Exception as e:
+        logger.error(f"Conviction command error: {e}")
+        send_message(chat_id, f"Error: {e}")
+
+
 # =============================================================================
 # THEME & UNIVERSE API ENDPOINTS
 # =============================================================================
@@ -5222,6 +5343,113 @@ def api_contracts_recent():
     except Exception as e:
         logger.error(f"Recent contracts API error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# HARD DATA CONVICTION SCANNER API
+# =============================================================================
+
+@app.route('/api/conviction/<ticker>')
+def api_conviction_ticker(ticker):
+    """
+    Get conviction score for a single ticker.
+
+    Combines:
+    - Insider activity (SEC Form 4)
+    - Options flow (Polygon)
+    - Patents (PatentsView)
+    - Gov contracts
+    - Sentiment (validation)
+    - Technical (entry timing)
+
+    Returns conviction score 0-100 with recommendation.
+    """
+    try:
+        from src.intelligence.hard_data_scanner import get_hard_data_scanner
+
+        scanner = get_hard_data_scanner()
+        result = scanner.scan_ticker(ticker.upper())
+
+        return jsonify({
+            'ok': True,
+            **result.to_dict()
+        })
+    except ImportError as e:
+        logger.error(f"Conviction scanner import error: {e}")
+        return jsonify({'ok': False, 'error': f'Scanner not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Conviction scan error for {ticker}: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/conviction/scan')
+def api_conviction_scan():
+    """
+    Scan multiple tickers for conviction scores.
+
+    Query params:
+    - tickers: Comma-separated list (default: top institutional)
+    - min_score: Minimum score to return (default: 50)
+
+    Returns list sorted by conviction score descending.
+    """
+    try:
+        from src.intelligence.hard_data_scanner import get_hard_data_scanner
+
+        scanner = get_hard_data_scanner()
+
+        tickers_param = request.args.get('tickers', '')
+        min_score = float(request.args.get('min_score', 50))
+
+        if tickers_param:
+            tickers = [t.strip().upper() for t in tickers_param.split(',')]
+        else:
+            # Default watchlist
+            tickers = ['NVDA', 'AMD', 'PLTR', 'LMT', 'CRWD', 'META', 'TSLA', 'LLY']
+
+        results = scanner.scan_watchlist(tickers, min_score=min_score)
+
+        return jsonify({
+            'ok': True,
+            'results': [r.to_dict() for r in results],
+            'count': len(results),
+            'min_score': min_score,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Scanner not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Conviction scan error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/conviction/alerts')
+def api_conviction_alerts():
+    """
+    Get high-conviction alerts (score >= 70).
+
+    These are the best setups where multiple hard data signals align.
+    """
+    try:
+        from src.intelligence.hard_data_scanner import get_hard_data_scanner
+
+        scanner = get_hard_data_scanner()
+        min_score = float(request.args.get('min_score', 70))
+
+        results = scanner.get_high_conviction_alerts(min_score=min_score)
+
+        return jsonify({
+            'ok': True,
+            'alerts': [r.to_dict() for r in results],
+            'count': len(results),
+            'threshold': min_score,
+            'timestamp': datetime.now().isoformat()
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Scanner not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"Conviction alerts error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 # =============================================================================

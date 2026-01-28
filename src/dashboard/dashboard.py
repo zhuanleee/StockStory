@@ -857,6 +857,17 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         </div>
                     </div>
 
+                    <!-- High Conviction Alerts -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">🎯 High Conviction</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchConvictionAlerts()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="conviction-alerts-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading multi-signal alerts...</div>
+                        </div>
+                    </div>
+
                     <!-- Upcoming Earnings -->
                     <div class="card sidebar-card">
                         <div class="card-header">
@@ -2055,6 +2066,73 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     <td>${(s.rs_rating || 0).toFixed(0)}</td>
                 </tr>
             `).join('');
+        }
+
+        async function fetchConvictionAlerts() {
+            try {
+                document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Scanning signals...</div>';
+                const res = await fetch(`${API_BASE}/conviction/alerts?min_score=60`);
+                const data = await res.json();
+
+                if (data.ok && data.alerts && data.alerts.length > 0) {
+                    const recEmoji = {
+                        'STRONG BUY': '🟢🟢',
+                        'BUY': '🟢',
+                        'WATCH': '🟡',
+                        'HOLD': '⚪',
+                        'AVOID': '🔴'
+                    };
+
+                    let html = '';
+                    data.alerts.slice(0, 5).forEach(a => {
+                        const emoji = recEmoji[a.recommendation] || '⚪';
+                        html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showConvictionDetail('${a.ticker}')">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-weight: 600;">${a.ticker}</span>
+                                <span style="font-size: 0.875rem;">${emoji} ${a.conviction_score.toFixed(0)}</span>
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">
+                                ${a.bullish_signals} bullish • ${a.recommendation}
+                            </div>
+                        </div>`;
+                    });
+                    document.getElementById('conviction-alerts-container').innerHTML = html;
+                } else {
+                    document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No high-conviction setups. Signals need to align.</div>';
+                }
+            } catch (e) {
+                console.warn('Conviction alerts fetch failed:', e);
+                document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Could not load conviction data</div>';
+            }
+        }
+
+        async function showConvictionDetail(ticker) {
+            try {
+                const res = await fetch(`${API_BASE}/conviction/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const recEmoji = {'STRONG BUY': '🟢🟢', 'BUY': '🟢', 'WATCH': '🟡', 'HOLD': '⚪', 'AVOID': '🔴'};
+                    let msg = `🎯 ${ticker} CONVICTION: ${data.conviction_score.toFixed(0)}/100\\n`;
+                    msg += `Recommendation: ${data.recommendation} ${recEmoji[data.recommendation] || ''}\\n\\n`;
+
+                    msg += `Signals:\\n`;
+                    if (data.signals.insider) msg += `• Insider: ${data.signals.insider.score.toFixed(0)} (${data.signals.insider.signal})\\n`;
+                    if (data.signals.options) msg += `• Options: ${data.signals.options.score.toFixed(0)} (${data.signals.options.signal})\\n`;
+                    if (data.signals.patents) msg += `• Patents: ${data.signals.patents.score.toFixed(0)} (${data.signals.patents.signal})\\n`;
+                    if (data.signals.contracts) msg += `• Contracts: ${data.signals.contracts.score.toFixed(0)} (${data.signals.contracts.signal})\\n`;
+                    if (data.signals.sentiment) msg += `• Sentiment: ${data.signals.sentiment.score.toFixed(0)} (${data.signals.sentiment.signal})\\n`;
+                    if (data.signals.technical) msg += `• Technical: ${data.signals.technical.score.toFixed(0)} (${data.signals.technical.signal})\\n`;
+
+                    if (data.warnings && data.warnings.length > 0) {
+                        msg += `\\nWarnings: ${data.warnings.join(', ')}`;
+                    }
+
+                    alert(msg);
+                }
+            } catch (e) {
+                console.warn('Conviction detail fetch failed:', e);
+            }
         }
 
         async function fetchEarnings() {
@@ -3708,6 +3786,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             await Promise.all([
                 fetchHealth(),
                 fetchScan(),
+                fetchConvictionAlerts(),
                 fetchEarnings(),
                 fetchEvolution(),
                 fetchParameters(),
