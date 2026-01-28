@@ -5,13 +5,11 @@ Flask-SocketIO integration for real-time sync.
 This integrates directly with the Flask app for single-deployment sync.
 """
 
-import os
-import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Optional
 from flask import request
-from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_socketio import SocketIO, emit
 
 from .sync_hub import (
     get_sync_hub, SyncHub, SyncEvent, SyncSource, EventType

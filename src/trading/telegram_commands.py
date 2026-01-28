@@ -13,10 +13,9 @@ Commands:
 """
 
 import logging
-import re
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional
 
-from .models import Trade, ScalingStrategy, TradeStatus, RiskLevel
+from .models import Trade, ScalingStrategy, RiskLevel
 from .trade_manager import get_trade_manager
 from .exit_scanner import get_exit_scanner
 from .risk_advisor import get_risk_advisor

@@ -28,14 +28,12 @@ Usage:
     insider = tracker.get_insider_clusters()
 """
 
-import os
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 

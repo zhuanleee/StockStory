@@ -19,13 +19,10 @@ Usage:
 """
 
 import json
-import asyncio
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 from typing import Optional
 import re
 
-from config import config
 from utils import get_logger
 
 logger = get_logger(__name__)

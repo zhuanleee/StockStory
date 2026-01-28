@@ -17,11 +17,11 @@ Risk Levels:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional, Any
 
 from .models import (
-    Trade, ExitSignal, RiskLevel, SignalSource, TradeStatus
+    Trade, ExitSignal, RiskLevel, TradeStatus
 )
 
 logger = logging.getLogger(__name__)

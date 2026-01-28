@@ -6,13 +6,11 @@ Handles watchlists, alerts, portfolios with file-based storage.
 Can be swapped to Redis/database later.
 """
 
-import os
 import json
 from datetime import datetime
-from pathlib import Path
 
 from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -34,7 +32,6 @@ def _load_data(chat_id, data_type, default=None):
                 return json.load(f)
         except (json.JSONDecodeError, IOError, OSError) as e:
             logger.warning(f"Failed to load {data_type} for {chat_id}: {e}")
-            pass
     return default if default is not None else {}
 
 def _save_data(chat_id, data_type, data):
@@ -156,7 +153,6 @@ def get_all_active_alerts():
                                     all_alerts.append(alert)
                     except (json.JSONDecodeError, IOError, OSError, ValueError) as e:
                         logger.warning(f"Failed to load alerts from {alerts_file}: {e}")
-                        pass
 
     return all_alerts
 

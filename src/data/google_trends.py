@@ -27,9 +27,8 @@ Note: Uses pytrends library (unofficial Google Trends API)
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional
-from functools import lru_cache
 import time
 
 logger = logging.getLogger(__name__)

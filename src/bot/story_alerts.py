@@ -11,14 +11,12 @@ Runs periodically via GitHub Actions to detect:
 Sends alerts to Telegram when something notable happens.
 """
 
-import os
 import json
-import requests
 from datetime import datetime
 from pathlib import Path
 
 from config import config
-from utils import get_logger, send_message, APIError
+from utils import get_logger, send_message
 
 logger = get_logger(__name__)
 
@@ -279,7 +277,6 @@ def check_earnings_alerts():
     """Alert about earnings happening today/tomorrow."""
     try:
         from earnings import get_upcoming_earnings
-        from storage import get_all_users_with_alerts
 
         earnings = get_upcoming_earnings(days_ahead=2)
 

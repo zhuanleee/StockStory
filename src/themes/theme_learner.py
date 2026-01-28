@@ -10,10 +10,9 @@ Provides:
 """
 
 import json
-import os
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from collections import defaultdict
 from pathlib import Path
@@ -21,8 +20,7 @@ import numpy as np
 
 from utils import get_logger
 from theme_registry import (
-    ThemeRegistry, get_registry, ThemeStage, MemberRole,
-    ThemeMember, LearnedTheme
+    ThemeRegistry, get_registry, ThemeStage, LearnedTheme
 )
 
 logger = get_logger(__name__)
@@ -122,8 +120,6 @@ class ThemeLearner:
             logger.warning("DeepSeek intelligence not available")
 
         try:
-            from sklearn.cluster import DBSCAN
-            from sklearn.feature_extraction.text import TfidfVectorizer
             self._has_sklearn = True
         except ImportError:
             logger.warning("sklearn not available for clustering")

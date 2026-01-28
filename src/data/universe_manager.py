@@ -18,16 +18,13 @@ Version: 1.0
 """
 
 import json
-import os
 import re
 import logging
 import requests
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from collections import defaultdict
-import hashlib
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
@@ -699,7 +696,6 @@ class UniverseManager:
         Returns:
             dict with refresh statistics
         """
-        import os
         import json
         from pathlib import Path
 

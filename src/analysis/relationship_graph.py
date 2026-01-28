@@ -18,7 +18,7 @@ Usage:
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from collections import defaultdict, deque
 from typing import Optional

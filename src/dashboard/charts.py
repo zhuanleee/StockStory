@@ -9,13 +9,10 @@ import io
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from matplotlib.patches import Rectangle
-import pandas as pd
 import numpy as np
 
-from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger, normalize_dataframe_columns
 
 logger = get_logger(__name__)
 

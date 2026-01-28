@@ -20,7 +20,6 @@ import logging
 import requests
 from datetime import datetime
 from typing import Dict, List, Optional
-from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 

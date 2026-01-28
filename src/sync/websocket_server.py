@@ -14,12 +14,12 @@ import json
 import asyncio
 import logging
 from datetime import datetime
-from typing import Set, Dict, Any
+from typing import Dict
 import websockets
 from websockets.server import serve, WebSocketServerProtocol
 
 from .sync_hub import (
-    get_sync_hub, SyncHub, SyncEvent, SyncSource, EventType
+    get_sync_hub, SyncEvent, SyncSource, EventType
 )
 
 logger = logging.getLogger(__name__)

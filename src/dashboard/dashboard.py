@@ -12,9 +12,6 @@ Clean, professional dashboard with:
 Generates static HTML for GitHub Pages.
 """
 
-import json
-import os
-from datetime import datetime
 from pathlib import Path
 
 try:

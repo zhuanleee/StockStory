@@ -14,14 +14,11 @@ Features:
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-import json
 from pathlib import Path
 
 from config import config
 from utils import (
     get_logger, normalize_dataframe_columns, get_spy_data_cached,
-    calculate_rs, safe_float, download_stock_data,
 )
 
 logger = get_logger(__name__)

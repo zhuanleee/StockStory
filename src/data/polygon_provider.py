@@ -10,7 +10,7 @@ import asyncio
 import aiohttp
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 import pandas as pd
 
 logger = logging.getLogger(__name__)

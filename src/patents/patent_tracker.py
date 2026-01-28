@@ -12,8 +12,7 @@ Uses USPTO PatentView API to:
 import os
 import requests
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from functools import lru_cache
+from typing import Dict, List, Any
 import json
 
 # API Configuration

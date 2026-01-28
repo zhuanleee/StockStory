@@ -11,7 +11,6 @@ import time
 import re
 import os
 import logging
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
@@ -21,7 +20,6 @@ from cache_manager import (
     stocktwits_cache_key, reddit_cache_key, sec_cache_key,
     sector_cache_key, news_cache_key,
 )
-from config import config
 import param_helper as params
 
 logger = logging.getLogger(__name__)
@@ -767,7 +765,7 @@ class AsyncStoryScorer:
         # =====================================================
         # STORY-FIRST SCORING
         # =====================================================
-        from story_scoring import calculate_story_score, StoryScore
+        from story_scoring import calculate_story_score
 
         # Prepare price data dict for story scorer
         price_dict = {

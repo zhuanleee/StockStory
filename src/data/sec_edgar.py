@@ -20,8 +20,6 @@ SEC EDGAR API:
 import os
 import logging
 import requests
-import json
-import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from dataclasses import dataclass

@@ -1,1 +1,1 @@
-"""Tests for Stock Scanner Bot."""
+"""Test suite for Stock Scanner Bot."""

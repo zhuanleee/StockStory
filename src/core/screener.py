@@ -10,11 +10,8 @@ Features:
 - Sector/market cap filtering
 """
 
-import yfinance as yf
 import pandas as pd
-import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
 import time
 import json
 from pathlib import Path

@@ -10,15 +10,11 @@ Combines:
 4. Penetration rate calculations
 """
 
-import pandas as pd
-import numpy as np
 import yfinance as yf
-from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger
 
 logger = get_logger(__name__)
 

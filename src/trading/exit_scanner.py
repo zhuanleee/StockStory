@@ -11,8 +11,7 @@ into composite risk levels.
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 
 from .models import (
     Trade, ExitSignal, SignalSource, RiskLevel

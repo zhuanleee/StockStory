@@ -13,16 +13,14 @@ Features:
 5. Trust score updates based on accuracy
 """
 
-import os
 import json
 import re
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 
 from config import config
-from utils import get_logger, APIError
+from utils import get_logger
 
 logger = get_logger(__name__)
 

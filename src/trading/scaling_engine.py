@@ -12,12 +12,10 @@ Features:
 """
 
 import logging
-from datetime import datetime
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 
 from .models import (
-    Trade, Tranche, ScalingPlan, ScalingStrategy,
-    ExitSignal, SignalSource, RiskLevel
+    Trade, ScalingStrategy, ExitSignal, SignalSource
 )
 
 logger = logging.getLogger(__name__)

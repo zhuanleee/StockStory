@@ -9,16 +9,13 @@ Scrapes early signals from:
 4. Finance Twitter/X influencers
 """
 
-import os
 import re
-import json
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -245,7 +242,6 @@ def scrape_podcast_transcripts():
                         continue
                 except (ValueError, TypeError) as e:
                     logger.debug(f"Could not parse date for video: {e}")
-                    pass
 
                 # For now, just use title as content (transcript is slow)
                 all_content.append({
@@ -294,7 +290,6 @@ def scrape_substack_feed(name, feed_url):
                         pass  # Skip date check for now
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.debug(f"Could not parse date for {name}: {e}")
-                    pass
 
                 # Clean description HTML
                 desc_text = ''
@@ -400,7 +395,6 @@ def aggregate_alt_sources():
         all_content.extend(podcasts)
     except Exception as e:
         logger.error(f"Failed to scrape podcast transcripts: {e}")
-        pass
 
     # Newsletters
     try:
@@ -408,7 +402,6 @@ def aggregate_alt_sources():
         all_content.extend(newsletters)
     except Exception as e:
         logger.error(f"Failed to scrape newsletters: {e}")
-        pass
 
     # Podcast show notes
     try:
@@ -416,7 +409,6 @@ def aggregate_alt_sources():
         all_content.extend(podcast_notes)
     except Exception as e:
         logger.error(f"Failed to scrape podcast notes: {e}")
-        pass
 
     return all_content
 

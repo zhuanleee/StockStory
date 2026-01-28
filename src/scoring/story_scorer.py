@@ -22,13 +22,9 @@ Data Sources:
 - SEC EDGAR - Institutional filings (13F, 8-K)
 """
 import requests
-from datetime import datetime, timedelta
-from collections import defaultdict
-import json
-from pathlib import Path
+from datetime import datetime
 import re
 
-from config import config
 from utils import get_logger, normalize_dataframe_columns
 import param_helper as params  # Learned parameters
 
@@ -49,7 +45,6 @@ except ImportError:
 try:
     from src.data.polygon_provider import (
         get_aggregates_sync,
-        get_ticker_details_sync,
     )
     HAS_POLYGON = True
 except ImportError:
@@ -59,7 +54,6 @@ except ImportError:
 # Try to import learned theme registry
 try:
     from theme_registry import (
-        get_themes_for_ticker as get_learned_themes_for_ticker,
         get_theme_membership_for_scoring,
         get_all_theme_tickers as get_learned_theme_tickers,
     )

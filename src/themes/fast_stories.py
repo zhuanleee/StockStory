@@ -8,18 +8,16 @@ Optimizations:
 3. Background refresh - Auto-updates every 5 minutes
 """
 
-import os
 import json
 import time
 import threading
 import requests
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 
 from config import config
-from utils import get_logger, APIError
+from utils import get_logger
 
 logger = get_logger(__name__)
 

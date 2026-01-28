@@ -16,10 +16,8 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
-import requests
 
-from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -74,7 +72,6 @@ def load_earnings_history():
                 return json.load(f)
         except (json.JSONDecodeError, IOError, OSError) as e:
             logger.warning(f"Failed to load earnings history: {e}")
-            pass
     return {'earnings': {}, 'surprises': []}
 
 
@@ -258,7 +255,6 @@ def get_upcoming_earnings(tickers=None, days_ahead=14, include_estimates=True):
                         earnings.append(info)
             except Exception as e:
                 logger.debug(f"Failed to get earnings for a ticker: {e}")
-                pass
 
     # Sort by date, then by high impact
     earnings.sort(key=lambda x: (x['next_date'], not x.get('high_impact', False)))
@@ -334,7 +330,6 @@ def check_earnings_soon(tickers, days=3):
                     earnings_soon[ticker] = info
         except Exception as e:
             logger.debug(f"Failed to check earnings for {ticker}: {e}")
-            pass
 
     return earnings_soon
 

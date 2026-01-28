@@ -29,11 +29,10 @@ Usage:
     boost = hub.get_ticker_theme_boost('NVDA')
 """
 
-import os
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path

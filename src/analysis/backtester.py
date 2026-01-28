@@ -11,16 +11,12 @@ Tests:
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, timedelta
 import json
-from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import config
 from utils import (
-    get_logger, normalize_dataframe_columns, get_spy_data_cached,
-    calculate_rs, safe_float, download_stock_data,
+    get_logger, normalize_dataframe_columns,
 )
 
 logger = get_logger(__name__)

@@ -25,14 +25,12 @@ Usage:
     reversions = predictor.detect_reversion_candidates()
 """
 
-import os
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
-import math
 
 logger = logging.getLogger(__name__)
 

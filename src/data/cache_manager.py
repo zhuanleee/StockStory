@@ -5,12 +5,11 @@ Provides TTL-based caching with automatic expiration and background pre-fetching
 """
 
 import json
-import os
 import time
 import hashlib
 import logging
 import asyncio
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Any, Optional, List
 from pathlib import Path
 import fnmatch

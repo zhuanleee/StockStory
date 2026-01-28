@@ -21,14 +21,12 @@ import yfinance as yf
 import pandas as pd
 import threading
 import time
-from functools import wraps
 
 from config import config
 from utils import (
     get_logger, normalize_dataframe_columns, get_spy_data_cached,
-    calculate_rs, send_message, send_photo, validate_ticker,
-    validate_webhook_url, validate_webhook_signature, ValidationError,
-    DataFetchError,
+    calculate_rs, send_message, send_photo, validate_webhook_url,
+    validate_webhook_signature, ValidationError,
 )
 
 logger = get_logger(__name__)
@@ -1456,14 +1454,18 @@ def serve_dashboard():
             f"const API_BASE = '{api_base}';"
         )
 
-        # Apply any template variables
-        html = html.replace('{INITIAL_SCAN_DATA}', '[]')
-        html = html.replace('{TOP_THEMES}', '')
-        html = html.replace('{ALL_THEMES}', '')
-        html = html.replace('{THEME_STOCKS}', '')
-        html = html.replace('{THEME_CARDS}', '')
-        html = html.replace('{THEME_OPTIONS}', '')
-        html = html.replace('{TELEGRAM_BOT_USERNAME}', 'Stocks_Story_Bot')
+        # Apply template variables (double braces as used in dashboard.py)
+        html = html.replace('{{BOT_USERNAME}}', 'Stocks_Story_Bot')
+        html = html.replace('{{TOTAL_SCANNED}}', '0')
+        html = html.replace('{{HOT_COUNT}}', '0')
+        html = html.replace('{{DEVELOPING_COUNT}}', '0')
+        html = html.replace('{{WATCHLIST_COUNT}}', '0')
+        html = html.replace('{{THEMES_PILLS}}', '')
+        html = html.replace('{{ALL_THEME_PILLS}}', '')
+        html = html.replace('{{THEME_STOCKS}}', '')
+        html = html.replace('{{THEME_CARDS}}', '')
+        html = html.replace('{{THEME_OPTIONS}}', '')
+        html = html.replace('{{SCAN_ROWS}}', '')
 
         return Response(html, mimetype='text/html')
 
@@ -2607,7 +2609,7 @@ def api_themes_lifecycle():
     """Get theme lifecycle status."""
     try:
         from ecosystem_intelligence import (
-            get_theme_lifecycle, detect_emerging_subthemes, detect_rotation_signals
+            detect_emerging_subthemes, detect_rotation_signals
         )
         from story_scorer import THEMES
 
@@ -3160,7 +3162,7 @@ def handle_experiments(chat_id):
 def handle_themes(chat_id):
     """Handle /themes command - Show learned themes."""
     try:
-        from theme_registry import get_registry, ThemeStage
+        from theme_registry import get_registry
 
         registry = get_registry()
         active_themes = registry.get_active_themes()
@@ -3464,7 +3466,7 @@ def handle_themealerts(chat_id):
 def handle_themeradar(chat_id):
     """Handle /themeradar command - Quick theme radar view."""
     try:
-        from src.intelligence.theme_intelligence import get_theme_radar, THEME_NAMES
+        from src.intelligence.theme_intelligence import get_theme_radar
 
         radar = get_theme_radar()
 
@@ -3505,7 +3507,7 @@ def handle_themeradar(chat_id):
 def handle_tickertheme(chat_id, ticker):
     """Handle /tickertheme command - Get theme boost for a ticker."""
     try:
-        from src.intelligence.theme_intelligence import get_ticker_theme_boost, THEME_NAMES
+        from src.intelligence.theme_intelligence import get_ticker_theme_boost
 
         ticker = ticker.upper()
         boost_data = get_ticker_theme_boost(ticker)
@@ -3689,8 +3691,6 @@ def handle_patents(chat_id, query=None):
     """Handle /patents command - Patent intelligence via PatentView API."""
     try:
         from src.patents.patent_tracker import (
-            get_patent_stats,
-            get_innovation_signal,
             format_patent_report
         )
 
@@ -3972,7 +3972,6 @@ def api_trigger_learning():
     """Trigger a theme learning cycle."""
     try:
         from theme_learner import get_learner
-        import asyncio
 
         learner = get_learner()
 
@@ -5714,7 +5713,7 @@ def api_sync_telegram_webhook():
     """Webhook endpoint for Telegram bot updates."""
     try:
         import asyncio
-        from src.sync import get_sync_hub, publish_telegram_command, SyncSource, EventType
+        from src.sync import get_sync_hub, SyncSource, EventType
 
         data = request.get_json() or {}
 

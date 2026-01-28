@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .models import Trade, ExitSignal, TradeStatus
+from .models import Trade
 from .trade_manager import get_trade_manager
 from .exit_scanner import get_exit_scanner
 from .risk_advisor import get_risk_advisor

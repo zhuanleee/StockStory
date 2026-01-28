@@ -12,7 +12,7 @@ Score Components:
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from enum import Enum
 import re
 

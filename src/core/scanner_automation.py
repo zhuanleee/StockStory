@@ -15,7 +15,6 @@ import io
 import json
 import yfinance as yf
 import pandas as pd
-import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
@@ -28,8 +27,7 @@ warnings.filterwarnings('ignore')
 from config import config
 from utils import (
     get_logger, normalize_dataframe_columns, get_spy_data_cached,
-    calculate_rs, safe_float, download_stock_data, send_message, send_photo,
-    TelegramClient, DataFetchError, get_kl_time, format_kl_time,
+    calculate_rs, send_message, send_photo, format_kl_time,
 )
 
 logger = get_logger(__name__)
@@ -402,8 +400,7 @@ def run_scan(use_story_first=True):
     if use_story_first:
         try:
             from story_scorer import (
-                calculate_story_score, get_theme_membership,
-                get_all_theme_tickers, THEMES
+                calculate_story_score, get_all_theme_tickers
             )
             logger.info("Story scorer loaded - using story-first approach")
         except ImportError as e:
@@ -811,7 +808,7 @@ def detect_supply_chain_plays(df_results, hot_threshold=70):
 
     # Try to use dynamic ecosystem intelligence
     try:
-        from ecosystem_intelligence import detect_lagging_suppliers, get_ecosystem
+        from ecosystem_intelligence import detect_lagging_suppliers
 
         scores_dict = df_results.set_index('ticker')['composite_score'].to_dict()
 
@@ -1971,70 +1968,39 @@ def handle_interactive_commands(price_data, df_results):
 
 
 # ============================================================
-# MAIN EXECUTION
+# MAIN EXECUTION HELPERS
 # ============================================================
 
-def main():
-    """Main automation function."""
-    logger.info("=" * 60)
-    logger.info("STOCK SCANNER AUTOMATION")
-    logger.info(f"Started: {datetime.now()}")
-    logger.info("=" * 60)
-
-    # Load previous state
-    prev_state = load_previous_state()
-
-    # Run scan
-    df_results, price_data = run_scan()
-
-    # Save results
-    timestamp = datetime.now().strftime('%Y%m%d')
-    df_results.to_csv(f'scan_{timestamp}.csv', index=False)
-
-    # Generate daily summary
-    summary = generate_daily_summary(df_results)
-
-    # Send daily summary
-    summary_msg = format_alert_message('DAILY_SUMMARY', summary)
-    send_telegram_message(summary_msg)
-
-    # ============================================================
-    # THEME DETECTION
-    # ============================================================
+def _run_theme_detection(df_results, price_data):
+    """Detect themes, supply chain plays, and unknown clusters."""
     logger.info("Running theme detection...")
 
-    # Detect supply chain plays
     supply_plays = detect_supply_chain_plays(df_results)
     logger.info(f"Found {len(supply_plays)} supply chain opportunities")
 
-    # Analyze themes
     themes = analyze_themes(df_results)
     logger.info(f"Analyzed {len(themes)} themes")
 
-    # Detect unknown clusters
     unknown_clusters = detect_unknown_clusters(price_data, df_results)
     logger.info(f"Found {len(unknown_clusters)} unknown clusters")
 
-    # Send theme alert
     if themes or supply_plays or unknown_clusters:
         theme_msg = format_theme_alert(themes, supply_plays, unknown_clusters)
         send_telegram_message(theme_msg)
 
-    # ============================================================
-    # SELF-LEARNING SYSTEM
-    # ============================================================
-    logger.info("Running self-learning system...")
+    return themes, supply_plays, unknown_clusters
 
-    # Track unknown clusters and check for promotions
+
+def _run_self_learning(df_results, unknown_clusters):
+    """Track unknown clusters and promote emerging themes."""
+    logger.info("Running self-learning system...")
     new_emerging, learned_themes = track_unknown_clusters(unknown_clusters, df_results)
 
-    # Alert on newly promoted themes
     if new_emerging:
         emerging_msg = format_emerging_theme_alert(new_emerging)
         send_telegram_message(emerging_msg)
         logger.info(f"Promoted {len(new_emerging)} new emerging themes!")
 
-    # Analyze and report on learned themes
     if learned_themes:
         learned_analysis = analyze_learned_themes(df_results, learned_themes)
         if learned_analysis:
@@ -2043,36 +2009,25 @@ def main():
                 send_telegram_message(learned_msg)
         logger.info(f"Tracking {len(learned_themes)} learned themes")
 
-    # ============================================================
-    # BREAKOUT ALERTS
-    # ============================================================
-    alerts = detect_alerts(df_results, prev_state)
+    return new_emerging, learned_themes
 
-    # Only send new breakout alerts (not already in previous state)
+
+def _process_breakout_alerts(df_results, prev_state):
+    """Detect and send breakout alerts."""
+    alerts = detect_alerts(df_results, prev_state)
     prev_breakouts = set(prev_state.get('breakouts', []))
     new_alerts = [a for a in alerts if a['ticker'] not in prev_breakouts]
 
-    for alert in new_alerts[:5]:  # Limit to 5 alerts
+    for alert in new_alerts[:5]:
         if alert['type'] == 'NEW_BREAKOUT':
             msg = format_alert_message('NEW_BREAKOUT', alert)
             send_telegram_message(msg)
 
-    # Save current state
-    save_current_state(df_results)
+    return new_alerts
 
-    # ============================================================
-    # WEEKLY STATS & DIGEST
-    # ============================================================
-    logger.info("Updating weekly stats...")
-    update_weekly_stats(df_results, themes, supply_plays)
 
-    # Send weekly digest on Sunday
-    if run_weekly_digest():
-        logger.info("Weekly digest sent!")
-
-    # ============================================================
-    # INSIDER BUYING DETECTION
-    # ============================================================
+def _run_insider_detection(df_results):
+    """Check for insider buying activity."""
     logger.info("Checking insider activity...")
     top_tickers = df_results.head(30)['ticker'].tolist()
     insider_buys = detect_insider_buying(top_tickers)
@@ -2084,9 +2039,11 @@ def main():
         send_telegram_message(msg)
         logger.info(f"Found {len(insider_buys)} stocks with insider buying")
 
-    # ============================================================
-    # CORRELATION MATRIX
-    # ============================================================
+    return insider_buys
+
+
+def _run_correlation_analysis(df_results, price_data):
+    """Calculate and report high correlations."""
     logger.info("Calculating correlations...")
     top_20 = df_results.head(20)['ticker'].tolist()
     corr_matrix = calculate_correlation_matrix(price_data, top_20)
@@ -2098,12 +2055,14 @@ def main():
             if corr_msg:
                 send_telegram_message(corr_msg)
             logger.info(f"Found {len(high_corr)} highly correlated pairs")
+        return high_corr
+    return []
 
-    # ============================================================
-    # SEND CHARTS FOR TOP 3
-    # ============================================================
+
+def _send_top_charts(df_results, price_data, count=3):
+    """Generate and send charts for top stocks."""
     logger.info("Generating charts for top stocks...")
-    for ticker in df_results.head(3)['ticker'].tolist():
+    for ticker in df_results.head(count)['ticker'].tolist():
         chart = generate_chart(ticker, price_data)
         if chart:
             row = df_results[df_results['ticker'] == ticker].iloc[0]
@@ -2111,15 +2070,9 @@ def main():
             send_telegram_photo(chart, caption=caption)
             logger.info(f"Chart sent: {ticker}")
 
-    # ============================================================
-    # PROCESS INTERACTIVE COMMANDS
-    # ============================================================
-    logger.info("Checking for interactive commands...")
-    handle_interactive_commands(price_data, df_results)
 
-    # ============================================================
-    # SECTOR ROTATION ANALYSIS
-    # ============================================================
+def _run_sector_rotation():
+    """Run sector rotation analysis."""
     logger.info("Running sector rotation analysis...")
     try:
         from sector_rotation import run_sector_rotation_analysis, format_sector_rotation_report
@@ -2134,9 +2087,9 @@ def main():
     except Exception as e:
         logger.error(f"Sector rotation error: {e}")
 
-    # ============================================================
-    # MULTI-TIMEFRAME CONFLUENCE (Top 5)
-    # ============================================================
+
+def _run_mtf_analysis(df_results):
+    """Run multi-timeframe confluence analysis."""
     logger.info("Running multi-timeframe analysis...")
     try:
         from multi_timeframe import scan_mtf_confluence, format_mtf_scan_results
@@ -2149,9 +2102,9 @@ def main():
     except Exception as e:
         logger.error(f"MTF analysis error: {e}")
 
-    # ============================================================
-    # NEWS SENTIMENT SCAN
-    # ============================================================
+
+def _run_news_scan(df_results):
+    """Scan news sentiment for top stocks."""
     logger.info("Scanning news sentiment...")
     try:
         from news_analyzer import scan_news_sentiment, format_news_scan_results
@@ -2163,88 +2116,58 @@ def main():
     except Exception as e:
         logger.error(f"News scan error: {e}")
 
-    # ============================================================
-    # COMPREHENSIVE SELF-LEARNING
-    # ============================================================
+
+def _run_comprehensive_learning(df_results, price_data, themes):
+    """Run comprehensive self-learning system."""
     logger.info("Running comprehensive self-learning...")
     try:
         from self_learning import (
-            auto_learn_from_scan,
-            auto_learn_stock_profile,
-            detect_market_regime,
-            record_regime_change,
-            track_theme_lifecycle,
+            auto_learn_from_scan, auto_learn_stock_profile,
+            detect_market_regime, record_regime_change, track_theme_lifecycle,
         )
 
-        # Get SPY data for regime detection
         spy_df = get_ticker_df(price_data, 'SPY')
-
-        # 1. Learn from scan results (alert accuracy, entries)
         auto_learn_from_scan(df_results, spy_df)
         logger.info("Recorded alerts for accuracy tracking")
 
-        # 2. Detect and record market regime
         if spy_df is not None and len(spy_df) >= 50:
             regime = detect_market_regime(spy_df)
             spy_price = float(spy_df['Close'].iloc[-1])
             record_regime_change(regime, spy_price)
             logger.info(f"Market regime: {regime}")
 
-        # 3. Learn stock personalities for top movers
-        top_movers = df_results.head(20)['ticker'].tolist()
+        # Learn stock profiles
         profiles_updated = 0
-        for ticker in top_movers:
+        for ticker in df_results.head(20)['ticker'].tolist():
             try:
                 ticker_df = get_ticker_df(price_data, ticker)
                 if ticker_df is not None and len(ticker_df) >= 50:
                     auto_learn_stock_profile(ticker, ticker_df)
                     profiles_updated += 1
-            except Exception as e:
-                logger.debug(f"Failed to update profile for {ticker}: {e}")
+            except Exception:
+                pass
         logger.info(f"Updated {profiles_updated} stock personality profiles")
 
-        # 4. Track theme lifecycles
+        # Track theme lifecycles
         for theme in themes[:10]:
             theme_name = theme['theme']
-            if theme['avg_rs'] > 5:
-                status = 'rising'
-            elif theme['avg_rs'] > 0:
-                status = 'stable'
-            elif theme['avg_rs'] > -3:
-                status = 'fading'
-            else:
-                status = 'dead'
-
-            # Get top stocks for this theme
+            avg_rs = theme['avg_rs']
+            status = 'rising' if avg_rs > 5 else 'stable' if avg_rs > 0 else 'fading' if avg_rs > -3 else 'dead'
             theme_data = NICHE_THEMES.get(theme_name, {})
-            top_stocks = theme_data.get('tickers', [])[:5]
-
-            track_theme_lifecycle(
-                theme_name,
-                status=status,
-                top_stocks=top_stocks,
-                momentum_score=theme['avg_rs']
-            )
+            track_theme_lifecycle(theme_name, status=status, top_stocks=theme_data.get('tickers', [])[:5], momentum_score=avg_rs)
         logger.info(f"Tracked lifecycle for {min(len(themes), 10)} themes")
-
         logger.info("Self-learning complete!")
 
     except Exception as e:
         logger.error(f"Self-learning error: {e}")
 
-    # ============================================================
-    # AI-POWERED ANALYSIS
-    # ============================================================
+
+def _run_ai_analysis(df_results, themes):
+    """Run AI-powered market analysis."""
     logger.info("Running AI-powered analysis...")
     try:
-        from ai_learning import (
-            generate_market_narrative,
-            analyze_signal_pattern,
-            scan_for_anomalies,
-            get_best_patterns,
-        )
+        from ai_learning import generate_market_narrative, analyze_signal_pattern, get_best_patterns
 
-        # 1. Generate AI Market Narrative
         narrative = generate_market_narrative(
             themes=themes[:5],
             sectors=[{'name': s, 'rs': rs} for s, rs in
@@ -2257,72 +2180,100 @@ def main():
             msg = "🤖 *AI MARKET BRIEFING*\n\n"
             msg += f"*{narrative.get('headline', 'Market Update')}*\n\n"
             msg += f"_{narrative.get('main_narrative', '')}_\n\n"
-
             opp = narrative.get('key_opportunity', {})
             if opp and opp.get('description'):
                 msg += f"*Opportunity:* {opp['description']}\n"
                 if opp.get('tickers'):
                     msg += f"Watch: `{'`, `'.join(opp['tickers'][:4])}`\n"
-
             risk = narrative.get('key_risk', {})
             if risk and risk.get('description'):
                 msg += f"\n*Risk:* {risk['description']}"
-
             send_telegram_message(msg)
             logger.info("AI market narrative sent!")
 
-        # 2. Learn patterns from top alerts
+        # Learn patterns
         for _, row in df_results.head(5).iterrows():
             try:
                 signals = {
                     'above_20sma': row.get('above_20', False),
                     'above_50sma': row.get('above_50', False),
                     'above_200sma': row.get('above_200', False),
-                    'ma_aligned': row.get('ma_aligned', False),
-                    'in_squeeze': row.get('in_squeeze', False),
-                    'breakout': row.get('breakout_up', False),
                     'volume_spike': row.get('vol_ratio', 1) > 1.5,
                     'rs_positive': row.get('rs_composite', 0) > 0,
-                    'rs_strong': row.get('rs_composite', 0) > 5,
                 }
                 analyze_signal_pattern(signals)
-            except Exception as e:
-                logger.debug(f"Failed to analyze signal pattern: {e}")
+            except Exception:
+                pass
         logger.info("Recorded signal patterns for AI learning")
 
-        # 3. Scan for anomalies in top movers
-        anomaly_data = {}
-        for _, row in df_results.head(20).iterrows():
-            ticker = row['ticker']
-            anomaly_data[ticker] = {
-                'vol_ratio': row.get('vol_ratio', 1),
-                'daily_change': row.get('rs_composite', 0) / 5,  # Rough approximation
-                'score': row.get('composite_score', 0),
-            }
-
-        # Only flag extreme anomalies
-        extreme = {t: d for t, d in anomaly_data.items()
-                  if d['vol_ratio'] > 3 or abs(d.get('daily_change', 0)) > 5}
-
-        if extreme:
-            logger.info(f"Detected {len(extreme)} potential anomalies for AI review")
-
-        # 4. Report best patterns if we have enough data
         patterns = get_best_patterns()
-        if patterns and len(patterns) >= 3:
+        if patterns and len(patterns) >= 3 and patterns[0]['win_rate'] >= 65:
             best = patterns[0]
-            if best['win_rate'] >= 65:
-                msg = f"🎯 *AI PATTERN INSIGHT*\n\n"
-                msg += f"Best pattern: *{best['pattern']}*\n"
-                msg += f"Win rate: {best['win_rate']:.0f}% ({best['total_trades']} trades)\n"
-                msg += f"\n_Focus on setups with these signals._"
-                send_telegram_message(msg)
-                logger.info(f"Best pattern: {best['pattern']} ({best['win_rate']:.0f}%)")
+            msg = f"🎯 *AI PATTERN INSIGHT*\n\nBest pattern: *{best['pattern']}*\nWin rate: {best['win_rate']:.0f}%"
+            send_telegram_message(msg)
+            logger.info(f"Best pattern: {best['pattern']} ({best['win_rate']:.0f}%)")
 
         logger.info("AI analysis complete!")
 
     except Exception as e:
         logger.error(f"AI analysis error: {e}")
+
+
+# ============================================================
+# MAIN EXECUTION
+# ============================================================
+
+def main():
+    """Main automation function."""
+    logger.info("=" * 60)
+    logger.info("STOCK SCANNER AUTOMATION")
+    logger.info(f"Started: {datetime.now()}")
+    logger.info("=" * 60)
+
+    # Load previous state and run scan
+    prev_state = load_previous_state()
+    df_results, price_data = run_scan()
+
+    # Save results
+    timestamp = datetime.now().strftime('%Y%m%d')
+    df_results.to_csv(f'scan_{timestamp}.csv', index=False)
+
+    # Send daily summary
+    summary = generate_daily_summary(df_results)
+    summary_msg = format_alert_message('DAILY_SUMMARY', summary)
+    send_telegram_message(summary_msg)
+
+    # Theme detection
+    themes, supply_plays, unknown_clusters = _run_theme_detection(df_results, price_data)
+
+    # Self-learning
+    new_emerging, learned_themes = _run_self_learning(df_results, unknown_clusters)
+
+    # Breakout alerts
+    new_alerts = _process_breakout_alerts(df_results, prev_state)
+    save_current_state(df_results)
+
+    # Weekly stats
+    logger.info("Updating weekly stats...")
+    update_weekly_stats(df_results, themes, supply_plays)
+    if run_weekly_digest():
+        logger.info("Weekly digest sent!")
+
+    # Insider detection, correlations, charts
+    _run_insider_detection(df_results)
+    _run_correlation_analysis(df_results, price_data)
+    _send_top_charts(df_results, price_data)
+
+    # Interactive commands
+    logger.info("Checking for interactive commands...")
+    handle_interactive_commands(price_data, df_results)
+
+    # Advanced analysis (using helper functions)
+    _run_sector_rotation()
+    _run_mtf_analysis(df_results)
+    _run_news_scan(df_results)
+    _run_comprehensive_learning(df_results, price_data, themes)
+    _run_ai_analysis(df_results, themes)
 
     logger.info(f"Completed: {datetime.now()}")
     logger.info(f"Sent {len(new_alerts)} new breakout alerts")

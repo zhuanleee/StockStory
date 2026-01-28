@@ -12,13 +12,11 @@ Tracks accuracy over time and adjusts rankings.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 import yfinance as yf
 
-from config import config
-from utils import get_logger, normalize_dataframe_columns, safe_float
+from utils import get_logger
 import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
@@ -253,7 +251,6 @@ def calculate_timing_score(theme_name, tickers):
                 continue
     except Exception as e:
         logger.error(f"Error calculating timing score: {e}")
-        pass
 
     if not moves:
         return {'score': 50, 'timing': 'UNKNOWN', 'moves': {}}
@@ -404,7 +401,6 @@ def record_signal(theme, sources, tickers, catalyst=None):
                 prices[ticker] = float(hist['Close'].iloc[-1])
         except Exception as e:
             logger.debug(f"Failed to get price for {ticker}: {e}")
-            pass
 
     history['signals'][signal_id] = {
         'theme': theme,
@@ -478,7 +474,6 @@ def evaluate_signal_performance(signal, period='1w'):
                     returns.append(ret)
             except Exception as e:
                 logger.debug(f"Failed to get return for {ticker}: {e}")
-                pass
 
         if not returns:
             return None

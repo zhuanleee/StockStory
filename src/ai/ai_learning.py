@@ -14,14 +14,12 @@ Uses DeepSeek AI to provide intelligent analysis:
 """
 
 import json
-import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 
 from config import config
-from utils import get_logger, APIError
+from utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -764,7 +762,6 @@ def fetch_realtime_market_data():
     """
     import yfinance as yf
     from concurrent.futures import ThreadPoolExecutor
-    import pandas as pd
 
     market_data = {
         'spy': None,
@@ -1065,7 +1062,6 @@ Synthesize ALL information comprehensively. Return JSON:
                 return result
             except json.JSONDecodeError:
                 logger.debug(f"JSON parse error: {response[:200]}")
-                pass
 
         return {
             'sentiment': 'neutral',

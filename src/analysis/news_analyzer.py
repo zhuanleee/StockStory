@@ -17,7 +17,7 @@ import os
 import requests
 import re
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import Counter
 import json
 import xml.etree.ElementTree as ET
@@ -25,7 +25,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from config import config
-from utils import get_logger, APIError
+from utils import get_logger
 from utils.data_providers import (
     FinnhubProvider,
     TiingoProvider,

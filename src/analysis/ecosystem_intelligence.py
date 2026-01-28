@@ -26,7 +26,7 @@ Usage:
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
 from typing import Optional

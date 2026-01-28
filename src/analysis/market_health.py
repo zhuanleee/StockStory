@@ -16,15 +16,12 @@ Data Sources:
 
 import yfinance as yf
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
 
-from config import config
 from utils import (
     get_logger, normalize_dataframe_columns, get_spy_data_cached,
-    calculate_rs, safe_float, download_stock_data,
+    safe_float,
 )
 
 logger = get_logger(__name__)
@@ -178,7 +175,6 @@ def safe_get_series(df, column, ticker=None):
             return result
         except Exception as e:
             logger.error(f"Error extracting {column} for {ticker}: {e}")
-            pass
     if column in df.columns:
         return df[column]
     return None

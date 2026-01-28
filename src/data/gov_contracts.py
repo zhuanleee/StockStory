@@ -28,7 +28,6 @@ Usage:
     activity = get_theme_contract_activity('defense')
 """
 
-import os
 import json
 import logging
 import requests

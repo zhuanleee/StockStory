@@ -21,12 +21,11 @@ Usage:
     keywords = engine.extract_trending_keywords()
 """
 
-import os
 import json
 import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from collections import Counter
@@ -358,7 +357,6 @@ Return empty array [] if no clear themes found.
         try:
             from src.data.polygon_provider import PolygonDataProvider
             import pandas as pd
-            import numpy as np
 
             provider = PolygonDataProvider()
 
