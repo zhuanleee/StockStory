@@ -27,9 +27,17 @@ def init_socketio(app, **kwargs):
     """Initialize SocketIO with Flask app."""
     global socketio
 
+    # CORS origins for GitHub Pages + local development
+    allowed_origins = [
+        'https://zhuanleee.github.io',
+        'http://localhost:5000',
+        'http://127.0.0.1:5000',
+        'https://web-production-46562.up.railway.app',
+    ]
+
     # Default config for production
     default_config = {
-        'cors_allowed_origins': '*',
+        'cors_allowed_origins': allowed_origins,
         'async_mode': 'threading',
         'ping_timeout': 60,
         'ping_interval': 25,

@@ -35,6 +35,29 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
+# CORS configuration for GitHub Pages dashboard
+ALLOWED_ORIGINS = [
+    'https://zhuanleee.github.io',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+]
+
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers for GitHub Pages dashboard."""
+    origin = request.headers.get('Origin', '')
+    if origin in ALLOWED_ORIGINS or origin.endswith('.github.io'):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
+
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    """Handle CORS preflight requests."""
+    return '', 204
+
 # Initialize SocketIO for real-time sync
 socketio = None
 try:
