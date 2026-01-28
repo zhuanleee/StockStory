@@ -229,7 +229,7 @@ class ThemeDiscoveryEngine:
             if story_scores:
                 top_scorers = sorted(story_scores.items(), key=lambda x: x[1], reverse=True)[:20]
                 data['high_story_scores'] = [
-                    {'ticker': t, 'story_score': s} for t, s in top_scorers if s >= 50
+                    {'ticker': t, 'story_score': float(s)} for t, s in top_scorers if s >= 50
                 ]
 
             # Get recent news
@@ -260,15 +260,15 @@ class ThemeDiscoveryEngine:
                             stock = yf.Ticker(ticker)
                             hist = stock.history(period='5d')
                             if len(hist) >= 2:
-                                change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[-2]) - 1) * 100
-                                vol_ratio = hist['Volume'].iloc[-1] / hist['Volume'].iloc[:-1].mean() if hist['Volume'].iloc[:-1].mean() > 0 else 1
+                                change = float((hist['Close'].iloc[-1] / hist['Close'].iloc[-2]) - 1) * 100
+                                vol_ratio = float(hist['Volume'].iloc[-1] / hist['Volume'].iloc[:-1].mean()) if hist['Volume'].iloc[:-1].mean() > 0 else 1.0
 
                                 if abs(change) > 2 or vol_ratio > 2:
                                     data['movers'].append({
                                         'ticker': ticker,
                                         'change_pct': round(change, 2),
                                         'volume_ratio': round(vol_ratio, 2),
-                                        'story_score': story_scores.get(ticker, 0)
+                                        'story_score': float(story_scores.get(ticker, 0))
                                     })
                         except:
                             pass
@@ -284,9 +284,9 @@ class ThemeDiscoveryEngine:
                         if buzz and buzz.get('message_count', 0) > 5:
                             data['social_buzz'].append({
                                 'ticker': ticker,
-                                'messages': buzz.get('message_count', 0),
-                                'bullish_pct': buzz.get('bullish_percent', 50),
-                                'trending': buzz.get('trending', False)
+                                'messages': int(buzz.get('message_count', 0)),
+                                'bullish_pct': float(buzz.get('bullish_percent', 50)),
+                                'trending': bool(buzz.get('trending', False))
                             })
                     except:
                         pass
@@ -335,7 +335,7 @@ class ThemeDiscoveryEngine:
                     try:
                         hist = yf.Ticker(etf).history(period='5d')
                         if len(hist) >= 2:
-                            change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
+                            change = float((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
                             data['sector_performance'][sector] = round(change, 2)
                     except:
                         pass
