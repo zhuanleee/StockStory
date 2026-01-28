@@ -65,31 +65,6 @@ except ImportError:
 
 
 # =============================================================================
-# XAI CLIENT HELPER - Shared client to avoid multiple instantiations
-# =============================================================================
-
-_xai_client = None
-
-def _get_xai_client():
-    """Get or create a shared xAI client."""
-    global _xai_client
-    import os
-    api_key = os.environ.get('XAI_API_KEY', '')
-    if not api_key:
-        return None
-    if _xai_client is None:
-        from xai_sdk import Client
-        _xai_client = Client(api_key=api_key)
-    return _xai_client
-
-
-def _reset_xai_client():
-    """Reset the client (useful between requests)."""
-    global _xai_client
-    _xai_client = None
-
-
-# =============================================================================
 # ADDITIONAL DATA SOURCES - Social & Institutional
 # =============================================================================
 
@@ -302,9 +277,9 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
     import math
     from datetime import datetime, timedelta
 
-    client = _get_xai_client()
-    if not client:
-        logger.debug(f"XAI client not available, skipping X sentiment for {ticker}")
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        logger.debug(f"XAI_API_KEY not set, skipping X sentiment for {ticker}")
         return {
             'post_count': 0,
             'engagement_score': 0,
@@ -314,9 +289,11 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
         }
 
     try:
+        from xai_sdk import Client
         from xai_sdk.chat import user
         from xai_sdk.tools import x_search
 
+        client = Client(api_key=api_key)
         chat = client.chat.create(
             model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
             tools=[x_search()],
