@@ -119,6 +119,72 @@
             color: var(--text-muted);
         }
 
+        /* Sync Status */
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: var(--bg-hover);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .sync-status:hover {
+            background: var(--bg-card);
+        }
+
+        /* Sync Notifications */
+        .sync-notification {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            min-width: 280px;
+            max-width: 350px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .sync-notification-success {
+            border-left: 3px solid var(--green);
+        }
+
+        .sync-notification-warning {
+            border-left: 3px solid var(--yellow);
+        }
+
+        .sync-notification-danger {
+            border-left: 3px solid var(--red);
+        }
+
+        .sync-notification-info {
+            border-left: 3px solid var(--blue);
+        }
+
+        .sync-notification-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+
+        .sync-notification-message {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
         /* Tabs */
         .tabs {
             background: var(--bg-card);
@@ -639,6 +705,10 @@
             </div>
 
             <div class="header-actions">
+                <div class="sync-status" title="Telegram Sync Status">
+                    <span id="sync-status-indicator" style="font-size: 0.75rem; color: var(--text-muted);">○</span>
+                    <span id="sync-status-text" style="font-size: 0.7rem; color: var(--text-muted);">OFFLINE</span>
+                </div>
                 <span class="update-time">Updated: <span id="last-update">--:--</span></span>
                 <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
                 <a href="https://t.me/Stocks_Story_Bot" target="_blank" class="btn btn-primary">Open Bot</a>
@@ -1434,6 +1504,318 @@
 
     <script>
         const API_BASE = 'https://web-production-46562.up.railway.app/api';
+
+        // =============================================================================
+        // WEBSOCKET SYNC CLIENT
+        // =============================================================================
+
+        class SyncClient {
+            constructor() {
+                this.ws = null;
+                this.clientId = null;
+                this.connected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 2000;
+                this.heartbeatInterval = null;
+                this.eventHandlers = {};
+                this.pendingEvents = [];
+            }
+
+            async connect() {
+                try {
+                    // Get WebSocket URL from config
+                    const configRes = await fetch(`${API_BASE}/sync/config`);
+                    const config = await configRes.json();
+
+                    if (!config.ok) {
+                        console.warn('Sync config not available');
+                        this.updateSyncStatus('unavailable');
+                        return;
+                    }
+
+                    const wsUrl = config.websocket_url || 'wss://stock-scanner-bot-ws.onrender.com';
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => this.onOpen();
+                    this.ws.onclose = (e) => this.onClose(e);
+                    this.ws.onerror = (e) => this.onError(e);
+                    this.ws.onmessage = (e) => this.onMessage(e);
+
+                } catch (e) {
+                    console.warn('Failed to connect to sync server:', e);
+                    this.updateSyncStatus('error');
+                }
+            }
+
+            onOpen() {
+                console.log('Sync connected');
+                this.connected = true;
+                this.reconnectAttempts = 0;
+                this.updateSyncStatus('connected');
+
+                // Start heartbeat
+                this.heartbeatInterval = setInterval(() => {
+                    if (this.connected) {
+                        this.send({ type: 'heartbeat' });
+                    }
+                }, 30000);
+
+                // Send pending events
+                while (this.pendingEvents.length > 0) {
+                    const event = this.pendingEvents.shift();
+                    this.send(event);
+                }
+            }
+
+            onClose(event) {
+                console.log('Sync disconnected:', event.code);
+                this.connected = false;
+                this.updateSyncStatus('disconnected');
+
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                }
+
+                // Attempt reconnect
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    const delay = this.reconnectDelay * this.reconnectAttempts;
+                    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+                    setTimeout(() => this.connect(), delay);
+                }
+            }
+
+            onError(error) {
+                console.error('Sync error:', error);
+                this.updateSyncStatus('error');
+            }
+
+            onMessage(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleMessage(data);
+                } catch (e) {
+                    console.warn('Invalid sync message:', e);
+                }
+            }
+
+            handleMessage(data) {
+                const type = data.type;
+
+                switch (type) {
+                    case 'connected':
+                        this.clientId = data.client_id;
+                        console.log('Sync client ID:', this.clientId);
+                        this.showNotification('Sync Connected', 'Real-time sync active', 'success');
+                        break;
+
+                    case 'sync_history':
+                        // Process historical events
+                        (data.events || []).forEach(event => {
+                            this.processEvent(event, false);
+                        });
+                        break;
+
+                    case 'sync_event':
+                        // Process new event
+                        this.processEvent(data.event, true);
+                        break;
+
+                    case 'heartbeat_ack':
+                        // Heartbeat acknowledged
+                        break;
+
+                    case 'status':
+                        // Sync status update
+                        this.updateSyncStatusDetails(data.status);
+                        break;
+                }
+
+                // Call registered handlers
+                if (this.eventHandlers[type]) {
+                    this.eventHandlers[type].forEach(handler => handler(data));
+                }
+            }
+
+            processEvent(event, notify = true) {
+                const eventType = event.event_type;
+                const source = event.source;
+                const payload = event.payload;
+
+                // Handle different event types
+                switch (eventType) {
+                    case 'trade_created':
+                        if (source === 'telegram' && notify) {
+                            this.showNotification('Trade Added (Telegram)', `${payload.ticker} added to watchlist`, 'info');
+                            fetchTrades(); // Refresh trades
+                        }
+                        break;
+
+                    case 'buy_executed':
+                        if (source === 'telegram' && notify) {
+                            this.showNotification('Buy Executed (Telegram)', `${payload.shares} ${payload.ticker} @ $${payload.price}`, 'success');
+                            fetchTrades();
+                        }
+                        break;
+
+                    case 'sell_executed':
+                        if (source === 'telegram' && notify) {
+                            this.showNotification('Sell Executed (Telegram)', `${payload.shares} ${payload.ticker} @ $${payload.price}`, 'warning');
+                            fetchTrades();
+                        }
+                        break;
+
+                    case 'exit_signal':
+                        if (notify) {
+                            this.showNotification('Exit Signal', `${payload.ticker}: ${payload.signal_type}`, 'danger');
+                        }
+                        break;
+
+                    case 'journal_added':
+                        if (source === 'telegram' && notify) {
+                            this.showNotification('Journal Entry (Telegram)', `${payload.entry_type}: ${payload.content?.slice(0, 50)}...`, 'info');
+                            fetchJournal();
+                        }
+                        break;
+
+                    case 'command_received':
+                        if (notify) {
+                            this.showNotification('Telegram Command', `/${payload.command} ${payload.args || ''}`, 'info');
+                            addSyncActivityItem(`Telegram: /${payload.command} ${payload.args || ''}`, 'command');
+                        }
+                        break;
+
+                    case 'scan_completed':
+                        if (notify) {
+                            this.showNotification('Scan Complete', `${payload.positions_scanned} positions, ${payload.signals_count} signals`, 'info');
+                        }
+                        break;
+                }
+
+                // Add to sync activity
+                if (source === 'telegram' && notify) {
+                    addSyncActivityItem(this.formatEventMessage(event), eventType.replace('_', '-'));
+                }
+
+                // Acknowledge event
+                if (event.ack_required) {
+                    this.send({ type: 'ack', event_id: event.id });
+                }
+            }
+
+            formatEventMessage(event) {
+                const p = event.payload;
+                const formatters = {
+                    'trade_created': () => `Added ${p.ticker} to watchlist`,
+                    'buy_executed': () => `Bought ${p.shares} ${p.ticker} @ $${p.price}`,
+                    'sell_executed': () => `Sold ${p.shares} ${p.ticker} @ $${p.price}`,
+                    'exit_signal': () => `Exit signal for ${p.ticker}: ${p.signal_type}`,
+                    'journal_added': () => `Journal: ${p.entry_type} - ${p.content?.slice(0, 30)}...`,
+                    'command_received': () => `Command: /${p.command}`,
+                    'scan_completed': () => `Scan: ${p.positions_scanned} positions`,
+                };
+                const formatter = formatters[event.event_type];
+                return formatter ? formatter() : event.event_type;
+            }
+
+            send(data) {
+                if (this.connected && this.ws) {
+                    this.ws.send(JSON.stringify(data));
+                } else {
+                    this.pendingEvents.push(data);
+                }
+            }
+
+            publish(eventType, payload) {
+                this.send({
+                    type: 'publish',
+                    event_type: eventType,
+                    payload: payload
+                });
+            }
+
+            on(eventType, handler) {
+                if (!this.eventHandlers[eventType]) {
+                    this.eventHandlers[eventType] = [];
+                }
+                this.eventHandlers[eventType].push(handler);
+            }
+
+            updateSyncStatus(status) {
+                const indicator = document.getElementById('sync-status-indicator');
+                const text = document.getElementById('sync-status-text');
+
+                if (!indicator || !text) return;
+
+                const statusConfig = {
+                    'connected': { color: 'var(--green)', text: 'SYNCED', icon: '●' },
+                    'disconnected': { color: 'var(--yellow)', text: 'OFFLINE', icon: '○' },
+                    'error': { color: 'var(--red)', text: 'ERROR', icon: '✕' },
+                    'unavailable': { color: 'var(--text-muted)', text: 'N/A', icon: '○' },
+                };
+
+                const config = statusConfig[status] || statusConfig.disconnected;
+                indicator.style.color = config.color;
+                indicator.textContent = config.icon;
+                text.textContent = config.text;
+                text.style.color = config.color;
+            }
+
+            updateSyncStatusDetails(status) {
+                const el = document.getElementById('sync-details');
+                if (el) {
+                    el.innerHTML = `
+                        <div>Clients: ${status.connected_clients || 0}</div>
+                        <div>Events: ${status.total_events || 0}</div>
+                    `;
+                }
+            }
+
+            showNotification(title, message, type = 'info') {
+                // Create notification element
+                const notification = document.createElement('div');
+                notification.className = `sync-notification sync-notification-${type}`;
+                notification.innerHTML = `
+                    <div class="sync-notification-title">${title}</div>
+                    <div class="sync-notification-message">${message}</div>
+                `;
+
+                // Add to container
+                let container = document.getElementById('sync-notifications');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'sync-notifications';
+                    container.style.cssText = 'position: fixed; top: 70px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px;';
+                    document.body.appendChild(container);
+                }
+                container.appendChild(notification);
+
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    notification.style.transform = 'translateX(100%)';
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+        }
+
+        // Global sync client
+        const syncClient = new SyncClient();
+
+        // Sync activity helper
+        function addSyncActivityItem(message, type = 'sync') {
+            const activityItems = window.activityItems || [];
+            activityItems.unshift({
+                message: `[SYNC] ${message}`,
+                type: type,
+                timestamp: new Date().toISOString()
+            });
+            window.activityItems = activityItems;
+            if (typeof renderActivityFeed === 'function') {
+                renderActivityFeed();
+            }
+        }
 
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
@@ -3109,7 +3491,19 @@
         // Init
         document.addEventListener('DOMContentLoaded', () => {
             refreshAll();
+
+            // Initialize sync client
+            setTimeout(() => {
+                syncClient.connect();
+            }, 1000);
         });
+
+        // Also refresh AI advisor after trades are loaded
+        setTimeout(() => {
+            if (typeof refreshAIAdvisor === 'function') {
+                refreshAIAdvisor();
+            }
+        }, 2000);
     </script>
 </body>
 </html>

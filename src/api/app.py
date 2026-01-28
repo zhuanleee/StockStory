@@ -5054,6 +5054,14 @@ def api_trades_create():
         # Log activity
         _add_activity(f"Added {ticker} to watchlist", 'create')
 
+        # Publish sync event
+        _publish_sync_event('trade_created', {
+            'ticker': ticker,
+            'thesis': thesis,
+            'theme': theme,
+            'trade_id': trade.id,
+        })
+
         return jsonify({
             'ok': True,
             'trade': trade.to_dict(),
@@ -5085,6 +5093,14 @@ def api_trades_buy(trade_id):
             trade = tm.get_trade(trade_id)
             # Log activity
             _add_activity(f"Bought {shares} {trade.ticker} @ ${price:.2f}", 'buy')
+            # Publish sync event
+            _publish_sync_event('buy_executed', {
+                'ticker': trade.ticker,
+                'shares': shares,
+                'price': price,
+                'reason': reason,
+                'trade_id': trade_id,
+            })
             return jsonify({
                 'ok': True,
                 'tranche': tranche.to_dict(),
@@ -5118,6 +5134,14 @@ def api_trades_sell(trade_id):
             trade = tm.get_trade(trade_id)
             # Log activity
             _add_activity(f"Sold {shares} {trade.ticker} @ ${price:.2f}", 'sell')
+            # Publish sync event
+            _publish_sync_event('sell_executed', {
+                'ticker': trade.ticker,
+                'shares': shares,
+                'price': price,
+                'reason': reason,
+                'trade_id': trade_id,
+            })
             return jsonify({
                 'ok': True,
                 'tranche': tranche.to_dict(),
@@ -5484,6 +5508,202 @@ def _add_activity(message: str, activity_type: str = 'general'):
 
     except Exception as e:
         logger.error(f"Failed to add activity: {e}")
+
+
+def _publish_sync_event(event_type: str, payload: dict):
+    """Publish a sync event to Telegram and connected dashboards."""
+    try:
+        import asyncio
+        from src.sync import get_sync_hub, EventType, SyncSource
+
+        hub = get_sync_hub()
+
+        # Map string to EventType
+        try:
+            et = EventType[event_type.upper()]
+        except KeyError:
+            logger.warning(f"Unknown event type: {event_type}")
+            return
+
+        event = hub.create_event(et, SyncSource.DASHBOARD, payload)
+
+        # Run async publish in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(hub.publish(event))
+        finally:
+            loop.close()
+
+        logger.info(f"Published sync event: {event_type}")
+
+    except ImportError:
+        logger.debug("Sync module not available")
+    except Exception as e:
+        logger.debug(f"Failed to publish sync event: {e}")
+
+
+# =============================================================================
+# SYNC API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/sync/status')
+def api_sync_status():
+    """Get sync system status."""
+    try:
+        from src.sync import get_sync_hub
+
+        hub = get_sync_hub()
+        status = hub.get_sync_status()
+
+        return jsonify({
+            'ok': True,
+            **status
+        })
+    except ImportError:
+        return jsonify({
+            'ok': True,
+            'connected_clients': 0,
+            'total_events': 0,
+            'telegram_configured': bool(os.environ.get('TELEGRAM_BOT_TOKEN')),
+            'websocket_url': os.environ.get('WS_URL', 'ws://localhost:8765'),
+        })
+    except Exception as e:
+        logger.error(f"Sync status error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sync/events')
+def api_sync_events():
+    """Get recent sync events."""
+    try:
+        from src.sync import get_sync_hub
+
+        hub = get_sync_hub()
+        count = request.args.get('count', 50, type=int)
+        events = hub.event_store.get_recent(count)
+
+        return jsonify({
+            'ok': True,
+            'events': [e.to_dict() for e in events],
+            'count': len(events)
+        })
+    except ImportError:
+        # Sync module not available, return empty
+        return jsonify({
+            'ok': True,
+            'events': [],
+            'count': 0
+        })
+    except Exception as e:
+        logger.error(f"Sync events error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sync/publish', methods=['POST'])
+def api_sync_publish():
+    """Publish a sync event from dashboard."""
+    try:
+        import asyncio
+        from src.sync import get_sync_hub, EventType, SyncSource
+
+        data = request.get_json() or {}
+        event_type = data.get('event_type', '')
+        payload = data.get('payload', {})
+
+        if not event_type:
+            return jsonify({'ok': False, 'error': 'event_type required'})
+
+        hub = get_sync_hub()
+
+        # Create and publish event
+        try:
+            et = EventType[event_type.upper()]
+        except KeyError:
+            return jsonify({'ok': False, 'error': f'Invalid event_type: {event_type}'})
+
+        event = hub.create_event(et, SyncSource.DASHBOARD, payload)
+
+        # Run async publish in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(hub.publish(event))
+        finally:
+            loop.close()
+
+        return jsonify({
+            'ok': True,
+            'event': event.to_dict(),
+            'message': f'Event {event_type} published'
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'Sync module not available'})
+    except Exception as e:
+        logger.error(f"Sync publish error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sync/telegram-webhook', methods=['POST'])
+def api_sync_telegram_webhook():
+    """Webhook endpoint for Telegram bot updates."""
+    try:
+        import asyncio
+        from src.sync import get_sync_hub, publish_telegram_command, SyncSource, EventType
+
+        data = request.get_json() or {}
+
+        # Extract message from update
+        message = data.get('message', {})
+        text = message.get('text', '')
+        user = message.get('from', {}).get('username', 'unknown')
+        chat_id = message.get('chat', {}).get('id', '')
+
+        if not text:
+            return jsonify({'ok': True})
+
+        # Check if it's a command
+        if text.startswith('/'):
+            parts = text.split(' ', 1)
+            command = parts[0][1:]  # Remove leading /
+            args = parts[1] if len(parts) > 1 else ''
+
+            hub = get_sync_hub()
+            event = hub.create_event(
+                EventType.COMMAND_RECEIVED,
+                SyncSource.TELEGRAM,
+                {
+                    'command': command,
+                    'args': args,
+                    'user': user,
+                    'chat_id': str(chat_id),
+                    'raw_text': text
+                }
+            )
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(hub.publish(event))
+            finally:
+                loop.close()
+
+        return jsonify({'ok': True})
+
+    except Exception as e:
+        logger.error(f"Telegram webhook error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/sync/config')
+def api_sync_config():
+    """Get sync configuration for dashboard."""
+    return jsonify({
+        'ok': True,
+        'websocket_url': os.environ.get('WS_URL', 'wss://stock-scanner-bot-ws.onrender.com'),
+        'telegram_configured': bool(os.environ.get('TELEGRAM_BOT_TOKEN') and os.environ.get('TELEGRAM_CHAT_ID')),
+        'api_base': request.host_url.rstrip('/') + '/api',
+    })
 
 
 if __name__ == '__main__':

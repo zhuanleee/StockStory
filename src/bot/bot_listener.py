@@ -138,6 +138,50 @@ def process_ticker_query(ticker: str, df_results: pd.DataFrame) -> str:
     return msg
 
 
+def _publish_telegram_event(text: str, user: str):
+    """Publish Telegram command to sync system for dashboard sync."""
+    try:
+        import asyncio
+        from src.sync import get_sync_hub, SyncSource, EventType
+
+        hub = get_sync_hub()
+
+        # Parse command
+        if text.startswith('/'):
+            parts = text.split(' ', 1)
+            command = parts[0][1:]
+            args = parts[1] if len(parts) > 1 else ''
+        else:
+            command = 'ticker_query'
+            args = text
+
+        event = hub.create_event(
+            EventType.COMMAND_RECEIVED,
+            SyncSource.TELEGRAM,
+            {
+                'command': command,
+                'args': args,
+                'user': user,
+                'raw_text': text
+            }
+        )
+
+        # Run async publish
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(hub.publish(event))
+        finally:
+            loop.close()
+
+        logger.info(f"Published sync event for: {text[:50]}")
+
+    except ImportError:
+        logger.debug("Sync module not available")
+    except Exception as e:
+        logger.debug(f"Failed to publish sync event: {e}")
+
+
 def handle_commands():
     """Main function to check and handle Telegram commands."""
     if not BOT_TOKEN:
@@ -166,9 +210,16 @@ def handle_commands():
         update_id = update.get('update_id', 0)
         message = update.get('message', {})
         text = message.get('text', '').strip()
+        user = message.get('from', {}).get('username', 'unknown')
 
         if text:
             logger.info(f"Processing command: {text}")
+
+            # Publish to sync system
+            try:
+                _publish_telegram_event(text, user)
+            except Exception as e:
+                logger.debug(f"Sync publish failed: {e}")
 
             # Check if it's a ticker query (1-5 uppercase letters)
             if len(text) <= 5 and text.isalpha() and not df_results.empty:
