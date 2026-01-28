@@ -679,6 +679,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div class="tab" data-tab="themes">Themes</div>
             <div class="tab" data-tab="themeradar">Theme Radar</div>
             <div class="tab" data-tab="sec">SEC Intel</div>
+            <div class="tab" data-tab="trades">Trades</div>
             <div class="tab" data-tab="analytics">Analytics</div>
         </div>
     </nav>
@@ -1051,6 +1052,150 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 </div>
                 <div class="card-body" id="filings-feed">
                     <div style="color: var(--text-muted); font-size: 0.8125rem;">Select a ticker above to view filings...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trades Tab -->
+        <div id="trades" class="tab-content">
+            <!-- Trade Stats Row -->
+            <div class="stats-row">
+                <div class="stat">
+                    <div class="stat-label">Open Positions</div>
+                    <div class="stat-value blue" id="trade-positions-count">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Watchlist</div>
+                    <div class="stat-value" id="trade-watchlist-count">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Portfolio Risk</div>
+                    <div class="stat-value" id="trade-risk-level">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">High Risk</div>
+                    <div class="stat-value red" id="trade-high-risk">--</div>
+                </div>
+            </div>
+
+            <div class="grid grid-sidebar">
+                <!-- Main Column -->
+                <div>
+                    <!-- Risk Alerts -->
+                    <div id="trade-alerts-container"></div>
+
+                    <!-- Open Positions -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">📊 Open Positions</div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="scanAllPositions()">Scan All</button>
+                                <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddTradeModal()">+ Add Trade</button>
+                            </div>
+                        </div>
+                        <div class="card-body no-padding">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Shares</th>
+                                        <th>Avg Cost</th>
+                                        <th>Current</th>
+                                        <th>P&L</th>
+                                        <th>Risk</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="positions-table-body">
+                                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading positions...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Watchlist -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📋 Watchlist</div>
+                        </div>
+                        <div class="card-body no-padding">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Thesis</th>
+                                        <th>Theme</th>
+                                        <th>Strategy</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="watchlist-table-body">
+                                    <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Loading watchlist...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <div>
+                    <!-- Quick Actions -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">⚡ Quick Actions</div>
+                        </div>
+                        <div class="card-body">
+                            <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="showAddTradeModal()">Add to Watchlist</button>
+                            <button class="btn btn-ghost" style="width: 100%; margin-bottom: 8px;" onclick="showBuyModal()">Log Buy</button>
+                            <button class="btn btn-ghost" style="width: 100%; margin-bottom: 8px;" onclick="showSellModal()">Log Sell</button>
+                            <button class="btn btn-ghost" style="width: 100%;" onclick="fetchDailyReport()">Daily Report</button>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Summary -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">💼 Portfolio Summary</div>
+                        </div>
+                        <div class="card-body" id="portfolio-summary">
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Total Invested</span>
+                                <span class="sidebar-value" id="portfolio-invested">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Current Value</span>
+                                <span class="sidebar-value" id="portfolio-value">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Total P&L</span>
+                                <span class="sidebar-value" id="portfolio-pnl">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Win Rate</span>
+                                <span class="sidebar-value" id="portfolio-winrate">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scaling Opportunities -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">📈 Scale Opportunities</div>
+                        </div>
+                        <div class="card-body" id="scale-opportunities">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Run scan to detect opportunities...</div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🕐 Recent Activity</div>
+                        </div>
+                        <div class="card-body" id="recent-activity">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">No recent activity</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1871,6 +2016,454 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // =============================================================================
+        // TRADE MANAGEMENT FUNCTIONS
+        // =============================================================================
+
+        async function fetchTrades() {
+            try {
+                // Fetch positions
+                const posRes = await fetch(`${API_BASE}/trades/positions`);
+                const posData = await posRes.json();
+
+                if (posData.ok) {
+                    document.getElementById('trade-positions-count').textContent = posData.count || 0;
+                    renderPositionsTable(posData.positions || []);
+                    updatePortfolioSummary(posData.positions || []);
+                }
+
+                // Fetch watchlist
+                const watchRes = await fetch(`${API_BASE}/trades/watchlist`);
+                const watchData = await watchRes.json();
+
+                if (watchData.ok) {
+                    document.getElementById('trade-watchlist-count').textContent = watchData.count || 0;
+                    renderWatchlistTable(watchData.watchlist || []);
+                }
+
+                // Fetch risk
+                const riskRes = await fetch(`${API_BASE}/trades/risk`);
+                const riskData = await riskRes.json();
+
+                if (riskData.ok) {
+                    const riskColors = {
+                        'critical': 'var(--red)',
+                        'high': 'var(--red)',
+                        'elevated': 'var(--yellow)',
+                        'moderate': 'var(--green)',
+                        'low': 'var(--text-muted)',
+                        'none': 'var(--green)'
+                    };
+                    const riskLevel = riskData.overall_risk || 'none';
+                    document.getElementById('trade-risk-level').textContent = riskLevel.toUpperCase();
+                    document.getElementById('trade-risk-level').style.color = riskColors[riskLevel] || 'var(--text)';
+                    document.getElementById('trade-high-risk').textContent = riskData.high_risk_count || 0;
+
+                    // Show risk alerts
+                    renderTradeAlerts(riskData.high_risk_trades || []);
+                }
+            } catch (e) {
+                console.warn('Trades fetch failed:', e);
+            }
+        }
+
+        function renderPositionsTable(positions) {
+            const tbody = document.getElementById('positions-table-body');
+            if (!positions || positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No open positions. Click "+ Add Trade" to start.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = positions.map(pos => {
+                const pnlPct = pos.pnl_pct || 0;
+                const pnlValue = pos.pnl_value || 0;
+                const pnlColor = pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
+                const riskLevel = pos.current_risk_level || 'none';
+                const riskColors = {
+                    'critical': 'var(--red)',
+                    'high': 'var(--red)',
+                    'elevated': 'var(--yellow)',
+                    'moderate': 'var(--text-muted)',
+                    'low': 'var(--text-muted)',
+                    'none': 'var(--green)'
+                };
+
+                return `<tr>
+                    <td><strong style="cursor: pointer;" onclick="showTradeDetail('${pos.id}')">${pos.ticker}</strong></td>
+                    <td>${pos.total_shares}</td>
+                    <td>$${(pos.average_cost || 0).toFixed(2)}</td>
+                    <td>$${(pos.current_price || 0).toFixed(2)}</td>
+                    <td style="color: ${pnlColor};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%<br><small>$${pnlValue >= 0 ? '+' : ''}${pnlValue.toFixed(0)}</small></td>
+                    <td><span style="padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; background: ${riskColors[riskLevel]}20; color: ${riskColors[riskLevel]};">${riskLevel.toUpperCase()}</span></td>
+                    <td>
+                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showBuyModalFor('${pos.id}', '${pos.ticker}')">Buy</button>
+                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showSellModalFor('${pos.id}', '${pos.ticker}', ${pos.total_shares})">Sell</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderWatchlistTable(watchlist) {
+            const tbody = document.getElementById('watchlist-table-body');
+            if (!watchlist || watchlist.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Watchlist empty. Add tickers to track.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = watchlist.map(item => {
+                const strategy = item.scaling_plan?.strategy || 'conservative';
+                return `<tr>
+                    <td><strong>${item.ticker}</strong></td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.thesis || '-'}</td>
+                    <td>${item.theme || '-'}</td>
+                    <td><span style="text-transform: capitalize;">${strategy}</span></td>
+                    <td>
+                        <button class="btn btn-primary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showBuyModalFor('${item.id}', '${item.ticker}')">Enter</button>
+                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="deleteTrade('${item.id}')">Remove</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderTradeAlerts(highRiskTrades) {
+            const container = document.getElementById('trade-alerts-container');
+            if (!highRiskTrades || highRiskTrades.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = highRiskTrades.map(trade => `
+                <div class="alert ${trade.risk_level === 'critical' ? 'alert-danger' : 'alert-warning'}" style="margin-bottom: 12px;">
+                    <span class="alert-icon">${trade.risk_level === 'critical' ? '🔴' : '⚠️'}</span>
+                    <span><strong>${trade.ticker}</strong>: ${trade.risk_level.toUpperCase()} risk (${trade.confidence.toFixed(0)}%) - ${trade.urgency}</span>
+                </div>
+            `).join('');
+        }
+
+        function updatePortfolioSummary(positions) {
+            let totalInvested = 0;
+            let currentValue = 0;
+
+            positions.forEach(pos => {
+                totalInvested += (pos.average_cost || 0) * (pos.total_shares || 0);
+                currentValue += (pos.current_price || pos.average_cost || 0) * (pos.total_shares || 0);
+            });
+
+            const totalPnl = currentValue - totalInvested;
+            const pnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+
+            document.getElementById('portfolio-invested').textContent = '$' + totalInvested.toLocaleString(undefined, {maximumFractionDigits: 0});
+            document.getElementById('portfolio-value').textContent = '$' + currentValue.toLocaleString(undefined, {maximumFractionDigits: 0});
+
+            const pnlEl = document.getElementById('portfolio-pnl');
+            pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toLocaleString(undefined, {maximumFractionDigits: 0})} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)`;
+            pnlEl.style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+        }
+
+        async function scanAllPositions() {
+            document.getElementById('scale-opportunities').innerHTML = '<div style="color: var(--text-muted);">Scanning positions...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/trades/scan`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    // Update scale opportunities
+                    let scaleHtml = '';
+                    const positions = data.positions || [];
+
+                    const scaleIns = positions.filter(p => p.scale_in?.should_scale);
+                    const scaleOuts = positions.filter(p => p.scale_out?.should_scale);
+
+                    if (scaleIns.length > 0) {
+                        scaleHtml += '<div style="margin-bottom: 12px;"><strong style="color: var(--green);">📈 Scale In:</strong></div>';
+                        scaleIns.forEach(p => {
+                            scaleHtml += `<div class="sidebar-item">
+                                <span class="sidebar-label">${p.ticker}</span>
+                                <span class="sidebar-value" style="color: var(--green);">+${p.scale_in.size_pct.toFixed(0)}%</span>
+                            </div>`;
+                        });
+                    }
+
+                    if (scaleOuts.length > 0) {
+                        scaleHtml += '<div style="margin-bottom: 12px; margin-top: 16px;"><strong style="color: var(--yellow);">📉 Scale Out:</strong></div>';
+                        scaleOuts.forEach(p => {
+                            scaleHtml += `<div class="sidebar-item">
+                                <span class="sidebar-label">${p.ticker}</span>
+                                <span class="sidebar-value" style="color: var(--yellow);">-${p.scale_out.size_pct.toFixed(0)}%</span>
+                            </div>`;
+                        });
+                    }
+
+                    if (!scaleHtml) {
+                        scaleHtml = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No scaling opportunities detected</div>';
+                    }
+
+                    document.getElementById('scale-opportunities').innerHTML = scaleHtml;
+
+                    // Refresh positions table with updated risk levels
+                    fetchTrades();
+                }
+            } catch (e) {
+                console.warn('Scan failed:', e);
+                document.getElementById('scale-opportunities').innerHTML = '<div style="color: var(--red);">Scan failed</div>';
+            }
+        }
+
+        function showAddTradeModal() {
+            const ticker = prompt('Ticker symbol:');
+            if (!ticker) return;
+
+            const thesis = prompt('Investment thesis (why this trade?):');
+            const theme = prompt('Theme (e.g., AI Infrastructure):') || '';
+            const strategy = prompt('Strategy (conservative/aggressive/core_trade/momentum):') || 'conservative';
+
+            addTrade(ticker.toUpperCase(), thesis, theme, strategy);
+        }
+
+        async function addTrade(ticker, thesis, theme, strategy) {
+            try {
+                const res = await fetch(`${API_BASE}/trades/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker, thesis, theme, strategy })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert(`Added ${ticker} to watchlist`);
+                    fetchTrades();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to add trade');
+            }
+        }
+
+        function showBuyModal() {
+            const ticker = prompt('Ticker symbol:');
+            if (!ticker) return;
+
+            showBuyModalFor(null, ticker.toUpperCase());
+        }
+
+        function showBuyModalFor(tradeId, ticker) {
+            const shares = prompt(`Shares to buy for ${ticker}:`);
+            if (!shares) return;
+
+            const price = prompt(`Price per share for ${ticker}:`);
+            if (!price) return;
+
+            const reason = prompt('Reason for buy:') || 'Manual entry';
+
+            executeBuy(tradeId, ticker, parseInt(shares), parseFloat(price), reason);
+        }
+
+        async function executeBuy(tradeId, ticker, shares, price, reason) {
+            try {
+                let url = `${API_BASE}/trades/${tradeId}/buy`;
+
+                // If no tradeId, first create the trade
+                if (!tradeId) {
+                    const createRes = await fetch(`${API_BASE}/trades/create`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ticker, thesis: reason })
+                    });
+                    const createData = await createRes.json();
+                    if (!createData.ok) {
+                        alert('Error creating trade: ' + createData.error);
+                        return;
+                    }
+                    tradeId = createData.trade.id;
+                    url = `${API_BASE}/trades/${tradeId}/buy`;
+                }
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shares, price, reason })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert(data.message);
+                    fetchTrades();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to execute buy');
+            }
+        }
+
+        function showSellModal() {
+            const ticker = prompt('Ticker symbol to sell:');
+            if (!ticker) return;
+
+            // Find trade by ticker
+            alert('Please use the Sell button on a specific position');
+        }
+
+        function showSellModalFor(tradeId, ticker, maxShares) {
+            const shares = prompt(`Shares to sell for ${ticker} (max: ${maxShares}):`);
+            if (!shares) return;
+
+            const price = prompt(`Price per share for ${ticker}:`);
+            if (!price) return;
+
+            const reason = prompt('Reason for sell:') || 'Manual exit';
+
+            executeSell(tradeId, parseInt(shares), parseFloat(price), reason);
+        }
+
+        async function executeSell(tradeId, shares, price, reason) {
+            try {
+                const res = await fetch(`${API_BASE}/trades/${tradeId}/sell`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shares, price, reason })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert(data.message);
+                    fetchTrades();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to execute sell');
+            }
+        }
+
+        async function deleteTrade(tradeId) {
+            if (!confirm('Remove this trade from watchlist?')) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/trades/${tradeId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    fetchTrades();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to delete trade');
+            }
+        }
+
+        async function showTradeDetail(tradeId) {
+            openModal('Trade Details', '<div style="text-align: center; padding: 20px;">Loading...</div>');
+
+            try {
+                const res = await fetch(`${API_BASE}/trades/${tradeId}`);
+                const data = await res.json();
+
+                if (data.ok && data.trade) {
+                    const t = data.trade;
+                    const pnlPct = t.unrealized_pnl_pct || ((t.current_price - t.average_cost) / t.average_cost * 100) || 0;
+                    const pnlColor = pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
+
+                    const content = `
+                        <div style="display: grid; gap: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-size: 1.5rem; font-weight: 700;">${t.ticker}</div>
+                                    <div style="color: var(--text-muted);">${t.theme || 'No theme'}</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.25rem; font-weight: 600; color: ${pnlColor};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%</div>
+                                    <div style="color: var(--text-muted);">${t.status}</div>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Shares</div>
+                                    <div style="font-weight: 600;">${t.total_shares}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Avg Cost</div>
+                                    <div style="font-weight: 600;">$${(t.average_cost || 0).toFixed(2)}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Current</div>
+                                    <div style="font-weight: 600;">$${(t.current_price || 0).toFixed(2)}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Days Held</div>
+                                    <div style="font-weight: 600;">${t.days_held}</div>
+                                </div>
+                            </div>
+
+                            ${t.thesis ? `<div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Thesis</div>
+                                <div style="font-size: 0.875rem;">${t.thesis}</div>
+                            </div>` : ''}
+
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Risk Level</div>
+                                    <div style="font-weight: 600;">${(t.current_risk_level || 'none').toUpperCase()}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Exit Confidence</div>
+                                    <div style="font-weight: 600;">${(t.composite_exit_confidence || 0).toFixed(0)}%</div>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Strategy</div>
+                                    <div style="font-weight: 600; text-transform: capitalize;">${t.scaling_plan?.strategy || 'conservative'}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Scale-ins</div>
+                                    <div style="font-weight: 600;">${t.scale_ins_used || 0}/${t.scaling_plan?.max_scale_ins || 3}</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">Scale-outs</div>
+                                    <div style="font-weight: 600;">${t.scale_outs_used || 0}</div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                <button class="btn btn-primary" onclick="showBuyModalFor('${t.id}', '${t.ticker}')" style="flex: 1;">Add Shares</button>
+                                <button class="btn btn-ghost" onclick="showSellModalFor('${t.id}', '${t.ticker}', ${t.total_shares})" style="flex: 1;">Sell Shares</button>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-body').innerHTML = content;
+                }
+            } catch (e) {
+                document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to load trade details</div>';
+            }
+        }
+
+        async function fetchDailyReport() {
+            openModal('Daily Report', '<div style="text-align: center; padding: 20px;">Generating report...</div>');
+
+            try {
+                const res = await fetch(`${API_BASE}/trades/daily-report`);
+                const data = await res.json();
+
+                if (data.ok && data.report) {
+                    document.getElementById('modal-body').innerHTML = `
+                        <div style="white-space: pre-wrap; line-height: 1.7; font-size: 0.875rem; font-family: monospace;">${data.report}</div>
+                    `;
+                } else {
+                    document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to generate report</div>';
+                }
+            } catch (e) {
+                document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to generate report</div>';
+            }
+        }
+
         async function refreshAll() {
             document.getElementById('last-update').textContent = 'Refreshing...';
 
@@ -1886,6 +2479,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchDeals(),
                 fetchThemeRadar(),
                 fetchThemeAlerts(),
+                fetchTrades(),
             ]);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {

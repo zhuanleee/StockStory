@@ -4938,5 +4938,383 @@ def api_intelligence_summary():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+# =============================================================================
+# TRADE MANAGEMENT API
+# =============================================================================
+
+@app.route('/api/trades')
+def api_trades():
+    """Get all trades (watchlist + open + closed)."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        include_closed = request.args.get('include_closed', 'false').lower() == 'true'
+
+        trades = tm.export_trades(include_closed=include_closed)
+
+        return jsonify({
+            'ok': True,
+            'trades': trades,
+            'summary': tm.get_portfolio_summary()
+        })
+    except Exception as e:
+        logger.error(f"Trades API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/positions')
+def api_trades_positions():
+    """Get open positions only."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        positions = [t.to_dict() for t in tm.get_open_trades()]
+
+        # Add current prices
+        for pos in positions:
+            try:
+                ticker = pos['ticker']
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period='1d')
+                if not hist.empty:
+                    current_price = float(hist['Close'].iloc[-1])
+                    pos['current_price'] = current_price
+                    if pos['average_cost'] > 0:
+                        pos['pnl_pct'] = ((current_price - pos['average_cost']) / pos['average_cost']) * 100
+                        pos['pnl_value'] = (current_price - pos['average_cost']) * pos['total_shares']
+            except:
+                pass
+
+        return jsonify({
+            'ok': True,
+            'positions': positions,
+            'count': len(positions)
+        })
+    except Exception as e:
+        logger.error(f"Positions API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/watchlist')
+def api_trades_watchlist():
+    """Get watchlist items."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        watchlist = [t.to_dict() for t in tm.get_watchlist()]
+
+        return jsonify({
+            'ok': True,
+            'watchlist': watchlist,
+            'count': len(watchlist)
+        })
+    except Exception as e:
+        logger.error(f"Watchlist API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/create', methods=['POST'])
+def api_trades_create():
+    """Create a new trade on watchlist."""
+    try:
+        from src.trading import TradeManager, ScalingStrategy
+        tm = TradeManager()
+
+        data = request.json or {}
+        ticker = data.get('ticker', '').upper()
+        thesis = data.get('thesis', '')
+        theme = data.get('theme', '')
+        catalyst = data.get('catalyst', '')
+        strategy = data.get('strategy', 'conservative')
+
+        if not ticker:
+            return jsonify({'ok': False, 'error': 'Ticker required'})
+
+        # Map strategy string to enum
+        strategy_map = {
+            'conservative': ScalingStrategy.CONSERVATIVE,
+            'aggressive': ScalingStrategy.AGGRESSIVE_PYRAMID,
+            'core_trade': ScalingStrategy.CORE_TRADE,
+            'momentum': ScalingStrategy.MOMENTUM_RIDER,
+        }
+        scaling_strategy = strategy_map.get(strategy, ScalingStrategy.CONSERVATIVE)
+
+        trade = tm.create_trade(
+            ticker=ticker,
+            thesis=thesis,
+            theme=theme,
+            catalyst=catalyst,
+            scaling_strategy=scaling_strategy,
+        )
+
+        return jsonify({
+            'ok': True,
+            'trade': trade.to_dict(),
+            'message': f'Created trade for {ticker}'
+        })
+    except Exception as e:
+        logger.error(f"Create trade API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/<trade_id>/buy', methods=['POST'])
+def api_trades_buy(trade_id):
+    """Add buy tranche to a trade."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        data = request.json or {}
+        shares = int(data.get('shares', 0))
+        price = float(data.get('price', 0))
+        reason = data.get('reason', 'Manual entry')
+
+        if shares <= 0 or price <= 0:
+            return jsonify({'ok': False, 'error': 'Invalid shares or price'})
+
+        tranche = tm.add_buy(trade_id, shares, price, reason)
+
+        if tranche:
+            trade = tm.get_trade(trade_id)
+            return jsonify({
+                'ok': True,
+                'tranche': tranche.to_dict(),
+                'trade': trade.to_dict() if trade else None,
+                'message': f'Bought {shares} shares @ ${price:.2f}'
+            })
+        return jsonify({'ok': False, 'error': 'Trade not found'})
+    except Exception as e:
+        logger.error(f"Buy API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/<trade_id>/sell', methods=['POST'])
+def api_trades_sell(trade_id):
+    """Add sell tranche to a trade."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        data = request.json or {}
+        shares = int(data.get('shares', 0))
+        price = float(data.get('price', 0))
+        reason = data.get('reason', 'Manual exit')
+
+        if shares <= 0 or price <= 0:
+            return jsonify({'ok': False, 'error': 'Invalid shares or price'})
+
+        tranche = tm.add_sell(trade_id, shares, price, reason)
+
+        if tranche:
+            trade = tm.get_trade(trade_id)
+            return jsonify({
+                'ok': True,
+                'tranche': tranche.to_dict(),
+                'trade': trade.to_dict() if trade else None,
+                'message': f'Sold {shares} shares @ ${price:.2f}'
+            })
+        return jsonify({'ok': False, 'error': 'Trade not found'})
+    except Exception as e:
+        logger.error(f"Sell API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/<trade_id>/close', methods=['POST'])
+def api_trades_close(trade_id):
+    """Close entire position."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        data = request.json or {}
+        price = float(data.get('price', 0))
+        reason = data.get('reason', 'Manual close')
+
+        if price <= 0:
+            return jsonify({'ok': False, 'error': 'Invalid price'})
+
+        trade = tm.get_trade(trade_id)
+        if not trade:
+            return jsonify({'ok': False, 'error': 'Trade not found'})
+
+        if tm.close_trade(trade_id, price, reason):
+            trade = tm.get_trade(trade_id)
+            return jsonify({
+                'ok': True,
+                'trade': trade.to_dict() if trade else None,
+                'message': f'Closed position'
+            })
+        return jsonify({'ok': False, 'error': 'Failed to close'})
+    except Exception as e:
+        logger.error(f"Close trade API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/<trade_id>')
+def api_trades_get(trade_id):
+    """Get single trade details."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        trade = tm.get_trade(trade_id)
+        if not trade:
+            return jsonify({'ok': False, 'error': 'Trade not found'})
+
+        # Get current price
+        current_price = None
+        try:
+            stock = yf.Ticker(trade.ticker)
+            hist = stock.history(period='1d')
+            if not hist.empty:
+                current_price = float(hist['Close'].iloc[-1])
+        except:
+            pass
+
+        return jsonify({
+            'ok': True,
+            'trade': tm.get_trade_summary(trade_id, current_price)
+        })
+    except Exception as e:
+        logger.error(f"Get trade API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/<trade_id>', methods=['DELETE'])
+def api_trades_delete(trade_id):
+    """Delete a trade."""
+    try:
+        from src.trading import TradeManager
+        tm = TradeManager()
+
+        if tm.delete_trade(trade_id):
+            return jsonify({'ok': True, 'message': 'Trade deleted'})
+        return jsonify({'ok': False, 'error': 'Trade not found'})
+    except Exception as e:
+        logger.error(f"Delete trade API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/scan')
+def api_trades_scan():
+    """Scan all positions for exit signals."""
+    try:
+        from src.trading import scan_positions
+
+        results = scan_positions()
+
+        return jsonify({
+            'ok': True,
+            **results
+        })
+    except Exception as e:
+        logger.error(f"Scan positions API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/scan/<ticker>')
+def api_trades_scan_ticker(ticker):
+    """Scan single ticker for exit signals."""
+    try:
+        from src.trading import scan_ticker
+
+        result = scan_ticker(ticker.upper())
+
+        if 'error' in result:
+            return jsonify({'ok': False, 'error': result['error']})
+
+        return jsonify({
+            'ok': True,
+            **result
+        })
+    except Exception as e:
+        logger.error(f"Scan ticker API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/risk')
+def api_trades_risk():
+    """Get portfolio risk assessment."""
+    try:
+        from src.trading import TradeManager, RiskAdvisor
+
+        tm = TradeManager()
+        advisor = RiskAdvisor()
+
+        positions = tm.get_open_trades()
+
+        if not positions:
+            return jsonify({
+                'ok': True,
+                'message': 'No open positions',
+                'risk_level': 'none',
+                'risk_score': 0
+            })
+
+        # Get current prices
+        current_prices = {}
+        for trade in positions:
+            try:
+                stock = yf.Ticker(trade.ticker)
+                hist = stock.history(period='1d')
+                if not hist.empty:
+                    current_prices[trade.ticker] = float(hist['Close'].iloc[-1])
+            except:
+                pass
+
+        # Estimate portfolio value
+        portfolio_value = sum(
+            trade.total_shares * current_prices.get(trade.ticker, trade.average_cost)
+            for trade in positions
+        )
+
+        risk = advisor.assess_portfolio_risk(
+            trades=positions,
+            current_prices=current_prices,
+            portfolio_value=portfolio_value
+        )
+
+        return jsonify({
+            'ok': True,
+            'overall_risk': risk['overall_risk'].value,
+            'risk_score': risk['risk_score'],
+            'high_risk_count': risk['high_risk_count'],
+            'trade_count': risk['trade_count'],
+            'high_risk_trades': [
+                {
+                    'ticker': t['ticker'],
+                    'risk_level': t['risk_level'].value,
+                    'confidence': t['confidence'],
+                    'urgency': t['urgency']
+                }
+                for t in risk.get('high_risk_trades', [])
+            ],
+            'recommendations': risk.get('recommendations', [])
+        })
+    except Exception as e:
+        logger.error(f"Risk API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/daily-report')
+def api_trades_daily_report():
+    """Generate daily position report."""
+    try:
+        from src.trading import get_daily_report
+
+        report = get_daily_report()
+
+        return jsonify({
+            'ok': True,
+            'report': report
+        })
+    except Exception as e:
+        logger.error(f"Daily report API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=config.port, debug=config.debug)
