@@ -551,7 +551,11 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
                 latest_scan = max(scan_files, key=lambda x: x.stat().st_mtime)
                 df = pd.read_csv(latest_scan)
                 if 'ticker' in df.columns and 'story_score' in df.columns:
-                    return dict(zip(df['ticker'].str.upper(), df['story_score'].fillna(0)))
+                    # Convert to Python floats to avoid numpy serialization issues
+                    return {
+                        str(t).upper(): float(s)
+                        for t, s in zip(df['ticker'], df['story_score'].fillna(0))
+                    }
         except Exception as e:
             logger.debug(f"Could not load story scores: {e}")
         return {}
@@ -563,10 +567,10 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
             stock = yf.Ticker(ticker)
             hist = stock.history(period=f'{days}d')
             if len(hist) >= 2:
-                return ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
+                return float((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
         except:
             pass
-        return 0
+        return 0.0
 
     def _validate_with_patents(self, tickers: List[str], theme_keywords: List[str]) -> float:
         """Validate theme with patent data."""
