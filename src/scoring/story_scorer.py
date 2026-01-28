@@ -117,23 +117,114 @@ def fetch_stocktwits_sentiment(ticker: str) -> dict:
         return {'sentiment': 'neutral', 'message_volume': 0, 'trending': False}
 
 
-def fetch_reddit_mentions(ticker: str) -> dict:
+def fetch_reddit_mentions(ticker: str, days_back: int = 7) -> dict:
     """
-    Fetch mentions from Reddit (r/wallstreetbets, r/stocks).
+    Fetch mentions from Reddit using xAI's web_search LiveSearch.
 
-    Uses public Reddit JSON API (no auth required).
+    Searches r/wallstreetbets, r/stocks, r/investing, r/options via Grok.
 
     Returns:
         - mention_count: number of recent mentions
-        - sentiment: estimated from upvotes/comments
+        - sentiment: estimated from post content
         - hot_posts: list of relevant posts
+    """
+    import os
+
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        logger.debug(f"XAI_API_KEY not set, falling back to direct Reddit API for {ticker}")
+        return _fetch_reddit_direct(ticker)
+
+    try:
+        from xai_sdk import Client
+        from xai_sdk.chat import user
+        from xai_sdk.tools import web_search
+
+        client = Client(api_key=api_key)
+        chat = client.chat.create(
+            model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+            tools=[web_search()],
+        )
+
+        # Search prompt for Reddit mentions
+        search_prompt = f"""Search Reddit for recent posts (last {days_back} days) about ${ticker} stock.
+
+Focus on these subreddits: r/wallstreetbets, r/stocks, r/investing, r/options
+
+Find posts discussing ${ticker} as an investment. Analyze the sentiment.
+
+Return a JSON summary:
+{{
+    "posts_found": 10,
+    "bullish_posts": 6,
+    "bearish_posts": 2,
+    "neutral_posts": 2,
+    "overall_sentiment": "bullish",
+    "total_upvotes": 5000,
+    "total_comments": 500,
+    "key_discussions": ["earnings expectations", "price targets"],
+    "hot_posts": [
+        {{"subreddit": "wallstreetbets", "title": "post title", "sentiment": "bullish", "upvotes": 1000}}
+    ]
+}}"""
+
+        chat.append(user(search_prompt))
+        response = chat.sample()
+        output_text = response.content
+
+        # Parse response
+        import json as json_module
+        json_match = re.search(r'\{[\s\S]*\}', output_text)
+        if not json_match:
+            logger.debug(f"No JSON found in xAI Reddit response for {ticker}")
+            return _fetch_reddit_direct(ticker)
+
+        data = json_module.loads(json_match.group())
+        posts_found = data.get('posts_found', 0)
+        bullish = data.get('bullish_posts', 0)
+        bearish = data.get('bearish_posts', 0)
+        overall = data.get('overall_sentiment', 'neutral')
+        hot_posts = data.get('hot_posts', [])
+
+        # Map sentiment
+        if overall == 'bullish':
+            sentiment = 'bullish'
+        elif overall == 'bearish':
+            sentiment = 'bearish'
+        elif posts_found > 0:
+            sentiment = 'neutral'
+        else:
+            sentiment = 'quiet'
+
+        return {
+            'mention_count': posts_found,
+            'total_score': data.get('total_upvotes', 0),
+            'total_comments': data.get('total_comments', 0),
+            'sentiment': sentiment,
+            'bullish_count': bullish,
+            'bearish_count': bearish,
+            'key_discussions': data.get('key_discussions', []),
+            'hot_posts': hot_posts[:3],
+        }
+
+    except ImportError:
+        logger.debug("xai_sdk not available, falling back to direct Reddit API")
+        return _fetch_reddit_direct(ticker)
+    except Exception as e:
+        logger.error(f"Reddit xAI fetch failed for {ticker}: {e}")
+        return _fetch_reddit_direct(ticker)
+
+
+def _fetch_reddit_direct(ticker: str) -> dict:
+    """
+    Fallback: Fetch mentions from Reddit using direct JSON API.
+    Often rate-limited but works as backup.
     """
     subreddits = ['wallstreetbets', 'stocks', 'investing', 'options']
     mentions = []
 
     for sub in subreddits:
         try:
-            # Search for ticker mentions in subreddit
             url = f"https://www.reddit.com/r/{sub}/search.json"
             params = {
                 'q': ticker,
@@ -153,7 +244,6 @@ def fetch_reddit_mentions(ticker: str) -> dict:
                     post_data = post.get('data', {})
                     title = post_data.get('title', '').upper()
 
-                    # Check if ticker is actually mentioned (not just substring)
                     if re.search(rf'\b{ticker}\b', title):
                         mentions.append({
                             'subreddit': sub,
@@ -163,15 +253,14 @@ def fetch_reddit_mentions(ticker: str) -> dict:
                             'created': post_data.get('created_utc', 0),
                         })
         except Exception as e:
-            logger.debug(f"Reddit fetch failed for {ticker} in r/{sub}: {e}")
+            logger.debug(f"Reddit direct fetch failed for {ticker} in r/{sub}: {e}")
             continue
 
-    # Calculate sentiment from engagement
     total_score = sum(m['score'] for m in mentions)
     total_comments = sum(m['num_comments'] for m in mentions)
 
     if len(mentions) >= 3 and total_score > 100:
-        sentiment = 'bullish'  # High engagement usually bullish on WSB
+        sentiment = 'bullish'
     elif len(mentions) >= 1:
         sentiment = 'neutral'
     else:
@@ -182,7 +271,7 @@ def fetch_reddit_mentions(ticker: str) -> dict:
         'total_score': total_score,
         'total_comments': total_comments,
         'sentiment': sentiment,
-        'hot_posts': mentions[:3],  # Top 3 posts
+        'hot_posts': mentions[:3],
     }
 
 
