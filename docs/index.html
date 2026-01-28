@@ -1502,45 +1502,51 @@
         </div>
     </div>
 
+    <!-- Socket.IO Client Library -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
     <script>
         const API_BASE = 'https://web-production-46562.up.railway.app/api';
 
         // =============================================================================
-        // WEBSOCKET SYNC CLIENT
+        // SOCKET.IO SYNC CLIENT
         // =============================================================================
 
         class SyncClient {
             constructor() {
-                this.ws = null;
+                this.socket = null;
                 this.clientId = null;
                 this.connected = false;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 5;
-                this.reconnectDelay = 2000;
-                this.heartbeatInterval = null;
                 this.eventHandlers = {};
-                this.pendingEvents = [];
             }
 
-            async connect() {
+            connect() {
                 try {
-                    // Get WebSocket URL from config
-                    const configRes = await fetch(`${API_BASE}/sync/config`);
-                    const config = await configRes.json();
+                    // Connect to same origin (API server) with Socket.IO
+                    const serverUrl = API_BASE.replace('/api', '');
+                    console.log('Connecting to sync server:', serverUrl);
 
-                    if (!config.ok) {
-                        console.warn('Sync config not available');
-                        this.updateSyncStatus('unavailable');
-                        return;
-                    }
+                    this.socket = io(serverUrl, {
+                        transports: ['websocket', 'polling'],
+                        reconnection: true,
+                        reconnectionAttempts: 10,
+                        reconnectionDelay: 2000,
+                        reconnectionDelayMax: 10000,
+                        timeout: 20000,
+                    });
 
-                    const wsUrl = config.websocket_url || 'wss://stock-scanner-bot-ws.onrender.com';
-                    this.ws = new WebSocket(wsUrl);
+                    // Connection events
+                    this.socket.on('connect', () => this.onConnect());
+                    this.socket.on('disconnect', (reason) => this.onDisconnect(reason));
+                    this.socket.on('connect_error', (error) => this.onError(error));
 
-                    this.ws.onopen = () => this.onOpen();
-                    this.ws.onclose = (e) => this.onClose(e);
-                    this.ws.onerror = (e) => this.onError(e);
-                    this.ws.onmessage = (e) => this.onMessage(e);
+                    // Sync events
+                    this.socket.on('connected', (data) => this.handleConnected(data));
+                    this.socket.on('sync_history', (data) => this.handleSyncHistory(data));
+                    this.socket.on('sync_event', (data) => this.handleSyncEvent(data));
+                    this.socket.on('status', (data) => this.handleStatus(data));
+                    this.socket.on('heartbeat_ack', () => {});
+                    this.socket.on('error', (data) => console.error('Sync error:', data));
 
                 } catch (e) {
                     console.warn('Failed to connect to sync server:', e);
@@ -1548,107 +1554,59 @@
                 }
             }
 
-            onOpen() {
-                console.log('Sync connected');
+            onConnect() {
+                console.log('Socket.IO connected');
                 this.connected = true;
-                this.reconnectAttempts = 0;
                 this.updateSyncStatus('connected');
-
-                // Start heartbeat
-                this.heartbeatInterval = setInterval(() => {
-                    if (this.connected) {
-                        this.send({ type: 'heartbeat' });
-                    }
-                }, 30000);
-
-                // Send pending events
-                while (this.pendingEvents.length > 0) {
-                    const event = this.pendingEvents.shift();
-                    this.send(event);
-                }
             }
 
-            onClose(event) {
-                console.log('Sync disconnected:', event.code);
+            onDisconnect(reason) {
+                console.log('Socket.IO disconnected:', reason);
                 this.connected = false;
                 this.updateSyncStatus('disconnected');
-
-                if (this.heartbeatInterval) {
-                    clearInterval(this.heartbeatInterval);
-                }
-
-                // Attempt reconnect
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    this.reconnectAttempts++;
-                    const delay = this.reconnectDelay * this.reconnectAttempts;
-                    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-                    setTimeout(() => this.connect(), delay);
-                }
             }
 
             onError(error) {
-                console.error('Sync error:', error);
+                console.warn('Socket.IO error:', error.message || error);
                 this.updateSyncStatus('error');
             }
 
-            onMessage(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    this.handleMessage(data);
-                } catch (e) {
-                    console.warn('Invalid sync message:', e);
+            handleConnected(data) {
+                this.clientId = data.client_id;
+                console.log('Sync client ID:', this.clientId);
+                this.showNotification('Sync Connected', 'Real-time Telegram sync active', 'success');
+            }
+
+            handleSyncHistory(data) {
+                const events = data.events || [];
+                console.log(`Received ${events.length} historical events`);
+                events.forEach(event => this.processEvent(event, false));
+            }
+
+            handleSyncEvent(data) {
+                const event = data.event;
+                if (event) {
+                    this.processEvent(event, true);
                 }
             }
 
-            handleMessage(data) {
-                const type = data.type;
-
-                switch (type) {
-                    case 'connected':
-                        this.clientId = data.client_id;
-                        console.log('Sync client ID:', this.clientId);
-                        this.showNotification('Sync Connected', 'Real-time sync active', 'success');
-                        break;
-
-                    case 'sync_history':
-                        // Process historical events
-                        (data.events || []).forEach(event => {
-                            this.processEvent(event, false);
-                        });
-                        break;
-
-                    case 'sync_event':
-                        // Process new event
-                        this.processEvent(data.event, true);
-                        break;
-
-                    case 'heartbeat_ack':
-                        // Heartbeat acknowledged
-                        break;
-
-                    case 'status':
-                        // Sync status update
-                        this.updateSyncStatusDetails(data.status);
-                        break;
-                }
-
-                // Call registered handlers
-                if (this.eventHandlers[type]) {
-                    this.eventHandlers[type].forEach(handler => handler(data));
-                }
+            handleStatus(data) {
+                this.updateSyncStatusDetails(data);
             }
 
             processEvent(event, notify = true) {
                 const eventType = event.event_type;
                 const source = event.source;
-                const payload = event.payload;
+                const payload = event.payload || {};
+
+                console.log(`Sync event: ${eventType} from ${source}`);
 
                 // Handle different event types
                 switch (eventType) {
                     case 'trade_created':
                         if (source === 'telegram' && notify) {
                             this.showNotification('Trade Added (Telegram)', `${payload.ticker} added to watchlist`, 'info');
-                            fetchTrades(); // Refresh trades
+                            fetchTrades();
                         }
                         break;
 
@@ -1674,7 +1632,7 @@
 
                     case 'journal_added':
                         if (source === 'telegram' && notify) {
-                            this.showNotification('Journal Entry (Telegram)', `${payload.entry_type}: ${payload.content?.slice(0, 50)}...`, 'info');
+                            this.showNotification('Journal Entry (Telegram)', `${payload.entry_type}: ${(payload.content || '').slice(0, 50)}...`, 'info');
                             fetchJournal();
                         }
                         break;
@@ -1723,23 +1681,28 @@
                 if (this.connected && this.ws) {
                     this.ws.send(JSON.stringify(data));
                 } else {
-                    this.pendingEvents.push(data);
-                }
-            }
-
+            // Publish event to server
             publish(eventType, payload) {
-                this.send({
-                    type: 'publish',
-                    event_type: eventType,
-                    payload: payload
-                });
+                if (this.socket && this.connected) {
+                    this.socket.emit('publish', {
+                        event_type: eventType,
+                        payload: payload
+                    });
+                }
             }
 
-            on(eventType, handler) {
-                if (!this.eventHandlers[eventType]) {
-                    this.eventHandlers[eventType] = [];
+            // Request sync status
+            requestStatus() {
+                if (this.socket && this.connected) {
+                    this.socket.emit('get_status');
                 }
-                this.eventHandlers[eventType].push(handler);
+            }
+
+            // Acknowledge event receipt
+            ack(eventId) {
+                if (this.socket && this.connected) {
+                    this.socket.emit('ack', { event_id: eventId });
+                }
             }
 
             updateSyncStatus(status) {

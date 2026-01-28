@@ -35,6 +35,17 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
+# Initialize SocketIO for real-time sync
+socketio = None
+try:
+    from src.sync.socketio_server import init_socketio
+    socketio = init_socketio(app)
+    logger.info("SocketIO sync enabled")
+except ImportError as e:
+    logger.warning(f"SocketIO not available: {e}")
+except Exception as e:
+    logger.warning(f"SocketIO init failed: {e}")
+
 
 # Global error handler to return JSON instead of HTML on errors
 @app.errorhandler(500)
@@ -5513,8 +5524,8 @@ def _add_activity(message: str, activity_type: str = 'general'):
 def _publish_sync_event(event_type: str, payload: dict):
     """Publish a sync event to Telegram and connected dashboards."""
     try:
-        import asyncio
-        from src.sync import get_sync_hub, EventType, SyncSource
+        from src.sync import get_sync_hub, EventType, SyncSource, broadcast_event
+        from src.sync.socketio_server import _send_to_telegram_sync
 
         hub = get_sync_hub()
 
@@ -5527,13 +5538,20 @@ def _publish_sync_event(event_type: str, payload: dict):
 
         event = hub.create_event(et, SyncSource.DASHBOARD, payload)
 
-        # Run async publish in sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Store event
+        hub.event_store.add(event)
+
+        # Broadcast to connected dashboards via SocketIO
         try:
-            loop.run_until_complete(hub.publish(event))
-        finally:
-            loop.close()
+            broadcast_event(event)
+        except Exception as e:
+            logger.debug(f"SocketIO broadcast failed: {e}")
+
+        # Send to Telegram
+        try:
+            _send_to_telegram_sync(hub, event)
+        except Exception as e:
+            logger.debug(f"Telegram send failed: {e}")
 
         logger.info(f"Published sync event: {event_type}")
 
@@ -5707,4 +5725,9 @@ def api_sync_config():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=config.port, debug=config.debug)
+    if socketio:
+        # Run with SocketIO for real-time sync support
+        socketio.run(app, host='0.0.0.0', port=config.port, debug=config.debug)
+    else:
+        # Fallback to regular Flask
+        app.run(host='0.0.0.0', port=config.port, debug=config.debug)
