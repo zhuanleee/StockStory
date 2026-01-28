@@ -484,18 +484,31 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         - sources: breakdown by source
         - trending: bool
     """
-    # Fetch from all sources
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # Quick fetches (non-xAI)
     stocktwits = fetch_stocktwits_sentiment(ticker)
-    reddit = fetch_reddit_mentions(ticker)
     sec = fetch_sec_filings(ticker)
 
-    # Fetch X/Twitter sentiment (optional, requires XAI_API_KEY)
+    # xAI calls in parallel (Reddit + X both use xAI, can take 30-60s each)
+    reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
     x_data = {'post_count': 0, 'engagement_score': 0, 'sentiment': 'unknown'}
-    if include_x:
-        try:
-            x_data = fetch_x_sentiment(ticker, days_back=7)
-        except Exception as e:
-            logger.debug(f"X sentiment fetch failed for {ticker}: {e}")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {}
+        futures['reddit'] = executor.submit(fetch_reddit_mentions, ticker)
+        if include_x:
+            futures['x'] = executor.submit(fetch_x_sentiment, ticker, 7)
+
+        for key, future in futures.items():
+            try:
+                result = future.result(timeout=90)
+                if key == 'reddit':
+                    reddit = result
+                elif key == 'x':
+                    x_data = result
+            except Exception as e:
+                logger.debug(f"{key} fetch failed for {ticker}: {e}")
 
     # Calculate component scores using learned thresholds
     st_score = 0
