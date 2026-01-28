@@ -1462,10 +1462,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     console.log('Connecting to sync server:', serverUrl);
 
                     this.socket = io(serverUrl, {
-                        transports: ['polling', 'websocket'],  // Try polling first
+                        transports: ['polling'],  // Polling only - WebSocket upgrade fails on Railway
                         secure: isSecure,
                         reconnection: true,
-                        reconnectionAttempts: 3,  // Reduced attempts
+                        reconnectionAttempts: 3,
                         reconnectionDelay: 3000,
                         reconnectionDelayMax: 10000,
                         timeout: 10000,
