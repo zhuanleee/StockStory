@@ -1437,6 +1437,8 @@ def home():
         'bot': 'Stock Scanner Bot',
         'status': 'running',
         'version': '2.0',
+        'telegram_configured': bool(os.environ.get('TELEGRAM_BOT_TOKEN')),
+        'chat_id_configured': bool(os.environ.get('TELEGRAM_CHAT_ID')),
         'timestamp': datetime.now().isoformat()
     })
 
