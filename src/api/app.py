@@ -231,7 +231,10 @@ def handle_help(chat_id):
     msg += "• `/patents` → Patent filings analysis\n"
     msg += "• `/patents NVDA` → Company patent lookup\n"
     msg += "• `/contracts` → Gov contract awards\n"
-    msg += "• `/contracts nuclear` → Theme contracts\n"
+    msg += "• `/contracts nuclear` → Theme contracts\n\n"
+
+    msg += "*⚙️ System:*\n"
+    msg += "• `/apistatus` → Check all API integrations\n"
 
     send_message(chat_id, msg)
 
@@ -1430,6 +1433,10 @@ def process_message(message):
         handle_contracts(chat_id)
     elif text_lower.startswith('/contracts '):
         handle_contracts(chat_id, text[11:].strip())
+
+    # System Commands
+    elif text_lower == '/apistatus':
+        handle_apistatus(chat_id)
 
     # Ticker lookup (1-5 letter word)
     elif len(text) <= 5 and text.replace('.', '').isalpha():
@@ -3832,6 +3839,91 @@ def handle_contracts(chat_id, query=None):
         send_message(chat_id, f"Error: {e}")
 
 
+def handle_apistatus(chat_id):
+    """Handle /apistatus command - Show all API integration status."""
+    import os
+    from config import config
+
+    msg = "⚙️ *API INTEGRATION STATUS*\n\n"
+
+    # AI Providers
+    msg += "*🤖 AI Providers:*\n"
+    if config.ai.has_deepseek:
+        msg += f"✅ DeepSeek (`{config.ai.model}`)\n"
+    else:
+        msg += "❌ DeepSeek - not configured\n"
+
+    if config.ai.has_xai:
+        msg += f"✅ xAI/Grok (`{config.ai.xai_model}`)\n"
+    else:
+        msg += "❌ xAI/Grok - not configured\n"
+    msg += "\n"
+
+    # Polygon
+    msg += "*📊 Market Data:*\n"
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key and len(polygon_key) > 10:
+        msg += "✅ Polygon.io (prices, options, news)\n"
+    else:
+        msg += "❌ Polygon.io - not configured\n"
+    msg += "\n"
+
+    # Data Providers
+    msg += "*📈 Data Providers:*\n"
+    try:
+        from utils.data_providers import check_provider_status
+        providers = check_provider_status()
+
+        if providers.get('finnhub'):
+            msg += "✅ Finnhub (quotes, news, sentiment)\n"
+        else:
+            msg += "❌ Finnhub - not configured\n"
+
+        if providers.get('tiingo'):
+            msg += "✅ Tiingo (EOD prices, news)\n"
+        else:
+            msg += "❌ Tiingo - not configured\n"
+
+        if providers.get('alpha_vantage'):
+            msg += "✅ Alpha Vantage (fundamentals)\n"
+        else:
+            msg += "❌ Alpha Vantage - not configured\n"
+
+        if providers.get('fred'):
+            msg += "✅ FRED (economic data)\n"
+        else:
+            msg += "❌ FRED - not configured\n"
+
+        msg += "✅ SEC EDGAR (filings, always available)\n"
+    except ImportError:
+        msg += "⚠️ Data providers module not loaded\n"
+    msg += "\n"
+
+    # Telegram
+    msg += "*📱 Telegram:*\n"
+    if config.telegram.is_configured:
+        msg += "✅ Bot configured\n"
+    else:
+        msg += "❌ Bot not configured\n"
+
+    if config.telegram.chat_id:
+        msg += "✅ Chat ID set (alerts enabled)\n"
+    else:
+        msg += "⚠️ Chat ID not set (no auto-alerts)\n"
+
+    # Summary
+    ai_count = (1 if config.ai.has_deepseek else 0) + (1 if config.ai.has_xai else 0)
+    try:
+        data_count = sum(1 for v in providers.values() if v)
+    except:
+        data_count = 0
+    polygon_count = 1 if (polygon_key and len(polygon_key) > 10) else 0
+
+    msg += f"\n*📋 Summary:* {ai_count + data_count + polygon_count} APIs active"
+
+    send_message(chat_id, msg)
+
+
 def handle_smartmoney(chat_id):
     """Handle /smartmoney command - Combined institutional intelligence."""
     try:
@@ -4260,6 +4352,110 @@ def api_polygon_status():
         except Exception as e:
             status['api_working'] = False
             status['error'] = str(e)
+
+    return jsonify(status)
+
+
+@app.route('/api/status')
+def api_status():
+    """
+    Comprehensive API status endpoint showing all integrations.
+
+    Returns status of:
+    - AI providers (DeepSeek, xAI/Grok)
+    - Data providers (Polygon, Finnhub, Tiingo, Alpha Vantage, FRED)
+    - SEC EDGAR (always available)
+    - Telegram
+    """
+    import os
+    from config import config
+
+    status = {
+        'ok': True,
+        'timestamp': datetime.now().isoformat(),
+        'services': {}
+    }
+
+    # AI Providers
+    status['services']['ai'] = {
+        'deepseek': {
+            'configured': config.ai.has_deepseek,
+            'model': config.ai.model if config.ai.has_deepseek else None,
+            'description': 'Primary AI for analysis and insights'
+        },
+        'xai_grok': {
+            'configured': config.ai.has_xai,
+            'model': config.ai.xai_model if config.ai.has_xai else None,
+            'description': 'Secondary AI, optimized for heavy tasks'
+        }
+    }
+
+    # Polygon
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    polygon_configured = bool(polygon_key and len(polygon_key) > 10)
+    status['services']['polygon'] = {
+        'configured': polygon_configured,
+        'features': ['price_data', 'options_flow', 'news', 'financials', 'universe'] if polygon_configured else [],
+        'description': 'Premium market data and options flow'
+    }
+
+    # Data Providers from utils/data_providers.py
+    try:
+        from utils.data_providers import check_provider_status
+        providers = check_provider_status()
+        status['services']['data_providers'] = {
+            'finnhub': {
+                'configured': providers.get('finnhub', False),
+                'rate_limit': '60 req/min' if providers.get('finnhub') else None,
+                'features': ['real_time_quotes', 'news', 'sentiment', 'earnings'] if providers.get('finnhub') else [],
+                'description': 'Real-time quotes, news, and sentiment'
+            },
+            'tiingo': {
+                'configured': providers.get('tiingo', False),
+                'rate_limit': '1000 req/day' if providers.get('tiingo') else None,
+                'features': ['eod_prices', 'news', 'fundamentals'] if providers.get('tiingo') else [],
+                'description': 'EOD prices and curated news'
+            },
+            'alpha_vantage': {
+                'configured': providers.get('alpha_vantage', False),
+                'rate_limit': '25 req/day' if providers.get('alpha_vantage') else None,
+                'features': ['fundamentals', 'technical_indicators', 'earnings'] if providers.get('alpha_vantage') else [],
+                'description': 'Company fundamentals and technicals'
+            },
+            'fred': {
+                'configured': providers.get('fred', False),
+                'rate_limit': 'unlimited' if providers.get('fred') else None,
+                'features': ['economic_indicators', 'interest_rates', 'employment'] if providers.get('fred') else [],
+                'description': 'Federal Reserve economic data'
+            },
+            'sec_edgar': {
+                'configured': True,  # Always available, no key needed
+                'rate_limit': 'unlimited',
+                'features': ['filings', 'insider_trades', 'institutional_holdings'],
+                'description': 'Official SEC filings and transactions'
+            }
+        }
+    except ImportError:
+        status['services']['data_providers'] = {'error': 'data_providers module not available'}
+
+    # Telegram
+    status['services']['telegram'] = {
+        'configured': config.telegram.is_configured,
+        'chat_id_set': bool(config.telegram.chat_id),
+        'description': 'Telegram bot for alerts and commands'
+    }
+
+    # Summary counts
+    ai_count = sum(1 for k, v in status['services'].get('ai', {}).items() if isinstance(v, dict) and v.get('configured'))
+    data_count = sum(1 for k, v in status['services'].get('data_providers', {}).items() if isinstance(v, dict) and v.get('configured'))
+
+    status['summary'] = {
+        'ai_providers': f"{ai_count}/2 configured",
+        'data_providers': f"{data_count}/5 configured",
+        'polygon': 'configured' if polygon_configured else 'not configured',
+        'telegram': 'configured' if config.telegram.is_configured else 'not configured',
+        'total_apis': ai_count + data_count + (1 if polygon_configured else 0) + (1 if config.telegram.is_configured else 0)
+    }
 
     return jsonify(status)
 
