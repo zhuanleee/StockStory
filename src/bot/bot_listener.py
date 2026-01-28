@@ -5,6 +5,7 @@ Processes incoming Telegram commands using cached scan results.
 """
 
 import os
+import sys
 import json
 import logging
 import requests
@@ -12,6 +13,10 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import glob
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -197,6 +202,18 @@ def handle_commands():
                     msg = f"*Status:* {len(df_results)} stocks in database\n"
                     msg += f"Last updated: Check scan file date"
                 send_telegram_message(msg)
+
+            # Trade management commands
+            elif text.startswith('/'):
+                try:
+                    from src.trading.telegram_commands import handle_trade_command
+                    response = handle_trade_command(text)
+                    if response:
+                        send_telegram_message(response)
+                except ImportError as e:
+                    logger.debug(f"Trade commands not available: {e}")
+                except Exception as e:
+                    logger.error(f"Error handling trade command: {e}")
 
         # Update offset
         with open(OFFSET_FILE, 'w') as f:
