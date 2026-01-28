@@ -19,6 +19,7 @@ Data Sources:
 - DeepSeek AI - Sentiment analysis
 - StockTwits - Social sentiment & retail buzz
 - Reddit (r/wallstreetbets, r/stocks) - Retail momentum
+- X/Twitter - Real-time social sentiment via xAI x_search (engagement-weighted)
 - SEC EDGAR - Institutional filings (13F, 8-K)
 """
 import requests
@@ -185,6 +186,210 @@ def fetch_reddit_mentions(ticker: str) -> dict:
     }
 
 
+def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
+    """
+    Fetch sentiment from X/Twitter using xAI's x_search tool.
+
+    Uses xAI Agent Tools API with x_search capability.
+    Weights engagement: likes 55%, reposts 25%, replies 15%, quotes 5%.
+
+    Returns:
+        - post_count: number of relevant posts found
+        - engagement_score: weighted engagement (0-100)
+        - sentiment: 'bullish', 'bearish', or 'neutral'
+        - top_posts: list of high-engagement posts
+    """
+    import os
+    import math
+    from datetime import datetime, timedelta
+
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        logger.debug(f"XAI_API_KEY not set, skipping X sentiment for {ticker}")
+        return {
+            'post_count': 0,
+            'engagement_score': 0,
+            'sentiment': 'unknown',
+            'top_posts': [],
+            'error': 'XAI_API_KEY not configured'
+        }
+
+    try:
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days_back)
+        from_date = start_date.strftime('%Y-%m-%d')
+        to_date = end_date.strftime('%Y-%m-%d')
+
+        # xAI Agent Tools API endpoint for x_search
+        url = "https://api.x.ai/v1/responses"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        # Build search prompt
+        search_prompt = f"""Search X/Twitter for posts about ${ticker} stock from {from_date} to {to_date}.
+
+Find 5-15 relevant posts discussing ${ticker} as a stock/investment.
+Focus on posts with meaningful engagement (likes, reposts, replies).
+
+For each post found, extract:
+- text: the post content
+- url: link to the post
+- likes: number of likes
+- reposts: number of reposts
+- replies: number of replies
+- quotes: number of quote tweets
+- date: when posted
+- sentiment: bullish, bearish, or neutral based on content
+
+Return as JSON:
+{{
+    "items": [
+        {{
+            "text": "post content",
+            "url": "https://x.com/...",
+            "likes": 100,
+            "reposts": 20,
+            "replies": 15,
+            "quotes": 5,
+            "date": "2025-01-20",
+            "sentiment": "bullish"
+        }}
+    ]
+}}"""
+
+        payload = {
+            "model": os.environ.get('XAI_MODEL', 'grok-2-latest'),
+            "tools": [{"type": "x_search"}],
+            "input": [
+                {
+                    "role": "user",
+                    "content": search_prompt,
+                }
+            ],
+        }
+
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+
+        if resp.status_code != 200:
+            logger.warning(f"xAI x_search failed for {ticker}: {resp.status_code}")
+            return {
+                'post_count': 0,
+                'engagement_score': 0,
+                'sentiment': 'unknown',
+                'top_posts': [],
+                'error': f'API error: {resp.status_code}'
+            }
+
+        result = resp.json()
+
+        # Parse response - extract output text from nested structure
+        output_text = ""
+        if 'output' in result:
+            for item in result.get('output', []):
+                if item.get('type') == 'message':
+                    for content in item.get('content', []):
+                        if content.get('type') == 'output_text':
+                            output_text = content.get('text', '')
+                            break
+
+        # Extract JSON from response
+        import json as json_module
+        json_match = re.search(r'\{[\s\S]*"items"[\s\S]*\}', output_text)
+        if not json_match:
+            logger.debug(f"No JSON found in xAI response for {ticker}")
+            return {
+                'post_count': 0,
+                'engagement_score': 0,
+                'sentiment': 'unknown',
+                'top_posts': [],
+            }
+
+        data = json_module.loads(json_match.group())
+        posts = data.get('items', [])
+
+        if not posts:
+            return {
+                'post_count': 0,
+                'engagement_score': 0,
+                'sentiment': 'neutral',
+                'top_posts': [],
+            }
+
+        # Calculate engagement-weighted scores
+        # Weights: likes 55%, reposts 25%, replies 15%, quotes 5%
+        def log1p_safe(x):
+            try:
+                return math.log1p(max(0, x or 0))
+            except:
+                return 0
+
+        def calc_engagement(post):
+            likes = post.get('likes', 0) or 0
+            reposts = post.get('reposts', 0) or 0
+            replies = post.get('replies', 0) or 0
+            quotes = post.get('quotes', 0) or 0
+
+            raw = (
+                0.55 * log1p_safe(likes) +
+                0.25 * log1p_safe(reposts) +
+                0.15 * log1p_safe(replies) +
+                0.05 * log1p_safe(quotes)
+            )
+            return raw
+
+        # Score each post
+        scored_posts = []
+        for post in posts:
+            eng = calc_engagement(post)
+            scored_posts.append({
+                **post,
+                'engagement_raw': eng
+            })
+
+        # Sort by engagement
+        scored_posts.sort(key=lambda x: x['engagement_raw'], reverse=True)
+
+        # Calculate overall engagement score (0-100)
+        # Normalize: log1p(1000 likes) ≈ 6.9, so max raw ≈ 4-5 for typical posts
+        total_engagement = sum(p['engagement_raw'] for p in scored_posts)
+        avg_engagement = total_engagement / len(scored_posts) if scored_posts else 0
+        engagement_score = min(100, int(avg_engagement * 15))  # Scale to 0-100
+
+        # Determine overall sentiment
+        sentiments = [p.get('sentiment', 'neutral') for p in posts]
+        bullish = sentiments.count('bullish')
+        bearish = sentiments.count('bearish')
+
+        if bullish > bearish * 2:
+            sentiment = 'bullish'
+        elif bearish > bullish * 2:
+            sentiment = 'bearish'
+        else:
+            sentiment = 'neutral'
+
+        return {
+            'post_count': len(posts),
+            'engagement_score': engagement_score,
+            'sentiment': sentiment,
+            'bullish_count': bullish,
+            'bearish_count': bearish,
+            'top_posts': scored_posts[:3],
+        }
+
+    except Exception as e:
+        logger.error(f"X sentiment fetch failed for {ticker}: {e}")
+        return {
+            'post_count': 0,
+            'engagement_score': 0,
+            'sentiment': 'unknown',
+            'top_posts': [],
+            'error': str(e)
+        }
+
+
 def fetch_sec_filings(ticker: str) -> dict:
     """
     Fetch recent SEC filings from EDGAR.
@@ -252,9 +457,15 @@ def fetch_sec_filings(ticker: str) -> dict:
         return {'recent_filings': [], 'has_8k': False, 'insider_activity': False}
 
 
-def get_social_buzz_score(ticker: str) -> dict:
+def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     """
     Combine all social sources into a unified buzz score.
+
+    Sources:
+        - StockTwits: Retail trader sentiment
+        - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options
+        - X/Twitter: Via xAI x_search (engagement-weighted)
+        - SEC: 8-K filings, insider activity
 
     Returns:
         - buzz_score: 0-100
@@ -265,6 +476,14 @@ def get_social_buzz_score(ticker: str) -> dict:
     stocktwits = fetch_stocktwits_sentiment(ticker)
     reddit = fetch_reddit_mentions(ticker)
     sec = fetch_sec_filings(ticker)
+
+    # Fetch X/Twitter sentiment (optional, requires XAI_API_KEY)
+    x_data = {'post_count': 0, 'engagement_score': 0, 'sentiment': 'unknown'}
+    if include_x:
+        try:
+            x_data = fetch_x_sentiment(ticker, days_back=7)
+        except Exception as e:
+            logger.debug(f"X sentiment fetch failed for {ticker}: {e}")
 
     # Calculate component scores using learned thresholds
     st_score = 0
@@ -291,19 +510,38 @@ def get_social_buzz_score(ticker: str) -> dict:
     elif reddit['total_score'] > params.threshold_reddit_score_medium():
         reddit_score += params.score_stocktwits_low()
 
+    # X/Twitter score (engagement-weighted)
+    x_score = 0
+    if x_data.get('post_count', 0) > 0:
+        # Base score from engagement (already 0-100)
+        x_score = min(30, x_data.get('engagement_score', 0) * 0.3)  # Cap at 30 pts
+
+        # Sentiment boost
+        if x_data.get('sentiment') == 'bullish':
+            x_score += 10
+        elif x_data.get('sentiment') == 'bearish':
+            x_score -= 5  # Slight penalty for bearish
+
+        # Volume boost for high post count
+        if x_data.get('post_count', 0) >= 10:
+            x_score += 5
+        elif x_data.get('post_count', 0) >= 5:
+            x_score += 2
+
     sec_score = 0
     if sec['has_8k']:
         sec_score += params.score_sec_8k()  # Material event
     if sec['insider_activity']:
         sec_score += params.score_sec_insider()  # Insider buying/selling
 
-    # Combined buzz score
-    buzz_score = min(100, st_score + reddit_score + sec_score)
+    # Combined buzz score (now includes X/Twitter)
+    buzz_score = min(100, st_score + reddit_score + x_score + sec_score)
 
     # Is it trending?
     trending = (
         stocktwits.get('trending', False) or
         reddit['mention_count'] >= params.threshold_trending_reddit_mentions() or
+        x_data.get('engagement_score', 0) >= 50 or  # High X engagement
         sec['has_8k']
     )
 
@@ -312,7 +550,14 @@ def get_social_buzz_score(ticker: str) -> dict:
         'trending': trending,
         'stocktwits': stocktwits,
         'reddit': reddit,
+        'x_twitter': x_data,  # New: X/Twitter data
         'sec': sec,
+        'component_scores': {  # New: breakdown for debugging
+            'stocktwits': st_score,
+            'reddit': reddit_score,
+            'x_twitter': x_score,
+            'sec': sec_score,
+        }
     }
 
 
