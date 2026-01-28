@@ -274,7 +274,7 @@ Return as JSON:
             ],
         }
 
-        resp = requests.post(url, json=payload, headers=headers, timeout=90)
+        resp = requests.post(url, json=payload, headers=headers, timeout=45)
 
         if resp.status_code != 200:
             error_text = resp.text[:500] if resp.text else 'No response body'
