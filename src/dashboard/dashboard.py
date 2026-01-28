@@ -2149,29 +2149,73 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         // Supply Chain Discovery Functions
         async function fetchSupplyChain() {
             try {
-                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Scanning supply chains...</div>';
+                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">🤖 AI analyzing market data...</div>';
 
-                const res = await fetch(`${API_BASE}/supplychain/themes`);
-                const data = await res.json();
+                // Try AI-driven discovery first
+                let data = null;
+                try {
+                    const aiRes = await fetch(`${API_BASE}/supplychain/ai-discover`);
+                    data = await aiRes.json();
+                } catch (e) {
+                    console.warn('AI discovery failed, trying static:', e);
+                }
 
-                if (data.ok && data.themes && data.themes.length > 0) {
+                // Fallback to static themes if AI fails
+                if (!data || !data.ok || !data.opportunities || data.opportunities.length === 0) {
+                    const staticRes = await fetch(`${API_BASE}/supplychain/themes`);
+                    data = await staticRes.json();
+                    data.isStatic = true;
+                }
+
+                if (data.ok) {
                     let html = '';
-                    const stageEmoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'};
 
-                    for (const theme of data.themes.slice(0, 5)) {
-                        const emoji = stageEmoji[theme.lifecycle_stage] || '⚪';
-                        html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showSupplyChainDetail('${theme.theme_id}')">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                    // AI-driven opportunities
+                    if (data.opportunities && data.opportunities.length > 0) {
+                        const themeGroups = {};
+                        for (const opp of data.opportunities) {
+                            const theme = opp.theme || 'Unknown';
+                            if (!themeGroups[theme]) themeGroups[theme] = [];
+                            themeGroups[theme].push(opp);
+                        }
+
+                        for (const [theme, opps] of Object.entries(themeGroups).slice(0, 4)) {
+                            const topOpp = opps[0];
+                            const confEmoji = topOpp.confidence > 75 ? '🔥' : topOpp.confidence > 50 ? '🌱' : '👀';
+
+                            html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showAIOpportunity('${encodeURIComponent(JSON.stringify(opps.slice(0, 5)))}')">
                                 <div>
-                                    <span style="font-weight: 600;">${emoji} ${theme.theme_name}</span>
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">${theme.laggard_count} lagging plays</div>
+                                    <span style="font-weight: 600;">${confEmoji} ${theme}</span>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">${opps.length} opportunities</div>
+                                    <div style="font-size: 0.7rem; color: var(--green);">Top: ${opps.slice(0, 2).map(o => o.ticker).join(', ')}</div>
                                 </div>
-                                <span style="color: var(--green); font-size: 0.8rem;">${theme.opportunity_score.toFixed(0)}</span>
-                            </div>
-                        </div>`;
+                            </div>`;
+                        }
+
+                        html += `<div style="font-size: 0.7rem; color: var(--blue); margin-top: 8px;">🤖 AI-analyzed • ${data.opportunities.length} total</div>`;
+                    }
+                    // Static theme mapping
+                    else if (data.themes && data.themes.length > 0) {
+                        const stageEmoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'};
+
+                        for (const theme of data.themes.slice(0, 5)) {
+                            const emoji = stageEmoji[theme.lifecycle_stage] || '⚪';
+                            html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showSupplyChainDetail('${theme.theme_id}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <span style="font-weight: 600;">${emoji} ${theme.theme_name}</span>
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">${theme.laggard_count} lagging plays</div>
+                                    </div>
+                                    <span style="color: var(--green); font-size: 0.8rem;">${theme.opportunity_score?.toFixed(0) || '--'}</span>
+                                </div>
+                            </div>`;
+                        }
+
+                        html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 8px;">Total: ${data.total_opportunities} opportunities</div>`;
+                    } else {
+                        html = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No lagging plays found.</div>';
                     }
 
-                    html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 8px;">Total: ${data.total_opportunities} opportunities</div>`;
                     document.getElementById('supplychain-container').innerHTML = html;
                 } else {
                     document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No lagging plays found. Run a scan first.</div>';
@@ -2179,6 +2223,26 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             } catch (e) {
                 console.warn('Supply chain fetch failed:', e);
                 document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Could not load supply chain data</div>';
+            }
+        }
+
+        function showAIOpportunity(encodedData) {
+            try {
+                const opps = JSON.parse(decodeURIComponent(encodedData));
+                let msg = '🤖 AI SUPPLY CHAIN OPPORTUNITIES\\n\\n';
+
+                for (const opp of opps) {
+                    msg += `• ${opp.ticker} (${opp.role || opp.source})\\n`;
+                    if (opp.connection) msg += `  Connection: ${opp.connection}\\n`;
+                    if (opp.catalyst) msg += `  Catalyst: ${opp.catalyst}\\n`;
+                    if (opp.thesis) msg += `  Thesis: ${opp.thesis}\\n`;
+                    if (opp.opportunity_score) msg += `  Score: ${opp.opportunity_score}/100\\n`;
+                    msg += '\\n';
+                }
+
+                alert(msg);
+            } catch (e) {
+                console.warn('Failed to parse AI opportunity:', e);
             }
         }
 

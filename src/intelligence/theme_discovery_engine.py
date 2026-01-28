@@ -192,15 +192,354 @@ class ThemeDiscoveryEngine:
 
         logger.info("ThemeDiscoveryEngine initialized")
 
-    def _call_ai(self, prompt: str, task_type: str = "theme") -> Optional[str]:
+    def _call_ai(self, prompt: str, task_type: str = "theme", max_tokens: int = 3000) -> Optional[str]:
         """Call AI service for analysis."""
         try:
             from src.services.ai_service import get_ai_service
             service = get_ai_service()
-            return service.call(prompt, max_tokens=2000, task_type=task_type)
+            return service.call(prompt, max_tokens=max_tokens, task_type=task_type)
         except Exception as e:
             logger.error(f"AI call failed: {e}")
             return None
+
+    def _gather_realtime_data(self, tickers: List[str] = None) -> Dict[str, Any]:
+        """
+        Gather real-time market data for AI analysis.
+
+        Collects:
+        - Recent news and sentiment
+        - Price movements and volume
+        - Social buzz signals
+        - SEC filings
+        - Sector performance
+        """
+        data = {
+            'timestamp': datetime.now().isoformat(),
+            'news': [],
+            'movers': [],
+            'social_buzz': [],
+            'filings': [],
+            'sector_performance': {},
+            'high_story_scores': []
+        }
+
+        try:
+            # Get high story score stocks
+            story_scores = self._get_story_scores()
+            if story_scores:
+                top_scorers = sorted(story_scores.items(), key=lambda x: x[1], reverse=True)[:20]
+                data['high_story_scores'] = [
+                    {'ticker': t, 'story_score': s} for t, s in top_scorers if s >= 50
+                ]
+
+            # Get recent news
+            try:
+                from src.sentiment.news_aggregator import get_latest_news
+                news = get_latest_news(limit=30)
+                if news:
+                    data['news'] = [
+                        {
+                            'headline': n.get('title', ''),
+                            'source': n.get('source', ''),
+                            'tickers': n.get('tickers', []),
+                            'sentiment': n.get('sentiment', 'neutral')
+                        }
+                        for n in news[:20]
+                    ]
+            except Exception as e:
+                logger.debug(f"News fetch failed: {e}")
+
+            # Get top movers
+            try:
+                import yfinance as yf
+                check_tickers = tickers or [t for t, s in (story_scores.items() if story_scores else [])][:30]
+
+                if check_tickers:
+                    for ticker in check_tickers[:15]:
+                        try:
+                            stock = yf.Ticker(ticker)
+                            hist = stock.history(period='5d')
+                            if len(hist) >= 2:
+                                change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[-2]) - 1) * 100
+                                vol_ratio = hist['Volume'].iloc[-1] / hist['Volume'].iloc[:-1].mean() if hist['Volume'].iloc[:-1].mean() > 0 else 1
+
+                                if abs(change) > 2 or vol_ratio > 2:
+                                    data['movers'].append({
+                                        'ticker': ticker,
+                                        'change_pct': round(change, 2),
+                                        'volume_ratio': round(vol_ratio, 2),
+                                        'story_score': story_scores.get(ticker, 0)
+                                    })
+                        except:
+                            pass
+            except Exception as e:
+                logger.debug(f"Movers fetch failed: {e}")
+
+            # Get social buzz from StockTwits
+            try:
+                from story_scorer import fetch_stocktwits_sentiment
+                for ticker in (tickers or list(story_scores.keys()))[:10]:
+                    try:
+                        buzz = fetch_stocktwits_sentiment(ticker)
+                        if buzz and buzz.get('message_count', 0) > 5:
+                            data['social_buzz'].append({
+                                'ticker': ticker,
+                                'messages': buzz.get('message_count', 0),
+                                'bullish_pct': buzz.get('bullish_percent', 50),
+                                'trending': buzz.get('trending', False)
+                            })
+                    except:
+                        pass
+            except Exception as e:
+                logger.debug(f"Social buzz fetch failed: {e}")
+
+            # Get recent SEC filings
+            try:
+                from src.data.sec_edgar import SECEdgarClient
+                client = SECEdgarClient()
+
+                for ticker in (tickers or list(story_scores.keys()))[:10]:
+                    try:
+                        filings = client.get_recent_filings(ticker, days_back=7)
+                        if filings:
+                            for f in filings[:2]:
+                                data['filings'].append({
+                                    'ticker': ticker,
+                                    'form': f.get('form', ''),
+                                    'description': f.get('description', ''),
+                                    'date': f.get('filing_date', '')
+                                })
+                    except:
+                        pass
+            except Exception as e:
+                logger.debug(f"SEC filings fetch failed: {e}")
+
+            # Get sector performance
+            try:
+                sector_etfs = {
+                    'Technology': 'XLK',
+                    'Healthcare': 'XLV',
+                    'Financials': 'XLF',
+                    'Energy': 'XLE',
+                    'Industrials': 'XLI',
+                    'Materials': 'XLB',
+                    'Utilities': 'XLU',
+                    'Consumer Discretionary': 'XLY',
+                    'Consumer Staples': 'XLP',
+                    'Real Estate': 'XLRE',
+                    'Communication Services': 'XLC'
+                }
+
+                import yfinance as yf
+                for sector, etf in sector_etfs.items():
+                    try:
+                        hist = yf.Ticker(etf).history(period='5d')
+                        if len(hist) >= 2:
+                            change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
+                            data['sector_performance'][sector] = round(change, 2)
+                    except:
+                        pass
+            except Exception as e:
+                logger.debug(f"Sector performance fetch failed: {e}")
+
+        except Exception as e:
+            logger.error(f"Real-time data gathering failed: {e}")
+
+        return data
+
+    def analyze_with_ai(self, context: str = "general") -> Dict[str, Any]:
+        """
+        Use AI to analyze real-time market data and discover opportunities.
+
+        Returns AI-reasoned insights about:
+        - Emerging themes
+        - Supply chain opportunities
+        - Lagging plays
+        """
+        # Gather real-time data
+        realtime_data = self._gather_realtime_data()
+
+        # Build context for AI
+        prompt = f"""Analyze this real-time market data and identify emerging investment themes and supply chain opportunities.
+
+REAL-TIME MARKET DATA:
+=====================
+
+HIGH STORY SCORE STOCKS (algorithmic momentum + catalyst detection):
+{json.dumps(realtime_data.get('high_story_scores', []), indent=2)}
+
+RECENT NEWS HEADLINES:
+{json.dumps(realtime_data.get('news', []), indent=2)}
+
+TODAY'S MOVERS (significant price/volume):
+{json.dumps(realtime_data.get('movers', []), indent=2)}
+
+SOCIAL BUZZ (StockTwits sentiment):
+{json.dumps(realtime_data.get('social_buzz', []), indent=2)}
+
+RECENT SEC FILINGS:
+{json.dumps(realtime_data.get('filings', []), indent=2)}
+
+SECTOR PERFORMANCE (5-day):
+{json.dumps(realtime_data.get('sector_performance', {}), indent=2)}
+
+KNOWN THEME SUPPLY CHAINS (for reference):
+{json.dumps(list(self.SUPPLY_CHAIN_MAP.keys()), indent=2)}
+
+YOUR TASK:
+==========
+1. IDENTIFY EMERGING THEMES: What investment themes are heating up based on this data?
+   - Look for clusters of related stocks moving together
+   - News patterns pointing to sector shifts
+   - Social buzz concentrations
+
+2. SUPPLY CHAIN ANALYSIS: For each theme, identify:
+   - LEADERS: The obvious plays already moving
+   - LAGGARDS: Supply chain stocks that HAVEN'T moved yet but should benefit
+   - Why they're connected (supplier, customer, infrastructure, materials, etc.)
+
+3. OPPORTUNITY RANKING: Rank lagging plays by:
+   - Connection strength to the theme
+   - How much they've missed the move
+   - Catalyst potential
+
+Return a JSON object with this structure:
+{{
+    "analysis_summary": "2-3 sentence market overview",
+    "emerging_themes": [
+        {{
+            "theme_name": "Theme Name",
+            "theme_id": "theme_id_snake_case",
+            "confidence": 0-100,
+            "reasoning": "Why this theme is emerging based on the data",
+            "leaders": ["TICKER1", "TICKER2"],
+            "lagging_opportunities": [
+                {{
+                    "ticker": "TICKER",
+                    "role": "supplier/equipment/materials/beneficiary/infrastructure",
+                    "connection": "How it connects to the theme",
+                    "why_lagging": "Why it hasn't moved yet",
+                    "catalyst": "What could trigger the move",
+                    "opportunity_score": 0-100
+                }}
+            ]
+        }}
+    ],
+    "top_actionable_ideas": [
+        {{
+            "ticker": "TICKER",
+            "theme": "Theme it belongs to",
+            "thesis": "1-2 sentence investment thesis",
+            "risk": "Key risk to watch"
+        }}
+    ]
+}}
+
+Focus on QUALITY over quantity. Only include high-conviction ideas with clear reasoning."""
+
+        response = self._call_ai(prompt, task_type="heavy", max_tokens=4000)
+
+        if not response:
+            return {'error': 'AI analysis failed', 'raw_data': realtime_data}
+
+        try:
+            # Parse JSON from response
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                result = json.loads(json_match.group())
+                result['raw_data'] = realtime_data
+                result['timestamp'] = datetime.now().isoformat()
+                return result
+        except Exception as e:
+            logger.error(f"Failed to parse AI response: {e}")
+
+        return {
+            'error': 'Failed to parse AI response',
+            'raw_response': response[:500],
+            'raw_data': realtime_data
+        }
+
+    def discover_realtime_opportunities(self) -> List[Dict]:
+        """
+        Main entry point for AI-driven opportunity discovery.
+
+        Combines real-time data analysis with supply chain mapping
+        to find the best lagging plays.
+        """
+        # Get AI analysis
+        ai_analysis = self.analyze_with_ai()
+
+        if 'error' in ai_analysis:
+            logger.warning(f"AI analysis had error: {ai_analysis.get('error')}")
+            # Fall back to static analysis
+            return self._fallback_static_analysis()
+
+        opportunities = []
+
+        # Extract opportunities from AI analysis
+        for theme in ai_analysis.get('emerging_themes', []):
+            for opp in theme.get('lagging_opportunities', []):
+                opportunities.append({
+                    'ticker': opp.get('ticker'),
+                    'theme': theme.get('theme_name'),
+                    'theme_id': theme.get('theme_id'),
+                    'role': opp.get('role'),
+                    'connection': opp.get('connection'),
+                    'opportunity_score': opp.get('opportunity_score', 50),
+                    'catalyst': opp.get('catalyst'),
+                    'confidence': theme.get('confidence', 50),
+                    'reasoning': theme.get('reasoning'),
+                    'source': 'ai_realtime'
+                })
+
+        # Add top actionable ideas
+        for idea in ai_analysis.get('top_actionable_ideas', []):
+            # Check if already in opportunities
+            if not any(o['ticker'] == idea.get('ticker') for o in opportunities):
+                opportunities.append({
+                    'ticker': idea.get('ticker'),
+                    'theme': idea.get('theme'),
+                    'thesis': idea.get('thesis'),
+                    'risk': idea.get('risk'),
+                    'opportunity_score': 75,  # Top ideas get high score
+                    'source': 'ai_top_pick'
+                })
+
+        # Sort by opportunity score
+        opportunities.sort(key=lambda x: x.get('opportunity_score', 0), reverse=True)
+
+        return opportunities
+
+    def _fallback_static_analysis(self) -> List[Dict]:
+        """Fallback to static supply chain analysis if AI fails."""
+        opportunities = []
+
+        story_scores = self._get_story_scores()
+
+        # Check each known theme
+        for theme_id, chain in self.SUPPLY_CHAIN_MAP.items():
+            leaders = chain.get('leaders', [])
+            leader_scores = [story_scores.get(t, 0) for t in leaders]
+
+            # If leaders have high scores, find laggards
+            if any(s >= 60 for s in leader_scores):
+                for role in ['suppliers', 'equipment', 'materials', 'beneficiaries', 'infrastructure']:
+                    for ticker in chain.get(role, []):
+                        perf = self._get_price_performance(ticker, 30)
+                        if perf < 15:  # Hasn't moved much
+                            opportunities.append({
+                                'ticker': ticker,
+                                'theme': theme_id.replace('_', ' ').title(),
+                                'theme_id': theme_id,
+                                'role': role,
+                                'price_perf_30d': perf,
+                                'opportunity_score': max(0, 70 - perf),
+                                'source': 'static_fallback'
+                            })
+
+        opportunities.sort(key=lambda x: x.get('opportunity_score', 0), reverse=True)
+        return opportunities[:20]
 
     def _get_story_scores(self) -> Dict[str, float]:
         """Get current story scores from scan data."""
@@ -530,12 +869,57 @@ Only include real US stock tickers. Be specific and accurate."""
 
         return laggards
 
-    def get_discovery_summary(self) -> Dict:
+    def get_discovery_summary(self, use_ai: bool = False) -> Dict:
         """Get summary of all discovered themes and opportunities."""
+
+        # Try AI-driven analysis first if requested
+        if use_ai:
+            try:
+                ai_analysis = self.analyze_with_ai()
+                if 'error' not in ai_analysis:
+                    return {
+                        'timestamp': datetime.now().isoformat(),
+                        'source': 'ai_realtime',
+                        'analysis_summary': ai_analysis.get('analysis_summary', ''),
+                        'themes_analyzed': len(ai_analysis.get('emerging_themes', [])),
+                        'total_opportunities': sum(
+                            len(t.get('lagging_opportunities', []))
+                            for t in ai_analysis.get('emerging_themes', [])
+                        ),
+                        'themes': [
+                            {
+                                'theme_id': t.get('theme_id'),
+                                'theme_name': t.get('theme_name'),
+                                'confidence': t.get('confidence', 50),
+                                'reasoning': t.get('reasoning'),
+                                'lifecycle_stage': 'emerging' if t.get('confidence', 50) > 70 else 'developing',
+                                'opportunity_score': t.get('confidence', 50),
+                                'laggard_count': len(t.get('lagging_opportunities', [])),
+                                'top_laggards': [
+                                    {
+                                        'ticker': l.get('ticker'),
+                                        'role': l.get('role'),
+                                        'connection': l.get('connection'),
+                                        'catalyst': l.get('catalyst'),
+                                        'opportunity_score': l.get('opportunity_score', 50)
+                                    }
+                                    for l in t.get('lagging_opportunities', [])[:5]
+                                ],
+                                'leaders': t.get('leaders', [])
+                            }
+                            for t in ai_analysis.get('emerging_themes', [])
+                        ],
+                        'top_ideas': ai_analysis.get('top_actionable_ideas', [])
+                    }
+            except Exception as e:
+                logger.warning(f"AI analysis failed, falling back to static: {e}")
+
+        # Fallback to static analysis
         discoveries = self.discover_emerging_themes()
 
         summary = {
             'timestamp': datetime.now().isoformat(),
+            'source': 'static_mapping',
             'themes_analyzed': len(discoveries),
             'total_opportunities': sum(d.laggard_count for d in discoveries),
             'themes': []
@@ -569,6 +953,22 @@ Only include real US stock tickers. Be specific and accurate."""
             })
 
         return summary
+
+    def get_ai_opportunities(self) -> Dict:
+        """
+        Get AI-analyzed real-time opportunities.
+
+        This is the main method for getting AI-driven supply chain opportunities.
+        """
+        opportunities = self.discover_realtime_opportunities()
+
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'source': 'ai_realtime',
+            'total_opportunities': len(opportunities),
+            'opportunities': opportunities[:15],
+            'themes_detected': list(set(o.get('theme') for o in opportunities if o.get('theme')))
+        }
 
 
 # Singleton instance

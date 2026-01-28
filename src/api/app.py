@@ -4147,10 +4147,15 @@ def handle_conviction(chat_id, ticker=None):
 
 def handle_supplychain(chat_id, theme_or_ticker=None):
     """
-    Handle /supplychain command - Supply chain theme discovery.
+    Handle /supplychain command - AI-powered supply chain theme discovery.
 
-    Finds lagging plays by analyzing supply chains of hot themes.
+    Uses AI to analyze real-time market data and find lagging plays.
     Key insight: Theme leaders move first, supply chain follows.
+
+    Usage:
+      /supplychain - AI-driven discovery (analyzes news, movers, social)
+      /supplychain ai_infrastructure - Specific theme analysis
+      /supplychain NVDA - Discover supply chain for a ticker
     """
     try:
         from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
@@ -4197,39 +4202,89 @@ def handle_supplychain(chat_id, theme_or_ticker=None):
             send_message(chat_id, msg)
 
         else:
-            # Discover emerging themes with lagging plays
-            send_message(chat_id, "🔗 Discovering supply chain opportunities...")
+            # AI-driven discovery - analyze real-time market data
+            send_message(chat_id, "🤖 AI analyzing real-time market data...\n_News, movers, social buzz, SEC filings_")
 
-            summary = engine.get_discovery_summary()
+            # Try AI-driven analysis first
+            ai_result = engine.analyze_with_ai()
 
-            if not summary.get('themes'):
-                msg = "🔗 *SUPPLY CHAIN DISCOVERY*\n\n"
-                msg += "_No emerging themes with lagging plays found._\n"
-                msg += "Run a scan first to populate story scores."
+            if 'error' not in ai_result and ai_result.get('emerging_themes'):
+                msg = "🔗 *AI SUPPLY CHAIN DISCOVERY*\n"
+                msg += "_Real-time analysis of market data_\n\n"
+
+                # Show analysis summary
+                if ai_result.get('analysis_summary'):
+                    msg += f"📊 _{ai_result['analysis_summary']}_\n\n"
+
+                # Show emerging themes
+                for theme_data in ai_result.get('emerging_themes', [])[:3]:
+                    confidence = theme_data.get('confidence', 50)
+                    emoji = '🔥' if confidence > 75 else '🌱' if confidence > 50 else '👀'
+
+                    msg += f"{emoji} *{theme_data.get('theme_name')}* ({confidence}% conf)\n"
+                    msg += f"_{theme_data.get('reasoning', '')[:100]}_\n"
+
+                    # Leaders
+                    leaders = theme_data.get('leaders', [])[:3]
+                    if leaders:
+                        msg += f"Leaders: `{', '.join(leaders)}`\n"
+
+                    # Lagging opportunities
+                    laggards = theme_data.get('lagging_opportunities', [])[:3]
+                    if laggards:
+                        msg += "📈 *Lagging plays:*\n"
+                        for opp in laggards:
+                            msg += f"  • `{opp.get('ticker')}` ({opp.get('role')})\n"
+                            msg += f"    _{opp.get('connection', '')[:50]}_\n"
+                            if opp.get('catalyst'):
+                                msg += f"    Catalyst: {opp.get('catalyst')[:40]}\n"
+
+                    msg += "\n"
+
+                # Top actionable ideas
+                top_ideas = ai_result.get('top_actionable_ideas', [])[:2]
+                if top_ideas:
+                    msg += "*🎯 TOP IDEAS:*\n"
+                    for idea in top_ideas:
+                        msg += f"• `{idea.get('ticker')}` - {idea.get('thesis', '')[:60]}\n"
+                        if idea.get('risk'):
+                            msg += f"  _Risk: {idea.get('risk')[:40]}_\n"
+
                 send_message(chat_id, msg)
-                return
 
-            msg = "🔗 *SUPPLY CHAIN OPPORTUNITIES*\n"
-            msg += "_Find laggards before they move_\n\n"
+            else:
+                # Fallback to static analysis
+                logger.info("AI analysis unavailable, using static supply chain mapping")
+                summary = engine.get_discovery_summary()
 
-            for theme_data in summary['themes'][:4]:
-                stage_emoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'}.get(theme_data['lifecycle_stage'], '⚪')
+                if not summary.get('themes'):
+                    msg = "🔗 *SUPPLY CHAIN DISCOVERY*\n\n"
+                    msg += "_No emerging themes with lagging plays found._\n"
+                    msg += "Run a scan first to populate story scores."
+                    send_message(chat_id, msg)
+                    return
 
-                msg += f"{stage_emoji} *{theme_data['theme_name']}*\n"
-                msg += f"  Opportunity: {theme_data['opportunity_score']:.0f}/100\n"
-                msg += f"  Laggards: {theme_data['laggard_count']} stocks\n"
+                msg = "🔗 *SUPPLY CHAIN OPPORTUNITIES*\n"
+                msg += "_Find laggards before they move_\n\n"
 
-                # Show top laggards
-                if theme_data.get('top_laggards'):
-                    laggard_tickers = [l['ticker'] for l in theme_data['top_laggards'][:3]]
-                    msg += f"  Top: `{', '.join(laggard_tickers)}`\n"
+                for theme_data in summary['themes'][:4]:
+                    stage_emoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'}.get(theme_data['lifecycle_stage'], '⚪')
 
-                msg += "\n"
+                    msg += f"{stage_emoji} *{theme_data['theme_name']}*\n"
+                    msg += f"  Opportunity: {theme_data['opportunity_score']:.0f}/100\n"
+                    msg += f"  Laggards: {theme_data['laggard_count']} stocks\n"
 
-            msg += f"Total opportunities: {summary['total_opportunities']}\n\n"
-            msg += "_Use `/supplychain THEME` for details_"
+                    # Show top laggards
+                    if theme_data.get('top_laggards'):
+                        laggard_tickers = [l['ticker'] for l in theme_data['top_laggards'][:3]]
+                        msg += f"  Top: `{', '.join(laggard_tickers)}`\n"
 
-            send_message(chat_id, msg)
+                    msg += "\n"
+
+                msg += f"Total opportunities: {summary['total_opportunities']}\n\n"
+                msg += "_Use `/supplychain THEME` for details_"
+
+                send_message(chat_id, msg)
 
     except ImportError as e:
         logger.error(f"Supply chain import error: {e}")
@@ -5670,6 +5725,72 @@ def api_supplychain_known_themes():
         return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
     except Exception as e:
         logger.error(f"Supply chain known themes error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/supplychain/ai-discover')
+def api_supplychain_ai_discover():
+    """
+    AI-driven real-time supply chain opportunity discovery.
+
+    Uses AI to analyze:
+    - Recent news and headlines
+    - Price movements and volume spikes
+    - Social buzz (StockTwits)
+    - SEC filings
+    - Sector performance
+
+    Returns AI-reasoned opportunities with supply chain connections.
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+        result = engine.get_ai_opportunities()
+
+        return jsonify({
+            'ok': True,
+            **result
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"AI discovery error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/supplychain/ai-analyze')
+def api_supplychain_ai_analyze():
+    """
+    Full AI analysis of market data for theme discovery.
+
+    Returns detailed AI reasoning about:
+    - Emerging themes detected
+    - Supply chain relationships
+    - Lagging opportunities
+    - Top actionable ideas
+    """
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+        result = engine.analyze_with_ai()
+
+        if 'error' in result:
+            return jsonify({
+                'ok': False,
+                'error': result.get('error'),
+                'raw_data': result.get('raw_data')
+            }), 500
+
+        return jsonify({
+            'ok': True,
+            **result
+        })
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Supply chain engine not available: {e}'}), 503
+    except Exception as e:
+        logger.error(f"AI analyze error: {e}")
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
