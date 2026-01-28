@@ -16,6 +16,7 @@ import json
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
+from pathlib import Path
 import yfinance as yf
 import pandas as pd
 import threading
