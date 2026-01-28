@@ -1056,10 +1056,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Trades Tab -->
+        <!-- Trades Tab - Professional Trading Dashboard -->
         <div id="trades" class="tab-content">
-            <!-- Trade Stats Row -->
-            <div class="stats-row">
+            <!-- Enhanced Stats Row -->
+            <div class="stats-row" style="grid-template-columns: repeat(6, 1fr);">
                 <div class="stat">
                     <div class="stat-label">Open Positions</div>
                     <div class="stat-value blue" id="trade-positions-count">--</div>
@@ -1069,47 +1069,88 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     <div class="stat-value" id="trade-watchlist-count">--</div>
                 </div>
                 <div class="stat">
+                    <div class="stat-label">Total P&L</div>
+                    <div class="stat-value" id="trade-total-pnl">--</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value green" id="trade-win-rate">--</div>
+                </div>
+                <div class="stat">
                     <div class="stat-label">Portfolio Risk</div>
                     <div class="stat-value" id="trade-risk-level">--</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-label">High Risk</div>
+                    <div class="stat-label">Alerts</div>
                     <div class="stat-value red" id="trade-high-risk">--</div>
                 </div>
             </div>
 
-            <div class="grid grid-sidebar">
-                <!-- Main Column -->
-                <div>
-                    <!-- Risk Alerts -->
-                    <div id="trade-alerts-container"></div>
+            <!-- Risk Alerts Banner -->
+            <div id="trade-alerts-container"></div>
 
-                    <!-- Open Positions -->
+            <!-- Main 3-Column Layout -->
+            <div style="display: grid; grid-template-columns: 1fr 380px; gap: 20px; margin-top: 20px;">
+                <!-- Left Column - Positions & Journal -->
+                <div>
+                    <!-- AI Trade Advisor -->
+                    <div class="card" style="margin-bottom: 20px; border-left: 3px solid var(--purple);">
+                        <div class="card-header">
+                            <div class="card-title">🤖 AI Trade Advisor</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshAIAdvisor()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="ai-advisor-container">
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;" id="ai-recommendations">
+                                <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">PRIORITY ACTION</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="ai-priority-action">--</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">MARKET REGIME</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="ai-market-regime">--</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">OVERALL STANCE</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="ai-stance">--</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 16px; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.8125rem; color: var(--text-muted);" id="ai-insight">Click refresh to get AI-powered trading insights based on your positions and market conditions...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Position Cards Grid -->
                     <div class="card" style="margin-bottom: 20px;">
                         <div class="card-header">
                             <div class="card-title">📊 Open Positions</div>
                             <div style="display: flex; gap: 8px;">
-                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="scanAllPositions()">Scan All</button>
+                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="scanAllPositions()">🔍 Scan All</button>
                                 <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddTradeModal()">+ Add Trade</button>
                             </div>
                         </div>
-                        <div class="card-body no-padding">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Shares</th>
-                                        <th>Avg Cost</th>
-                                        <th>Current</th>
-                                        <th>P&L</th>
-                                        <th>Risk</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="positions-table-body">
-                                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading positions...</td></tr>
-                                </tbody>
-                            </table>
+                        <div class="card-body" id="position-cards-container">
+                            <div style="color: var(--text-muted); text-align: center; padding: 40px;">Loading positions...</div>
+                        </div>
+                    </div>
+
+                    <!-- Smart Trade Journal -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">📓 Trade Journal</div>
+                            <div style="display: flex; gap: 8px;">
+                                <select id="journal-filter" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;" onchange="filterJournal()">
+                                    <option value="all">All Entries</option>
+                                    <option value="trade">Trades</option>
+                                    <option value="note">Notes</option>
+                                    <option value="lesson">Lessons</option>
+                                    <option value="mistake">Mistakes</option>
+                                </select>
+                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddJournalEntry()">+ Add Entry</button>
+                            </div>
+                        </div>
+                        <div class="card-body" id="journal-container" style="max-height: 400px; overflow-y: auto;">
+                            <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading journal...</div>
                         </div>
                     </div>
 
@@ -1118,26 +1159,13 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         <div class="card-header">
                             <div class="card-title">📋 Watchlist</div>
                         </div>
-                        <div class="card-body no-padding">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Thesis</th>
-                                        <th>Theme</th>
-                                        <th>Strategy</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="watchlist-table-body">
-                                    <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Loading watchlist...</td></tr>
-                                </tbody>
-                            </table>
+                        <div class="card-body" id="watchlist-cards-container">
+                            <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading watchlist...</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sidebar -->
+                <!-- Right Sidebar -->
                 <div>
                     <!-- Quick Actions -->
                     <div class="card" style="margin-bottom: 20px;">
@@ -1145,34 +1173,40 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             <div class="card-title">⚡ Quick Actions</div>
                         </div>
                         <div class="card-body">
-                            <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="showAddTradeModal()">Add to Watchlist</button>
-                            <button class="btn btn-ghost" style="width: 100%; margin-bottom: 8px;" onclick="showBuyModal()">Log Buy</button>
-                            <button class="btn btn-ghost" style="width: 100%; margin-bottom: 8px;" onclick="showSellModal()">Log Sell</button>
-                            <button class="btn btn-ghost" style="width: 100%;" onclick="fetchDailyReport()">Daily Report</button>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <button class="btn btn-primary" style="padding: 10px;" onclick="showAddTradeModal()">📝 Add Trade</button>
+                                <button class="btn btn-ghost" style="padding: 10px;" onclick="showBuyModal()">💰 Log Buy</button>
+                                <button class="btn btn-ghost" style="padding: 10px;" onclick="showSellModal()">💵 Log Sell</button>
+                                <button class="btn btn-ghost" style="padding: 10px;" onclick="fetchDailyReport()">📊 Report</button>
+                            </div>
+                            <button class="btn btn-ghost" style="width: 100%; margin-top: 8px; padding: 10px;" onclick="showAddJournalEntry()">📓 Add Journal Entry</button>
                         </div>
                     </div>
 
-                    <!-- Portfolio Summary -->
+                    <!-- Portfolio Summary with Charts -->
                     <div class="card" style="margin-bottom: 20px;">
                         <div class="card-header">
-                            <div class="card-title">💼 Portfolio Summary</div>
+                            <div class="card-title">💼 Portfolio Overview</div>
                         </div>
-                        <div class="card-body" id="portfolio-summary">
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Total Invested</span>
-                                <span class="sidebar-value" id="portfolio-invested">--</span>
+                        <div class="card-body">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">INVESTED</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="portfolio-invested">--</div>
+                                </div>
+                                <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">CURRENT</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="portfolio-value">--</div>
+                                </div>
                             </div>
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Current Value</span>
-                                <span class="sidebar-value" id="portfolio-value">--</span>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 16px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">TOTAL P&L</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="portfolio-pnl">--</div>
                             </div>
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Total P&L</span>
-                                <span class="sidebar-value" id="portfolio-pnl">--</span>
-                            </div>
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Win Rate</span>
-                                <span class="sidebar-value" id="portfolio-winrate">--</span>
+                            <!-- Theme Concentration -->
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">THEME CONCENTRATION</div>
+                            <div id="theme-concentration-chart" style="margin-bottom: 12px;">
+                                <div style="color: var(--text-muted); font-size: 0.75rem;">No positions</div>
                             </div>
                         </div>
                     </div>
@@ -1180,19 +1214,52 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     <!-- Scaling Opportunities -->
                     <div class="card" style="margin-bottom: 20px;">
                         <div class="card-header">
-                            <div class="card-title">📈 Scale Opportunities</div>
+                            <div class="card-title">📈 Scale Signals</div>
                         </div>
                         <div class="card-body" id="scale-opportunities">
                             <div style="color: var(--text-muted); font-size: 0.8125rem;">Run scan to detect opportunities...</div>
                         </div>
                     </div>
 
+                    <!-- Performance Metrics -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">📈 Performance</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Avg Win</span>
+                                <span class="sidebar-value green" id="perf-avg-win">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Avg Loss</span>
+                                <span class="sidebar-value red" id="perf-avg-loss">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Profit Factor</span>
+                                <span class="sidebar-value" id="perf-profit-factor">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Best Trade</span>
+                                <span class="sidebar-value green" id="perf-best">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Worst Trade</span>
+                                <span class="sidebar-value red" id="perf-worst">--</span>
+                            </div>
+                            <div class="sidebar-item">
+                                <span class="sidebar-label">Avg Hold Time</span>
+                                <span class="sidebar-value" id="perf-hold-time">--</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Recent Activity -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title">🕐 Recent Activity</div>
+                            <div class="card-title">🕐 Activity Feed</div>
                         </div>
-                        <div class="card-body" id="recent-activity">
+                        <div class="card-body" id="recent-activity" style="max-height: 200px; overflow-y: auto;">
                             <div style="color: var(--text-muted); font-size: 0.8125rem;">No recent activity</div>
                         </div>
                     </div>
@@ -2020,6 +2087,11 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         // TRADE MANAGEMENT FUNCTIONS
         // =============================================================================
 
+        // Store positions globally for filtering
+        let allPositions = [];
+        let allWatchlist = [];
+        let journalEntries = [];
+
         async function fetchTrades() {
             try {
                 // Fetch positions
@@ -2027,9 +2099,12 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 const posData = await posRes.json();
 
                 if (posData.ok) {
+                    allPositions = posData.positions || [];
                     document.getElementById('trade-positions-count').textContent = posData.count || 0;
-                    renderPositionsTable(posData.positions || []);
-                    updatePortfolioSummary(posData.positions || []);
+                    renderPositionCards(allPositions);
+                    updatePortfolioSummary(allPositions);
+                    renderThemeConcentration(allPositions);
+                    updatePerformanceMetrics(allPositions);
                 }
 
                 // Fetch watchlist
@@ -2037,8 +2112,9 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 const watchData = await watchRes.json();
 
                 if (watchData.ok) {
+                    allWatchlist = watchData.watchlist || [];
                     document.getElementById('trade-watchlist-count').textContent = watchData.count || 0;
-                    renderWatchlistTable(watchData.watchlist || []);
+                    renderWatchlistCards(allWatchlist);
                 }
 
                 // Fetch risk
@@ -2062,67 +2138,183 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     // Show risk alerts
                     renderTradeAlerts(riskData.high_risk_trades || []);
                 }
+
+                // Fetch journal
+                fetchJournal();
+
+                // Fetch activity
+                fetchActivityFeed();
+
             } catch (e) {
                 console.warn('Trades fetch failed:', e);
             }
         }
 
-        function renderPositionsTable(positions) {
-            const tbody = document.getElementById('positions-table-body');
+        function renderPositionCards(positions) {
+            const container = document.getElementById('position-cards-container');
             if (!positions || positions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No open positions. Click "+ Add Trade" to start.</td></tr>';
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">No open positions. Click "+ Add Trade" to start tracking.</div>';
                 return;
             }
 
-            tbody.innerHTML = positions.map(pos => {
+            const riskColors = {
+                'critical': '#ef4444',
+                'high': '#f97316',
+                'elevated': '#eab308',
+                'moderate': '#22c55e',
+                'low': '#6b7280',
+                'none': '#10b981'
+            };
+
+            container.innerHTML = positions.map(pos => {
                 const pnlPct = pos.pnl_pct || 0;
                 const pnlValue = pos.pnl_value || 0;
                 const pnlColor = pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
                 const riskLevel = pos.current_risk_level || 'none';
-                const riskColors = {
-                    'critical': 'var(--red)',
-                    'high': 'var(--red)',
-                    'elevated': 'var(--yellow)',
-                    'moderate': 'var(--text-muted)',
-                    'low': 'var(--text-muted)',
-                    'none': 'var(--green)'
-                };
+                const riskColor = riskColors[riskLevel] || riskColors.none;
+                const storyScore = pos.story_score || 0;
+                const exitConf = pos.composite_exit_confidence || 0;
+                const daysHeld = pos.days_held || 0;
+                const theme = pos.theme || 'No Theme';
 
-                return `<tr>
-                    <td><strong style="cursor: pointer;" onclick="showTradeDetail('${pos.id}')">${pos.ticker}</strong></td>
-                    <td>${pos.total_shares}</td>
-                    <td>$${(pos.average_cost || 0).toFixed(2)}</td>
-                    <td>$${(pos.current_price || 0).toFixed(2)}</td>
-                    <td style="color: ${pnlColor};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%<br><small>$${pnlValue >= 0 ? '+' : ''}${pnlValue.toFixed(0)}</small></td>
-                    <td><span style="padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; background: ${riskColors[riskLevel]}20; color: ${riskColors[riskLevel]};">${riskLevel.toUpperCase()}</span></td>
-                    <td>
-                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showBuyModalFor('${pos.id}', '${pos.ticker}')">Buy</button>
-                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showSellModalFor('${pos.id}', '${pos.ticker}', ${pos.total_shares})">Sell</button>
-                    </td>
-                </tr>`;
+                // Calculate profit target progress (assuming 20% target for visual)
+                const profitTarget = 20;
+                const progressPct = Math.min(100, Math.max(0, (pnlPct / profitTarget) * 100));
+                const progressColor = pnlPct >= profitTarget ? 'var(--green)' : pnlPct >= 0 ? 'var(--blue)' : 'var(--red)';
+
+                return `<div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; border-left: 4px solid ${riskColor};">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                        <div style="cursor: pointer;" onclick="showTradeDetail('${pos.id}')">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.25rem; font-weight: 700;">${pos.ticker}</span>
+                                <span style="font-size: 0.7rem; padding: 2px 6px; background: ${riskColor}20; color: ${riskColor}; border-radius: 4px;">${riskLevel.toUpperCase()}</span>
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">${theme} • ${daysHeld}d held</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: ${pnlColor};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%</div>
+                            <div style="font-size: 0.8rem; color: ${pnlColor};">$${pnlValue >= 0 ? '+' : ''}${pnlValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                        </div>
+                    </div>
+
+                    <!-- Story Score Bar -->
+                    <div style="margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            <span>Story Score</span>
+                            <span>${storyScore.toFixed(0)}/100</span>
+                        </div>
+                        <div style="height: 4px; background: var(--bg-hover); border-radius: 2px; overflow: hidden;">
+                            <div style="height: 100%; width: ${storyScore}%; background: linear-gradient(90deg, var(--blue), var(--purple));"></div>
+                        </div>
+                    </div>
+
+                    <!-- Profit Target Progress -->
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            <span>Profit Target</span>
+                            <span>${pnlPct.toFixed(1)}% / ${profitTarget}%</span>
+                        </div>
+                        <div style="height: 4px; background: var(--bg-hover); border-radius: 2px; overflow: hidden;">
+                            <div style="height: 100%; width: ${progressPct}%; background: ${progressColor}; transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Position Details -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; font-size: 0.75rem;">
+                        <div style="background: var(--bg-hover); padding: 8px; border-radius: 6px; text-align: center;">
+                            <div style="color: var(--text-muted);">Shares</div>
+                            <div style="font-weight: 600;">${pos.total_shares}</div>
+                        </div>
+                        <div style="background: var(--bg-hover); padding: 8px; border-radius: 6px; text-align: center;">
+                            <div style="color: var(--text-muted);">Avg Cost</div>
+                            <div style="font-weight: 600;">$${(pos.average_cost || 0).toFixed(2)}</div>
+                        </div>
+                        <div style="background: var(--bg-hover); padding: 8px; border-radius: 6px; text-align: center;">
+                            <div style="color: var(--text-muted);">Current</div>
+                            <div style="font-weight: 600;">$${(pos.current_price || 0).toFixed(2)}</div>
+                        </div>
+                        <div style="background: var(--bg-hover); padding: 8px; border-radius: 6px; text-align: center;">
+                            <div style="color: var(--text-muted);">Exit Conf</div>
+                            <div style="font-weight: 600; color: ${exitConf > 60 ? 'var(--yellow)' : 'var(--text)'};">${exitConf.toFixed(0)}%</div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="flex: 1; padding: 8px; font-size: 0.75rem;" onclick="showBuyModalFor('${pos.id}', '${pos.ticker}')">📈 Scale In</button>
+                        <button class="btn btn-ghost" style="flex: 1; padding: 8px; font-size: 0.75rem;" onclick="showSellModalFor('${pos.id}', '${pos.ticker}', ${pos.total_shares})">📉 Scale Out</button>
+                        <button class="btn btn-ghost" style="padding: 8px; font-size: 0.75rem;" onclick="scanSinglePosition('${pos.id}')">🔍</button>
+                    </div>
+                </div>`;
             }).join('');
         }
 
-        function renderWatchlistTable(watchlist) {
-            const tbody = document.getElementById('watchlist-table-body');
+        async function scanSinglePosition(tradeId) {
+            try {
+                const res = await fetch(`${API_BASE}/trades/scan`);
+                const data = await res.json();
+                if (data.ok) {
+                    const position = (data.positions || []).find(p => p.id === tradeId);
+                    if (position) {
+                        let msg = `Scan Results for ${position.ticker}:\\n\\n`;
+                        if (position.exit_signals && position.exit_signals.length > 0) {
+                            msg += 'Exit Signals:\\n';
+                            position.exit_signals.forEach(s => {
+                                msg += `- ${s.signal_type}: ${s.reason} (${s.confidence}%)\\n`;
+                            });
+                        } else {
+                            msg += 'No exit signals detected.\\n';
+                        }
+                        if (position.scale_in?.should_scale) {
+                            msg += `\\nScale In: +${position.scale_in.size_pct}%`;
+                        }
+                        if (position.scale_out?.should_scale) {
+                            msg += `\\nScale Out: -${position.scale_out.size_pct}%`;
+                        }
+                        alert(msg);
+                    }
+                }
+            } catch (e) {
+                alert('Scan failed');
+            }
+        }
+
+        function renderWatchlistCards(watchlist) {
+            const container = document.getElementById('watchlist-cards-container');
             if (!watchlist || watchlist.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Watchlist empty. Add tickers to track.</td></tr>';
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Watchlist empty. Add tickers to track potential trades.</div>';
                 return;
             }
 
-            tbody.innerHTML = watchlist.map(item => {
-                const strategy = item.scaling_plan?.strategy || 'conservative';
-                return `<tr>
-                    <td><strong>${item.ticker}</strong></td>
-                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.thesis || '-'}</td>
-                    <td>${item.theme || '-'}</td>
-                    <td><span style="text-transform: capitalize;">${strategy}</span></td>
-                    <td>
-                        <button class="btn btn-primary" style="padding: 2px 8px; font-size: 0.7rem;" onclick="showBuyModalFor('${item.id}', '${item.ticker}')">Enter</button>
-                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="deleteTrade('${item.id}')">Remove</button>
-                    </td>
-                </tr>`;
-            }).join('');
+            const strategyColors = {
+                'conservative': 'var(--blue)',
+                'aggressive': 'var(--red)',
+                'core_trade': 'var(--purple)',
+                'momentum': 'var(--yellow)'
+            };
+
+            container.innerHTML = `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                ${watchlist.map(item => {
+                    const strategy = item.scaling_plan?.strategy || 'conservative';
+                    const strategyColor = strategyColors[strategy] || 'var(--blue)';
+                    const theme = item.theme || 'No Theme';
+
+                    return `<div style="background: var(--bg-hover); border: 1px solid var(--border); border-radius: 10px; padding: 14px; border-top: 3px solid ${strategyColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                            <div>
+                                <div style="font-size: 1.1rem; font-weight: 700;">${item.ticker}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">${theme}</div>
+                            </div>
+                            <span style="font-size: 0.65rem; padding: 2px 6px; background: ${strategyColor}20; color: ${strategyColor}; border-radius: 4px; text-transform: capitalize;">${strategy}</span>
+                        </div>
+                        ${item.thesis ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4; max-height: 40px; overflow: hidden;">${item.thesis}</div>` : ''}
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-primary" style="flex: 1; padding: 6px; font-size: 0.7rem;" onclick="showBuyModalFor('${item.id}', '${item.ticker}')">Enter</button>
+                            <button class="btn btn-ghost" style="padding: 6px; font-size: 0.7rem;" onclick="deleteTrade('${item.id}')">✕</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>`;
         }
 
         function renderTradeAlerts(highRiskTrades) {
@@ -2462,6 +2654,366 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             } catch (e) {
                 document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to generate report</div>';
             }
+        }
+
+        // =============================================================================
+        // AI ADVISOR FUNCTIONS
+        // =============================================================================
+
+        async function refreshAIAdvisor() {
+            document.getElementById('ai-insight').innerHTML = '<span style="color: var(--text-muted);">Analyzing positions...</span>';
+
+            try {
+                // Get risk assessment for AI insights
+                const riskRes = await fetch(`${API_BASE}/trades/risk`);
+                const riskData = await riskRes.json();
+
+                // Get scan data for market context
+                const scanRes = await fetch(`${API_BASE}/trades/scan`);
+                const scanData = await scanRes.json();
+
+                if (riskData.ok && scanData.ok) {
+                    const positions = scanData.positions || [];
+                    const highRisk = riskData.high_risk_trades || [];
+
+                    // Determine priority action
+                    let priorityAction = 'HOLD';
+                    let priorityColor = 'var(--text)';
+                    if (highRisk.length > 0) {
+                        const critical = highRisk.filter(t => t.risk_level === 'critical');
+                        if (critical.length > 0) {
+                            priorityAction = `EXIT ${critical[0].ticker}`;
+                            priorityColor = 'var(--red)';
+                        } else {
+                            priorityAction = `REVIEW ${highRisk[0].ticker}`;
+                            priorityColor = 'var(--yellow)';
+                        }
+                    } else {
+                        const scaleIns = positions.filter(p => p.scale_in?.should_scale);
+                        if (scaleIns.length > 0) {
+                            priorityAction = `SCALE IN ${scaleIns[0].ticker}`;
+                            priorityColor = 'var(--green)';
+                        }
+                    }
+
+                    // Determine market regime based on positions
+                    let regime = 'NEUTRAL';
+                    let regimeColor = 'var(--text-muted)';
+                    const avgPnl = positions.length > 0 ? positions.reduce((sum, p) => sum + (p.pnl_pct || 0), 0) / positions.length : 0;
+                    if (avgPnl > 5) {
+                        regime = 'BULLISH';
+                        regimeColor = 'var(--green)';
+                    } else if (avgPnl < -5) {
+                        regime = 'BEARISH';
+                        regimeColor = 'var(--red)';
+                    }
+
+                    // Determine overall stance
+                    let stance = 'NEUTRAL';
+                    let stanceColor = 'var(--text-muted)';
+                    const riskLevel = riskData.overall_risk || 'none';
+                    if (riskLevel === 'critical' || riskLevel === 'high') {
+                        stance = 'DEFENSIVE';
+                        stanceColor = 'var(--red)';
+                    } else if (riskLevel === 'elevated') {
+                        stance = 'CAUTIOUS';
+                        stanceColor = 'var(--yellow)';
+                    } else if (positions.length > 0 && avgPnl > 0) {
+                        stance = 'AGGRESSIVE';
+                        stanceColor = 'var(--green)';
+                    }
+
+                    document.getElementById('ai-priority-action').innerHTML = `<span style="color: ${priorityColor};">${priorityAction}</span>`;
+                    document.getElementById('ai-market-regime').innerHTML = `<span style="color: ${regimeColor};">${regime}</span>`;
+                    document.getElementById('ai-stance').innerHTML = `<span style="color: ${stanceColor};">${stance}</span>`;
+
+                    // Generate insight
+                    let insight = '';
+                    if (positions.length === 0) {
+                        insight = 'No open positions. Consider scanning for high-conviction setups with strong story scores.';
+                    } else if (highRisk.length > 0) {
+                        insight = `${highRisk.length} position(s) require attention. ${highRisk[0].ticker} shows ${highRisk[0].risk_level} risk level (${highRisk[0].confidence}% confidence). Consider reducing exposure.`;
+                    } else {
+                        const winners = positions.filter(p => (p.pnl_pct || 0) > 0);
+                        const losers = positions.filter(p => (p.pnl_pct || 0) < 0);
+                        insight = `Portfolio is ${winners.length > losers.length ? 'performing well' : 'mixed'}. ${winners.length} winners, ${losers.length} losers. `;
+                        if (avgPnl > 10) {
+                            insight += 'Consider taking partial profits on extended positions.';
+                        } else if (avgPnl < -5) {
+                            insight += 'Review stop levels and thesis integrity for underperformers.';
+                        } else {
+                            insight += 'Continue monitoring story developments and technical levels.';
+                        }
+                    }
+                    document.getElementById('ai-insight').innerHTML = insight;
+                }
+            } catch (e) {
+                console.warn('AI Advisor refresh failed:', e);
+                document.getElementById('ai-insight').innerHTML = '<span style="color: var(--red);">Failed to load AI insights</span>';
+            }
+        }
+
+        // =============================================================================
+        // JOURNAL FUNCTIONS
+        // =============================================================================
+
+        async function fetchJournal() {
+            try {
+                const res = await fetch(`${API_BASE}/trades/journal`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    journalEntries = data.entries || [];
+                    renderJournal(journalEntries);
+                } else {
+                    // Journal endpoint might not exist yet, show empty state
+                    journalEntries = [];
+                    renderJournal([]);
+                }
+            } catch (e) {
+                console.warn('Journal fetch failed:', e);
+                journalEntries = [];
+                renderJournal([]);
+            }
+        }
+
+        function filterJournal() {
+            const filter = document.getElementById('journal-filter').value;
+            if (filter === 'all') {
+                renderJournal(journalEntries);
+            } else {
+                renderJournal(journalEntries.filter(e => e.entry_type === filter));
+            }
+        }
+
+        function renderJournal(entries) {
+            const container = document.getElementById('journal-container');
+
+            if (!entries || entries.length === 0) {
+                container.innerHTML = `<div style="text-align: center; padding: 30px;">
+                    <div style="font-size: 2rem; margin-bottom: 8px;">📓</div>
+                    <div style="color: var(--text-muted);">No journal entries yet.</div>
+                    <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 4px;">Document your trades, lessons, and insights.</div>
+                </div>`;
+                return;
+            }
+
+            const typeIcons = {
+                'trade': '💹',
+                'note': '📝',
+                'lesson': '💡',
+                'mistake': '⚠️'
+            };
+            const typeColors = {
+                'trade': 'var(--blue)',
+                'note': 'var(--text-muted)',
+                'lesson': 'var(--green)',
+                'mistake': 'var(--red)'
+            };
+
+            container.innerHTML = entries.map(entry => {
+                const icon = typeIcons[entry.entry_type] || '📝';
+                const color = typeColors[entry.entry_type] || 'var(--text-muted)';
+                const date = new Date(entry.timestamp).toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+
+                return `<div style="padding: 12px; background: var(--bg-hover); border-radius: 8px; margin-bottom: 10px; border-left: 3px solid ${color};">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 1.1rem;">${icon}</span>
+                            ${entry.ticker ? `<span style="font-weight: 600;">${entry.ticker}</span>` : ''}
+                            <span style="font-size: 0.7rem; padding: 2px 6px; background: ${color}20; color: ${color}; border-radius: 4px; text-transform: capitalize;">${entry.entry_type}</span>
+                        </div>
+                        <span style="font-size: 0.7rem; color: var(--text-muted);">${date} ${time}</span>
+                    </div>
+                    <div style="font-size: 0.85rem; line-height: 1.5;">${entry.content}</div>
+                    ${entry.tags && entry.tags.length > 0 ? `<div style="margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
+                        ${entry.tags.map(tag => `<span style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-card); border-radius: 4px; color: var(--text-muted);">#${tag}</span>`).join('')}
+                    </div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function showAddJournalEntry() {
+            const entryType = prompt('Entry type (trade/note/lesson/mistake):', 'note') || 'note';
+            const validTypes = ['trade', 'note', 'lesson', 'mistake'];
+            if (!validTypes.includes(entryType.toLowerCase())) {
+                alert('Invalid type. Use: trade, note, lesson, or mistake');
+                return;
+            }
+
+            const ticker = prompt('Ticker (optional, press Enter to skip):') || '';
+            const content = prompt('Entry content:');
+            if (!content) return;
+
+            const tagsStr = prompt('Tags (comma-separated, optional):') || '';
+            const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+
+            addJournalEntry(entryType.toLowerCase(), content, ticker.toUpperCase() || null, tags);
+        }
+
+        async function addJournalEntry(entryType, content, ticker = null, tags = []) {
+            try {
+                const res = await fetch(`${API_BASE}/trades/journal`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entry_type: entryType, content, ticker, tags })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    fetchJournal();
+                    // Also add to activity feed
+                    addActivityItem(`Added ${entryType} journal entry${ticker ? ` for ${ticker}` : ''}`);
+                } else {
+                    alert('Failed to add entry: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to add journal entry');
+            }
+        }
+
+        // =============================================================================
+        // THEME CONCENTRATION
+        // =============================================================================
+
+        function renderThemeConcentration(positions) {
+            const container = document.getElementById('theme-concentration-chart');
+
+            if (!positions || positions.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No positions to analyze</div>';
+                return;
+            }
+
+            // Group by theme
+            const themeValues = {};
+            let totalValue = 0;
+
+            positions.forEach(pos => {
+                const theme = pos.theme || 'No Theme';
+                const value = (pos.current_price || pos.average_cost || 0) * (pos.total_shares || 0);
+                themeValues[theme] = (themeValues[theme] || 0) + value;
+                totalValue += value;
+            });
+
+            if (totalValue === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.75rem;">No position values</div>';
+                return;
+            }
+
+            // Sort by value
+            const sortedThemes = Object.entries(themeValues).sort((a, b) => b[1] - a[1]);
+
+            // Theme colors
+            const themeColors = [
+                'var(--blue)', 'var(--purple)', 'var(--green)', 'var(--yellow)',
+                'var(--red)', 'var(--cyan)', 'var(--pink)', 'var(--text-muted)'
+            ];
+
+            container.innerHTML = sortedThemes.map(([theme, value], i) => {
+                const pct = (value / totalValue * 100).toFixed(1);
+                const color = themeColors[i % themeColors.length];
+
+                return `<div style="margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 2px;">
+                        <span style="color: ${color};">${theme}</span>
+                        <span>${pct}%</span>
+                    </div>
+                    <div style="height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: ${pct}%; background: ${color}; transition: width 0.3s;"></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // =============================================================================
+        // PERFORMANCE METRICS
+        // =============================================================================
+
+        function updatePerformanceMetrics(positions) {
+            // Calculate from positions
+            const wins = positions.filter(p => (p.pnl_pct || 0) > 0);
+            const losses = positions.filter(p => (p.pnl_pct || 0) < 0);
+
+            const avgWin = wins.length > 0 ? wins.reduce((sum, p) => sum + (p.pnl_pct || 0), 0) / wins.length : 0;
+            const avgLoss = losses.length > 0 ? losses.reduce((sum, p) => sum + Math.abs(p.pnl_pct || 0), 0) / losses.length : 0;
+
+            const totalWins = wins.reduce((sum, p) => sum + (p.pnl_value || 0), 0);
+            const totalLosses = Math.abs(losses.reduce((sum, p) => sum + (p.pnl_value || 0), 0));
+            const profitFactor = totalLosses > 0 ? (totalWins / totalLosses).toFixed(2) : (totalWins > 0 ? '∞' : '--');
+
+            const allPnl = positions.map(p => p.pnl_pct || 0);
+            const bestTrade = allPnl.length > 0 ? Math.max(...allPnl) : 0;
+            const worstTrade = allPnl.length > 0 ? Math.min(...allPnl) : 0;
+
+            const avgHoldTime = positions.length > 0 ? Math.round(positions.reduce((sum, p) => sum + (p.days_held || 0), 0) / positions.length) : 0;
+
+            document.getElementById('perf-avg-win').textContent = avgWin > 0 ? `+${avgWin.toFixed(1)}%` : '--';
+            document.getElementById('perf-avg-loss').textContent = avgLoss > 0 ? `-${avgLoss.toFixed(1)}%` : '--';
+            document.getElementById('perf-profit-factor').textContent = profitFactor;
+            document.getElementById('perf-best').textContent = bestTrade > 0 ? `+${bestTrade.toFixed(1)}%` : '--';
+            document.getElementById('perf-worst').textContent = worstTrade < 0 ? `${worstTrade.toFixed(1)}%` : '--';
+            document.getElementById('perf-hold-time').textContent = avgHoldTime > 0 ? `${avgHoldTime}d` : '--';
+        }
+
+        // =============================================================================
+        // ACTIVITY FEED
+        // =============================================================================
+
+        let activityItems = [];
+
+        async function fetchActivityFeed() {
+            try {
+                const res = await fetch(`${API_BASE}/trades/activity`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    activityItems = data.activities || [];
+                    renderActivityFeed();
+                } else {
+                    // Activity endpoint might not exist, use local tracking
+                    renderActivityFeed();
+                }
+            } catch (e) {
+                // Fallback to showing recent local activity
+                renderActivityFeed();
+            }
+        }
+
+        function renderActivityFeed() {
+            const container = document.getElementById('recent-activity');
+
+            if (activityItems.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">No recent activity</div>';
+                return;
+            }
+
+            container.innerHTML = activityItems.slice(0, 10).map(item => {
+                const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : 'now';
+                const typeEmoji = {
+                    'buy': '📈',
+                    'sell': '📉',
+                    'create': '➕',
+                    'delete': '🗑️',
+                    'scan': '🔍',
+                    'journal': '📓'
+                }[item.type] || '•';
+
+                return `<div style="padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.8rem;">
+                    <span>${typeEmoji}</span>
+                    <span>${item.message}</span>
+                    <span style="color: var(--text-muted); font-size: 0.7rem; float: right;">${time}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function addActivityItem(message, type = 'general') {
+            activityItems.unshift({
+                message,
+                type,
+                timestamp: new Date().toISOString()
+            });
+            renderActivityFeed();
         }
 
         async function refreshAll() {

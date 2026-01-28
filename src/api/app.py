@@ -5050,6 +5050,9 @@ def api_trades_create():
             scaling_strategy=scaling_strategy,
         )
 
+        # Log activity
+        _add_activity(f"Added {ticker} to watchlist", 'create')
+
         return jsonify({
             'ok': True,
             'trade': trade.to_dict(),
@@ -5079,6 +5082,8 @@ def api_trades_buy(trade_id):
 
         if tranche:
             trade = tm.get_trade(trade_id)
+            # Log activity
+            _add_activity(f"Bought {shares} {trade.ticker} @ ${price:.2f}", 'buy')
             return jsonify({
                 'ok': True,
                 'tranche': tranche.to_dict(),
@@ -5110,6 +5115,8 @@ def api_trades_sell(trade_id):
 
         if tranche:
             trade = tm.get_trade(trade_id)
+            # Log activity
+            _add_activity(f"Sold {shares} {trade.ticker} @ ${price:.2f}", 'sell')
             return jsonify({
                 'ok': True,
                 'tranche': tranche.to_dict(),
@@ -5190,7 +5197,13 @@ def api_trades_delete(trade_id):
         from src.trading import TradeManager
         tm = TradeManager()
 
+        # Get trade info before deleting for activity log
+        trade = tm.get_trade(trade_id)
+        ticker = trade.ticker if trade else 'Unknown'
+
         if tm.delete_trade(trade_id):
+            # Log activity
+            _add_activity(f"Removed {ticker} from watchlist", 'delete')
             return jsonify({'ok': True, 'message': 'Trade deleted'})
         return jsonify({'ok': False, 'error': 'Trade not found'})
     except Exception as e:
@@ -5205,6 +5218,10 @@ def api_trades_scan():
         from src.trading import scan_positions
 
         results = scan_positions()
+
+        # Log activity
+        pos_count = len(results.get('positions', []))
+        _add_activity(f"Scanned {pos_count} positions for exit signals", 'scan')
 
         return jsonify({
             'ok': True,
@@ -5314,6 +5331,158 @@ def api_trades_daily_report():
     except Exception as e:
         logger.error(f"Daily report API error: {e}")
         return jsonify({'ok': False, 'error': str(e)})
+
+
+# =============================================================================
+# TRADE JOURNAL ENDPOINTS
+# =============================================================================
+
+# In-memory journal storage (will be replaced with file-based storage)
+_journal_entries = []
+_activity_feed = []
+
+
+@app.route('/api/trades/journal')
+def api_trades_journal_get():
+    """Get all journal entries."""
+    try:
+        # Load from file if exists
+        journal_file = Path('data/trade_journal.json')
+        if journal_file.exists():
+            with open(journal_file, 'r') as f:
+                entries = json.load(f)
+        else:
+            entries = _journal_entries
+
+        # Sort by timestamp descending
+        entries = sorted(entries, key=lambda x: x.get('timestamp', ''), reverse=True)
+
+        return jsonify({
+            'ok': True,
+            'entries': entries,
+            'count': len(entries)
+        })
+    except Exception as e:
+        logger.error(f"Journal GET API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/journal', methods=['POST'])
+def api_trades_journal_post():
+    """Add a new journal entry."""
+    try:
+        from datetime import datetime
+        import uuid
+
+        data = request.get_json() or {}
+        entry_type = data.get('entry_type', 'note')
+        content = data.get('content', '')
+        ticker = data.get('ticker')
+        tags = data.get('tags', [])
+
+        if not content:
+            return jsonify({'ok': False, 'error': 'Content is required'})
+
+        # Validate entry type
+        valid_types = ['trade', 'note', 'lesson', 'mistake']
+        if entry_type not in valid_types:
+            return jsonify({'ok': False, 'error': f'Invalid entry type. Use: {", ".join(valid_types)}'})
+
+        entry = {
+            'id': str(uuid.uuid4()),
+            'entry_type': entry_type,
+            'content': content,
+            'ticker': ticker.upper() if ticker else None,
+            'tags': tags,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Load existing entries
+        journal_file = Path('data/trade_journal.json')
+        journal_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if journal_file.exists():
+            with open(journal_file, 'r') as f:
+                entries = json.load(f)
+        else:
+            entries = []
+
+        entries.append(entry)
+
+        # Save back
+        with open(journal_file, 'w') as f:
+            json.dump(entries, f, indent=2)
+
+        # Also add to activity feed
+        _add_activity(f"Added {entry_type} entry{f' for {ticker.upper()}' if ticker else ''}", 'journal')
+
+        return jsonify({
+            'ok': True,
+            'entry': entry,
+            'message': f'Journal entry added successfully'
+        })
+    except Exception as e:
+        logger.error(f"Journal POST API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/trades/activity')
+def api_trades_activity():
+    """Get recent activity feed."""
+    try:
+        # Load from file if exists
+        activity_file = Path('data/trade_activity.json')
+        if activity_file.exists():
+            with open(activity_file, 'r') as f:
+                activities = json.load(f)
+        else:
+            activities = _activity_feed
+
+        # Sort by timestamp descending and limit to 50
+        activities = sorted(activities, key=lambda x: x.get('timestamp', ''), reverse=True)[:50]
+
+        return jsonify({
+            'ok': True,
+            'activities': activities,
+            'count': len(activities)
+        })
+    except Exception as e:
+        logger.error(f"Activity API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+def _add_activity(message: str, activity_type: str = 'general'):
+    """Add an activity to the feed."""
+    try:
+        from datetime import datetime
+        import uuid
+
+        activity = {
+            'id': str(uuid.uuid4()),
+            'message': message,
+            'type': activity_type,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        activity_file = Path('data/trade_activity.json')
+        activity_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if activity_file.exists():
+            with open(activity_file, 'r') as f:
+                activities = json.load(f)
+        else:
+            activities = []
+
+        activities.append(activity)
+
+        # Keep only last 100 activities
+        activities = activities[-100:]
+
+        with open(activity_file, 'w') as f:
+            json.dump(activities, f, indent=2)
+
+    except Exception as e:
+        logger.error(f"Failed to add activity: {e}")
 
 
 if __name__ == '__main__':
