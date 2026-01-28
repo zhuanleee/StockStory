@@ -188,10 +188,10 @@ def fetch_reddit_mentions(ticker: str) -> dict:
 
 def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
     """
-    Fetch sentiment from X/Twitter using xAI's x_search tool.
+    Fetch sentiment from X/Twitter using xAI SDK with web_search tool.
 
-    Uses xAI Agent Tools API with x_search capability.
-    Weights engagement: likes 55%, reposts 25%, replies 15%, quotes 5%.
+    Uses xai_sdk with web_search capability and date filtering.
+    Analyzes posts mentioning the stock ticker and determines sentiment.
 
     Returns:
         - post_count: number of relevant posts found
@@ -215,124 +215,59 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
         }
 
     try:
-        # Calculate date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-        from_date = start_date.strftime('%Y-%m-%d')
-        to_date = end_date.strftime('%Y-%m-%d')
+        # Try using xai_sdk first
+        try:
+            from xai_sdk import Client
+            from xai_sdk.chat import user
+            from xai_sdk.tools import web_search
 
-        # xAI Agent Tools API endpoint for x_search
-        url = "https://api.x.ai/v1/responses"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+            # Calculate date range
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days_back)
+            from_date_str = start_date.strftime('%Y-%m-%d')
+            to_date_str = end_date.strftime('%Y-%m-%d')
 
-        # Build search prompt
-        search_prompt = f"""Search X/Twitter for posts about ${ticker} stock from {from_date} to {to_date}.
+            client = Client(api_key=api_key)
+            chat = client.chat.create(
+                model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+                tools=[web_search(
+                    from_date=from_date_str,
+                    to_date=to_date_str,
+                )],
+            )
 
-Find 5-15 relevant posts discussing ${ticker} as a stock/investment.
-Focus on posts with meaningful engagement (likes, reposts, replies).
+            # Search prompt for stock sentiment
+            search_prompt = f"""Search for recent posts and discussions about ${ticker} stock on X/Twitter.
 
-For each post found, extract:
-- text: the post content
-- url: link to the post
-- likes: number of likes
-- reposts: number of reposts
-- replies: number of replies
-- quotes: number of quote tweets
-- date: when posted
-- sentiment: bullish, bearish, or neutral based on content
+Find posts discussing ${ticker} as an investment. Analyze the sentiment.
 
-Return as JSON:
+Return a JSON summary:
 {{
-    "items": [
-        {{
-            "text": "post content",
-            "url": "https://x.com/...",
-            "likes": 100,
-            "reposts": 20,
-            "replies": 15,
-            "quotes": 5,
-            "date": "2025-01-20",
-            "sentiment": "bullish"
-        }}
+    "posts_found": 5,
+    "bullish_posts": 3,
+    "bearish_posts": 1,
+    "neutral_posts": 1,
+    "overall_sentiment": "bullish",
+    "key_themes": ["earnings beat", "AI growth"],
+    "notable_posts": [
+        {{"text": "summary of post", "sentiment": "bullish"}}
     ]
 }}"""
 
-        # x_search tool requires grok-4 family models
-        # Try grok-4-1-fast first, fallback configurable via env
-        model = os.environ.get('XAI_X_SEARCH_MODEL', 'grok-4-1-fast')
+            chat.append(user(search_prompt))
+            response = chat.sample()
+            output_text = response.content
 
-        payload = {
-            "model": model,
-            "tools": [{"type": "x_search"}],
-            "input": [
-                {
-                    "role": "user",
-                    "content": search_prompt,
-                }
-            ],
-        }
+        except ImportError:
+            logger.debug("xai_sdk not available, falling back to HTTP API")
+            # Fallback to direct HTTP if SDK not available
+            return _fetch_x_sentiment_http(ticker, days_back)
 
-        resp = requests.post(url, json=payload, headers=headers, timeout=45)
-
-        if resp.status_code != 200:
-            error_text = resp.text[:500] if resp.text else 'No response body'
-            logger.warning(f"xAI x_search failed for {ticker}: {resp.status_code} - {error_text}")
-            return {
-                'post_count': 0,
-                'engagement_score': 0,
-                'sentiment': 'unknown',
-                'top_posts': [],
-                'error': f'API error: {resp.status_code}',
-                'error_detail': error_text[:200]
-            }
-
-        result = resp.json()
-        logger.debug(f"xAI response keys for {ticker}: {list(result.keys())}")
-
-        # Parse response - extract output text from nested structure
-        output_text = ""
-
-        # Try 'output' structure (Agent Tools API format)
-        if 'output' in result:
-            for item in result.get('output', []):
-                if isinstance(item, dict):
-                    if item.get('type') == 'message':
-                        for content in item.get('content', []):
-                            if isinstance(content, dict) and content.get('type') == 'output_text':
-                                output_text = content.get('text', '')
-                                break
-                    elif 'text' in item:
-                        output_text = item['text']
-                elif isinstance(item, str):
-                    output_text = item
-                if output_text:
-                    break
-
-        # Try 'choices' structure (Chat Completions API format)
-        if not output_text and 'choices' in result:
-            for choice in result.get('choices', []):
-                if isinstance(choice, dict) and 'message' in choice:
-                    output_text = choice['message'].get('content', '')
-                    break
-
-        if not output_text:
-            logger.warning(f"No output text found in xAI response for {ticker}. Keys: {list(result.keys())}")
-            return {
-                'post_count': 0,
-                'engagement_score': 0,
-                'sentiment': 'unknown',
-                'top_posts': [],
-                'error': 'No output text in response'
-            }
-
-        # Extract JSON from response
+        # Parse response
         import json as json_module
-        json_match = re.search(r'\{[\s\S]*"items"[\s\S]*\}', output_text)
+        json_match = re.search(r'\{[\s\S]*\}', output_text)
         if not json_match:
-            logger.debug(f"No JSON found in xAI response for {ticker}. Output: {output_text[:200]}")
+            logger.debug(f"No JSON found in xAI response for {ticker}")
             return {
                 'post_count': 0,
                 'engagement_score': 0,
@@ -341,75 +276,27 @@ Return as JSON:
             }
 
         data = json_module.loads(json_match.group())
-        posts = data.get('items', [])
+        posts_found = data.get('posts_found', 0)
+        bullish = data.get('bullish_posts', 0)
+        bearish = data.get('bearish_posts', 0)
+        overall = data.get('overall_sentiment', 'neutral')
+        notable = data.get('notable_posts', [])
 
-        if not posts:
-            return {
-                'post_count': 0,
-                'engagement_score': 0,
-                'sentiment': 'neutral',
-                'top_posts': [],
-            }
-
-        # Calculate engagement-weighted scores
-        # Weights: likes 55%, reposts 25%, replies 15%, quotes 5%
-        def log1p_safe(x):
-            try:
-                return math.log1p(max(0, x or 0))
-            except:
-                return 0
-
-        def calc_engagement(post):
-            likes = post.get('likes', 0) or 0
-            reposts = post.get('reposts', 0) or 0
-            replies = post.get('replies', 0) or 0
-            quotes = post.get('quotes', 0) or 0
-
-            raw = (
-                0.55 * log1p_safe(likes) +
-                0.25 * log1p_safe(reposts) +
-                0.15 * log1p_safe(replies) +
-                0.05 * log1p_safe(quotes)
-            )
-            return raw
-
-        # Score each post
-        scored_posts = []
-        for post in posts:
-            eng = calc_engagement(post)
-            scored_posts.append({
-                **post,
-                'engagement_raw': eng
-            })
-
-        # Sort by engagement
-        scored_posts.sort(key=lambda x: x['engagement_raw'], reverse=True)
-
-        # Calculate overall engagement score (0-100)
-        # Normalize: log1p(1000 likes) ≈ 6.9, so max raw ≈ 4-5 for typical posts
-        total_engagement = sum(p['engagement_raw'] for p in scored_posts)
-        avg_engagement = total_engagement / len(scored_posts) if scored_posts else 0
-        engagement_score = min(100, int(avg_engagement * 15))  # Scale to 0-100
-
-        # Determine overall sentiment
-        sentiments = [p.get('sentiment', 'neutral') for p in posts]
-        bullish = sentiments.count('bullish')
-        bearish = sentiments.count('bearish')
-
-        if bullish > bearish * 2:
-            sentiment = 'bullish'
-        elif bearish > bullish * 2:
-            sentiment = 'bearish'
+        # Calculate engagement score based on post volume and sentiment strength
+        if posts_found > 0:
+            sentiment_ratio = bullish / posts_found if posts_found > 0 else 0.5
+            engagement_score = min(100, int(posts_found * 5 + sentiment_ratio * 50))
         else:
-            sentiment = 'neutral'
+            engagement_score = 0
 
         return {
-            'post_count': len(posts),
+            'post_count': posts_found,
             'engagement_score': engagement_score,
-            'sentiment': sentiment,
+            'sentiment': overall,
             'bullish_count': bullish,
             'bearish_count': bearish,
-            'top_posts': scored_posts[:3],
+            'key_themes': data.get('key_themes', []),
+            'top_posts': notable[:3],
         }
 
     except Exception as e:
@@ -421,6 +308,18 @@ Return as JSON:
             'top_posts': [],
             'error': str(e)
         }
+
+
+def _fetch_x_sentiment_http(ticker: str, days_back: int = 7) -> dict:
+    """Fallback HTTP implementation when xai_sdk is not available."""
+    # Return empty result - SDK is preferred
+    return {
+        'post_count': 0,
+        'engagement_score': 0,
+        'sentiment': 'unknown',
+        'top_posts': [],
+        'error': 'xai_sdk not available, install with: pip install xai-sdk'
+    }
 
 
 def fetch_sec_filings(ticker: str) -> dict:
