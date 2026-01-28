@@ -5678,6 +5678,71 @@ def api_x_sentiment(ticker):
         return jsonify({'ok': False, 'error': str(e), 'traceback': traceback.format_exc()[:500]}), 500
 
 
+@app.route('/api/social/reddit/<ticker>')
+def api_reddit_sentiment(ticker):
+    """
+    Debug endpoint: Get Reddit sentiment only via xAI web_search.
+    """
+    import traceback
+    import os
+
+    ticker = ticker.upper()
+    result = {'ticker': ticker, 'debug': True}
+
+    try:
+        api_key = os.environ.get('XAI_API_KEY', '')
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'XAI_API_KEY not set'}), 500
+
+        from xai_sdk import Client
+        from xai_sdk.chat import user
+        from xai_sdk.tools import web_search
+
+        result['step'] = 'creating_client'
+        client = Client(api_key=api_key)
+
+        result['step'] = 'creating_chat'
+        chat = client.chat.create(
+            model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+            tools=[web_search()],
+        )
+
+        result['step'] = 'appending_prompt'
+        search_prompt = f"""Search Reddit for recent posts about ${ticker} stock.
+Focus on: r/wallstreetbets, r/stocks, r/investing
+Return JSON: {{"posts_found": 5, "bullish_posts": 3, "bearish_posts": 1, "overall_sentiment": "bullish", "hot_posts": [{{"title": "example", "subreddit": "wallstreetbets"}}]}}"""
+
+        chat.append(user(search_prompt))
+
+        result['step'] = 'sampling'
+        response = chat.sample()
+
+        result['step'] = 'extracting_content'
+        output_text = response.content
+        result['raw_response'] = output_text[:1000] if output_text else 'empty'
+
+        # Parse JSON
+        import re
+        import json as json_module
+        json_match = re.search(r'\{[\s\S]*\}', output_text or '')
+        if json_match:
+            data = json_module.loads(json_match.group())
+            result['parsed_data'] = data
+            result['ok'] = True
+        else:
+            result['ok'] = False
+            result['error'] = 'No JSON found in response'
+
+        return jsonify(result)
+
+    except Exception as e:
+        result['ok'] = False
+        result['error'] = str(e)
+        result['error_type'] = type(e).__name__
+        result['traceback'] = traceback.format_exc()[:1000]
+        return jsonify(result), 500
+
+
 # =============================================================================
 # SUPPLY CHAIN DISCOVERY API
 # =============================================================================
