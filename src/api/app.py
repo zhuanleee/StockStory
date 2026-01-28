@@ -3686,49 +3686,46 @@ def handle_peakwarnings(chat_id):
 
 
 def handle_patents(chat_id, query=None):
-    """Handle /patents command - Patent intelligence."""
+    """Handle /patents command - Patent intelligence via PatentView API."""
     try:
-        from src.data.patents import (
-            get_patent_intelligence,
-            format_patent_message
+        from src.patents.patent_tracker import (
+            get_patent_stats,
+            get_innovation_signal,
+            format_patent_report
         )
 
-        send_message(chat_id, "📜 Fetching patent intelligence...")
-
-        intel = get_patent_intelligence()
-
         if query:
-            # Single company or theme lookup
-            query = query.upper()
-            if len(query) <= 5:  # Likely a ticker
-                activity = intel.get_company_patents(query)
-                msg = f"📜 *PATENTS: {query}*\n\n"
-                msg += f"*Patents (2yr):* {activity.patent_count}\n"
-                msg += f"*Trend:* {activity.trend}\n"
-                msg += f"*YoY Change:* {'+' if activity.yoy_change > 0 else ''}{activity.yoy_change:.0f}%\n"
-                msg += f"*Signal:* {activity.signal_strength:.0%}\n\n"
+            # Single ticker lookup
+            ticker = query.upper().strip()
+            send_message(chat_id, f"Fetching patent data for {ticker}...")
 
-                if activity.recent_patents:
-                    msg += "*Recent Patents:*\n"
-                    for p in activity.recent_patents[:5]:
-                        msg += f"• {p.get('title', '')[:50]}...\n"
-            else:
-                # Theme lookup
-                activity = intel.get_theme_patent_activity(query.lower())
-                msg = f"📜 *PATENTS: {query}*\n\n"
-                msg += f"*Patents (2yr):* {activity.patent_count}\n"
-                msg += f"*Trend:* {activity.trend}\n"
-
+            # Get detailed patent report
+            msg = format_patent_report(ticker)
             send_message(chat_id, msg)
         else:
-            # Full trends report
-            data = intel.get_all_themes_patent_activity()
-            msg = format_patent_message(data)
+            # Show help/usage
+            msg = """*Patent Intelligence*
+
+Search USPTO patent filings by company.
+
+*Usage:*
+`/patents NVDA` - NVIDIA patents
+`/patents AAPL` - Apple patents
+`/patents TSLA` - Tesla patents
+
+*Provides:*
+- Total patents (3 years)
+- Innovation score (0-100)
+- Filing trend (accelerating/stable/declining)
+- Top patent categories
+- Recent patent titles
+
+_Powered by USPTO PatentView API_"""
             send_message(chat_id, msg)
 
     except ImportError as e:
         logger.error(f"Patents import error: {e}")
-        send_message(chat_id, "❌ Patent module not available.")
+        send_message(chat_id, "Patent module not available.")
     except Exception as e:
         logger.error(f"Patents command error: {e}")
         send_message(chat_id, f"Error: {e}")
