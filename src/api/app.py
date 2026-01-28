@@ -1738,37 +1738,49 @@ def api_scan():
 @app.route('/api/scan/trigger', methods=['POST', 'GET'])
 def api_scan_trigger():
     """
-    Trigger a quick scan and save results to CSV.
-    This populates data for the dashboard.
+    Trigger a scan and save results to CSV.
 
     Query params:
-        tickers: Comma-separated list (default: top 50 theme stocks)
-        full: If 'true', run full universe scan (slower)
+        tickers: Comma-separated list (custom tickers)
+        mode: 'quick' (20 stocks), 'indices' (S&P500+NASDAQ100), 'full' (Polygon 300M+ mcap)
+              Default: 'indices'
+        min_mcap: Minimum market cap in millions (default: 300 for full mode)
     """
     import concurrent.futures
 
     tickers_param = request.args.get('tickers', '')
-    full_scan = request.args.get('full', 'false').lower() == 'true'
+    mode = request.args.get('mode', 'indices').lower()
+    min_mcap = int(request.args.get('min_mcap', 300)) * 1_000_000  # Convert to dollars
+
+    # Legacy support: full=true -> mode=full
+    if request.args.get('full', 'false').lower() == 'true':
+        mode = 'full'
 
     try:
         # Determine tickers to scan
         if tickers_param:
             tickers = [t.strip().upper() for t in tickers_param.split(',') if t.strip()]
-        elif full_scan:
+            logger.info(f"Custom scan: {len(tickers)} tickers")
+        elif mode == 'full':
+            # Full Polygon universe with market cap filter
             from src.data.universe_manager import get_universe_manager
             um = get_universe_manager()
-            tickers = um.get_scan_universe()
+            tickers = um.get_scan_universe(use_polygon_full=True, min_market_cap=min_mcap)
+            logger.info(f"Full scan: {len(tickers)} tickers (min mcap ${min_mcap/1e6:.0f}M)")
+        elif mode == 'indices':
+            # S&P 500 + NASDAQ 100 (faster, ~600 stocks)
+            from src.data.universe_manager import get_universe_manager
+            um = get_universe_manager()
+            tickers = um.get_scan_universe(use_polygon_full=False)
+            logger.info(f"Indices scan: {len(tickers)} tickers (S&P500 + NASDAQ100)")
         else:
-            # Quick scan: top 20 theme stocks (fits in Railway timeout)
+            # Quick scan: top theme stocks
             tickers = [
-                'NVDA', 'AMD', 'AVGO', 'TSM',     # AI/Semis
-                'MSFT', 'GOOGL', 'META', 'AAPL',  # Big Tech
-                'TSLA', 'VST', 'CEG',             # EV/Nuclear
-                'PLTR', 'CRWD', 'NET',            # Software
-                'LLY', 'NVO',                     # Biotech/GLP-1
-                'LMT', 'JPM', 'XOM',              # Defense/Finance/Energy
-                'SPY',                            # Index
+                'NVDA', 'AMD', 'AVGO', 'TSM', 'MSFT', 'GOOGL', 'META', 'AAPL',
+                'TSLA', 'VST', 'CEG', 'PLTR', 'CRWD', 'NET', 'LLY', 'NVO',
+                'LMT', 'JPM', 'XOM', 'SPY',
             ]
+            logger.info(f"Quick scan: {len(tickers)} tickers")
 
         def run_async_scan(ticker_list):
             """Run async scan in a separate thread with its own event loop."""
@@ -1776,9 +1788,14 @@ def api_scan_trigger():
             from src.core.async_scanner import AsyncScanner
 
             async def scan():
-                scanner = AsyncScanner(max_concurrent=25)
+                # Adjust concurrency based on scan size
+                max_concurrent = 50 if len(ticker_list) > 100 else 25
+                scanner = AsyncScanner(max_concurrent=max_concurrent)
                 try:
                     return await scanner.run_scan_async(ticker_list)
+                except Exception as e:
+                    logger.error(f"Async scan error: {e}")
+                    raise
                 finally:
                     await scanner.close()
 
@@ -1789,10 +1806,13 @@ def api_scan_trigger():
             finally:
                 loop.close()
 
+        # Longer timeout for larger scans
+        timeout = 600 if len(tickers) > 100 else 300  # 10 min for large, 5 min for small
+
         # Run in thread pool to avoid event loop conflicts with gunicorn
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(run_async_scan, tickers)
-            results = future.result(timeout=300)  # 5 min timeout
+            results = future.result(timeout=timeout)
 
         if isinstance(results, tuple):
             df = results[0]
@@ -1801,16 +1821,17 @@ def api_scan_trigger():
 
         return jsonify({
             'ok': True,
-            'scanned': len(df),
-            'tickers': tickers[:10],  # Show first 10
-            'message': f'Scan complete. {len(df)} stocks saved to CSV.',
+            'scanned': len(df) if df is not None else 0,
+            'mode': mode,
+            'universe_size': len(tickers),
+            'message': f'Scan complete. {len(df) if df is not None else 0} stocks saved to CSV.',
             'timestamp': datetime.now().isoformat()
         })
 
     except concurrent.futures.TimeoutError:
-        return jsonify({'ok': False, 'error': 'Scan timed out after 5 minutes'})
+        return jsonify({'ok': False, 'error': f'Scan timed out ({len(tickers)} tickers). Try mode=quick.'})
     except Exception as e:
-        logger.error(f"Scan trigger error: {e}")
+        logger.error(f"Scan trigger error: {e}", exc_info=True)
         return jsonify({'ok': False, 'error': str(e)})
 
 

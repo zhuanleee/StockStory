@@ -873,10 +873,10 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-primary" onclick="triggerScan()" style="width: 100%;">🔄 Run New Scan</button>
+                            <button class="btn btn-primary" onclick="triggerScan('indices')" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
+                            <button class="btn btn-ghost" onclick="triggerScan('full')" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
                             <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
-                            <button class="btn btn-ghost" onclick="switchTab('themes')" style="width: 100%;">🔥 Browse Themes</button>
                         </div>
                     </div>
                 </div>
@@ -889,7 +889,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan()">🔄 Run Scan</button>
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('indices')">🔄 Scan</button>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('full')">🌐 Full</button>
                         <select id="filter-strength" class="btn btn-ghost" onchange="filterTable()">
                             <option value="">All Strength</option>
                             <option value="hot">Hot</option>
@@ -1866,18 +1867,19 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
 
-        async function triggerScan() {
+        async function triggerScan(mode = 'indices') {
             const btn = event.target;
             const originalText = btn.textContent;
-            btn.textContent = '⏳ Scanning...';
+            const modeLabel = mode === 'full' ? 'Full Universe' : mode === 'indices' ? 'S&P+NASDAQ' : 'Quick';
+            btn.textContent = `⏳ Scanning ${modeLabel}...`;
             btn.disabled = true;
 
             try {
-                const res = await fetch(`${API_BASE}/scan/trigger`, { method: 'POST' });
+                const res = await fetch(`${API_BASE}/scan/trigger?mode=${mode}`, { method: 'POST' });
                 const data = await res.json();
 
                 if (data.ok) {
-                    btn.textContent = '✅ Done!';
+                    btn.textContent = `✅ ${data.scanned} stocks!`;
                     // Refresh the scan data
                     await fetchScan();
                     setTimeout(() => {
@@ -1885,7 +1887,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         btn.disabled = false;
                     }, 2000);
                 } else {
-                    btn.textContent = '❌ Failed';
+                    btn.textContent = '❌ ' + (data.error || 'Failed').substring(0, 20);
                     setTimeout(() => {
                         btn.textContent = originalText;
                         btn.disabled = false;
