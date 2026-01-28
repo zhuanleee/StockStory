@@ -471,7 +471,8 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
         try:
             ai_analysis = self.analyze_with_ai()
         except Exception as e:
-            logger.error(f"AI analysis exception: {e}")
+            import traceback
+            logger.error(f"AI analysis exception: {e}\n{traceback.format_exc()}")
             return self._fallback_static_analysis()
 
         if 'error' in ai_analysis:
@@ -979,11 +980,14 @@ Only include real US stock tickers. Be specific and accurate."""
                 'themes_detected': list(set(o.get('theme') for o in opportunities if o.get('theme')))
             }
         except Exception as e:
-            logger.error(f"get_ai_opportunities error: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"get_ai_opportunities error: {e}\n{tb}")
             return {
                 'timestamp': datetime.now().isoformat(),
                 'source': 'error_fallback',
                 'error': str(e),
+                'traceback': tb[:500],
                 'total_opportunities': 0,
                 'opportunities': [],
                 'themes_detected': []
