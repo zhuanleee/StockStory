@@ -117,19 +117,89 @@ def fetch_stocktwits_sentiment(ticker: str) -> dict:
         return {'sentiment': 'neutral', 'message_volume': 0, 'trending': False}
 
 
-def fetch_reddit_mentions(ticker: str, days_back: int = 7) -> dict:
+def fetch_reddit_mentions(ticker: str, days_back: int = 7, use_xai: bool = True) -> dict:
     """
-    Fetch mentions from Reddit using direct JSON API.
+    Fetch mentions from Reddit.
 
-    Searches r/wallstreetbets, r/stocks, r/investing, r/options.
+    Uses xAI web_search (LiveSearch) if available, falls back to direct Reddit API.
 
     Returns:
         - mention_count: number of recent mentions
         - sentiment: estimated from post content
         - hot_posts: list of relevant posts
     """
-    # Use direct Reddit API for reliability (xAI web_search can be slow)
-    return _fetch_reddit_direct(ticker)
+    import os
+
+    # Option to disable xAI for Reddit (for debugging or performance)
+    if not use_xai:
+        return _fetch_reddit_direct(ticker)
+
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        logger.debug(f"XAI_API_KEY not set, using direct Reddit API for {ticker}")
+        return _fetch_reddit_direct(ticker)
+
+    try:
+        from xai_sdk import Client
+        from xai_sdk.chat import user
+        from xai_sdk.tools import web_search
+
+        client = Client(api_key=api_key)
+        chat = client.chat.create(
+            model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
+            tools=[web_search()],
+        )
+
+        # Search prompt for Reddit mentions
+        search_prompt = f"""Search Reddit for recent posts (last {days_back} days) about ${ticker} stock.
+
+Focus on: r/wallstreetbets, r/stocks, r/investing, r/options
+
+Return JSON only:
+{{"posts_found": 10, "bullish_posts": 6, "bearish_posts": 2, "overall_sentiment": "bullish", "total_upvotes": 5000, "total_comments": 500, "key_discussions": ["topic1"], "hot_posts": [{{"subreddit": "wallstreetbets", "title": "title", "sentiment": "bullish", "upvotes": 1000}}]}}"""
+
+        chat.append(user(search_prompt))
+        response = chat.sample()
+        output_text = response.content
+
+        # Parse response
+        import json as json_module
+        json_match = re.search(r'\{[\s\S]*\}', output_text)
+        if not json_match:
+            logger.warning(f"No JSON in xAI Reddit response for {ticker}, using direct API")
+            return _fetch_reddit_direct(ticker)
+
+        data = json_module.loads(json_match.group())
+        posts_found = data.get('posts_found', 0)
+        overall = data.get('overall_sentiment', 'neutral')
+
+        # Map sentiment
+        if overall == 'bullish':
+            sentiment = 'bullish'
+        elif overall == 'bearish':
+            sentiment = 'bearish'
+        elif posts_found > 0:
+            sentiment = 'neutral'
+        else:
+            sentiment = 'quiet'
+
+        return {
+            'mention_count': posts_found,
+            'total_score': data.get('total_upvotes', 0),
+            'total_comments': data.get('total_comments', 0),
+            'sentiment': sentiment,
+            'bullish_count': data.get('bullish_posts', 0),
+            'bearish_count': data.get('bearish_posts', 0),
+            'key_discussions': data.get('key_discussions', []),
+            'hot_posts': data.get('hot_posts', [])[:3],
+        }
+
+    except ImportError as e:
+        logger.warning(f"xai_sdk import error: {e}, using direct Reddit API")
+        return _fetch_reddit_direct(ticker)
+    except Exception as e:
+        logger.error(f"Reddit xAI error for {ticker}: {type(e).__name__}: {e}")
+        return _fetch_reddit_direct(ticker)
 
 
 def _fetch_reddit_direct(ticker: str) -> dict:
