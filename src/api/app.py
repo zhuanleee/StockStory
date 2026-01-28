@@ -33,19 +33,22 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
-# CORS configuration for GitHub Pages dashboard
+# CORS configuration for dashboard
 ALLOWED_ORIGINS = [
     'https://zhuanleee.github.io',
+    'https://web-production-46562.up.railway.app',
     'http://localhost:5000',
     'http://127.0.0.1:5000',
 ]
 
 @app.after_request
-def add_cors_headers(response):
-    """Add CORS headers for GitHub Pages dashboard."""
+def add_cors_headers_first(response):
+    """Add CORS headers for dashboard requests."""
     origin = request.headers.get('Origin', '')
-    if origin in ALLOWED_ORIGINS or origin.endswith('.github.io'):
-        response.headers['Access-Control-Allow-Origin'] = origin
+    # Allow same-origin requests (no Origin header) or explicitly allowed origins
+    if not origin or origin in ALLOWED_ORIGINS or origin.endswith('.github.io') or origin.endswith('.up.railway.app'):
+        if origin:
+            response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
@@ -1550,18 +1553,6 @@ def set_webhook():
 # =============================================================================
 # DASHBOARD API ENDPOINTS
 # =============================================================================
-
-
-@app.after_request
-def add_cors_headers(response):
-    """Add CORS headers to response based on allowed origins."""
-    origin = request.headers.get('Origin', '')
-    allowed = config.security.allowed_cors_origins
-    if '*' in allowed or origin in allowed:
-        response.headers['Access-Control-Allow-Origin'] = origin if origin else '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    return response
 
 
 @app.route('/api/<path:path>', methods=['OPTIONS'])
