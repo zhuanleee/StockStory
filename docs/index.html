@@ -737,7 +737,7 @@
             <div class="stats-row">
                 <div class="stat">
                     <div class="stat-label">Stocks Scanned</div>
-                    <div class="stat-value blue" id="stat-scanned">10</div>
+                    <div class="stat-value blue" id="stat-scanned">0</div>
                 </div>
                 <div class="stat">
                     <div class="stat-label">Hot Opportunities</div>
@@ -749,7 +749,7 @@
                 </div>
                 <div class="stat">
                     <div class="stat-label">Watchlist</div>
-                    <div class="stat-value" id="stat-watchlist">2</div>
+                    <div class="stat-value" id="stat-watchlist">0</div>
                 </div>
             </div>
 
@@ -835,6 +835,28 @@
                         </div>
                     </div>
 
+                    <!-- High Conviction Alerts -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">🎯 High Conviction</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchConvictionAlerts()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="conviction-alerts-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading multi-signal alerts...</div>
+                        </div>
+                    </div>
+
+                    <!-- Supply Chain Opportunities -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">🔗 Supply Chain</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchSupplyChain()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="supplychain-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading lagging opportunities...</div>
+                        </div>
+                    </div>
+
                     <!-- Upcoming Earnings -->
                     <div class="card sidebar-card">
                         <div class="card-header">
@@ -851,9 +873,10 @@
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Run Full Scan</button>
+                            <button class="btn btn-primary" onclick="triggerScan('indices')" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
+                            <button class="btn btn-ghost" onclick="triggerScan('full')" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
+                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
-                            <button class="btn btn-ghost" onclick="switchTab('themes')" style="width: 100%;">🔥 Browse Themes</button>
                         </div>
                     </div>
                 </div>
@@ -866,6 +889,8 @@
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
                     <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('indices')">🔄 Scan</button>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('full')">🌐 Full</button>
                         <select id="filter-strength" class="btn btn-ghost" onchange="filterTable()">
                             <option value="">All Strength</option>
                             <option value="hot">Hot</option>
@@ -894,97 +919,7 @@
                                 </tr>
                             </thead>
                             <tbody id="scan-table-body">
-                                <tr>
-                    <td>1</td>
-                    <td class="ticker-cell" onclick="showTicker('NVDA')">NVDA</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 42.1%"></span></span> 42</td>
-                    <td>watchlist</td>
-                    <td>AI Infrastructure</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>2</td>
-                    <td class="ticker-cell" onclick="showTicker('GOOGL')">GOOGL</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 42.1%"></span></span> 42</td>
-                    <td>watchlist</td>
-                    <td>AI Infrastructure</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>3</td>
-                    <td class="ticker-cell" onclick="showTicker('AMD')">AMD</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 38.5%"></span></span> 38</td>
-                    <td>waiting</td>
-                    <td>AI Infrastructure</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>4</td>
-                    <td class="ticker-cell" onclick="showTicker('TSLA')">TSLA</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 37.9%"></span></span> 38</td>
-                    <td>waiting</td>
-                    <td>AI Infrastructure</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>5</td>
-                    <td class="ticker-cell" onclick="showTicker('META')">META</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 19.5%"></span></span> 20</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>6</td>
-                    <td class="ticker-cell" onclick="showTicker('AMZN')">AMZN</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 18.6%"></span></span> 19</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>7</td>
-                    <td class="ticker-cell" onclick="showTicker('AAPL')">AAPL</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 15.3%"></span></span> 15</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>8</td>
-                    <td class="ticker-cell" onclick="showTicker('MSFT')">MSFT</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 15.3%"></span></span> 15</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>9</td>
-                    <td class="ticker-cell" onclick="showTicker('NFLX')">NFLX</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 13.5%"></span></span> 14</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr><tr>
-                    <td>10</td>
-                    <td class="ticker-cell" onclick="showTicker('CRM')">CRM</td>
-                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 12.2%"></span></span> 12</td>
-                    <td>none</td>
-                    <td>nan</td>
-                    <td style="color: var(--green);">+0.00%</td>
-                    <td>0</td>
-                    <td>0</td>
-                </tr>
+                                
                             </tbody>
                         </table>
                     </div>
@@ -1187,6 +1122,99 @@
                 </div>
                 <div class="card-body" id="filings-feed">
                     <div style="color: var(--text-muted); font-size: 0.8125rem;">Select a ticker above to view filings...</div>
+                </div>
+            </div>
+
+            <!-- Government Contracts Section -->
+            <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🏛️ Government Contracts</h3>
+                <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
+                    Track federal spending on defense, tech, and infrastructure. Government contracts often signal sector momentum.
+                </p>
+                <div class="grid grid-3">
+                    <!-- Contract Themes -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 Theme Spending</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchContractThemes()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="contract-themes-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading contract data...</div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Contracts -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📋 Recent Awards</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchRecentContracts()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="recent-contracts-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading recent contracts...</div>
+                        </div>
+                    </div>
+
+                    <!-- Company Lookup -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🔍 Company Lookup</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="margin-bottom: 12px;">
+                                <input type="text" id="contract-ticker-input" placeholder="Enter ticker (e.g., LMT)..."
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <button class="btn btn-primary" onclick="lookupCompanyContracts()" style="width: 100%;">Search Contracts</button>
+                            <div id="contract-lookup-result" style="margin-top: 12px; font-size: 0.8125rem;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patent Intelligence Section -->
+            <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🔬 Patent Intelligence</h3>
+                <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
+                    Patents are filed 6-12 months before product launches. Track R&D activity as a leading indicator.
+                </p>
+                <div class="grid grid-3">
+                    <!-- Patent Themes -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🏷️ Theme Activity</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchPatentThemes()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="patent-themes-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading patent themes...</div>
+                        </div>
+                    </div>
+
+                    <!-- Patent Lookup -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🔍 Company Patents</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="margin-bottom: 12px;">
+                                <input type="text" id="patent-ticker-input" placeholder="Enter ticker (e.g., NVDA)..."
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <button class="btn btn-primary" onclick="lookupCompanyPatents()" style="width: 100%;">Search Patents</button>
+                            <div id="patent-lookup-result" style="margin-top: 12px; font-size: 0.8125rem;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Patent Stats -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 Why Patents Matter</div>
+                        </div>
+                        <div class="card-body" style="font-size: 0.8125rem; color: var(--text-muted);">
+                            <div style="margin-bottom: 8px;"><strong style="color: var(--green);">📈 Leading Indicator</strong><br>Patent filings precede product launches by 6-12 months</div>
+                            <div style="margin-bottom: 8px;"><strong style="color: var(--blue);">💰 R&D Investment</strong><br>Surge in patents = heavy investment in area</div>
+                            <div><strong style="color: var(--yellow);">🎯 Theme Discovery</strong><br>Track emerging tech before it hits the market</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1528,10 +1556,10 @@
                     console.log('Connecting to sync server:', serverUrl);
 
                     this.socket = io(serverUrl, {
-                        transports: ['polling', 'websocket'],  // Try polling first
+                        transports: ['polling'],  // Polling only - WebSocket upgrade fails on Railway
                         secure: isSecure,
                         reconnection: true,
-                        reconnectionAttempts: 3,  // Reduced attempts
+                        reconnectionAttempts: 3,
                         reconnectionDelay: 3000,
                         reconnectionDelayMax: 10000,
                         timeout: 10000,
@@ -1932,6 +1960,42 @@
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
 
+        async function triggerScan(mode = 'indices') {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            const modeLabel = mode === 'full' ? 'Full Universe' : mode === 'indices' ? 'S&P+NASDAQ' : 'Quick';
+            btn.textContent = `⏳ Scanning ${modeLabel}...`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/scan/trigger?mode=${mode}`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.ok) {
+                    btn.textContent = `✅ ${data.scanned} stocks!`;
+                    // Refresh the scan data
+                    await fetchScan();
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    btn.textContent = '❌ ' + (data.error || 'Failed').substring(0, 20);
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 3000);
+                }
+            } catch (e) {
+                console.warn('Trigger scan failed:', e);
+                btn.textContent = '❌ Error';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 3000);
+            }
+        }
+
         function renderTopPicks(stocks) {
             const top = stocks.slice(0, 10);
             if (top.length === 0) {
@@ -1991,6 +2055,208 @@
                     <td>${(s.rs_rating || 0).toFixed(0)}</td>
                 </tr>
             `).join('');
+        }
+
+        async function fetchConvictionAlerts() {
+            try {
+                document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Scanning signals...</div>';
+                const res = await fetch(`${API_BASE}/conviction/alerts?min_score=60`);
+                const data = await res.json();
+
+                if (data.ok && data.alerts && data.alerts.length > 0) {
+                    const recEmoji = {
+                        'STRONG BUY': '🟢🟢',
+                        'BUY': '🟢',
+                        'WATCH': '🟡',
+                        'HOLD': '⚪',
+                        'AVOID': '🔴'
+                    };
+
+                    let html = '';
+                    data.alerts.slice(0, 5).forEach(a => {
+                        const emoji = recEmoji[a.recommendation] || '⚪';
+                        html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showConvictionDetail('${a.ticker}')">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-weight: 600;">${a.ticker}</span>
+                                <span style="font-size: 0.875rem;">${emoji} ${a.conviction_score.toFixed(0)}</span>
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">
+                                ${a.bullish_signals} bullish • ${a.recommendation}
+                            </div>
+                        </div>`;
+                    });
+                    document.getElementById('conviction-alerts-container').innerHTML = html;
+                } else {
+                    document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No high-conviction setups. Signals need to align.</div>';
+                }
+            } catch (e) {
+                console.warn('Conviction alerts fetch failed:', e);
+                document.getElementById('conviction-alerts-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Could not load conviction data</div>';
+            }
+        }
+
+        async function showConvictionDetail(ticker) {
+            try {
+                const res = await fetch(`${API_BASE}/conviction/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    const recEmoji = {'STRONG BUY': '🟢🟢', 'BUY': '🟢', 'WATCH': '🟡', 'HOLD': '⚪', 'AVOID': '🔴'};
+                    let msg = `🎯 ${ticker} CONVICTION: ${data.conviction_score.toFixed(0)}/100\n`;
+                    msg += `Recommendation: ${data.recommendation} ${recEmoji[data.recommendation] || ''}\n\n`;
+
+                    msg += `Signals:\n`;
+                    if (data.signals.insider) msg += `• Insider: ${data.signals.insider.score.toFixed(0)} (${data.signals.insider.signal})\n`;
+                    if (data.signals.options) msg += `• Options: ${data.signals.options.score.toFixed(0)} (${data.signals.options.signal})\n`;
+                    if (data.signals.patents) msg += `• Patents: ${data.signals.patents.score.toFixed(0)} (${data.signals.patents.signal})\n`;
+                    if (data.signals.contracts) msg += `• Contracts: ${data.signals.contracts.score.toFixed(0)} (${data.signals.contracts.signal})\n`;
+                    if (data.signals.sentiment) msg += `• Sentiment: ${data.signals.sentiment.score.toFixed(0)} (${data.signals.sentiment.signal})\n`;
+                    if (data.signals.technical) msg += `• Technical: ${data.signals.technical.score.toFixed(0)} (${data.signals.technical.signal})\n`;
+
+                    if (data.warnings && data.warnings.length > 0) {
+                        msg += `\nWarnings: ${data.warnings.join(', ')}`;
+                    }
+
+                    alert(msg);
+                }
+            } catch (e) {
+                console.warn('Conviction detail fetch failed:', e);
+            }
+        }
+
+        // Supply Chain Discovery Functions
+        async function fetchSupplyChain() {
+            try {
+                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">🤖 AI analyzing market data...</div>';
+
+                // Try AI-driven discovery first
+                let data = null;
+                try {
+                    const aiRes = await fetch(`${API_BASE}/supplychain/ai-discover`);
+                    data = await aiRes.json();
+                } catch (e) {
+                    console.warn('AI discovery failed, trying static:', e);
+                }
+
+                // Fallback to static themes if AI fails
+                if (!data || !data.ok || !data.opportunities || data.opportunities.length === 0) {
+                    const staticRes = await fetch(`${API_BASE}/supplychain/themes`);
+                    data = await staticRes.json();
+                    data.isStatic = true;
+                }
+
+                if (data.ok) {
+                    let html = '';
+
+                    // AI-driven opportunities
+                    if (data.opportunities && data.opportunities.length > 0) {
+                        const themeGroups = {};
+                        for (const opp of data.opportunities) {
+                            const theme = opp.theme || 'Unknown';
+                            if (!themeGroups[theme]) themeGroups[theme] = [];
+                            themeGroups[theme].push(opp);
+                        }
+
+                        for (const [theme, opps] of Object.entries(themeGroups).slice(0, 4)) {
+                            const topOpp = opps[0];
+                            const confEmoji = topOpp.confidence > 75 ? '🔥' : topOpp.confidence > 50 ? '🌱' : '👀';
+
+                            html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showAIOpportunity('${encodeURIComponent(JSON.stringify(opps.slice(0, 5)))}')">
+                                <div>
+                                    <span style="font-weight: 600;">${confEmoji} ${theme}</span>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">${opps.length} opportunities</div>
+                                    <div style="font-size: 0.7rem; color: var(--green);">Top: ${opps.slice(0, 2).map(o => o.ticker).join(', ')}</div>
+                                </div>
+                            </div>`;
+                        }
+
+                        html += `<div style="font-size: 0.7rem; color: var(--blue); margin-top: 8px;">🤖 AI-analyzed • ${data.opportunities.length} total</div>`;
+                    }
+                    // Static theme mapping
+                    else if (data.themes && data.themes.length > 0) {
+                        const stageEmoji = {'emerging': '🌱', 'accelerating': '🚀', 'mainstream': '🌊', 'late': '🍂'};
+
+                        for (const theme of data.themes.slice(0, 5)) {
+                            const emoji = stageEmoji[theme.lifecycle_stage] || '⚪';
+                            html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showSupplyChainDetail('${theme.theme_id}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <span style="font-weight: 600;">${emoji} ${theme.theme_name}</span>
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">${theme.laggard_count} lagging plays</div>
+                                    </div>
+                                    <span style="color: var(--green); font-size: 0.8rem;">${theme.opportunity_score?.toFixed(0) || '--'}</span>
+                                </div>
+                            </div>`;
+                        }
+
+                        html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 8px;">Total: ${data.total_opportunities} opportunities</div>`;
+                    } else {
+                        html = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No lagging plays found.</div>';
+                    }
+
+                    document.getElementById('supplychain-container').innerHTML = html;
+                } else {
+                    document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">No lagging plays found. Run a scan first.</div>';
+                }
+            } catch (e) {
+                console.warn('Supply chain fetch failed:', e);
+                document.getElementById('supplychain-container').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8125rem;">Could not load supply chain data</div>';
+            }
+        }
+
+        function showAIOpportunity(encodedData) {
+            try {
+                const opps = JSON.parse(decodeURIComponent(encodedData));
+                let msg = '🤖 AI SUPPLY CHAIN OPPORTUNITIES\n\n';
+
+                for (const opp of opps) {
+                    msg += `• ${opp.ticker} (${opp.role || opp.source})\n`;
+                    if (opp.connection) msg += `  Connection: ${opp.connection}\n`;
+                    if (opp.catalyst) msg += `  Catalyst: ${opp.catalyst}\n`;
+                    if (opp.thesis) msg += `  Thesis: ${opp.thesis}\n`;
+                    if (opp.opportunity_score) msg += `  Score: ${opp.opportunity_score}/100\n`;
+                    msg += '\n';
+                }
+
+                alert(msg);
+            } catch (e) {
+                console.warn('Failed to parse AI opportunity:', e);
+            }
+        }
+
+        async function showSupplyChainDetail(themeId) {
+            try {
+                const res = await fetch(`${API_BASE}/supplychain/${themeId}`);
+                const data = await res.json();
+
+                if (data.ok && data.theme) {
+                    const theme = data.theme;
+                    let msg = `🔗 SUPPLY CHAIN: ${theme.theme_name}\n`;
+                    msg += `Stage: ${theme.lifecycle_stage.toUpperCase()}\n`;
+                    msg += `Opportunity: ${theme.opportunity_score.toFixed(0)}/100\n\n`;
+
+                    msg += `Lagging Plays (${theme.laggard_count} stocks):\n`;
+
+                    // Show suppliers that haven't moved
+                    const allNodes = [...(theme.suppliers || []), ...(theme.equipment || []), ...(theme.materials || []), ...(theme.beneficiaries || []), ...(theme.infrastructure || [])];
+                    const laggards = allNodes.filter(n => !n.has_moved).sort((a, b) => b.opportunity_score - a.opportunity_score).slice(0, 8);
+
+                    for (const node of laggards) {
+                        const perf = node.price_performance_30d >= 0 ? '+' + node.price_performance_30d.toFixed(1) : node.price_performance_30d.toFixed(1);
+                        msg += `• ${node.ticker} (${node.role}): Story ${node.story_score.toFixed(0)}, 30d: ${perf}%\n`;
+                    }
+
+                    msg += `\nValidation:\n`;
+                    msg += `• Patents: ${theme.patent_validation.toFixed(0)}/100\n`;
+                    msg += `• Contracts: ${theme.contract_validation.toFixed(0)}/100\n`;
+                    msg += `• Insider: ${theme.insider_validation.toFixed(0)}/100\n`;
+                    msg += `\n${theme.estimated_runway}`;
+
+                    alert(msg);
+                }
+            } catch (e) {
+                console.warn('Supply chain detail fetch failed:', e);
+            }
         }
 
         async function fetchEarnings() {
@@ -2315,6 +2581,200 @@
                 }
             } catch (e) {
                 alert('Failed to add deal');
+            }
+        }
+
+        // Government Contracts Functions
+        async function fetchContractThemes() {
+            try {
+                document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/contracts/themes`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    let html = '';
+                    const sortedThemes = Object.entries(data.themes)
+                        .filter(([_, info]) => info.total_value > 0)
+                        .sort((a, b) => b[1].total_value - a[1].total_value)
+                        .slice(0, 8);
+
+                    sortedThemes.forEach(([theme, info]) => {
+                        const trendEmoji = info.trend === 'increasing' ? '📈' : info.trend === 'decreasing' ? '📉' : '➡️';
+                        const trendColor = info.trend === 'increasing' ? 'var(--green)' : info.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+                        const valueB = (info.total_value / 1e9).toFixed(1);
+
+                        html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <div style="font-weight: 500;">${theme.replace(/_/g, ' ').toUpperCase()}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${info.contract_count || 0} contracts</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 600;">$${valueB}B</div>
+                                <div style="font-size: 0.75rem; color: ${trendColor};">${trendEmoji} ${info.mom_change > 0 ? '+' : ''}${(info.mom_change || 0).toFixed(0)}% MoM</div>
+                            </div>
+                        </div>`;
+                    });
+
+                    document.getElementById('contract-themes-container').innerHTML = html || '<div style="color: var(--text-muted);">No contract data</div>';
+                } else {
+                    document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Contracts API not configured</div>';
+                }
+            } catch (e) {
+                console.warn('Contract themes fetch failed:', e);
+                document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Could not load contract data</div>';
+            }
+        }
+
+        async function fetchRecentContracts() {
+            try {
+                document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/contracts/recent`);
+                const data = await res.json();
+
+                if (data.ok && data.contracts) {
+                    let html = '';
+                    data.contracts.slice(0, 6).forEach(c => {
+                        const valueM = (c.amount / 1e6).toFixed(1);
+                        html += `<div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div style="font-weight: 500; font-size: 0.8125rem;">${c.recipient || 'Unknown'}</div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">${c.agency || 'Federal'}</span>
+                                <span style="font-weight: 600; color: var(--green);">$${valueM}M</span>
+                            </div>
+                        </div>`;
+                    });
+                    document.getElementById('recent-contracts-container').innerHTML = html || '<div style="color: var(--text-muted);">No recent contracts</div>';
+                } else {
+                    document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">No data</div>';
+                }
+            } catch (e) {
+                console.warn('Recent contracts fetch failed:', e);
+                document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">Could not load contracts</div>';
+            }
+        }
+
+        async function lookupCompanyContracts() {
+            const ticker = document.getElementById('contract-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('contract-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Searching contracts...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/contracts/company/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.activity) {
+                    const a = data.activity;
+                    const valueB = (a.total_value / 1e9).toFixed(2);
+                    const signalPct = Math.round((a.signal_strength || 0) * 100);
+
+                    let html = `
+                        <div style="background: var(--bg-hover); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--green);">$${valueB}B</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Total Contract Value</div>
+                            <div style="margin-top: 8px; font-size: 0.875rem;">${a.contract_count || 0} contracts • Signal: ${signalPct}%</div>
+                        </div>`;
+
+                    if (a.top_agencies && a.top_agencies.length > 0) {
+                        html += '<div style="margin-bottom: 8px;"><strong>Top Agencies:</strong></div>';
+                        a.top_agencies.slice(0, 3).forEach(agency => {
+                            html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">• ${agency}</div>`;
+                        });
+                    }
+
+                    document.getElementById('contract-lookup-result').innerHTML = html;
+                } else {
+                    document.getElementById('contract-lookup-result').innerHTML = `<div style="color: var(--text-muted);">No contract data for ${ticker}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('contract-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching contracts</div>';
+            }
+        }
+
+        // Patent Intelligence Functions
+        async function fetchPatentThemes() {
+            try {
+                document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/patents/themes`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    let html = '';
+                    const sortedThemes = Object.entries(data.themes)
+                        .sort((a, b) => b[1].patent_count - a[1].patent_count)
+                        .slice(0, 8);
+
+                    sortedThemes.forEach(([theme, info]) => {
+                        const trendEmoji = info.trend === 'increasing' ? '📈' : info.trend === 'decreasing' ? '📉' : '➡️';
+                        const trendColor = info.trend === 'increasing' ? 'var(--green)' : info.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+                        const signalPct = Math.round((info.signal_strength || 0) * 100);
+
+                        html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <div style="font-weight: 500;">${theme.replace(/_/g, ' ').toUpperCase()}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${info.patent_count} patents</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="color: ${trendColor};">${trendEmoji} ${info.yoy_change > 0 ? '+' : ''}${(info.yoy_change || 0).toFixed(0)}% YoY</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Signal: ${signalPct}%</div>
+                            </div>
+                        </div>`;
+                    });
+
+                    document.getElementById('patent-themes-container').innerHTML = html || '<div style="color: var(--text-muted);">No patent data</div>';
+                } else {
+                    document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Patent API not configured</div>';
+                }
+            } catch (e) {
+                console.warn('Patent themes fetch failed:', e);
+                document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Could not load patent data</div>';
+            }
+        }
+
+        async function lookupCompanyPatents() {
+            const ticker = document.getElementById('patent-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('patent-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Searching patents...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/patents/company/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.activity) {
+                    const a = data.activity;
+                    const trendEmoji = a.trend === 'increasing' ? '📈' : a.trend === 'decreasing' ? '📉' : '➡️';
+                    const trendColor = a.trend === 'increasing' ? 'var(--green)' : a.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+
+                    let html = `
+                        <div style="background: var(--bg-hover); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--text);">${a.patent_count}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Patents (3 years)</div>
+                            <div style="margin-top: 8px; color: ${trendColor};">${trendEmoji} ${a.yoy_change > 0 ? '+' : ''}${(a.yoy_change || 0).toFixed(0)}% YoY</div>
+                        </div>`;
+
+                    if (a.top_keywords && a.top_keywords.length > 0) {
+                        html += '<div style="margin-bottom: 8px;"><strong>Top Keywords:</strong></div>';
+                        html += '<div style="display: flex; flex-wrap: wrap; gap: 4px;">';
+                        a.top_keywords.slice(0, 6).forEach(kw => {
+                            html += `<span style="background: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">${kw}</span>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    if (a.recent_patents && a.recent_patents.length > 0) {
+                        html += '<div style="margin-top: 12px;"><strong>Recent Patents:</strong></div>';
+                        a.recent_patents.slice(0, 3).forEach(p => {
+                            html += `<div style="margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);">• ${p.title || p.patent_id}</div>`;
+                        });
+                    }
+
+                    document.getElementById('patent-lookup-result').innerHTML = html;
+                } else {
+                    document.getElementById('patent-lookup-result').innerHTML = `<div style="color: var(--text-muted);">No patent data for ${ticker}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('patent-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching patents</div>';
             }
         }
 
@@ -3450,6 +3910,8 @@
             await Promise.all([
                 fetchHealth(),
                 fetchScan(),
+                fetchConvictionAlerts(),
+                fetchSupplyChain(),
                 fetchEarnings(),
                 fetchEvolution(),
                 fetchParameters(),
@@ -3457,6 +3919,9 @@
                 fetchThemes(),
                 fetchMARadar(),
                 fetchDeals(),
+                fetchContractThemes(),
+                fetchRecentContracts(),
+                fetchPatentThemes(),
                 fetchThemeRadar(),
                 fetchThemeAlerts(),
                 fetchTrades(),
