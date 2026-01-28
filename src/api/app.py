@@ -3840,23 +3840,49 @@ def handle_contracts(chat_id, query=None):
 
 
 def handle_apistatus(chat_id):
-    """Handle /apistatus command - Show all API integration status."""
+    """Handle /apistatus command - Show all API integration status with usage stats."""
     import os
     from config import config
 
     msg = "⚙️ *API INTEGRATION STATUS*\n\n"
 
-    # AI Providers
+    # AI Providers with usage stats
     msg += "*🤖 AI Providers:*\n"
-    if config.ai.has_deepseek:
-        msg += f"✅ DeepSeek (`{config.ai.model}`)\n"
-    else:
-        msg += "❌ DeepSeek - not configured\n"
+    try:
+        from src.services.ai_service import get_ai_service
+        ai_svc = get_ai_service()
+        status = ai_svc.get_status()
 
-    if config.ai.has_xai:
-        msg += f"✅ xAI/Grok (`{config.ai.xai_model}`)\n"
-    else:
-        msg += "❌ xAI/Grok - not configured\n"
+        if status['providers']['deepseek']['configured']:
+            msg += f"✅ DeepSeek (`{status['providers']['deepseek']['model']}`)\n"
+        else:
+            msg += "❌ DeepSeek - not configured\n"
+
+        if status['providers']['xai']['configured']:
+            msg += f"✅ xAI/Grok (`{status['providers']['xai']['model']}`)\n"
+        else:
+            msg += "❌ xAI/Grok - not configured\n"
+
+        # AI usage stats
+        stats = status.get('stats', {})
+        if stats.get('calls_today', 0) > 0:
+            msg += f"\n_Today: {stats['calls_today']} calls"
+            if stats.get('deepseek_calls'):
+                msg += f", DS:{stats['deepseek_calls']}"
+            if stats.get('xai_calls'):
+                msg += f", xAI:{stats['xai_calls']}"
+            if stats.get('fallback_count'):
+                msg += f", fallbacks:{stats['fallback_count']}"
+            msg += "_\n"
+    except ImportError:
+        if config.ai.has_deepseek:
+            msg += f"✅ DeepSeek (`{config.ai.model}`)\n"
+        else:
+            msg += "❌ DeepSeek - not configured\n"
+        if config.ai.has_xai:
+            msg += f"✅ xAI/Grok (`{config.ai.xai_model}`)\n"
+        else:
+            msg += "❌ xAI/Grok - not configured\n"
     msg += "\n"
 
     # Polygon
@@ -4232,20 +4258,46 @@ def api_universe_refresh():
 
 @app.route('/api/deepseek/status')
 def api_deepseek_status():
-    """Get DeepSeek AI status."""
-    try:
-        from deepseek_intelligence import get_deepseek_intelligence
-        from dataclasses import asdict
+    """Get DeepSeek AI status (legacy endpoint)."""
+    # Redirect to unified AI status
+    return api_ai_status()
 
-        ds = get_deepseek_intelligence()
-        health = ds.run_health_check()
+
+@app.route('/api/ai/status')
+def api_ai_status():
+    """Get unified AI service status (DeepSeek + xAI)."""
+    try:
+        from src.services.ai_service import get_ai_service
+
+        service = get_ai_service()
+        status = service.get_status()
 
         return jsonify({
             'ok': True,
-            'health': asdict(health),
+            **status,
+            'timestamp': datetime.now().isoformat()
         })
     except ImportError:
-        return jsonify({'ok': False, 'error': 'DeepSeek intelligence not available'}), 503
+        return jsonify({'ok': False, 'error': 'AI service not available'}), 503
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ai/health')
+def api_ai_health():
+    """Run health check on all AI providers."""
+    try:
+        from src.services.ai_service import get_ai_service
+
+        service = get_ai_service()
+        health = service.health_check()
+
+        return jsonify({
+            'ok': True,
+            **health
+        })
+    except ImportError:
+        return jsonify({'ok': False, 'error': 'AI service not available'}), 503
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 

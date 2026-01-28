@@ -1124,6 +1124,99 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                     <div style="color: var(--text-muted); font-size: 0.8125rem;">Select a ticker above to view filings...</div>
                 </div>
             </div>
+
+            <!-- Government Contracts Section -->
+            <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🏛️ Government Contracts</h3>
+                <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
+                    Track federal spending on defense, tech, and infrastructure. Government contracts often signal sector momentum.
+                </p>
+                <div class="grid grid-3">
+                    <!-- Contract Themes -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 Theme Spending</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchContractThemes()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="contract-themes-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading contract data...</div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Contracts -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📋 Recent Awards</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchRecentContracts()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="recent-contracts-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading recent contracts...</div>
+                        </div>
+                    </div>
+
+                    <!-- Company Lookup -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🔍 Company Lookup</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="margin-bottom: 12px;">
+                                <input type="text" id="contract-ticker-input" placeholder="Enter ticker (e.g., LMT)..."
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <button class="btn btn-primary" onclick="lookupCompanyContracts()" style="width: 100%;">Search Contracts</button>
+                            <div id="contract-lookup-result" style="margin-top: 12px; font-size: 0.8125rem;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patent Intelligence Section -->
+            <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🔬 Patent Intelligence</h3>
+                <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
+                    Patents are filed 6-12 months before product launches. Track R&D activity as a leading indicator.
+                </p>
+                <div class="grid grid-3">
+                    <!-- Patent Themes -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🏷️ Theme Activity</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchPatentThemes()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="patent-themes-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading patent themes...</div>
+                        </div>
+                    </div>
+
+                    <!-- Patent Lookup -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">🔍 Company Patents</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="margin-bottom: 12px;">
+                                <input type="text" id="patent-ticker-input" placeholder="Enter ticker (e.g., NVDA)..."
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <button class="btn btn-primary" onclick="lookupCompanyPatents()" style="width: 100%;">Search Patents</button>
+                            <div id="patent-lookup-result" style="margin-top: 12px; font-size: 0.8125rem;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Patent Stats -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 Why Patents Matter</div>
+                        </div>
+                        <div class="card-body" style="font-size: 0.8125rem; color: var(--text-muted);">
+                            <div style="margin-bottom: 8px;"><strong style="color: var(--green);">📈 Leading Indicator</strong><br>Patent filings precede product launches by 6-12 months</div>
+                            <div style="margin-bottom: 8px;"><strong style="color: var(--blue);">💰 R&D Investment</strong><br>Surge in patents = heavy investment in area</div>
+                            <div><strong style="color: var(--yellow);">🎯 Theme Discovery</strong><br>Track emerging tech before it hits the market</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Trades Tab - Professional Trading Dashboard -->
@@ -2289,6 +2382,200 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        // Government Contracts Functions
+        async function fetchContractThemes() {
+            try {
+                document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/contracts/themes`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    let html = '';
+                    const sortedThemes = Object.entries(data.themes)
+                        .filter(([_, info]) => info.total_value > 0)
+                        .sort((a, b) => b[1].total_value - a[1].total_value)
+                        .slice(0, 8);
+
+                    sortedThemes.forEach(([theme, info]) => {
+                        const trendEmoji = info.trend === 'increasing' ? '📈' : info.trend === 'decreasing' ? '📉' : '➡️';
+                        const trendColor = info.trend === 'increasing' ? 'var(--green)' : info.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+                        const valueB = (info.total_value / 1e9).toFixed(1);
+
+                        html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <div style="font-weight: 500;">${theme.replace(/_/g, ' ').toUpperCase()}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${info.contract_count || 0} contracts</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 600;">$${valueB}B</div>
+                                <div style="font-size: 0.75rem; color: ${trendColor};">${trendEmoji} ${info.mom_change > 0 ? '+' : ''}${(info.mom_change || 0).toFixed(0)}% MoM</div>
+                            </div>
+                        </div>`;
+                    });
+
+                    document.getElementById('contract-themes-container').innerHTML = html || '<div style="color: var(--text-muted);">No contract data</div>';
+                } else {
+                    document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Contracts API not configured</div>';
+                }
+            } catch (e) {
+                console.warn('Contract themes fetch failed:', e);
+                document.getElementById('contract-themes-container').innerHTML = '<div style="color: var(--text-muted);">Could not load contract data</div>';
+            }
+        }
+
+        async function fetchRecentContracts() {
+            try {
+                document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/contracts/recent`);
+                const data = await res.json();
+
+                if (data.ok && data.contracts) {
+                    let html = '';
+                    data.contracts.slice(0, 6).forEach(c => {
+                        const valueM = (c.amount / 1e6).toFixed(1);
+                        html += `<div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div style="font-weight: 500; font-size: 0.8125rem;">${c.recipient || 'Unknown'}</div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">${c.agency || 'Federal'}</span>
+                                <span style="font-weight: 600; color: var(--green);">$${valueM}M</span>
+                            </div>
+                        </div>`;
+                    });
+                    document.getElementById('recent-contracts-container').innerHTML = html || '<div style="color: var(--text-muted);">No recent contracts</div>';
+                } else {
+                    document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">No data</div>';
+                }
+            } catch (e) {
+                console.warn('Recent contracts fetch failed:', e);
+                document.getElementById('recent-contracts-container').innerHTML = '<div style="color: var(--text-muted);">Could not load contracts</div>';
+            }
+        }
+
+        async function lookupCompanyContracts() {
+            const ticker = document.getElementById('contract-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('contract-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Searching contracts...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/contracts/company/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.activity) {
+                    const a = data.activity;
+                    const valueB = (a.total_value / 1e9).toFixed(2);
+                    const signalPct = Math.round((a.signal_strength || 0) * 100);
+
+                    let html = `
+                        <div style="background: var(--bg-hover); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: var(--green);">$${valueB}B</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Total Contract Value</div>
+                            <div style="margin-top: 8px; font-size: 0.875rem;">${a.contract_count || 0} contracts • Signal: ${signalPct}%</div>
+                        </div>`;
+
+                    if (a.top_agencies && a.top_agencies.length > 0) {
+                        html += '<div style="margin-bottom: 8px;"><strong>Top Agencies:</strong></div>';
+                        a.top_agencies.slice(0, 3).forEach(agency => {
+                            html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">• ${agency}</div>`;
+                        });
+                    }
+
+                    document.getElementById('contract-lookup-result').innerHTML = html;
+                } else {
+                    document.getElementById('contract-lookup-result').innerHTML = `<div style="color: var(--text-muted);">No contract data for ${ticker}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('contract-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching contracts</div>';
+            }
+        }
+
+        // Patent Intelligence Functions
+        async function fetchPatentThemes() {
+            try {
+                document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
+                const res = await fetch(`${API_BASE}/patents/themes`);
+                const data = await res.json();
+
+                if (data.ok && data.themes) {
+                    let html = '';
+                    const sortedThemes = Object.entries(data.themes)
+                        .sort((a, b) => b[1].patent_count - a[1].patent_count)
+                        .slice(0, 8);
+
+                    sortedThemes.forEach(([theme, info]) => {
+                        const trendEmoji = info.trend === 'increasing' ? '📈' : info.trend === 'decreasing' ? '📉' : '➡️';
+                        const trendColor = info.trend === 'increasing' ? 'var(--green)' : info.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+                        const signalPct = Math.round((info.signal_strength || 0) * 100);
+
+                        html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <div style="font-weight: 500;">${theme.replace(/_/g, ' ').toUpperCase()}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">${info.patent_count} patents</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="color: ${trendColor};">${trendEmoji} ${info.yoy_change > 0 ? '+' : ''}${(info.yoy_change || 0).toFixed(0)}% YoY</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">Signal: ${signalPct}%</div>
+                            </div>
+                        </div>`;
+                    });
+
+                    document.getElementById('patent-themes-container').innerHTML = html || '<div style="color: var(--text-muted);">No patent data</div>';
+                } else {
+                    document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Patent API not configured</div>';
+                }
+            } catch (e) {
+                console.warn('Patent themes fetch failed:', e);
+                document.getElementById('patent-themes-container').innerHTML = '<div style="color: var(--text-muted);">Could not load patent data</div>';
+            }
+        }
+
+        async function lookupCompanyPatents() {
+            const ticker = document.getElementById('patent-ticker-input').value.trim().toUpperCase();
+            if (!ticker) { alert('Enter a ticker'); return; }
+
+            document.getElementById('patent-lookup-result').innerHTML = '<div style="color: var(--text-muted);">Searching patents...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/patents/company/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.activity) {
+                    const a = data.activity;
+                    const trendEmoji = a.trend === 'increasing' ? '📈' : a.trend === 'decreasing' ? '📉' : '➡️';
+                    const trendColor = a.trend === 'increasing' ? 'var(--green)' : a.trend === 'decreasing' ? 'var(--red)' : 'var(--text-muted)';
+
+                    let html = `
+                        <div style="background: var(--bg-hover); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: var(--text);">${a.patent_count}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Patents (3 years)</div>
+                            <div style="margin-top: 8px; color: ${trendColor};">${trendEmoji} ${a.yoy_change > 0 ? '+' : ''}${(a.yoy_change || 0).toFixed(0)}% YoY</div>
+                        </div>`;
+
+                    if (a.top_keywords && a.top_keywords.length > 0) {
+                        html += '<div style="margin-bottom: 8px;"><strong>Top Keywords:</strong></div>';
+                        html += '<div style="display: flex; flex-wrap: wrap; gap: 4px;">';
+                        a.top_keywords.slice(0, 6).forEach(kw => {
+                            html += `<span style="background: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">${kw}</span>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    if (a.recent_patents && a.recent_patents.length > 0) {
+                        html += '<div style="margin-top: 12px;"><strong>Recent Patents:</strong></div>';
+                        a.recent_patents.slice(0, 3).forEach(p => {
+                            html += `<div style="margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);">• ${p.title || p.patent_id}</div>`;
+                        });
+                    }
+
+                    document.getElementById('patent-lookup-result').innerHTML = html;
+                } else {
+                    document.getElementById('patent-lookup-result').innerHTML = `<div style="color: var(--text-muted);">No patent data for ${ticker}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('patent-lookup-result').innerHTML = '<div style="color: var(--red);">Error fetching patents</div>';
+            }
+        }
+
         // Theme Intelligence Hub Functions
         async function fetchThemeRadar() {
             try {
@@ -3428,6 +3715,9 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 fetchThemes(),
                 fetchMARadar(),
                 fetchDeals(),
+                fetchContractThemes(),
+                fetchRecentContracts(),
+                fetchPatentThemes(),
                 fetchThemeRadar(),
                 fetchThemeAlerts(),
                 fetchTrades(),

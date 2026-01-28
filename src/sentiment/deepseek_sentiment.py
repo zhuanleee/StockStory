@@ -4,6 +4,8 @@ DeepSeek Sentiment Analyzer
 Uses DeepSeek API for financial news sentiment analysis.
 Lightweight alternative to FinBERT - no heavy ML dependencies.
 
+Now uses unified AI service with automatic xAI fallback.
+
 Usage:
     from src.sentiment.deepseek_sentiment import analyze_sentiment, get_sentiment_signal
 
@@ -14,56 +16,65 @@ Usage:
     signal = get_sentiment_signal("NVDA")
 """
 
-import os
 import json
 import logging
-import requests
 from datetime import datetime
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# DeepSeek API configuration
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-
 
 def _call_deepseek(prompt: str, system_prompt: str = None) -> Optional[str]:
-    """Make API call to DeepSeek."""
-    if not DEEPSEEK_API_KEY:
-        logger.warning("DEEPSEEK_API_KEY not set")
-        return None
+    """
+    Make API call to AI service.
 
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-
+    Uses unified AI service with automatic failover:
+    DeepSeek (primary) -> xAI/Grok (fallback)
+    """
     try:
-        response = requests.post(
-            DEEPSEEK_API_URL,
-            headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "deepseek-chat",
-                "messages": messages,
-                "temperature": 0.1,  # Low temp for consistent scoring
-                "max_tokens": 500
-            },
-            timeout=30
-        )
+        from src.services.ai_service import get_ai_service
+        service = get_ai_service()
+        # Use sentiment task type for optimal routing (DeepSeek preferred)
+        return service.call(prompt, system_prompt, max_tokens=500,
+                           temperature=0.1, task_type="sentiment")
+    except ImportError:
+        # Fallback to direct call if service not available
+        logger.warning("AI service not available, using direct DeepSeek call")
+        import os
+        import requests
 
-        if response.status_code == 200:
-            data = response.json()
-            return data['choices'][0]['message']['content']
-        else:
+        api_key = os.environ.get('DEEPSEEK_API_KEY', '')
+        if not api_key:
+            logger.warning("DEEPSEEK_API_KEY not set")
+            return None
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "deepseek-chat",
+                    "messages": messages,
+                    "temperature": 0.1,
+                    "max_tokens": 500
+                },
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content']
             logger.error(f"DeepSeek API error: {response.status_code}")
             return None
-    except Exception as e:
-        logger.error(f"DeepSeek request error: {e}")
-        return None
+        except Exception as e:
+            logger.error(f"DeepSeek request error: {e}")
+            return None
 
 
 def analyze_sentiment(text: str) -> Dict:

@@ -168,55 +168,80 @@ class DeepSeekIntelligence:
 
     def _call_deepseek(self, prompt: str, system_prompt: str = None,
                        temperature: float = 0.3) -> Optional[str]:
-        """Make API call to DeepSeek"""
-        if not self.api_key:
-            logger.warning("DeepSeek API key not configured")
-            return None
+        """
+        Make API call using unified AI service.
 
+        Uses AI service with automatic failover:
+        DeepSeek (primary) -> xAI/Grok (fallback)
+        """
         if not self._check_budget():
             logger.warning("Daily AI budget exhausted")
             return None
 
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
         try:
+            from src.services.ai_service import get_ai_service
+            service = get_ai_service()
+
             start_time = datetime.now()
 
-            response = requests.post(
-                self.DEEPSEEK_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "deepseek-chat",
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": 2000,
-                },
-                timeout=60
-            )
+            # Use 'theme' task type for theme-related analysis (routes to xAI for heavy tasks)
+            result = service.call(prompt, system_prompt, max_tokens=2000,
+                                 temperature=temperature, task_type="theme",
+                                 use_cache=False)  # Don't double-cache
 
             latency = (datetime.now() - start_time).total_seconds() * 1000
             self.latencies.append(latency)
-            self.latencies = self.latencies[-100:]  # Keep last 100
+            self.latencies = self.latencies[-100:]
 
-            response.raise_for_status()
-            result = response.json()
+            if result:
+                self.usage['api_calls'] += 1
+                self._save_usage()
 
-            # Track usage
-            self.usage['api_calls'] += 1
-            self._save_usage()
+            return result
 
-            return result['choices'][0]['message']['content']
+        except ImportError:
+            # Fallback to direct call if service not available
+            logger.warning("AI service not available, using direct DeepSeek call")
+            if not self.api_key:
+                logger.warning("DeepSeek API key not configured")
+                return None
 
-        except Exception as e:
-            self.last_error = str(e)
-            logger.error(f"DeepSeek API error: {e}")
-            return None
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            try:
+                start_time = datetime.now()
+                response = requests.post(
+                    self.DEEPSEEK_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": 2000,
+                    },
+                    timeout=60
+                )
+
+                latency = (datetime.now() - start_time).total_seconds() * 1000
+                self.latencies.append(latency)
+                self.latencies = self.latencies[-100:]
+
+                response.raise_for_status()
+                result = response.json()
+                self.usage['api_calls'] += 1
+                self._save_usage()
+                return result['choices'][0]['message']['content']
+
+            except Exception as e:
+                self.last_error = str(e)
+                logger.error(f"DeepSeek API error: {e}")
+                return None
 
     def _parse_json_response(self, response: str) -> Optional[Dict]:
         """Parse JSON from AI response"""
