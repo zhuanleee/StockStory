@@ -1456,10 +1456,12 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 try {
                     // Connect to same origin (API server) with Socket.IO
                     const serverUrl = API_BASE.replace('/api', '');
-                    console.log('Connecting to sync server:', serverUrl);
+                    const isSecure = window.location.protocol === 'https:';
+                    console.log('Connecting to sync server:', serverUrl, 'secure:', isSecure);
 
                     this.socket = io(serverUrl, {
                         transports: ['websocket', 'polling'],
+                        secure: isSecure,
                         reconnection: true,
                         reconnectionAttempts: 10,
                         reconnectionDelay: 2000,
