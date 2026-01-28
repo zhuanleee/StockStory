@@ -1654,18 +1654,38 @@ def api_scan():
         # Get scan timestamp from file modification time
         scan_time = datetime.fromtimestamp(latest_scan.stat().st_mtime)
 
-        # Format stocks for dashboard
+        # Format stocks for dashboard (handle NaN values)
+        import math
+        def safe_float(val, default=0):
+            try:
+                f = float(val)
+                return default if math.isnan(f) else f
+            except (TypeError, ValueError):
+                return default
+
+        def safe_int(val, default=0):
+            try:
+                f = float(val)
+                return default if math.isnan(f) else int(f)
+            except (TypeError, ValueError):
+                return default
+
+        def safe_str(val, default=None):
+            if pd.isna(val):
+                return default
+            return str(val) if val else default
+
         stocks = []
         for _, row in df.head(100).iterrows():
             stocks.append({
-                'ticker': row.get('ticker', ''),
-                'story_score': float(row.get('story_score', 0)),
-                'story_strength': row.get('story_strength', 'none'),
-                'hottest_theme': row.get('hottest_theme', None),
-                'change_pct': float(row.get('change_pct', 0)),
-                'volume': int(row.get('volume', 0)),
-                'rs_rating': float(row.get('rs_rating', 0)),
-                'sector': row.get('sector', 'Unknown'),
+                'ticker': safe_str(row.get('ticker', ''), ''),
+                'story_score': safe_float(row.get('story_score', 0)),
+                'story_strength': safe_str(row.get('story_strength', 'none'), 'none'),
+                'hottest_theme': safe_str(row.get('hottest_theme', None), None),
+                'change_pct': safe_float(row.get('change_pct', 0)),
+                'volume': safe_int(row.get('volume', 0)),
+                'rs_rating': safe_float(row.get('rs_rating', 0)),
+                'sector': safe_str(row.get('sector', 'Unknown'), 'Unknown'),
             })
 
         # Count by strength
