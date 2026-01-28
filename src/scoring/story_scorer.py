@@ -462,28 +462,9 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         - sources: breakdown by source
         - trending: bool
     """
-    # Quick fetches (non-xAI)
     logger.info(f"[SOCIAL] Starting social buzz for {ticker}, include_x={include_x}")
 
-    logger.info(f"[SOCIAL] Fetching StockTwits for {ticker}")
-    stocktwits = fetch_stocktwits_sentiment(ticker)
-    logger.info(f"[SOCIAL] StockTwits done for {ticker}")
-
-    logger.info(f"[SOCIAL] Fetching SEC for {ticker}")
-    sec = fetch_sec_filings(ticker)
-    logger.info(f"[SOCIAL] SEC done for {ticker}")
-
-    # Reddit: Use direct API (xAI web_search has reliability issues)
-    # X/Twitter uses x_search which is more reliable
-    reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
-    try:
-        logger.info(f"[SOCIAL] Fetching Reddit for {ticker}")
-        reddit = _fetch_reddit_direct(ticker)
-        logger.info(f"[SOCIAL] Reddit done for {ticker}: {reddit.get('mention_count', 0)} mentions")
-    except Exception as e:
-        logger.error(f"[SOCIAL] Reddit fetch failed for {ticker}: {type(e).__name__}: {e}")
-
-    # X/Twitter via xAI x_search (optional)
+    # X/Twitter via xAI x_search FIRST (to isolate any ordering issues)
     x_data = {'post_count': 0, 'engagement_score': 0, 'sentiment': 'unknown'}
     if include_x:
         try:
@@ -492,6 +473,24 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
             logger.info(f"[SOCIAL] X done for {ticker}: {x_data.get('post_count', 0)} posts")
         except Exception as e:
             logger.error(f"[SOCIAL] X fetch failed for {ticker}: {type(e).__name__}: {e}")
+
+    # Quick fetches (non-xAI)
+    logger.info(f"[SOCIAL] Fetching StockTwits for {ticker}")
+    stocktwits = fetch_stocktwits_sentiment(ticker)
+    logger.info(f"[SOCIAL] StockTwits done for {ticker}")
+
+    logger.info(f"[SOCIAL] Fetching SEC for {ticker}")
+    sec = fetch_sec_filings(ticker)
+    logger.info(f"[SOCIAL] SEC done for {ticker}")
+
+    # Reddit: Use direct API
+    reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet'}
+    try:
+        logger.info(f"[SOCIAL] Fetching Reddit for {ticker}")
+        reddit = _fetch_reddit_direct(ticker)
+        logger.info(f"[SOCIAL] Reddit done for {ticker}: {reddit.get('mention_count', 0)} mentions")
+    except Exception as e:
+        logger.error(f"[SOCIAL] Reddit fetch failed for {ticker}: {type(e).__name__}: {e}")
 
     # Calculate component scores using learned thresholds
     st_score = 0
