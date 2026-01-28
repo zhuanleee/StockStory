@@ -277,32 +277,61 @@ Return as JSON:
         resp = requests.post(url, json=payload, headers=headers, timeout=90)
 
         if resp.status_code != 200:
-            logger.warning(f"xAI x_search failed for {ticker}: {resp.status_code}")
+            error_text = resp.text[:500] if resp.text else 'No response body'
+            logger.warning(f"xAI x_search failed for {ticker}: {resp.status_code} - {error_text}")
             return {
                 'post_count': 0,
                 'engagement_score': 0,
                 'sentiment': 'unknown',
                 'top_posts': [],
-                'error': f'API error: {resp.status_code}'
+                'error': f'API error: {resp.status_code}',
+                'error_detail': error_text[:200]
             }
 
         result = resp.json()
+        logger.debug(f"xAI response keys for {ticker}: {list(result.keys())}")
 
         # Parse response - extract output text from nested structure
         output_text = ""
+
+        # Try 'output' structure (Agent Tools API format)
         if 'output' in result:
             for item in result.get('output', []):
-                if item.get('type') == 'message':
-                    for content in item.get('content', []):
-                        if content.get('type') == 'output_text':
-                            output_text = content.get('text', '')
-                            break
+                if isinstance(item, dict):
+                    if item.get('type') == 'message':
+                        for content in item.get('content', []):
+                            if isinstance(content, dict) and content.get('type') == 'output_text':
+                                output_text = content.get('text', '')
+                                break
+                    elif 'text' in item:
+                        output_text = item['text']
+                elif isinstance(item, str):
+                    output_text = item
+                if output_text:
+                    break
+
+        # Try 'choices' structure (Chat Completions API format)
+        if not output_text and 'choices' in result:
+            for choice in result.get('choices', []):
+                if isinstance(choice, dict) and 'message' in choice:
+                    output_text = choice['message'].get('content', '')
+                    break
+
+        if not output_text:
+            logger.warning(f"No output text found in xAI response for {ticker}. Keys: {list(result.keys())}")
+            return {
+                'post_count': 0,
+                'engagement_score': 0,
+                'sentiment': 'unknown',
+                'top_posts': [],
+                'error': 'No output text in response'
+            }
 
         # Extract JSON from response
         import json as json_module
         json_match = re.search(r'\{[\s\S]*"items"[\s\S]*\}', output_text)
         if not json_match:
-            logger.debug(f"No JSON found in xAI response for {ticker}")
+            logger.debug(f"No JSON found in xAI response for {ticker}. Output: {output_text[:200]}")
             return {
                 'post_count': 0,
                 'engagement_score': 0,
