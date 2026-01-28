@@ -1613,9 +1613,11 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
 
             send(data) {
-                if (this.connected && this.ws) {
-                    this.ws.send(JSON.stringify(data));
-                } else {
+                if (this.socket && this.connected) {
+                    this.socket.emit('message', data);
+                }
+            }
+
             // Publish event to server
             publish(eventType, payload) {
                 if (this.socket && this.connected) {
