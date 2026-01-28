@@ -447,14 +447,54 @@ def fetch_sec_filings(ticker: str) -> dict:
         return {'recent_filings': [], 'has_8k': False, 'insider_activity': False}
 
 
+def fetch_google_trends(ticker: str) -> dict:
+    """
+    Fetch Google Trends data for a stock ticker.
+
+    Searches for "{ticker} stock" to get search interest trends.
+
+    Returns:
+        - score: momentum score (0-100)
+        - trend_pct: percentage change in search interest
+        - is_breakout: bool if search interest is spiking
+        - status: 'rising', 'stable', 'falling', or 'breakout'
+    """
+    try:
+        from src.data.google_trends import get_trend_score, HAS_PYTRENDS
+
+        if not HAS_PYTRENDS:
+            return {'score': 50, 'status': 'unavailable', 'trend_pct': 0, 'is_breakout': False}
+
+        # Search for "{ticker} stock" (e.g., "NVDA stock")
+        keyword = f"{ticker} stock"
+        result = get_trend_score(keyword, use_cache=True)
+
+        return {
+            'keyword': keyword,
+            'score': result.get('score', 50),
+            'trend_pct': result.get('trend_pct', 0),
+            'is_breakout': result.get('is_breakout', False),
+            'status': result.get('status', 'unknown'),
+            'current': result.get('current', 0),
+            'avg_30d': result.get('avg_30d', 0),
+        }
+    except ImportError:
+        logger.debug("Google Trends module not available")
+        return {'score': 50, 'status': 'unavailable', 'trend_pct': 0, 'is_breakout': False}
+    except Exception as e:
+        logger.debug(f"Google Trends fetch failed for {ticker}: {e}")
+        return {'score': 50, 'status': 'error', 'trend_pct': 0, 'is_breakout': False}
+
+
 def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     """
     Combine all social sources into a unified buzz score.
 
     Sources:
         - StockTwits: Retail trader sentiment
-        - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options (via xAI web_search)
+        - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options
         - X/Twitter: Via xAI x_search (engagement-weighted)
+        - Google Trends: Search interest momentum
         - SEC: 8-K filings, insider activity
 
     Returns:
@@ -480,6 +520,13 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         reddit = _fetch_reddit_direct(ticker)
     except Exception as e:
         logger.debug(f"Reddit fetch failed for {ticker}: {e}")
+
+    # Google Trends: Search interest momentum
+    google_trends = {'score': 50, 'status': 'unknown', 'trend_pct': 0, 'is_breakout': False}
+    try:
+        google_trends = fetch_google_trends(ticker)
+    except Exception as e:
+        logger.debug(f"Google Trends fetch failed for {ticker}: {e}")
 
     # Calculate component scores using learned thresholds
     st_score = 0
@@ -530,14 +577,29 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
     if sec['insider_activity']:
         sec_score += params.score_sec_insider()  # Insider buying/selling
 
-    # Combined buzz score (now includes X/Twitter)
-    buzz_score = min(100, st_score + reddit_score + x_score + sec_score)
+    # Google Trends score (0-20 points based on momentum)
+    gt_score = 0
+    gt_momentum = google_trends.get('score', 50)
+    if google_trends.get('is_breakout'):
+        gt_score = 20  # Breakout = max points
+    elif gt_momentum >= 80:
+        gt_score = 15  # Very high search interest
+    elif gt_momentum >= 65:
+        gt_score = 10  # Above average
+    elif gt_momentum >= 50:
+        gt_score = 5   # Average
+    # Below 50 = no points (declining interest)
+
+    # Combined buzz score (includes all sources)
+    buzz_score = min(100, st_score + reddit_score + x_score + sec_score + gt_score)
 
     # Is it trending?
     trending = (
         stocktwits.get('trending', False) or
         reddit['mention_count'] >= params.threshold_trending_reddit_mentions() or
         x_data.get('engagement_score', 0) >= 50 or  # High X engagement
+        google_trends.get('is_breakout', False) or  # Google Trends breakout
+        google_trends.get('score', 0) >= 75 or      # High search momentum
         sec['has_8k']
     )
 
@@ -546,12 +608,14 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         'trending': trending,
         'stocktwits': stocktwits,
         'reddit': reddit,
-        'x_twitter': x_data,  # New: X/Twitter data
+        'x_twitter': x_data,
+        'google_trends': google_trends,  # New: Google Trends data
         'sec': sec,
-        'component_scores': {  # New: breakdown for debugging
+        'component_scores': {
             'stocktwits': st_score,
             'reddit': reddit_score,
             'x_twitter': x_score,
+            'google_trends': gt_score,  # New: Google Trends score
             'sec': sec_score,
         }
     }
