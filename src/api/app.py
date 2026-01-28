@@ -5651,9 +5651,17 @@ def api_x_sentiment(ticker):
     """
     try:
         from src.scoring.story_scorer import fetch_x_sentiment
+        import json
 
         ticker = ticker.upper()
         result = fetch_x_sentiment(ticker, days_back=7)
+
+        # Ensure result is JSON serializable
+        try:
+            json.dumps(result)
+        except TypeError as te:
+            logger.error(f"X sentiment serialization error: {te}")
+            return jsonify({'ok': False, 'error': f'Serialization error: {te}'}), 500
 
         return jsonify({
             'ok': True,
@@ -5662,8 +5670,9 @@ def api_x_sentiment(ticker):
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        logger.error(f"X sentiment error for {ticker}: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        import traceback
+        logger.error(f"X sentiment error for {ticker}: {e}\n{traceback.format_exc()}")
+        return jsonify({'ok': False, 'error': str(e), 'traceback': traceback.format_exc()[:500]}), 500
 
 
 # =============================================================================
