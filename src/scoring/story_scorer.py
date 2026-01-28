@@ -485,9 +485,6 @@ def get_social_buzz_score(ticker: str, include_x: bool = True) -> dict:
         - sources: breakdown by source
         - trending: bool
     """
-    # Reset xAI client for fresh state each request
-    _reset_xai_client()
-
     # Quick fetches (non-xAI)
     logger.info(f"[SOCIAL] Starting social buzz for {ticker}, include_x={include_x}")
 
