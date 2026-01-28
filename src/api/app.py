@@ -133,13 +133,13 @@ class EndpointCache:
 # Global cache instance
 _endpoint_cache = EndpointCache()
 
-# Cache TTLs (in seconds)
+# Cache TTLs (in seconds) - increased for better performance
 CACHE_TTL = {
-    'health': 300,      # 5 minutes
-    'stories': 600,     # 10 minutes
-    'scan': 300,        # 5 minutes
-    'top': 300,         # 5 minutes
-    'sectors': 600,     # 10 minutes
+    'health': 600,      # 10 minutes (was 5)
+    'stories': 900,     # 15 minutes (was 10)
+    'scan': 600,        # 10 minutes (was 5)
+    'top': 600,         # 10 minutes (was 5)
+    'sectors': 900,     # 15 minutes (was 10)
 }
 
 # Configuration is now loaded from config module
@@ -368,13 +368,13 @@ def handle_scan(chat_id):
     try:
         import concurrent.futures
 
-        # Quick scan: top 20 theme stocks (fits in Railway timeout)
+        # Quick scan: top 15 theme stocks (reduced for faster completion)
         tickers = [
-            'NVDA', 'AMD', 'AVGO', 'TSM',     # AI/Semis
-            'MSFT', 'GOOGL', 'META', 'AAPL',  # Big Tech
-            'TSLA', 'VST', 'CEG',             # EV/Nuclear
-            'PLTR', 'CRWD', 'NET',            # Software
-            'LLY', 'NVO',                     # Biotech/GLP-1
+            'NVDA', 'AMD', 'AVGO',            # AI/Semis
+            'MSFT', 'GOOGL', 'META',          # Big Tech
+            'TSLA', 'VST',                    # EV/Nuclear
+            'PLTR', 'CRWD',                   # Software
+            'LLY',                            # Biotech/GLP-1
             'LMT', 'JPM', 'XOM',              # Defense/Finance/Energy
             'SPY',                            # Index
         ]
@@ -385,9 +385,12 @@ def handle_scan(chat_id):
             from src.core.async_scanner import AsyncScanner
 
             async def scan():
-                scanner = AsyncScanner(max_concurrent=25)
+                scanner = AsyncScanner(max_concurrent=15)
                 try:
                     return await scanner.run_scan_async(ticker_list)
+                except Exception as e:
+                    logger.error(f"Async scan internal error: {e}")
+                    raise
                 finally:
                     await scanner.close()
 
@@ -395,20 +398,26 @@ def handle_scan(chat_id):
             asyncio.set_event_loop(loop)
             try:
                 return loop.run_until_complete(scan())
+            except Exception as e:
+                logger.error(f"Event loop error: {e}")
+                raise
             finally:
                 loop.close()
 
-        # Run in thread pool to avoid event loop conflicts
+        # Run in thread pool with shorter timeout for Railway
+        logger.info(f"Starting scan for {len(tickers)} tickers")
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(run_async_scan, tickers)
-            results = future.result(timeout=180)  # 3 min timeout
+            results = future.result(timeout=90)  # 90 second timeout for Railway
+
+        logger.info(f"Scan completed, processing results")
 
         if isinstance(results, tuple):
             df = results[0]
         else:
             df = results
 
-        if len(df) > 0:
+        if df is not None and len(df) > 0:
             msg = "🔍 *SCAN RESULTS*\n\n"
             for i, row in df.head(15).iterrows():
                 ticker = row.get('ticker', 'N/A')
@@ -425,13 +434,14 @@ def handle_scan(chat_id):
             msg += "\n_Dashboard updated at zhuanleee.github.io/stock\\_scanner\\_bot/_"
             send_message(chat_id, msg)
         else:
-            send_message(chat_id, "No stocks scanned. Check Polygon API key.")
+            send_message(chat_id, "❌ No stocks scanned. Check API keys or try again.")
 
     except concurrent.futures.TimeoutError:
-        send_message(chat_id, "Scan timed out after 3 minutes. Try again later.")
+        logger.error("Scan timed out after 90 seconds")
+        send_message(chat_id, "⏰ Scan timed out. Try /top for cached results instead.")
     except Exception as e:
-        logger.error(f"Scan error: {e}")
-        send_message(chat_id, f"Scan error: {str(e)}")
+        logger.error(f"Scan error: {e}", exc_info=True)
+        send_message(chat_id, f"❌ Scan error: {str(e)[:100]}")
 
 
 # =============================================================================

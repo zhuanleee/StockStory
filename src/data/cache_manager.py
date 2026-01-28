@@ -9,8 +9,10 @@ import time
 import hashlib
 import logging
 import asyncio
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 from pathlib import Path
 import fnmatch
 
@@ -25,17 +27,102 @@ class CacheConfig:
     """Cache configuration constants."""
     CACHE_DIR = "cache_data"
 
-    # TTL values in seconds
-    TTL_PRICE = 300         # 5 minutes - price data changes frequently
-    TTL_NEWS = 900          # 15 minutes - news updates periodically
-    TTL_SOCIAL = 1800       # 30 minutes - social sentiment is semi-stable
-    TTL_SEC = 1800          # 30 minutes - SEC filings don't change often
+    # TTL values in seconds (increased for better performance)
+    TTL_PRICE = 900         # 15 minutes - balance freshness vs API calls
+    TTL_NEWS = 1800         # 30 minutes - news doesn't change that fast
+    TTL_SOCIAL = 3600       # 1 hour - social sentiment is semi-stable
+    TTL_SEC = 3600          # 1 hour - SEC filings don't change often
     TTL_SECTOR = 86400      # 24 hours - sector info is very stable
-    TTL_DEFAULT = 600       # 10 minutes - default TTL
+    TTL_DEFAULT = 900       # 15 minutes - default TTL
 
     # Cleanup settings
     CLEANUP_INTERVAL = 3600  # 1 hour between cleanup runs
     MAX_CACHE_SIZE_MB = 500  # Maximum cache directory size
+
+    # In-memory LRU cache settings
+    LRU_MAX_SIZE = 500       # Max entries in memory
+    LRU_ENABLED = True       # Enable/disable memory cache
+
+
+# =============================================================================
+# IN-MEMORY LRU CACHE
+# =============================================================================
+
+class LRUCache:
+    """
+    Thread-safe LRU cache with TTL support.
+
+    Uses OrderedDict for O(1) get/set operations with LRU eviction.
+    """
+
+    def __init__(self, max_size: int = 500):
+        self._cache: OrderedDict = OrderedDict()
+        self._max_size = max_size
+        self._lock = threading.Lock()
+        self._stats = {'hits': 0, 'misses': 0, 'evictions': 0}
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get value if exists and not expired. Moves to end (most recent)."""
+        with self._lock:
+            if key not in self._cache:
+                self._stats['misses'] += 1
+                return None
+
+            entry = self._cache[key]
+            # Check TTL
+            if time.time() > entry['expires']:
+                del self._cache[key]
+                self._stats['misses'] += 1
+                return None
+
+            # Move to end (most recently used)
+            self._cache.move_to_end(key)
+            self._stats['hits'] += 1
+            return entry['data']
+
+    def set(self, key: str, data: Any, ttl: int) -> None:
+        """Set value with TTL. Evicts oldest if at capacity."""
+        with self._lock:
+            # Remove if exists to update position
+            if key in self._cache:
+                del self._cache[key]
+
+            # Evict oldest if at capacity
+            while len(self._cache) >= self._max_size:
+                self._cache.popitem(last=False)
+                self._stats['evictions'] += 1
+
+            self._cache[key] = {
+                'data': data,
+                'expires': time.time() + ttl
+            }
+
+    def delete(self, key: str) -> bool:
+        """Delete a key from cache."""
+        with self._lock:
+            if key in self._cache:
+                del self._cache[key]
+                return True
+            return False
+
+    def clear(self) -> int:
+        """Clear all entries. Returns count cleared."""
+        with self._lock:
+            count = len(self._cache)
+            self._cache.clear()
+            return count
+
+    def get_stats(self) -> dict:
+        """Get cache statistics."""
+        with self._lock:
+            total = self._stats['hits'] + self._stats['misses']
+            hit_rate = (self._stats['hits'] / total * 100) if total > 0 else 0
+            return {
+                **self._stats,
+                'hit_rate': round(hit_rate, 1),
+                'size': len(self._cache),
+                'max_size': self._max_size,
+            }
 
 
 # =============================================================================
@@ -93,15 +180,22 @@ class CacheManager:
         abcd1234.json  (hash-based filename)
     """
 
-    def __init__(self, cache_dir: str = None):
-        """Initialize cache manager."""
+    def __init__(self, cache_dir: str = None, use_lru: bool = None):
+        """Initialize cache manager with optional in-memory LRU cache."""
         self.cache_dir = Path(cache_dir or CacheConfig.CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # In-memory LRU cache (first level)
+        use_lru = use_lru if use_lru is not None else CacheConfig.LRU_ENABLED
+        self._lru = LRUCache(CacheConfig.LRU_MAX_SIZE) if use_lru else None
+
         self._stats = {
             'hits': 0,
             'misses': 0,
             'sets': 0,
             'expired': 0,
+            'lru_hits': 0,
+            'file_hits': 0,
         }
         self._last_cleanup = 0
 
@@ -118,8 +212,18 @@ class CacheManager:
         """
         Get value from cache.
 
+        Checks in-memory LRU first, then falls back to file.
         Returns None if key doesn't exist or is expired.
         """
+        # Check LRU cache first (fast path)
+        if self._lru:
+            data = self._lru.get(key)
+            if data is not None:
+                self._stats['hits'] += 1
+                self._stats['lru_hits'] += 1
+                return data
+
+        # Fall back to file-based cache
         path = self._key_to_path(key)
 
         if not path.exists():
@@ -137,9 +241,18 @@ class CacheManager:
                 self._stats['misses'] += 1
                 # Clean up expired entry
                 path.unlink(missing_ok=True)
+                if self._lru:
+                    self._lru.delete(key)
                 return None
 
+            # Promote to LRU cache for faster subsequent access
+            if self._lru:
+                remaining_ttl = int(entry.remaining_ttl())
+                if remaining_ttl > 0:
+                    self._lru.set(key, entry.data, remaining_ttl)
+
             self._stats['hits'] += 1
+            self._stats['file_hits'] += 1
             return entry.data
 
         except (json.JSONDecodeError, KeyError, IOError) as e:
@@ -151,6 +264,8 @@ class CacheManager:
         """
         Set value in cache with TTL.
 
+        Stores in both LRU (memory) and file-based cache.
+
         Args:
             key: Cache key
             data: Data to cache (must be JSON-serializable)
@@ -159,6 +274,11 @@ class CacheManager:
         if ttl is None:
             ttl = CacheConfig.TTL_DEFAULT
 
+        # Store in LRU cache (fast access)
+        if self._lru:
+            self._lru.set(key, data, ttl)
+
+        # Store in file-based cache (persistence)
         entry = CacheEntry(
             data=data,
             timestamp=time.time(),
@@ -176,12 +296,20 @@ class CacheManager:
             logger.warning(f"Cache write error for {key}: {e}")
 
     def delete(self, key: str) -> bool:
-        """Delete a specific cache entry."""
+        """Delete a specific cache entry from both LRU and file cache."""
+        deleted = False
+
+        # Delete from LRU
+        if self._lru:
+            deleted = self._lru.delete(key)
+
+        # Delete from file cache
         path = self._key_to_path(key)
         if path.exists():
             path.unlink()
-            return True
-        return False
+            deleted = True
+
+        return deleted
 
     def invalidate(self, pattern: str) -> int:
         """
@@ -240,8 +368,14 @@ class CacheManager:
         return count
 
     def clear_all(self) -> int:
-        """Clear entire cache. Returns number of entries removed."""
+        """Clear entire cache (both LRU and file). Returns number of entries removed."""
         count = 0
+
+        # Clear LRU cache
+        if self._lru:
+            count += self._lru.clear()
+
+        # Clear file cache
         for subdir in self.cache_dir.iterdir():
             if not subdir.is_dir():
                 continue
@@ -252,11 +386,11 @@ class CacheManager:
         return count
 
     def get_stats(self) -> dict:
-        """Get cache statistics."""
+        """Get cache statistics including LRU and file stats."""
         total = self._stats['hits'] + self._stats['misses']
         hit_rate = (self._stats['hits'] / total * 100) if total > 0 else 0
 
-        # Count current entries
+        # Count current file entries
         entry_count = 0
         total_size = 0
         for subdir in self.cache_dir.iterdir():
@@ -266,12 +400,20 @@ class CacheManager:
                 entry_count += 1
                 total_size += cache_file.stat().st_size
 
-        return {
+        stats = {
             **self._stats,
             'hit_rate': round(hit_rate, 1),
-            'entry_count': entry_count,
+            'file_entry_count': entry_count,
             'total_size_mb': round(total_size / 1024 / 1024, 2),
         }
+
+        # Add LRU stats if enabled
+        if self._lru:
+            lru_stats = self._lru.get_stats()
+            stats['lru'] = lru_stats
+            stats['lru_entry_count'] = lru_stats['size']
+
+        return stats
 
     def maybe_cleanup(self) -> None:
         """Run cleanup if enough time has passed since last cleanup."""
@@ -440,3 +582,149 @@ def sec_cache_key(ticker: str) -> str:
 
 def sector_cache_key(ticker: str) -> str:
     return make_cache_key('meta', ticker, 'sector')
+
+
+# =============================================================================
+# REQUEST DEDUPLICATION
+# =============================================================================
+
+class RequestDeduplicator:
+    """
+    Prevents duplicate concurrent API requests.
+
+    When multiple requests for the same key arrive concurrently,
+    only the first one makes the actual API call. Others wait
+    for the result.
+
+    Thread-safe for sync code, async-compatible for async code.
+    """
+
+    def __init__(self):
+        self._in_flight: Dict[str, threading.Event] = {}
+        self._results: Dict[str, Any] = {}
+        self._lock = threading.Lock()
+        self._stats = {'deduplicated': 0, 'requests': 0}
+
+    def get_or_fetch(self, key: str, fetch_func, timeout: float = 30.0) -> Optional[Any]:
+        """
+        Get cached result or fetch with deduplication.
+
+        Args:
+            key: Unique key for this request (e.g., "stocktwits:NVDA")
+            fetch_func: Function to call if no request in flight
+            timeout: Max seconds to wait for in-flight request
+
+        Returns:
+            Result from fetch_func (may be from another request)
+        """
+        self._stats['requests'] += 1
+
+        with self._lock:
+            # Check if request is already in flight
+            if key in self._in_flight:
+                event = self._in_flight[key]
+                self._stats['deduplicated'] += 1
+            else:
+                # We're the first - create event and start request
+                event = threading.Event()
+                self._in_flight[key] = event
+                event = None  # Signal that we need to fetch
+
+        if event is not None:
+            # Wait for the in-flight request to complete
+            if event.wait(timeout):
+                return self._results.get(key)
+            return None
+
+        # We're the one fetching
+        try:
+            result = fetch_func()
+            self._results[key] = result
+            return result
+        finally:
+            with self._lock:
+                event = self._in_flight.pop(key, None)
+                if event:
+                    event.set()  # Wake up waiters
+
+    async def get_or_fetch_async(self, key: str, fetch_coro, timeout: float = 30.0) -> Optional[Any]:
+        """
+        Async version of get_or_fetch.
+
+        Args:
+            key: Unique key for this request
+            fetch_coro: Coroutine to call if no request in flight
+            timeout: Max seconds to wait
+
+        Returns:
+            Result from fetch_coro
+        """
+        self._stats['requests'] += 1
+
+        # Use asyncio.Event for async waiting
+        async_events: Dict[str, asyncio.Event] = getattr(self, '_async_events', {})
+        if not hasattr(self, '_async_events'):
+            self._async_events = async_events
+
+        with self._lock:
+            if key in async_events:
+                event = async_events[key]
+                self._stats['deduplicated'] += 1
+            else:
+                event = asyncio.Event()
+                async_events[key] = event
+                event = None
+
+        if event is not None:
+            try:
+                await asyncio.wait_for(event.wait(), timeout)
+                return self._results.get(key)
+            except asyncio.TimeoutError:
+                return None
+
+        # We're fetching
+        try:
+            result = await fetch_coro
+            self._results[key] = result
+            return result
+        finally:
+            with self._lock:
+                event = async_events.pop(key, None)
+                if event:
+                    event.set()
+
+    def clear_result(self, key: str) -> None:
+        """Clear a cached result."""
+        self._results.pop(key, None)
+
+    def get_stats(self) -> dict:
+        """Get deduplication statistics."""
+        total = self._stats['requests']
+        dedup_rate = (self._stats['deduplicated'] / total * 100) if total > 0 else 0
+        return {
+            **self._stats,
+            'dedup_rate': round(dedup_rate, 1),
+            'in_flight': len(self._in_flight),
+        }
+
+
+# Global deduplicator instance
+_deduplicator: Optional[RequestDeduplicator] = None
+
+
+def get_deduplicator() -> RequestDeduplicator:
+    """Get the global request deduplicator."""
+    global _deduplicator
+    if _deduplicator is None:
+        _deduplicator = RequestDeduplicator()
+    return _deduplicator
+
+
+def deduplicated_fetch(key: str, fetch_func, timeout: float = 30.0) -> Optional[Any]:
+    """Shorthand for deduplicated fetch using global instance."""
+    return get_deduplicator().get_or_fetch(key, fetch_func, timeout)
+
+
+async def deduplicated_fetch_async(key: str, fetch_coro, timeout: float = 30.0) -> Optional[Any]:
+    """Shorthand for async deduplicated fetch using global instance."""
+    return await get_deduplicator().get_or_fetch_async(key, fetch_coro, timeout)

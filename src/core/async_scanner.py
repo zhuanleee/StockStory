@@ -900,34 +900,79 @@ class AsyncScanner:
 
     async def _fetch_price_data(self, tickers: List[str]) -> Dict[str, pd.DataFrame]:
         """
-        Fetch price data for multiple tickers using Polygon.io.
+        Fetch price data for multiple tickers.
+
+        Uses Polygon.io if API key is set, otherwise falls back to yfinance.
         """
         price_data_dict = {}
 
         polygon_key = os.environ.get('POLYGON_API_KEY', '')
-        if not polygon_key:
-            logger.error("POLYGON_API_KEY not set - cannot fetch price data")
-            return price_data_dict
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import PolygonProvider
+                logger.info("Using Polygon.io for price data...")
 
+                provider = PolygonProvider(api_key=polygon_key)
+                price_data_dict = await provider.batch_get_daily_bars(
+                    tickers + ['SPY'],
+                    days=250,
+                    max_concurrent=50,  # Higher concurrency for unlimited tier
+                )
+                await provider.close()
+
+                logger.info(f"Polygon fetched {len(price_data_dict)} tickers")
+
+                if len(price_data_dict) >= len(tickers) * 0.5:
+                    return price_data_dict
+                else:
+                    logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)} tickers, trying yfinance")
+
+            except Exception as e:
+                logger.error(f"Polygon price data error: {e}, falling back to yfinance")
+
+        # Fallback to yfinance
+        logger.info("Using yfinance for price data...")
         try:
-            from src.data.polygon_provider import PolygonProvider
-            logger.info("Using Polygon.io for price data...")
+            import yfinance as yf
 
-            provider = PolygonProvider(api_key=polygon_key)
-            price_data_dict = await provider.batch_get_daily_bars(
-                tickers + ['SPY'],
-                days=250,
-                max_concurrent=50,  # Higher concurrency for unlimited tier
-            )
-            await provider.close()
+            all_tickers = list(set(tickers + ['SPY']))
 
-            logger.info(f"Polygon fetched {len(price_data_dict)} tickers")
+            # yfinance batch download (synchronous, run in executor)
+            def fetch_yf():
+                data = yf.download(
+                    all_tickers,
+                    period='1y',
+                    group_by='ticker',
+                    progress=False,
+                    threads=True,
+                )
+                return data
 
-            if len(price_data_dict) < len(tickers) * 0.5:
-                logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)} tickers")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, fetch_yf)
+
+            if data is not None and not data.empty:
+                for ticker in all_tickers:
+                    try:
+                        if len(all_tickers) == 1:
+                            ticker_data = data
+                        else:
+                            ticker_data = data[ticker] if ticker in data.columns.get_level_values(0) else None
+
+                        if ticker_data is not None and not ticker_data.empty:
+                            # Normalize column names
+                            ticker_df = ticker_data.copy()
+                            ticker_df.columns = [c.lower() for c in ticker_df.columns]
+                            if 'adj close' in ticker_df.columns:
+                                ticker_df = ticker_df.rename(columns={'adj close': 'close'})
+                            price_data_dict[ticker] = ticker_df
+                    except Exception as e:
+                        logger.debug(f"yfinance parse error for {ticker}: {e}")
+
+                logger.info(f"yfinance fetched {len(price_data_dict)} tickers")
 
         except Exception as e:
-            logger.error(f"Polygon price data error: {e}")
+            logger.error(f"yfinance price data error: {e}")
 
         return price_data_dict
 
