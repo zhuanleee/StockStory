@@ -467,8 +467,12 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
         Combines real-time data analysis with supply chain mapping
         to find the best lagging plays.
         """
-        # Get AI analysis
-        ai_analysis = self.analyze_with_ai()
+        # Get AI analysis with exception handling
+        try:
+            ai_analysis = self.analyze_with_ai()
+        except Exception as e:
+            logger.error(f"AI analysis exception: {e}")
+            return self._fallback_static_analysis()
 
         if 'error' in ai_analysis:
             logger.warning(f"AI analysis had error: {ai_analysis.get('error')}")
@@ -964,15 +968,26 @@ Only include real US stock tickers. Be specific and accurate."""
 
         This is the main method for getting AI-driven supply chain opportunities.
         """
-        opportunities = self.discover_realtime_opportunities()
+        try:
+            opportunities = self.discover_realtime_opportunities()
 
-        return {
-            'timestamp': datetime.now().isoformat(),
-            'source': 'ai_realtime',
-            'total_opportunities': len(opportunities),
-            'opportunities': opportunities[:15],
-            'themes_detected': list(set(o.get('theme') for o in opportunities if o.get('theme')))
-        }
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'source': 'ai_realtime',
+                'total_opportunities': len(opportunities),
+                'opportunities': opportunities[:15],
+                'themes_detected': list(set(o.get('theme') for o in opportunities if o.get('theme')))
+            }
+        except Exception as e:
+            logger.error(f"get_ai_opportunities error: {e}")
+            return {
+                'timestamp': datetime.now().isoformat(),
+                'source': 'error_fallback',
+                'error': str(e),
+                'total_opportunities': 0,
+                'opportunities': [],
+                'themes_detected': []
+            }
 
 
 # Singleton instance
