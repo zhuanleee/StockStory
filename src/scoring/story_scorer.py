@@ -261,7 +261,8 @@ Return as JSON:
 }}"""
 
         # x_search tool requires grok-4 family models
-        model = os.environ.get('XAI_X_SEARCH_MODEL', 'grok-4-1-fast-reasoning')
+        # Try grok-4-1-fast first, fallback configurable via env
+        model = os.environ.get('XAI_X_SEARCH_MODEL', 'grok-4-1-fast')
 
         payload = {
             "model": model,
