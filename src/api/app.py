@@ -5628,9 +5628,8 @@ def api_social_sentiment(ticker):
         from src.scoring.story_scorer import get_social_buzz_score
 
         ticker = ticker.upper()
-        # X/Twitter disabled by default due to xAI API timeout issues
-        # Enable with ?include_x=true
-        include_x = request.args.get('include_x', 'false').lower() == 'true'
+        # X/Twitter enabled by default (disable with ?include_x=false)
+        include_x = request.args.get('include_x', 'true').lower() == 'true'
         result = get_social_buzz_score(ticker, include_x=include_x)
 
         return jsonify({
