@@ -53,11 +53,6 @@ def add_cors_headers(response):
         response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
-@app.route('/api/<path:path>', methods=['OPTIONS'])
-def handle_options(path):
-    """Handle CORS preflight requests."""
-    return '', 204
-
 # Initialize SocketIO for real-time sync
 socketio = None
 try:
