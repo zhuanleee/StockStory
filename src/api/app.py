@@ -5610,6 +5610,63 @@ def api_conviction_alerts():
 
 
 # =============================================================================
+# SOCIAL SENTIMENT API
+# =============================================================================
+
+@app.route('/api/social/<ticker>')
+def api_social_sentiment(ticker):
+    """
+    Get social sentiment for a ticker from all sources.
+
+    Sources:
+    - StockTwits: Retail trader sentiment
+    - Reddit: r/wallstreetbets, r/stocks, r/investing, r/options
+    - X/Twitter: Via xAI x_search (engagement-weighted) - requires XAI_API_KEY
+    - SEC: 8-K filings, insider activity
+    """
+    try:
+        from src.scoring.story_scorer import get_social_buzz_score
+
+        ticker = ticker.upper()
+        result = get_social_buzz_score(ticker, include_x=True)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            **result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Social sentiment error for {ticker}: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/social/x/<ticker>')
+def api_x_sentiment(ticker):
+    """
+    Get X/Twitter sentiment only for a ticker.
+
+    Uses xAI x_search with engagement-weighted scoring.
+    Requires XAI_API_KEY environment variable.
+    """
+    try:
+        from src.scoring.story_scorer import fetch_x_sentiment
+
+        ticker = ticker.upper()
+        result = fetch_x_sentiment(ticker, days_back=7)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            **result,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"X sentiment error for {ticker}: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # SUPPLY CHAIN DISCOVERY API
 # =============================================================================
 
