@@ -5728,6 +5728,51 @@ def api_supplychain_known_themes():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+@app.route('/api/supplychain/ai-debug')
+def api_supplychain_ai_debug():
+    """Debug endpoint to test AI discovery components step by step."""
+    debug_info = {'steps': []}
+
+    try:
+        # Step 1: Import
+        debug_info['steps'].append('1. Starting import...')
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+        debug_info['steps'].append('1. Import succeeded')
+
+        # Step 2: Get engine
+        debug_info['steps'].append('2. Getting engine...')
+        engine = get_theme_discovery_engine()
+        debug_info['steps'].append('2. Engine created')
+
+        # Step 3: Get story scores
+        debug_info['steps'].append('3. Getting story scores...')
+        story_scores = engine._get_story_scores()
+        debug_info['story_score_count'] = len(story_scores)
+        debug_info['steps'].append(f'3. Got {len(story_scores)} story scores')
+
+        # Step 4: Gather realtime data (fast mode)
+        debug_info['steps'].append('4. Gathering realtime data (fast mode)...')
+        realtime_data = engine._gather_realtime_data(fast_mode=True)
+        debug_info['realtime_keys'] = list(realtime_data.keys())
+        debug_info['steps'].append(f'4. Got realtime data keys: {list(realtime_data.keys())}')
+
+        # Step 5: Try JSON serialization
+        import json
+        debug_info['steps'].append('5. Testing JSON serialization...')
+        json.dumps(realtime_data)
+        debug_info['steps'].append('5. JSON serialization OK')
+
+        debug_info['ok'] = True
+        return jsonify(debug_info)
+
+    except Exception as e:
+        import traceback
+        debug_info['error'] = str(e)
+        debug_info['traceback'] = traceback.format_exc()
+        debug_info['ok'] = False
+        return jsonify(debug_info), 500
+
+
 @app.route('/api/supplychain/ai-discover')
 def api_supplychain_ai_discover():
     """
