@@ -550,9 +550,9 @@ class HardDataScanner:
                 sma_50 = close.rolling(50).mean().iloc[-1]
                 sma_200 = close.rolling(200).mean().iloc[-1] if len(df) >= 200 else sma_50
 
-                signal.above_20sma = signal.price > sma_20
-                signal.above_50sma = signal.price > sma_50
-                signal.above_200sma = signal.price > sma_200
+                signal.above_20sma = bool(signal.price > sma_20)
+                signal.above_50sma = bool(signal.price > sma_50)
+                signal.above_200sma = bool(signal.price > sma_200)
 
                 # Volume
                 avg_volume = volume.rolling(20).mean().iloc[-1]
@@ -565,14 +565,14 @@ class HardDataScanner:
                 kc_upper = sma_20 + 1.5 * atr.iloc[-1]
                 kc_lower = sma_20 - 1.5 * atr.iloc[-1]
 
-                signal.in_squeeze = bb_upper.iloc[-1] < kc_upper and bb_lower.iloc[-1] > kc_lower
+                signal.in_squeeze = bool(bb_upper.iloc[-1] < kc_upper and bb_lower.iloc[-1] > kc_lower)
 
                 # Distance from high
                 high_52w = close.rolling(252).max().iloc[-1] if len(df) >= 252 else close.max()
-                signal.distance_from_high = ((high_52w - signal.price) / high_52w) * 100
+                signal.distance_from_high = float(((high_52w - signal.price) / high_52w) * 100)
 
                 # Extended check
-                signal.is_extended = signal.price > sma_20 * 1.15  # More than 15% above 20 SMA
+                signal.is_extended = bool(signal.price > sma_20 * 1.15)  # More than 15% above 20 SMA
 
             signal.calculate_score()
 

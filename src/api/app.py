@@ -5776,11 +5776,14 @@ def api_supplychain_ai_analyze():
         engine = get_theme_discovery_engine()
         result = engine.analyze_with_ai()
 
+        # Remove raw_data as it may contain non-serializable objects
+        result.pop('raw_data', None)
+
         if 'error' in result:
             return jsonify({
                 'ok': False,
                 'error': result.get('error'),
-                'raw_data': result.get('raw_data')
+                'raw_response': result.get('raw_response', '')[:200]
             }), 500
 
         return jsonify({
