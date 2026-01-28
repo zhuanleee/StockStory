@@ -219,27 +219,18 @@ def fetch_x_sentiment(ticker: str, days_back: int = 7) -> dict:
         try:
             from xai_sdk import Client
             from xai_sdk.chat import user
-            from xai_sdk.tools import web_search
-
-            # Calculate date range
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days_back)
-            from_date_str = start_date.strftime('%Y-%m-%d')
-            to_date_str = end_date.strftime('%Y-%m-%d')
+            from xai_sdk.tools import x_search
 
             client = Client(api_key=api_key)
             chat = client.chat.create(
                 model=os.environ.get('XAI_MODEL', 'grok-4-1-fast'),
-                tools=[web_search(
-                    from_date=from_date_str,
-                    to_date=to_date_str,
-                )],
+                tools=[x_search()],
             )
 
-            # Search prompt for stock sentiment
-            search_prompt = f"""Search for recent posts and discussions about ${ticker} stock on X/Twitter.
+            # Search prompt for stock sentiment - include date range in query
+            search_prompt = f"""Search X/Twitter for recent posts (last {days_back} days) about ${ticker} stock.
 
-Find posts discussing ${ticker} as an investment. Analyze the sentiment.
+Find posts discussing ${ticker} as an investment. Analyze the overall sentiment.
 
 Return a JSON summary:
 {{
