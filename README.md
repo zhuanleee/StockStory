@@ -1,327 +1,406 @@
-# Stock Scanner Bot
+# Stock Scanner Bot 📈
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+**AI-powered stock scanner with 38-component analysis, learning system, and Telegram bot interface.**
+
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Railway](https://img.shields.io/badge/Deploy-Railway-blueviolet)](https://railway.app)
+[![DigitalOcean](https://img.shields.io/badge/Deployed-DigitalOcean-0080FF)](https://stock-story-jy89o.ondigitalocean.app/)
 
-An institutional-grade stock scanner with real-time data from **Polygon.io**, AI-powered analysis via **DeepSeek**, and **Telegram** integration. Features story-first analysis, theme detection, options flow tracking, and self-evolving intelligence.
+> **Live Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+> **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
 
-**Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
+---
 
-## Highlights
+## 🎯 Overview
 
-- **Real-time Data** - Polygon.io integration for stocks, options, news, and fundamentals
-- **17x Faster Scanning** - Async pipeline scans 500+ stocks in ~7 minutes
-- **Story-First Analysis** - Prioritize narratives over pure technicals
-- **Options Flow** - Track unusual options activity and put/call ratios
-- **Self-Learning** - 124 auto-tuning parameters that adapt to market conditions
-- **AI Intelligence** - DeepSeek-powered market analysis and predictions
+Stock Scanner Bot is a sophisticated stock analysis system that combines:
+- **38 data components** across technical, sentiment, fundamental, and AI analysis
+- **10 data sources** including Polygon, Alpha Vantage, xAI, DeepSeek, Google Trends
+- **6-component learning system** that adapts to market conditions
+- **Exit strategy analyzer** with dynamic price targets and urgency levels
+- **Real-time Telegram alerts** for trades and exits
+- **Interactive dashboard** with 7 intelligence visualizations
 
-## Data Sources
+---
 
-| Source | Data | Priority |
-|--------|------|----------|
-| **Polygon.io** | Price, Options, News, Financials, Dividends, Splits, Technical Indicators | Primary |
-| **yfinance** | Price data, Earnings estimates | Fallback |
-| **StockTwits** | Social sentiment | Supplementary |
-| **Reddit** | Retail sentiment (wallstreetbets, stocks, investing, options) | Supplementary |
-| **SEC EDGAR** | Insider filings, 8-K events | Supplementary |
+## ✨ Key Features
 
-## Features
+### 📊 Market Analysis
+- **Real-time scanning** of 1400+ liquid stocks
+- **Story-first methodology** - finds stocks with compelling narratives
+- **Theme detection** - identifies emerging market themes
+- **Supply chain analysis** - maps relationships between stocks
 
-### Core Scanning
-- **Async Scanner** - Parallel scanning with connection pooling and rate limiting
-- **Story-First Scoring** - Weight narratives, catalysts, and themes over technicals
-- **Theme Detection** - 17+ tracked themes (AI, Nuclear, GLP-1, Defense, etc.)
-- **Dynamic Universe** - Auto-updated S&P 500 + NASDAQ-100 via Polygon
+### 🧠 Intelligence System
+- **X/Twitter sentiment** via xAI Grok
+- **Google Trends** retail momentum tracking
+- **Earnings call analysis** with AI-powered transcript analysis
+- **Executive commentary** aggregation from SEC filings
+- **Government contracts** and **patent activity** tracking
+- **Institutional flow** detection
 
-### Polygon.io Integration
-- **Real-time Quotes** - Sub-second price data with pre/post market
-- **Options Chain** - Full options data with Greeks and unusual activity detection
-- **News Feed** - Market news with sentiment scoring
-- **Financials** - Quarterly/annual income statements, balance sheets, cash flow
-- **Corporate Actions** - Dividends, stock splits, upcoming events
-- **Technical Indicators** - SMA, EMA, RSI, MACD from Polygon's API
-- **Ticker Universe** - Dynamic stock lists without web scraping
+### 🎯 Exit Strategy (NEW!)
+- **38-component exit analysis** for every position
+- **Dynamic price targets** (bull/base/bear cases)
+- **Exit urgency levels** (0-10 scale)
+- **Telegram alerts** for critical exits
+- **Automated risk management** with trailing stops
 
-### AI Intelligence
-- **DeepSeek Integration** - GPT-class analysis at lower cost
-- **Pattern Recognition** - Technical and narrative pattern detection
-- **Trading Coach** - Personalized trade feedback
-- **Market Briefings** - Daily AI-generated summaries
-- **Price Predictions** - ML-based directional forecasts
+### 🤖 Learning System
+- **Adaptive component weights** based on performance
+- **Regime detection** (bull/bear/choppy markets)
+- **Performance tracking** and improvement over time
+- **Trade journal** with AI insights
 
-### Self-Learning System
-- **Parameter Learning** - Bayesian optimization of 124 parameters
-- **Theme Evolution** - Auto-discover themes from news clustering
-- **Correlation Learning** - Detect lead-lag relationships
-- **Accuracy Tracking** - Monitor prediction quality over time
+---
 
-## Telegram Commands
+## 🚀 Quick Start
 
-Use [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot) on Telegram:
-
-### Market Analysis
-| Command | Description |
-|---------|-------------|
-| `/scan` | Run full market scan |
-| `/top` | Show top-ranked stocks |
-| `/ticker NVDA` | Deep-dive on specific stock |
-| `/screen volume>2 rs>80` | Custom screening filters |
-| `/themes` | Active market themes |
-| `/stories` | Emerging story detection |
-| `/news` | Latest market news |
-| `/sectors` | Sector rotation analysis |
-| `/health` | Market internals (breadth, put/call, VIX) |
-| `/earnings` | Upcoming earnings calendar |
-
-### AI Commands
-| Command | Description |
-|---------|-------------|
-| `/briefing` | AI market briefing |
-| `/predict AAPL` | AI price prediction |
-| `/coach` | Trading coach feedback |
-| `/patterns` | Pattern detection |
-
-### Learning Commands
-| Command | Description |
-|---------|-------------|
-| `/evolution` | Learning system status |
-| `/weights` | Adaptive scoring weights |
-| `/accuracy` | Prediction accuracy metrics |
-| `/parameters` | Parameter learning status |
-
-## Architecture
-
-```
-                     ┌─────────────────────────────────────────┐
-                     │           Telegram Bot (Flask)          │
-                     │         Webhook + REST API              │
-                     └─────────────────────────────────────────┘
-                                        │
-         ┌──────────────────────────────┼──────────────────────────────┐
-         │                              │                              │
-         ▼                              ▼                              ▼
-┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-│  Async Scanner  │           │   AI Systems    │           │    Learning     │
-│                 │           │                 │           │                 │
-│ • AsyncScanner  │           │ • DeepSeek AI   │           │ • Parameter     │
-│ • StoryScorer   │           │ • AI Learning   │           │   Learning      │
-│ • RateLimiter   │           │ • Predictions   │           │ • Evolution     │
-│ • CacheManager  │           │                 │           │   Engine        │
-└─────────────────┘           └─────────────────┘           └─────────────────┘
-         │                              │                              │
-         └──────────────────────────────┼──────────────────────────────┘
-                                        │
-         ┌──────────────────────────────┼──────────────────────────────┐
-         │                              │                              │
-         ▼                              ▼                              ▼
-┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
-│  Polygon.io     │           │    Analysis     │           │     Themes      │
-│                 │           │                 │           │                 │
-│ • Stocks/Options│           │ • Market Health │           │ • 17+ Themes    │
-│ • News          │           │ • Sector Rotate │           │ • Auto-Discovery│
-│ • Financials    │           │ • News Analyzer │           │ • Correlation   │
-│ • Technicals    │           │ • Earnings      │           │   Graph         │
-└─────────────────┘           └─────────────────┘           └─────────────────┘
-```
-
-## Quick Start
-
-### Prerequisites
-- Python 3.11+
-- Polygon.io API Key (free tier works)
-- Telegram Bot Token
-- (Optional) DeepSeek API Key for AI features
-
-### Installation
-
+### 1. Clone Repository
 ```bash
-# Clone repository
 git clone https://github.com/zhuanleee/stock_scanner_bot.git
 cd stock_scanner_bot
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
 ```
 
-### Environment Variables
-
-```env
-# Required
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-POLYGON_API_KEY=your_polygon_api_key
-
-# Optional
-DEEPSEEK_API_KEY=your_deepseek_api_key
-```
-
-### Running
-
+### 2. Install Dependencies
 ```bash
-# Main entry point
-python main.py scan           # Full scan (500+ tickers)
-python main.py scan --test    # Test scan (10 tickers)
-python main.py dashboard      # Generate HTML dashboard
-python main.py bot            # Telegram bot listener
-python main.py api            # Start Flask API
-python main.py test           # Run test suite
+pip install -r requirements.txt
 ```
 
-### Using Async Scanner
-
-```python
-from src.core.async_scanner import AsyncScanner
-import asyncio
-
-async def scan():
-    scanner = AsyncScanner(max_concurrent=50)
-    results = await scanner.run_scan_async(tickers)
-    await scanner.close()
-    return results
-
-results = asyncio.run(scan())
+### 3. Configure Environment
+```bash
+cp .env.example .env
+# Edit .env and add your API keys
 ```
 
-## Performance
+Required API keys:
+- `POLYGON_API_KEY` - Stock data (free tier available)
+- `TELEGRAM_BOT_TOKEN` - Telegram bot
+- `TELEGRAM_CHAT_ID` - Your Telegram chat ID
+- `XAI_API_KEY` - X/Twitter sentiment analysis
+- `DEEPSEEK_API_KEY` - AI analysis
+- `ALPHA_VANTAGE_API_KEY` - Earnings transcripts
 
-| Metric | Sequential | Async + Polygon |
-|--------|------------|-----------------|
-| 500 tickers | ~125 min | ~7 min |
-| Per ticker | 15s | 0.25s |
-| Speedup | 1x | **60x** |
-| Cache hit rate | 0% | 60-80% |
+### 4. Run Locally
+```bash
+# Start Flask API and dashboard
+python main.py api
 
-## Scoring System
+# Or run a scan
+python main.py scan
 
-### Story-First Philosophy
-
-Traditional scanners focus on technical indicators. This scanner prioritizes **stories**:
-
+# View help
+python main.py --help
 ```
-Story Score = Story Quality (50%) + Catalyst (35%) + Technical Confirmation (15%)
+
+### 5. Access Dashboard
+Open browser: http://localhost:5000
+
+---
+
+## 📱 Telegram Bot
+
+### Setup
+1. Get your Chat ID:
+   ```bash
+   python scripts/deployment/get_chat_id.py
+   ```
+
+2. Set environment variables in `.env`:
+   ```bash
+   TELEGRAM_BOT_TOKEN=your_token
+   TELEGRAM_CHAT_ID=your_chat_id
+   ```
+
+3. Start the bot:
+   ```bash
+   python main.py api
+   ```
+
+### Available Commands
+
+#### Scanning
+```
+/scan              - Full market scan
+/scan NVDA         - Scan specific ticker
+/top10             - Top 10 stocks
 ```
 
-### Score Components
+#### Intelligence
+```
+/trends NVDA       - Google Trends analysis
+/exec NVDA         - Executive commentary
+/earnings NVDA     - Earnings analysis
+/sympathy NVDA     - Related stocks (supply chain)
+```
 
-| Component | Weight | Elements |
-|-----------|--------|----------|
-| **Story Quality** | 50% | Theme strength, freshness, clarity, institutional interest |
-| **Catalyst** | 35% | Event type, recency, magnitude |
-| **Confirmation** | 15% | Trend alignment, volume, buyability |
+#### Trading & Watchlist
+```
+/watch add NVDA    - Add to watchlist
+/watch list        - View watchlist
+/trades            - Trade history
+```
 
-### Theme Tiers
+#### Exit Strategy (NEW!)
+```
+/exit NVDA         - Check exit signals
+/exitall           - Monitor all positions
+/targets NVDA      - Show price targets
+```
 
-| Tier | Score | Examples |
-|------|-------|----------|
-| MEGA | 100 | AI Infrastructure, GLP-1/Obesity |
-| STRONG | 80 | Nuclear, Defense, Data Centers |
-| MODERATE | 60 | Cybersecurity, Reshoring, Crypto |
-| EMERGING | 40 | Robotics, Space, Quantum |
+#### Learning System
+```
+/weights           - Component weights
+/stats             - Learning statistics
+/status            - System health
+```
 
-### Catalyst Types
+---
 
-| Tier | Score | Examples |
-|------|-------|---------|
-| 1 | 80-100 | FDA approval, Major contract, M&A |
-| 2 | 50-79 | Analyst upgrade, Insider buying |
-| 3 | 30-49 | Earnings beat, Partnership |
-| 4 | 0-29 | News mention, No catalyst |
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/scan` | GET | Run scan, return results |
-| `/api/ticker/<symbol>` | GET | Analyze single ticker |
-| `/api/stories` | GET | Emerging stories |
-| `/api/news` | GET | Latest news |
-| `/api/sectors` | GET | Sector analysis |
-| `/api/earnings` | GET | Earnings calendar |
-| `/api/options/<symbol>` | GET | Options flow data |
-| `/api/briefing` | GET | AI market briefing |
-
-## Project Structure
+## 🏗️ Architecture
 
 ```
 stock_scanner_bot/
-├── main.py                    # Main entry point
-├── app.py                     # Flask app wrapper
-├── src/
-│   ├── core/                  # Scanning engine
-│   │   ├── async_scanner.py   # Async parallel scanning
-│   │   ├── scanner_automation.py
-│   │   └── screener.py
-│   │
-│   ├── data/                  # Data providers
-│   │   ├── polygon_provider.py  # Polygon.io client
-│   │   ├── universe_manager.py  # Stock universe
-│   │   └── cache_manager.py
-│   │
-│   ├── scoring/               # Scoring systems
-│   │   └── story_scorer.py
-│   │
-│   ├── analysis/              # Market analysis
-│   │   ├── news_analyzer.py
-│   │   ├── market_health.py
-│   │   ├── earnings.py
-│   │   └── sector_rotation.py
-│   │
-│   ├── themes/                # Theme management
-│   │   ├── theme_registry.py
-│   │   └── theme_learner.py
-│   │
-│   ├── learning/              # Self-learning
-│   │   ├── parameter_learning.py
-│   │   └── evolution_engine.py
-│   │
-│   ├── ai/                    # AI systems
-│   │   └── deepseek_intelligence.py
-│   │
-│   ├── api/                   # Web API
-│   │   └── app.py
-│   │
-│   └── bot/                   # Telegram bot
-│       └── bot_listener.py
-│
-├── config/                    # Configuration
-├── tests/                     # Test suite
-├── docs/                      # GitHub Pages dashboard
-└── .github/workflows/         # CI/CD
+├── src/                    # Source code
+│   ├── api/               # Flask API endpoints
+│   ├── core/              # Core scanner logic
+│   ├── intelligence/      # Intelligence modules
+│   ├── trading/           # Exit strategy & position monitoring
+│   ├── learning/          # Learning system
+│   ├── scoring/           # Scoring engines
+│   └── data/              # Data fetchers
+├── docs/                  # Documentation
+│   ├── guides/           # User guides
+│   ├── deployment/       # Deployment docs
+│   └── api/              # API documentation
+├── tests/                 # Test suite
+│   ├── unit/             # Unit tests
+│   └── integration/      # Integration tests
+├── scripts/               # Utility scripts
+│   ├── deployment/       # Setup scripts
+│   └── verification/     # Health checks
+├── data/                  # Data storage (gitignored)
+│   ├── cache/            # API response cache
+│   ├── learning/         # Learning system state
+│   └── user/             # User data
+└── main.py               # Entry point
 ```
 
-## Deployment
+---
 
-### Railway (Recommended)
-- Automatic deploys from GitHub
-- Environment variables via dashboard
-- Configured via `Procfile`
+## 📊 38 Components Analyzed
 
-### GitHub Actions
-Automated workflows:
-- `daily_scan.yml` - Pre-market and after-hours scans
-- `dashboard.yml` - Dashboard updates every 30 min
+### Technical (8)
+Price momentum, volume profile, relative strength, support/resistance, volatility, price patterns, MA health, MACD
 
-## Contributing
+### Sentiment (6)
+X/Twitter, Reddit, StockTwits, sentiment trends, viral activity, social volume
 
+### Theme/Catalyst (8)
+Theme strength, leadership, supply chain, catalyst freshness, narrative, sector rotation, related performance, concentration
+
+### AI Analysis (4)
+AI conviction, risk assessment, opportunity score, pattern recognition
+
+### Earnings (4)
+Transcript tone, guidance direction, beat rate, surprise trend
+
+### Institutional (4)
+Ownership changes, dark pool activity, options flow, smart money indicators
+
+### Fundamental (4)
+Revenue growth, margin trends, valuation, insider trading
+
+---
+
+## 🎨 Dashboard
+
+**Live Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+
+### Features
+- **Overview** - Market summary and top picks
+- **Scans** - Full scan results with filtering
+- **Intelligence** - 7 data visualizations:
+  - X/Twitter sentiment chart
+  - Google Trends breakouts
+  - Government contracts tracking
+  - Patent activity analysis
+  - Supply chain visualizations
+  - Catalyst source distribution
+  - Real-time data updates
+- **Watchlist** - Position tracking with health scores
+- **Trades** - Portfolio management
+- **Learning** - System performance metrics
+- **Exit Targets** - Dynamic exit analysis (coming soon)
+
+---
+
+## 🚢 Deployment
+
+### DigitalOcean App Platform (Recommended)
+
+1. **Fork this repository**
+
+2. **Connect to DigitalOcean:**
+   - Go to https://cloud.digitalocean.com/apps
+   - Create App → GitHub → Select repo
+   - DigitalOcean auto-detects `.do/app.yaml`
+
+3. **Set environment variables:**
+   ```
+   POLYGON_API_KEY
+   TELEGRAM_BOT_TOKEN
+   TELEGRAM_CHAT_ID
+   XAI_API_KEY
+   DEEPSEEK_API_KEY
+   ALPHA_VANTAGE_API_KEY
+   ```
+
+4. **Deploy:**
+   - DigitalOcean auto-deploys on push to `main`
+   - First deployment: ~3-5 minutes
+
+5. **Configure Telegram webhook:**
+   ```bash
+   curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+     -d "url=https://your-app.ondigitalocean.app/webhook"
+   ```
+
+**Cost:** $5/month (Basic XXS plan)
+**SLA:** 99.95% uptime
+
+See [deployment guide](docs/deployment/DIGITALOCEAN_MIGRATION_GUIDE.md) for details.
+
+---
+
+## 📖 Documentation
+
+### User Guides
+- [Exit Strategy Guide](docs/guides/EXIT_STRATEGY_GUIDE.md) - How to use exit analysis
+- [Watchlist Quick Start](docs/guides/WATCHLIST_QUICK_START.md) - Watchlist features
+- [Learning System Guide](docs/guides/LEARNING_QUICK_START.md) - How learning works
+- [Telegram Setup](docs/guides/TELEGRAM_SETUP_GUIDE.md) - Bot configuration
+
+### Deployment
+- [DigitalOcean Migration](docs/deployment/DIGITALOCEAN_MIGRATION_GUIDE.md)
+- [Resource Optimization](docs/deployment/RESOURCE_OPTIMIZATION.md)
+- [Deployment Status](docs/deployment/DEPLOYMENT_STATUS.md)
+
+### Development
+- [Implementation Summary](docs/development/IMPLEMENTATION_SUMMARY.md)
+- [Claude Guidelines](docs/development/CLAUDE.md)
+
+---
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test category
+pytest tests/unit/
+pytest tests/integration/
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+```
+
+---
+
+## 🛠️ Development
+
+### Project Structure
+```python
+# Main entry point
+python main.py api      # Start API server
+python main.py scan     # Run market scan
+python main.py --help   # Show all commands
+
+# Module imports
+from src.core.async_scanner import AsyncScanner
+from src.intelligence.x_intelligence import XIntelligence
+from src.trading.exit_analyzer import ExitAnalyzer
+from src.learning.rl_models import ReinforcementLearning
+```
+
+### Adding New Features
+1. Create module in appropriate `src/` subdirectory
+2. Add API endpoint in `src/api/`
+3. Add Telegram command in `src/bot/`
+4. Update dashboard in `docs/index.html`
+5. Add tests in `tests/`
+6. Update documentation in `docs/`
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
 
-## License
+---
 
-MIT License - see [LICENSE](LICENSE) for details.
+## 📄 License
 
-## Acknowledgments
+MIT License - see [LICENSE](LICENSE) file for details
 
-- [Polygon.io](https://polygon.io) - Real-time market data
-- [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance data
-- [DeepSeek](https://deepseek.com) - AI capabilities
-- [Telegram Bot API](https://core.telegram.org/bots/api) - Bot platform
+---
+
+## 🙏 Acknowledgments
+
+**Data Sources:**
+- Polygon.io - Stock market data
+- Alpha Vantage - Earnings transcripts
+- xAI Grok - X/Twitter sentiment
+- DeepSeek - AI analysis
+- Google Trends - Retail momentum
+- SEC Edgar - Filings and insider trading
+- USASpending.gov - Government contracts
+- PatentsView - Patent activity
+
+**Technologies:**
+- Python 3.11
+- Flask (API)
+- Chart.js (Dashboard visualizations)
+- Telegram Bot API
+- DigitalOcean App Platform
+
+---
+
+## 📞 Support
+
+**Issues:** https://github.com/zhuanleee/stock_scanner_bot/issues
+**Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
+**Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+
+---
+
+## 🔄 Recent Updates
+
+### 2026-01-29: Exit Strategy System
+- ✅ 38-component exit analysis
+- ✅ Dynamic price targets (bull/base/bear)
+- ✅ Exit urgency levels and real-time alerts
+- ✅ Automated risk management
+
+### 2026-01-29: Dashboard Improvements
+- ✅ Fixed dashboard serving on DigitalOcean
+- ✅ Added 7 intelligence visualizations
+- ✅ Forensic analysis - all features verified
+
+### 2026-01-29: Repository Cleanup
+- ✅ Organized documentation into docs/
+- ✅ Moved tests to tests/ directory
+- ✅ Cleaned up root directory
+- ✅ Professional structure
+
+---
+
+**Built with ❤️ for finding the next big stock story**
+
+**⭐ Star this repo if you find it useful!**

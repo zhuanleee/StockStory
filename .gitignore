@@ -1,3 +1,24 @@
+# Cache and temp data
+data/cache/
+data/cache_old/
+data/learning/
+data/user/
+data/ai_data/
+cache/
+cache_data/
+
+# Test results
+*.json
+!requirements.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,75 +41,53 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
-.venv/
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
 
-# Environment & Secrets
-.env
-.env.local
-.env.*.local
-*.pem
-*.key
-secrets.json
-credentials.json
-
-# Data directories (runtime data, not code)
-learning_data/
-!learning_data/ecosystem_graph.json
-ai_learning_data/
-ai_data/
-user_data/
-cache/
-!cache/market_cap_cache.json
-cache_data/
-logs/
-theme_data/
-universe_data/
-evolution_data/
-parameter_data/
-
-# Log files
-*.log
-
-# JSON state files (but keep config files)
-*.json
-!render.yaml
-!package.json
-!package-lock.json
-
-# Test coverage
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# macOS
+# OS
 .DS_Store
-.AppleDouble
-.LSOverride
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Temporary files
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary
+tmp/
+temp/
 *.tmp
-*.temp
-/tmp/
-scan_*.csv
-test_dashboard.sh
+*.bak
+*.swp
+
+# Documentation builds
+site/
+docs/_build/
+
+# Never ignore
+!.gitignore
+!.github/
+!.do/
+
+# Specific data dirs to keep structure
+!data/.gitkeep
+!data/cache/.gitkeep
+!data/learning/.gitkeep
+!data/user/.gitkeep
