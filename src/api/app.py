@@ -6052,6 +6052,229 @@ def api_intelligence_summary():
         return jsonify({'ok': False, 'error': str(e)})
 
 
+@app.route('/api/intelligence/x-sentiment')
+def api_intelligence_x_sentiment():
+    """Get X/Twitter sentiment data for dashboard."""
+    try:
+        from src.intelligence.x_intelligence import get_x_intelligence
+
+        x_intel = get_x_intelligence()
+
+        # Get recent scan results to find tickers with X sentiment
+        tickers_with_sentiment = []
+
+        # Try to get from recent scan cache
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                import pandas as pd
+                df = pd.read_csv(scan_files[0])
+                top_tickers = df.head(20)['ticker'].tolist() if 'ticker' in df.columns else []
+
+                for ticker in top_tickers[:10]:  # Limit to top 10
+                    try:
+                        sentiment = x_intel.get_ticker_sentiment(ticker)
+                        tickers_with_sentiment.append({
+                            'ticker': ticker,
+                            'sentiment': sentiment.sentiment,
+                            'sentiment_score': sentiment.sentiment_score,
+                            'mentions': sentiment.mentions,
+                            'viral_posts': len(sentiment.viral_posts)
+                        })
+                    except:
+                        continue
+        except:
+            pass
+
+        return jsonify({
+            'ok': True,
+            'tickers': tickers_with_sentiment,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"X sentiment API error: {e}")
+        return jsonify({'ok': False, 'error': str(e), 'tickers': []})
+
+
+@app.route('/api/intelligence/google-trends')
+def api_intelligence_google_trends():
+    """Get Google Trends data for dashboard."""
+    try:
+        from src.intelligence.google_trends import get_trends_intelligence
+
+        trends = get_trends_intelligence()
+
+        # Get tickers from recent scan
+        tickers_with_trends = []
+
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                import pandas as pd
+                df = pd.read_csv(scan_files[0])
+                top_tickers = df.head(20)['ticker'].tolist() if 'ticker' in df.columns else []
+
+                for ticker in top_tickers[:10]:  # Limit to top 10
+                    try:
+                        trend_data = trends.get_ticker_trend(ticker)
+                        tickers_with_trends.append({
+                            'ticker': ticker,
+                            'search_interest': trend_data.search_interest,
+                            'trend_direction': trend_data.trend_direction,
+                            'is_breakout': trend_data.is_breakout
+                        })
+                    except:
+                        continue
+        except:
+            pass
+
+        return jsonify({
+            'ok': True,
+            'tickers': tickers_with_trends,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Google Trends API error: {e}")
+        return jsonify({'ok': False, 'error': str(e), 'tickers': []})
+
+
+@app.route('/api/intelligence/supply-chain/<theme_id>')
+def api_intelligence_supply_chain(theme_id):
+    """Get supply chain relationships for a theme."""
+    try:
+        from src.intelligence.relationship_graph import get_theme_basket
+
+        chain = get_theme_basket(theme_id)
+
+        return jsonify({
+            'ok': True,
+            'theme_id': theme_id,
+            'chain': chain,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Supply chain API error: {e}")
+        return jsonify({'ok': False, 'error': str(e), 'chain': {}})
+
+
+@app.route('/api/intelligence/catalyst-breakdown')
+def api_intelligence_catalyst_breakdown():
+    """Get catalyst sources distribution."""
+    try:
+        # Calculate catalyst sources from recent scan data
+        sources = {
+            'X Sentiment': 10,
+            'Google Trends': 10,
+            'Contracts': 10,
+            'Patents': 10,
+            'Supply Chain': 10,
+            'News': 15,
+            'SEC': 10,
+            'Social': 10,
+            'Price': 10,
+            'Volume': 5
+        }
+
+        # Try to get actual data from recent scans
+        try:
+            import glob
+            scan_files = sorted(glob.glob('scan_*.csv'), reverse=True)
+            if scan_files:
+                import pandas as pd
+                df = pd.read_csv(scan_files[0])
+
+                # Count non-zero components
+                component_counts = {}
+                for col in df.columns:
+                    if 'score' in col.lower() and df[col].notna().sum() > 0:
+                        component_counts[col] = int((df[col] > 0).sum())
+
+                # Normalize to percentages
+                total = sum(component_counts.values()) if component_counts else 1
+                sources = {
+                    k.replace('_', ' ').title(): int(v / total * 100)
+                    for k, v in component_counts.items()
+                }
+        except:
+            pass
+
+        return jsonify({
+            'ok': True,
+            'sources': sources,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Catalyst breakdown API error: {e}")
+        return jsonify({'ok': False, 'error': str(e), 'sources': {}})
+
+
+@app.route('/api/intelligence/earnings/<ticker>')
+def api_intelligence_earnings(ticker):
+    """Get earnings intelligence for a ticker."""
+    try:
+        from src.scoring.earnings_scorer import get_earnings_scorer
+
+        scorer = get_earnings_scorer()
+        features = scorer.get_features(ticker.upper())
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'confidence': features.earnings_confidence,
+            'has_earnings_soon': features.has_earnings_soon,
+            'days_until': features.days_until_earnings,
+            'days_since': features.days_since_earnings,
+            'beat_rate': features.beat_rate,
+            'avg_surprise': features.avg_surprise,
+            'guidance_tone': features.guidance_tone,
+            'risk_level': scorer.get_earnings_risk_level(ticker.upper()),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Earnings intelligence API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+@app.route('/api/intelligence/executive/<ticker>')
+def api_intelligence_executive(ticker):
+    """Get executive commentary for a ticker."""
+    try:
+        from src.intelligence.executive_commentary import get_executive_commentary
+
+        commentary = get_executive_commentary(ticker.upper(), days_back=30)
+
+        return jsonify({
+            'ok': True,
+            'ticker': ticker,
+            'overall_sentiment': commentary.overall_sentiment,
+            'sentiment_score': commentary.sentiment_score,
+            'guidance_tone': commentary.guidance_tone,
+            'key_themes': commentary.key_themes,
+            'has_recent_commentary': commentary.has_recent_commentary,
+            'recent_comments': [
+                {
+                    'source': c.source,
+                    'date': c.date,
+                    'sentiment': c.sentiment,
+                    'content': c.content[:200]
+                }
+                for c in commentary.recent_comments[:5]
+            ],
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Executive commentary API error: {e}")
+        return jsonify({'ok': False, 'error': str(e)})
+
+
 # =============================================================================
 # TRADE MANAGEMENT API
 # =============================================================================

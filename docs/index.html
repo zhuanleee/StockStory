@@ -1174,8 +1174,8 @@
                         <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshXSentiment()">↻</button>
                     </div>
                     <div class="card-body">
-                        <canvas id="x-sentiment-chart" style="max-height: 250px;"></canvas>
-                        <div id="x-sentiment-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+                        <canvas id="xSentimentChart" style="max-height: 250px;"></canvas>
+                        <div id="xSentimentList" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
                             <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
                                 Set XAI_API_KEY to enable X Intelligence
                             </div>
@@ -1190,8 +1190,8 @@
                         <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshGoogleTrends()">↻</button>
                     </div>
                     <div class="card-body">
-                        <canvas id="google-trends-chart" style="max-height: 250px;"></canvas>
-                        <div id="trends-breakouts" style="margin-top: 12px;">
+                        <canvas id="trendsChart" style="max-height: 250px;"></canvas>
+                        <div id="trendsBreakoutList" style="margin-top: 12px;">
                             <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
                                 Loading trends data...
                             </div>
@@ -1208,7 +1208,7 @@
                         <span style="font-size: 0.75rem; color: var(--text-muted);">Last 6 months</span>
                     </div>
                     <div class="card-body">
-                        <canvas id="gov-contracts-chart" style="max-height: 250px;"></canvas>
+                        <canvas id="contractsChart" style="max-height: 250px;"></canvas>
                         <div id="gov-contracts-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
                             <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
                                 Loading contracts data...
@@ -1224,7 +1224,7 @@
                         <span style="font-size: 0.75rem; color: var(--text-muted);">Last 6 months</span>
                     </div>
                     <div class="card-body">
-                        <canvas id="patent-activity-chart" style="max-height: 250px;"></canvas>
+                        <canvas id="patentsChart" style="max-height: 250px;"></canvas>
                         <div id="patent-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
                             <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
                                 Set PATENTSVIEW_API_KEY to enable patent tracking
@@ -1251,7 +1251,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div id="supply-chain-viz" style="min-height: 300px;">
+                    <div id="supplyChainViz" style="min-height: 300px;">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;" id="supply-chain-grid">
                             <!-- Will be populated by JavaScript -->
                         </div>
@@ -1267,8 +1267,8 @@
                 </div>
                 <div class="card-body">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                        <canvas id="catalyst-sources-chart" style="max-height: 300px;"></canvas>
-                        <div id="catalyst-breakdown">
+                        <canvas id="catalystChart" style="max-height: 300px;"></canvas>
+                        <div id="catalystBreakdownList">
                             <div style="display: flex; flex-direction: column; gap: 8px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
                                     <span>📰 News</span>
