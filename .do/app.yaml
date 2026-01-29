@@ -7,11 +7,11 @@ services:
       branch: main
       deploy_on_push: true
     build_command: pip install --upgrade pip && pip install -r requirements.txt
-    run_command: gunicorn --bind 0.0.0.0:8080 --workers 2 --timeout 120 --chdir /workspace wsgi:application
+    run_command: python main.py api
     environment_slug: python
     instance_count: 1
     instance_size_slug: basic-xxs
-    http_port: 8080
+    http_port: 5000
     health_check:
       http_path: /health
       initial_delay_seconds: 60

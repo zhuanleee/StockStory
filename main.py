@@ -122,8 +122,11 @@ def run_bot():
 def run_api():
     """Start the Flask API server."""
     from src.api.app import app
-    print("Starting Flask API server on port 5000...")
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Starting Flask API server on port {port}...")
+    # Use debug=False for production
+    is_production = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DO_APP_NAME')
+    app.run(debug=not is_production, port=port, host='0.0.0.0')
 
 
 def run_tests():
