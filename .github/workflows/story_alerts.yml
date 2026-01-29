@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -q requests yfinance pandas feedparser
+          pip install -r requirements.txt
 
       - name: Download previous state
         uses: actions/cache@v4
@@ -42,14 +42,16 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
         run: |
-          python story_alerts.py stories
+          python -m src.bot.story_alerts stories
 
       - name: Check price alerts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
         run: |
-          python story_alerts.py prices
+          python -m src.bot.story_alerts prices
         continue-on-error: true
 
       - name: Save state for next run
@@ -75,11 +77,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -q requests yfinance
+          pip install -r requirements.txt
 
       - name: Check earnings
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
         run: |
-          python story_alerts.py earnings
+          python -m src.bot.story_alerts earnings

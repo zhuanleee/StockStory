@@ -29,19 +29,22 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance pandas numpy requests matplotlib mplfinance
+          pip install -r requirements.txt
 
       - name: Run scanner
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
         run: |
-          python scanner_automation.py
+          python main.py scan
 
       - name: Generate dashboard
         run: |
-          python dashboard.py
+          python main.py dashboard
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
