@@ -3990,7 +3990,8 @@ def handle_apistatus(chat_id):
     ai_count = (1 if config.ai.has_deepseek else 0) + (1 if config.ai.has_xai else 0)
     try:
         data_count = sum(1 for v in providers.values() if v)
-    except:
+    except (KeyError, ValueError, TypeError) as e:
+        logger.warning(f"Error counting data providers: {e}")
         data_count = 0
     polygon_count = 1 if (polygon_key and len(polygon_key) > 10) else 0
 
