@@ -1465,8 +1465,35 @@ def process_message(message):
 @app.route('/')
 def home():
     """Serve the dashboard homepage."""
-    from flask import send_from_directory
-    return send_from_directory(app.static_folder, 'index.html')
+    try:
+        import os
+        from pathlib import Path
+
+        # Get the absolute path to index.html
+        current_dir = Path(__file__).parent
+        docs_dir = current_dir.parent.parent / 'docs'
+        index_path = docs_dir / 'index.html'
+
+        logger.info(f"Attempting to serve index.html from: {index_path}")
+
+        if index_path.exists():
+            with open(index_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            from flask import Response
+            return Response(html_content, mimetype='text/html')
+        else:
+            logger.error(f"index.html not found at {index_path}")
+            return jsonify({
+                'error': 'Dashboard not found',
+                'path_checked': str(index_path),
+                'exists': False
+            }), 404
+    except Exception as e:
+        logger.error(f"Error serving dashboard: {e}")
+        return jsonify({
+            'error': 'Failed to serve dashboard',
+            'details': str(e)
+        }), 500
 
 
 @app.route('/health')
