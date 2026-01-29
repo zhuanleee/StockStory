@@ -1794,15 +1794,18 @@ def api_scan():
 @app.route('/api/scan/trigger', methods=['POST', 'GET'])
 def api_scan_trigger():
     """
-    Trigger a scan and save results to CSV.
+    Trigger a scan and save results to CSV (async - returns immediately).
 
     Query params:
         tickers: Comma-separated list (custom tickers)
         mode: 'quick' (20 stocks), 'indices' (S&P500+NASDAQ100), 'full' (Polygon 300M+ mcap)
               Default: 'indices'
         min_mcap: Minimum market cap in millions (default: 300 for full mode)
+
+    Returns:
+        202 Accepted - Scan started in background
     """
-    import concurrent.futures
+    import threading
 
     tickers_param = request.args.get('tickers', '')
     mode = request.args.get('mode', 'indices').lower()
@@ -1838,19 +1841,25 @@ def api_scan_trigger():
             ]
             logger.info(f"Quick scan: {len(tickers)} tickers")
 
-        def run_async_scan(ticker_list):
-            """Run async scan in a separate thread with its own event loop."""
+        def run_background_scan(ticker_list, scan_mode):
+            """Run scan in background thread."""
             import asyncio
             from src.core.async_scanner import AsyncScanner
 
             async def scan():
-                # Adjust concurrency based on scan size
                 max_concurrent = 50 if len(ticker_list) > 100 else 25
                 scanner = AsyncScanner(max_concurrent=max_concurrent)
                 try:
-                    return await scanner.run_scan_async(ticker_list)
+                    logger.info(f"Background scan started: {len(ticker_list)} tickers, mode={scan_mode}")
+                    results = await scanner.run_scan_async(ticker_list)
+                    if isinstance(results, tuple):
+                        df = results[0]
+                    else:
+                        df = results
+                    logger.info(f"Background scan complete: {len(df) if df is not None else 0} stocks scanned")
+                    return df
                 except Exception as e:
-                    logger.error(f"Async scan error: {e}")
+                    logger.error(f"Background scan error: {e}", exc_info=True)
                     raise
                 finally:
                     await scanner.close()
@@ -1858,37 +1867,31 @@ def api_scan_trigger():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(scan())
+                loop.run_until_complete(scan())
             finally:
                 loop.close()
 
-        # Longer timeout for larger scans
-        timeout = 600 if len(tickers) > 100 else 300  # 10 min for large, 5 min for small
+        # Start scan in background thread
+        scan_thread = threading.Thread(
+            target=run_background_scan,
+            args=(tickers, mode),
+            daemon=True
+        )
+        scan_thread.start()
 
-        # Run in thread pool to avoid event loop conflicts with gunicorn
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_async_scan, tickers)
-            results = future.result(timeout=timeout)
-
-        if isinstance(results, tuple):
-            df = results[0]
-        else:
-            df = results
-
+        # Return immediately with 202 Accepted
         return jsonify({
             'ok': True,
-            'scanned': len(df) if df is not None else 0,
+            'status': 'started',
             'mode': mode,
             'universe_size': len(tickers),
-            'message': f'Scan complete. {len(df) if df is not None else 0} stocks saved to CSV.',
+            'message': f'Scan started in background. Scanning {len(tickers)} stocks...',
             'timestamp': datetime.now().isoformat()
-        })
+        }), 202
 
-    except concurrent.futures.TimeoutError:
-        return jsonify({'ok': False, 'error': f'Scan timed out ({len(tickers)} tickers). Try mode=quick.'})
     except Exception as e:
         logger.error(f"Scan trigger error: {e}", exc_info=True)
-        return jsonify({'ok': False, 'error': str(e)})
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/api/ticker/<ticker>')
