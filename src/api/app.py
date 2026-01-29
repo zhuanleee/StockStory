@@ -31,12 +31,13 @@ from utils import (
 
 logger = get_logger(__name__)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../../docs', static_url_path='')
 
 # CORS configuration for dashboard
 ALLOWED_ORIGINS = [
     'https://zhuanleee.github.io',
     'https://web-production-46562.up.railway.app',
+    'https://stock-story-jy89o.ondigitalocean.app',
     'http://localhost:5000',
     'http://127.0.0.1:5000',
 ]
@@ -46,7 +47,7 @@ def add_cors_headers_first(response):
     """Add CORS headers for dashboard requests."""
     origin = request.headers.get('Origin', '')
     # Allow same-origin requests (no Origin header) or explicitly allowed origins
-    if not origin or origin in ALLOWED_ORIGINS or origin.endswith('.github.io') or origin.endswith('.up.railway.app'):
+    if not origin or origin in ALLOWED_ORIGINS or origin.endswith('.github.io') or origin.endswith('.up.railway.app') or origin.endswith('.ondigitalocean.app'):
         if origin:
             response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
@@ -1463,6 +1464,13 @@ def process_message(message):
 
 @app.route('/')
 def home():
+    """Serve the dashboard homepage."""
+    from flask import send_from_directory
+    return send_from_directory(app.static_folder, 'index.html')
+
+
+@app.route('/health')
+def health():
     """Health check endpoint."""
     return jsonify({
         'bot': 'Stock Scanner Bot',
