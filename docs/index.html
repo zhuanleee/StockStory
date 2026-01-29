@@ -1540,6 +1540,39 @@
             : `${window.location.protocol}//${window.location.host}/api`;
 
         // =============================================================================
+        // UTILITY FUNCTIONS FOR SAFE DATA HANDLING
+        // =============================================================================
+
+        // Safe number formatting - handles null/undefined gracefully
+        function safeFixed(value, decimals = 2) {
+            if (value === null || value === undefined || isNaN(value)) return '--';
+            return Number(value).toFixed(decimals);
+        }
+
+        // Safe fetch with HTTP validation and timeout
+        async function safeFetch(url, options = {}, timeoutMs = 30000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const res = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+
+                return await res.json();
+            } catch (e) {
+                clearTimeout(timeoutId);
+                if (e.name === 'AbortError') {
+                    throw new Error('Request timed out');
+                }
+                throw e;
+            }
+        }
+
+        // =============================================================================
         // SOCKET.IO SYNC CLIENT
         // =============================================================================
 
@@ -1810,8 +1843,13 @@
             }
         }
 
-        // Global sync client
-        const syncClient = new SyncClient();
+        // Global sync client - initialize safely
+        let syncClient = null;
+        try {
+            syncClient = new SyncClient();
+        } catch (e) {
+            console.warn('Sync client initialization failed:', e);
+        }
 
         // Sync activity helper
         function addSyncActivityItem(message, type = 'sync') {
