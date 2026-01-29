@@ -180,12 +180,8 @@ window.validatePrice = validatePrice;
 window.validateShares = validateShares;
 window.validateText = validateText;
 
-// Initialize on DOM ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+// DON'T auto-initialize - let inline JS handle initialization
+// This module only provides utilities that are exported to window
 
 // Export for module usage
 export { api, apiQueue, queuedFetch, store, modal, toast, dom, refreshAll };
