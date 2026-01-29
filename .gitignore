@@ -91,3 +91,4 @@ coverage.xml
 *.temp
 /tmp/
 scan_*.csv
+test_dashboard.sh
