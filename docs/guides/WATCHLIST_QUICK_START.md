@@ -494,7 +494,7 @@ python test_xai_x_intelligence.py
 3. **Test on Railway:**
    ```bash
    # Your Railway URL
-   curl https://your-app.up.railway.app/api/watchlist/
+   curl https://stock-story-jy89o.ondigitalocean.app/api/watchlist/
    ```
 
 4. **Update dashboard** to use Railway URL

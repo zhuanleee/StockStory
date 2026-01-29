@@ -793,7 +793,7 @@ POST /api/watchlist/import
 4. **Deploy to Railway:**
    - Push changes to git
    - Railway auto-deploys
-   - Watchlist available at your-app.railway.app/api/watchlist/
+   - Watchlist available at stock-story-jy89o.ondigitalocean.app/api/watchlist/
 
 ---
 

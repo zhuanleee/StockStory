@@ -24,7 +24,7 @@
 python3 get_chat_id.py
 ```
 
-This will display your Chat ID. **Save this number** - you'll need it for Railway!
+This will display your Chat ID. **Save this number** - you'll need it for DigitalOcean!
 
 Example output:
 ```
@@ -35,13 +35,13 @@ Name: Your Name
 
 ---
 
-## ⚙️ Step 2: Configure Railway Environment Variables
+## ⚙️ Step 2: Configure DigitalOcean Environment Variables
 
-### Go to Railway Dashboard
+### Go to DigitalOcean App Platform
 
-1. Open: https://railway.app/dashboard
-2. Select your project: `stock_scanner_bot`
-3. Click on "Variables" tab
+1. Open: https://cloud.digitalocean.com/apps
+2. Select your app: `stock-scanner-bot`
+3. Go to "Settings" → "App-Level Environment Variables"
 4. Add the following variables:
 
 ```bash
@@ -64,31 +64,31 @@ FINNHUB_API_KEY=your_finnhub_key_here
 PATENTSVIEW_API_KEY=your_patents_key_here
 USE_AI_BRAIN_RANKING=true
 USE_LEARNING_SYSTEM=true
-MAX_CONCURRENT_SCANS=50
+MAX_CONCURRENT_SCANS=25
 ```
 
 ### Save and Deploy
 
-Railway will automatically redeploy when you add/change variables.
+DigitalOcean will automatically redeploy when you add/change variables.
 
 ---
 
-## 🔗 Step 3: Configure Webhook (After Railway Deployment)
+## 🔗 Step 3: Configure Webhook (After DigitalOcean Deployment)
 
 ### Wait for Deployment
 
-1. Go to Railway Dashboard → Deployments
-2. Wait until status shows "Deployed" (~2-3 minutes)
-3. Note your Railway app URL (e.g., `your-app-name.railway.app`)
+1. Go to DigitalOcean App Platform → Overview
+2. Wait until status shows "Deployed" (~3-5 minutes)
+3. Your app URL is: `https://stock-story-jy89o.ondigitalocean.app`
 
 ### Set Webhook
 
-Run this command (replace `YOUR_RAILWAY_URL` with your actual Railway URL):
+Run this command:
 
 ```bash
 curl -X POST "https://api.telegram.org/bot7626822299:AAHVNKOLIVelbBwOEO2J2aE_6D34Ml0RuuM/setWebhook" \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://YOUR_RAILWAY_URL.railway.app/webhook"}'
+  -d '{"url": "https://stock-story-jy89o.ondigitalocean.app/webhook"}'
 ```
 
 Expected response:
@@ -107,7 +107,7 @@ Should show:
 {
   "ok": true,
   "result": {
-    "url": "https://your-app.railway.app/webhook",
+    "url": "https://stock-story-jy89o.ondigitalocean.app/webhook",
     "has_custom_certificate": false,
     "pending_update_count": 0
   }
@@ -132,7 +132,7 @@ Send these commands to `@Stocks_Story_Bot`:
 ### Test Health Endpoint
 
 ```bash
-curl https://YOUR_RAILWAY_URL.railway.app/health
+curl https://stock-story-jy89o.ondigitalocean.app/health
 ```
 
 Expected:
@@ -148,7 +148,7 @@ Expected:
 
 Open in browser:
 ```
-https://YOUR_RAILWAY_URL.railway.app
+https://stock-story-jy89o.ondigitalocean.app
 ```
 
 Click "Intelligence" tab - should show all visualizations.
@@ -203,7 +203,7 @@ Once your bot is working, you can use:
 ### Issue: Webhook not working
 
 **Solution**:
-1. Check Railway deployment logs for errors
+1. Check DigitalOcean deployment logs for errors
 2. Verify webhook URL is correct
 3. Delete and recreate webhook:
 ```bash
@@ -213,13 +213,13 @@ curl -X POST "https://api.telegram.org/bot7626822299:AAHVNKOLIVelbBwOEO2J2aE_6D3
 
 ### Issue: "API key not configured"
 
-**Solution**: Add missing environment variable in Railway dashboard and redeploy.
+**Solution**: Add missing environment variable in DigitalOcean App Platform and redeploy.
 
 ### Issue: Bot responds slowly
 
 **Solution**:
-- Reduce `MAX_CONCURRENT_SCANS` to 30
-- Check Railway logs for performance issues
+- MAX_CONCURRENT_SCANS is already optimized to 25 for 512MB RAM
+- Check DigitalOcean logs for performance issues
 - Ensure all API keys are valid
 
 ---
@@ -252,7 +252,7 @@ curl -X POST "https://api.telegram.org/bot7626822299:AAHVNKOLIVelbBwOEO2J2aE_6D3
 
 ## 🔒 Security Notes
 
-- ✅ Bot token is stored securely in Railway environment variables
+- ✅ Bot token is stored securely in DigitalOcean environment variables
 - ✅ Webhook uses HTTPS
 - ✅ No sensitive data in git repository
 - ✅ Rate limiting enabled on API endpoints
@@ -261,26 +261,26 @@ curl -X POST "https://api.telegram.org/bot7626822299:AAHVNKOLIVelbBwOEO2J2aE_6D3
 
 ## 📈 Cost Estimate
 
-**Free Tier** (Recommended):
-- Railway: Free (500 hrs/month)
+**DigitalOcean App Platform**:
+- DigitalOcean: $5/month (Basic XXS - 512MB RAM)
 - Polygon: Free (your unlimited tier)
 - Alpha Vantage: Free (25 calls/day)
 - xAI: ~$0.10/week
 - DeepSeek: ~$0.05/week
 
-**Total: ~$0.60/month**
+**Total: ~$5.60/month** (99.95% uptime SLA)
 
 ---
 
 ## 🚀 Quick Start Checklist
 
 - [ ] Send `/start` to @Stocks_Story_Bot
-- [ ] Run `python3 get_chat_id.py` to get Chat ID
-- [ ] Add all environment variables to Railway
-- [ ] Wait for Railway deployment (2-3 min)
-- [ ] Configure webhook with Railway URL
+- [ ] Run `python3 scripts/deployment/get_chat_id.py` to get Chat ID
+- [ ] Add all environment variables to DigitalOcean
+- [ ] Wait for DigitalOcean deployment (3-5 min)
+- [ ] Configure webhook with DigitalOcean URL
 - [ ] Test: Send `/help` to bot
-- [ ] Test: Open Railway dashboard URL
+- [ ] Test: Open https://stock-story-jy89o.ondigitalocean.app
 - [ ] Test: Send `/scan NVDA` to bot
 
 ---

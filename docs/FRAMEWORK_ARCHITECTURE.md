@@ -1427,7 +1427,7 @@ Uptime: 99.9%
 ### 11.1 API Endpoints (Flask)
 
 ```
-BASE URL: https://<railway-url>.railway.app
+BASE URL: https://stock-story-jy89o.ondigitalocean.app
 or LOCAL: http://localhost:5000
 
 ┌──────────────────────────────────────────────────────────┐
