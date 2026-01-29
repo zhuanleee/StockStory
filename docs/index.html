@@ -1966,10 +1966,13 @@
         }
 
         async function triggerScan(mode = 'indices', evt = null) {
+            // Safety: Check if toast is loaded
+            const safeToast = window.toast || { error: console.error, success: console.log };
+
             // Fix: Get button reference safely - use passed event or find button
             const btn = evt?.target || document.querySelector(`button[onclick*="triggerScan('${mode}')"]`) || null;
             if (!btn) {
-                toast.error('Button reference not found');
+                safeToast.error('Button reference not found');
                 return;
             }
 
@@ -1985,7 +1988,7 @@
                 if (data.ok && data.status === 'started') {
                     // Scan started in background (202 Accepted)
                     btn.textContent = `⏳ Scanning ${data.universe_size} stocks...`;
-                    toast.success(`Scan started! Processing ${data.universe_size} stocks in background.`, 5000);
+                    safeToast.success(`Scan started! Processing ${data.universe_size} stocks in background.`, 5000);
 
                     // Poll for results every 10 seconds
                     let pollCount = 0;
@@ -1997,7 +2000,7 @@
                             // If we got new data, stop polling
                             clearInterval(pollInterval);
                             btn.textContent = '✅ Scan complete!';
-                            toast.success('Scan results updated!');
+                            safeToast.success('Scan results updated!');
                             setTimeout(() => {
                                 btn.textContent = originalText;
                                 btn.disabled = false;
@@ -2031,7 +2034,7 @@
                 } else {
                     const errorMsg = data.error || 'Scan failed';
                     btn.textContent = '❌ ' + errorMsg.substring(0, 20);
-                    toast.error('Scan failed: ' + errorMsg);
+                    safeToast.error('Scan failed: ' + errorMsg);
                     setTimeout(() => {
                         btn.textContent = originalText;
                         btn.disabled = false;
@@ -2040,7 +2043,7 @@
             } catch (e) {
                 console.error('Trigger scan failed:', e);
                 btn.textContent = '❌ Error';
-                toast.error('Scan error: ' + (e.message || 'Network issue'));
+                safeToast.error('Scan error: ' + (e.message || 'Network issue'));
                 setTimeout(() => {
                     btn.textContent = originalText;
                     btn.disabled = false;
