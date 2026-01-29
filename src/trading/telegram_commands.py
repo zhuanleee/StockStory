@@ -233,7 +233,8 @@ class TradeCommandHandler:
                 stock = yf.Ticker(trade.ticker)
                 hist = stock.history(period='1d')
                 current_price = float(hist['Close'].iloc[-1]) if not hist.empty else trade.average_cost
-            except:
+            except Exception as e:
+                logger.debug(f"Failed to get current price for {trade.ticker}: {e}")
                 current_price = trade.average_cost
 
             value = trade.total_shares * current_price
@@ -442,7 +443,8 @@ class TradeCommandHandler:
             stock = yf.Ticker(trade.ticker)
             hist = stock.history(period='1d')
             current_price = float(hist['Close'].iloc[-1]) if not hist.empty else trade.average_cost
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to get current price for {trade.ticker}: {e}")
             current_price = trade.average_cost
 
         pnl_pct = ((current_price / trade.average_cost) - 1) * 100 if trade.average_cost > 0 else 0

@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from enum import Enum
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ThemeTier(Enum):
@@ -24,6 +27,27 @@ class ThemeTier(Enum):
     MODERATE = "moderate"   # Cybersecurity, Energy - solid themes
     WEAK = "weak"           # Fading or crowded themes
     NONE = "none"           # No clear theme
+
+
+class ThemeRole(Enum):
+    """Role within a theme's supply chain"""
+    LEADER = "leader"               # Theme leaders (move first)
+    SUPPLIER = "supplier"           # Equipment/chip suppliers
+    EQUIPMENT = "equipment"         # Infrastructure providers
+    MATERIAL = "material"           # Raw materials
+    BENEFICIARY = "beneficiary"     # Software/service beneficiaries
+    INFRASTRUCTURE = "infrastructure"  # Supporting infrastructure
+
+
+# Role-based score multipliers
+ROLE_MULTIPLIERS = {
+    ThemeRole.LEADER: 1.0,          # Leaders get full score
+    ThemeRole.SUPPLIER: 0.85,       # Suppliers lag slightly
+    ThemeRole.EQUIPMENT: 0.80,      # Equipment follows
+    ThemeRole.BENEFICIARY: 0.90,    # Beneficiaries closely tied
+    ThemeRole.INFRASTRUCTURE: 0.75, # Infrastructure is slower
+    ThemeRole.MATERIAL: 0.70,       # Materials are furthest
+}
 
 
 class CatalystType(Enum):
@@ -79,6 +103,83 @@ THEME_TIERS = {
         'score': 30,
     },
 }
+
+
+# Supply chain maps from theme discovery engine
+# Maps themes to their ecosystem (leaders, suppliers, beneficiaries, etc.)
+SUPPLY_CHAIN_MAP = {
+    'ai_infrastructure': {
+        'leaders': ['NVDA', 'AMD', 'MSFT', 'GOOGL', 'META'],
+        'suppliers': ['ASML', 'LRCX', 'AMAT', 'KLAC'],  # Chip equipment
+        'equipment': ['DELL', 'HPE', 'SMCI'],  # Servers
+        'materials': ['ENTG', 'MKSI', 'CRUS'],  # Materials
+        'beneficiaries': ['PLTR', 'SNOW', 'MDB', 'DDOG'],  # Software
+        'infrastructure': ['EQIX', 'DLR', 'AMT'],  # Data centers
+    },
+    'nuclear_energy': {
+        'leaders': ['CEG', 'VST', 'NRG'],
+        'suppliers': ['CCJ', 'UEC', 'DNN', 'UUUU'],  # Uranium
+        'equipment': ['GEV', 'BWX', 'FLR'],  # Equipment/Construction
+        'materials': ['NEM', 'FCX'],  # Mining
+        'beneficiaries': ['ETN', 'EMR', 'ROK'],  # Grid/Electrical
+        'infrastructure': ['NEE', 'DUK', 'SO'],  # Utilities
+    },
+    'defense_tech': {
+        'leaders': ['LMT', 'RTX', 'NOC', 'GD'],
+        'suppliers': ['HII', 'TXT', 'LHX'],  # Contractors
+        'equipment': ['AXON', 'PLTR', 'LDOS'],  # Tech
+        'materials': ['ATI', 'HWM', 'TDG'],  # Aerospace materials
+        'beneficiaries': ['KTOS', 'RGR', 'SWBI'],  # Smaller defense
+        'infrastructure': ['BAH', 'CACI', 'SAIC'],  # Services
+    },
+    'ev_battery': {
+        'leaders': ['TSLA', 'RIVN', 'LCID'],
+        'suppliers': ['PCRFY', 'ALB', 'SQM', 'LAC'],  # Lithium
+        'equipment': ['PLUG', 'BLNK', 'CHPT'],  # Charging
+        'materials': ['MP', 'LTHM'],  # Rare earth
+        'beneficiaries': ['F', 'GM', 'STLA'],  # Legacy auto
+        'infrastructure': ['EOSE', 'STEM', 'NOVA'],  # Energy storage
+    },
+    'biotech_glp1': {
+        'leaders': ['LLY', 'NVO'],
+        'suppliers': ['TMO', 'DHR', 'A'],  # Lab equipment
+        'equipment': ['ISRG', 'BSX', 'MDT'],  # Medical devices
+        'materials': ['CTLT', 'WST'],  # Drug delivery
+        'beneficiaries': ['HUM', 'CI', 'UNH'],  # Insurance
+        'infrastructure': ['CVS', 'WBA', 'ABC'],  # Distribution
+    },
+    'cybersecurity': {
+        'leaders': ['CRWD', 'PANW', 'ZS'],
+        'suppliers': ['FTNT', 'S', 'TENB'],  # Security vendors
+        'equipment': ['CSCO', 'JNPR', 'ANET'],  # Network
+        'materials': ['QLYS', 'VRNS', 'RPD'],  # Tools
+        'beneficiaries': ['OKTA', 'NET', 'DDOG'],  # Cloud security
+        'infrastructure': ['ACN', 'IBM', 'LDOS'],  # Services
+    },
+}
+
+
+# Map theme names to supply chain IDs
+THEME_NAME_TO_SUPPLY_CHAIN = {
+    'ai': 'ai_infrastructure',
+    'artificial intelligence': 'ai_infrastructure',
+    'ai infrastructure': 'ai_infrastructure',
+    'nuclear': 'nuclear_energy',
+    'nuclear power': 'nuclear_energy',
+    'uranium': 'nuclear_energy',
+    'defense': 'defense_tech',
+    'defense tech': 'defense_tech',
+    'military': 'defense_tech',
+    'ev': 'ev_battery',
+    'electric vehicle': 'ev_battery',
+    'battery': 'ev_battery',
+    'glp-1': 'biotech_glp1',
+    'ozempic': 'biotech_glp1',
+    'weight loss': 'biotech_glp1',
+    'cybersecurity': 'cybersecurity',
+    'cyber': 'cybersecurity',
+}
+
 
 # Catalyst scores by type
 CATALYST_SCORES = {
@@ -193,12 +294,14 @@ class StoryScorer:
     def detect_theme_tier(self, news: List[Dict], ticker: str, theme_data: List[Dict] = None) -> tuple:
         """
         Detect theme tier from news and theme registry.
-        Returns (tier, theme_name, freshness_score)
+        Enhanced with supply chain role detection.
+        Returns (tier, theme_name, freshness_score, role_multiplier)
         """
         # Check theme registry first
         best_theme = None
         best_tier = ThemeTier.NONE
         theme_stage = None
+        role_multiplier = 1.0
 
         if theme_data:
             for theme in theme_data:
@@ -224,6 +327,12 @@ class StoryScorer:
                     if idx < len(tier_order) - 1:
                         best_tier = tier_order[idx + 1]
 
+        # Check supply chain map for role-based scoring
+        supply_chain_role = self._detect_supply_chain_role(ticker, best_theme)
+        if supply_chain_role:
+            role_multiplier = ROLE_MULTIPLIERS.get(supply_chain_role, 1.0)
+            logger.debug(f"{ticker}: Theme role = {supply_chain_role.value}, multiplier = {role_multiplier}")
+
         # Also scan news for theme keywords
         all_text = ' '.join([
             (n.get('title', '') + ' ' + n.get('summary', '')).lower()
@@ -236,6 +345,10 @@ class StoryScorer:
                     if tier.value < best_tier.value or best_tier == ThemeTier.NONE:
                         best_tier = tier
                         best_theme = best_theme or keyword.title()
+                        # Check supply chain role for keyword-detected themes too
+                        supply_chain_role = self._detect_supply_chain_role(ticker, best_theme)
+                        if supply_chain_role:
+                            role_multiplier = ROLE_MULTIPLIERS.get(supply_chain_role, 1.0)
                     break
 
         # Calculate freshness based on stage
@@ -252,11 +365,49 @@ class StoryScorer:
         elif best_tier in [ThemeTier.MEGA, ThemeTier.STRONG]:
             freshness = 70  # Strong themes assumed somewhat fresh
 
-        return best_tier, best_theme, freshness
+        return best_tier, best_theme, freshness, role_multiplier
 
-    def detect_catalyst(self, news: List[Dict], sec_data: Dict) -> tuple:
+    def _detect_supply_chain_role(self, ticker: str, theme_name: Optional[str]) -> Optional[ThemeRole]:
         """
-        Detect catalyst type and recency from news and SEC filings.
+        Detect ticker's role in theme supply chain.
+        Returns role or None if not found.
+        """
+        if not theme_name:
+            return None
+
+        # Map theme name to supply chain ID
+        theme_lower = theme_name.lower()
+        supply_chain_id = None
+
+        for key, sc_id in THEME_NAME_TO_SUPPLY_CHAIN.items():
+            if key in theme_lower:
+                supply_chain_id = sc_id
+                break
+
+        if not supply_chain_id or supply_chain_id not in SUPPLY_CHAIN_MAP:
+            return None
+
+        # Find ticker in supply chain
+        supply_chain = SUPPLY_CHAIN_MAP[supply_chain_id]
+
+        for role_name, tickers in supply_chain.items():
+            if ticker in tickers:
+                # Map role name to ThemeRole enum
+                role_map = {
+                    'leaders': ThemeRole.LEADER,
+                    'suppliers': ThemeRole.SUPPLIER,
+                    'equipment': ThemeRole.EQUIPMENT,
+                    'materials': ThemeRole.MATERIAL,
+                    'beneficiaries': ThemeRole.BENEFICIARY,
+                    'infrastructure': ThemeRole.INFRASTRUCTURE,
+                }
+                return role_map.get(role_name)
+
+        return None
+
+    def detect_catalyst(self, news: List[Dict], sec_data: Dict, ticker: str = None) -> tuple:
+        """
+        Detect catalyst type and recency from news, SEC filings, and government contracts.
         Returns (catalyst_type, score, recency_multiplier, catalyst_description, catalyst_date)
         """
         best_catalyst = CatalystType.NO_CATALYST
@@ -264,21 +415,72 @@ class StoryScorer:
         catalyst_desc = None
         catalyst_date = None
 
-        # Check SEC filings first
-        if sec_data.get('has_8k'):
-            best_catalyst = CatalystType.SEC_8K
-            best_score = CATALYST_SCORES[CatalystType.SEC_8K]
-            catalyst_desc = "SEC 8-K Filing"
-            # Recent filing
-            filings = sec_data.get('filings', [])
-            if filings:
-                catalyst_date = filings[0].get('date')
+        # Check government contracts first (high-value catalyst)
+        if ticker:
+            try:
+                from src.data.gov_contracts import get_company_contracts
 
-        if sec_data.get('insider_activity'):
-            # Check if it's buying
-            best_catalyst = CatalystType.INSIDER_BUYING
-            best_score = CATALYST_SCORES[CatalystType.INSIDER_BUYING]
-            catalyst_desc = "Insider Activity"
+                contracts = get_company_contracts(ticker)
+                if contracts and contracts.get('contract_count', 0) > 0:
+                    recent_contracts = contracts.get('recent_contracts', [])
+
+                    # Check for large contracts with tiered recency
+                    # - Last 180 days: Major catalyst (95 points)
+                    # - Last 365 days: Strong catalyst (but older, 70 points)
+                    one_year_ago = datetime.now() - timedelta(days=365)
+                    six_months_ago = datetime.now() - timedelta(days=180)
+
+                    for contract in recent_contracts:
+                        contract_amount = contract.get('amount', 0)
+                        award_date_str = contract.get('date', contract.get('award_date', ''))
+
+                        if contract_amount >= 10_000_000:  # $10M+ contracts
+                            try:
+                                award_date = datetime.strptime(award_date_str[:10], '%Y-%m-%d')
+
+                                # Recent contract (last 6 months) = Major catalyst
+                                if award_date >= six_months_ago:
+                                    best_catalyst = CatalystType.MAJOR_CONTRACT
+                                    best_score = CATALYST_SCORES[CatalystType.MAJOR_CONTRACT]
+                                    catalyst_desc = f"${contract_amount/1e6:.0f}M Government Contract"
+                                    catalyst_date = award_date_str
+
+                                    logger.debug(f"{ticker}: Major government contract catalyst: {catalyst_desc}")
+                                    break  # Use the largest/most recent
+
+                                # Older contract (6-12 months) = Analyst upgrade level
+                                elif award_date >= one_year_ago:
+                                    if best_score < CATALYST_SCORES[CatalystType.ANALYST_UPGRADE]:
+                                        best_catalyst = CatalystType.ANALYST_UPGRADE
+                                        best_score = CATALYST_SCORES[CatalystType.ANALYST_UPGRADE]
+                                        catalyst_desc = f"${contract_amount/1e6:.0f}M Government Contract (older)"
+                                        catalyst_date = award_date_str
+                                        logger.debug(f"{ticker}: Older government contract catalyst: {catalyst_desc}")
+
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"Failed to parse contract date {award_date_str}: {e}")
+                                continue
+
+            except Exception as e:
+                logger.debug(f"Failed to check government contracts for {ticker}: {e}")
+
+        # Check SEC filings
+        if best_score < CATALYST_SCORES[CatalystType.SEC_8K]:
+            if sec_data.get('has_8k'):
+                best_catalyst = CatalystType.SEC_8K
+                best_score = CATALYST_SCORES[CatalystType.SEC_8K]
+                catalyst_desc = "SEC 8-K Filing"
+                # Recent filing
+                filings = sec_data.get('filings', [])
+                if filings:
+                    catalyst_date = filings[0].get('date')
+
+        if best_score < CATALYST_SCORES[CatalystType.INSIDER_BUYING]:
+            if sec_data.get('insider_activity'):
+                # Check if it's buying
+                best_catalyst = CatalystType.INSIDER_BUYING
+                best_score = CATALYST_SCORES[CatalystType.INSIDER_BUYING]
+                catalyst_desc = "Insider Activity"
 
         # Scan news for catalyst keywords
         for article in news[:15]:
@@ -304,12 +506,18 @@ class StoryScorer:
             try:
                 if isinstance(catalyst_date, str):
                     # Try parsing various date formats
+                    dt = None
                     for fmt in ['%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%a, %d %b %Y %H:%M:%S']:
                         try:
                             dt = datetime.strptime(catalyst_date[:19], fmt)
                             break
-                        except:
-                            dt = datetime.now() - timedelta(days=7)  # Assume week old
+                        except (ValueError, TypeError) as e:
+                            logger.debug(f"Date format {fmt} failed for {catalyst_date}: {e}")
+                            continue
+
+                    if dt is None:
+                        logger.warning(f"Could not parse catalyst date: {catalyst_date}, assuming 7 days old")
+                        dt = datetime.now() - timedelta(days=7)
                 else:
                     dt = catalyst_date
 
@@ -327,7 +535,8 @@ class StoryScorer:
                     recency_multiplier = 0.3
                 else:
                     recency_multiplier = 0.1
-            except:
+            except Exception as e:
+                logger.warning(f"Error calculating catalyst recency: {e}")
                 recency_multiplier = 0.3  # Default if parsing fails
 
         return best_catalyst, best_score, recency_multiplier, catalyst_desc, catalyst_date
@@ -372,10 +581,10 @@ class StoryScorer:
 
         return clarity
 
-    def calculate_institutional_narrative(self, news: List[Dict]) -> float:
+    def calculate_institutional_narrative(self, news: List[Dict], ticker: str = None) -> float:
         """
         Check if institutions/analysts are driving the narrative.
-        Analyst mentions, fund involvement, etc.
+        Enhanced with patent activity signal for innovation tracking.
         """
         inst_keywords = [
             'analyst', 'upgrade', 'downgrade', 'price target', 'rating',
@@ -390,13 +599,71 @@ class StoryScorer:
 
         matches = sum(1 for kw in inst_keywords if kw in all_text)
 
+        base_score = 10
         if matches >= 5:
-            return 100
+            base_score = 100
         elif matches >= 3:
-            return 70
+            base_score = 70
         elif matches >= 1:
-            return 40
-        return 10
+            base_score = 40
+
+        # Patent activity boost (innovation signal for tech/biotech)
+        patent_boost = 0
+        if ticker:
+            try:
+                from src.data.patents import get_company_patents
+
+                patents = get_company_patents(ticker)
+                if patents and patents.get('patent_count', 0) > 0:
+                    recent_patents = patents.get('recent_patents', [])
+
+                    # Recent patents (last 180 days) boost institutional narrative
+                    six_months_ago = datetime.now() - timedelta(days=180)
+                    recent_count = 0
+
+                    for patent in recent_patents:
+                        grant_date_str = patent.get('grant_date', '')
+                        if grant_date_str:
+                            try:
+                                grant_date = datetime.strptime(grant_date_str[:10], '%Y-%m-%d')
+                                if grant_date >= six_months_ago:
+                                    recent_count += 1
+                            except (ValueError, TypeError) as e:
+                                logger.debug(f"Failed to parse patent date {grant_date_str}: {e}")
+                                continue
+
+                    # Scale patent boost: 1-3 recent patents = +5, 4-10 = +10, 11+ = +15
+                    if recent_count >= 11:
+                        patent_boost = 15
+                        logger.debug(f"{ticker}: Patent boost +15 ({recent_count} recent patents)")
+                    elif recent_count >= 4:
+                        patent_boost = 10
+                        logger.debug(f"{ticker}: Patent boost +10 ({recent_count} recent patents)")
+                    elif recent_count >= 1:
+                        patent_boost = 5
+                        logger.debug(f"{ticker}: Patent boost +5 ({recent_count} recent patents)")
+
+            except Exception as e:
+                logger.debug(f"Failed to check patents for {ticker}: {e}")
+
+        # Google Trends retail momentum boost
+        retail_boost = 0
+        if ticker:
+            try:
+                from src.intelligence.google_trends import calculate_retail_momentum_score
+
+                retail_score = calculate_retail_momentum_score(ticker)
+                if retail_score >= 15:
+                    retail_boost = 10
+                    logger.debug(f"{ticker}: Retail momentum boost +10 (Google Trends: {retail_score})")
+                elif retail_score >= 10:
+                    retail_boost = 5
+                    logger.debug(f"{ticker}: Retail momentum boost +5 (Google Trends: {retail_score})")
+
+            except Exception as e:
+                logger.debug(f"Failed to check Google Trends for {ticker}: {e}")
+
+        return min(100, base_score + patent_boost + retail_boost)
 
     def calculate_confirmation(
         self,
@@ -488,14 +755,20 @@ class StoryScorer:
         # =====================================================
 
         # Theme strength (40% of story quality)
-        theme_tier, primary_theme, theme_freshness = self.detect_theme_tier(news, ticker, theme_data)
-        theme_strength = THEME_TIERS.get(theme_tier, {}).get('score', 0)
+        theme_tier, primary_theme, theme_freshness, role_multiplier = self.detect_theme_tier(news, ticker, theme_data)
+        base_theme_strength = THEME_TIERS.get(theme_tier, {}).get('score', 0)
+
+        # Apply supply chain role multiplier
+        theme_strength = base_theme_strength * role_multiplier
+
+        if role_multiplier != 1.0:
+            logger.debug(f"{ticker}: Theme strength adjusted by role: {base_theme_strength} * {role_multiplier} = {theme_strength}")
 
         # Story clarity (20% of story quality)
         story_clarity = self.calculate_story_clarity(news)
 
         # Institutional narrative (20% of story quality)
-        institutional_narrative = self.calculate_institutional_narrative(news)
+        institutional_narrative = self.calculate_institutional_narrative(news, ticker)
 
         # Theme freshness already calculated (20% of story quality)
 
@@ -511,7 +784,7 @@ class StoryScorer:
         # =====================================================
 
         catalyst_type, catalyst_type_score, recency_mult, catalyst_desc, catalyst_date = \
-            self.detect_catalyst(news, sec_data)
+            self.detect_catalyst(news, sec_data, ticker)
 
         # Multiple catalysts bonus
         catalyst_count = sum(1 for n in news[:10] if any(

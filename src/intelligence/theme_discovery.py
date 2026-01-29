@@ -125,8 +125,8 @@ class ThemeDiscoveryEngine:
                 with open(DISCOVERED_THEMES_FILE) as f:
                     data = json.load(f)
                     return {k: DiscoveredTheme(**v) for k, v in data.items()}
-            except:
-                pass
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.warning(f"Failed to load discovered themes: {e}")
         return {}
 
     def _save_discovered_themes(self):
@@ -142,8 +142,8 @@ class ThemeDiscoveryEngine:
                 with open(KEYWORD_HISTORY_FILE) as f:
                     data = json.load(f)
                     return {k: TrendingKeyword(**v) for k, v in data.items()}
-            except:
-                pass
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.warning(f"Failed to load keyword history: {e}")
         return {}
 
     def _save_keyword_history(self):
@@ -177,7 +177,8 @@ class ThemeDiscoveryEngine:
                     news = provider.get_news_sync(symbol, limit=10)
                     if news:
                         news_items.extend(news)
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to fetch news for {symbol}: {e}")
                     continue
 
             if not news_items:
@@ -384,7 +385,8 @@ Return empty array [] if no clear themes found.
                     data = provider.get_price_data_sync(ticker, days=30)
                     if data is not None and len(data) >= 20:
                         price_data[ticker] = data['close'].pct_change().dropna()
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to get price data for {ticker}: {e}")
                     continue
 
             if len(price_data) < 5:
@@ -529,7 +531,8 @@ Return empty array [] if no clear themes found.
                             sectors.append(sector)
                         if industry:
                             industries.append(industry)
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to get details for {ticker}: {e}")
                     continue
 
             # Find most common
@@ -545,7 +548,8 @@ Return empty array [] if no clear themes found.
 
             return None
 
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to identify cluster theme: {e}")
             return None
 
     def _consolidate_signals(self, signals: List[Dict]) -> List[DiscoveredTheme]:
@@ -680,7 +684,8 @@ Return empty array [] if no clear themes found.
                 last_seen = datetime.fromisoformat(kw.last_seen)
                 if last_seen > cutoff and kw.mention_count >= min_mentions:
                     hot.append(kw)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to parse last_seen for keyword {kw.keyword}: {e}")
                 continue
 
         return sorted(hot, key=lambda x: x.mention_count, reverse=True)

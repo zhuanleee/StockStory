@@ -6826,6 +6826,27 @@ def api_sync_config():
     })
 
 
+# =============================================================================
+# WATCHLIST SYSTEM - Enhanced with Auto-Updates
+# =============================================================================
+
+# Register watchlist blueprint
+try:
+    from src.watchlist.watchlist_api import watchlist_bp
+    app.register_blueprint(watchlist_bp)
+    logger.info("✓ Watchlist API registered")
+except Exception as e:
+    logger.warning(f"Watchlist API not available: {e}")
+
+# Register learning system API
+try:
+    from src.learning.learning_api import learning_bp
+    app.register_blueprint(learning_bp)
+    logger.info("✓ Learning System API registered")
+except Exception as e:
+    logger.warning(f"Learning System API not available: {e}")
+
+
 if __name__ == '__main__':
     if socketio:
         # Run with SocketIO for real-time sync support

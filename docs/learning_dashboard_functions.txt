@@ -1,0 +1,277 @@
+        // =============================================================================
+        // LEARNING DASHBOARD FUNCTIONS
+        // =============================================================================
+
+        // Chart instances (global)
+        let weightsChart = null;
+        let componentPerfChart = null;
+        let weightsEvolutionChart = null;
+        let regimeProbsChart = null;
+        let learnerSelectionChart = null;
+        let learnerPerfChart = null;
+
+        // Learning data cache
+        let learningData = {
+            statistics: null,
+            weights: null,
+            regime: null,
+            performance: null
+        };
+
+        // Initialize learning dashboard when tab is activated
+        function initLearningDashboard() {
+            console.log('Initializing learning dashboard...');
+            createAllCharts();
+            refreshLearningDashboard();
+        }
+
+        // Create all chart instances
+        function createAllCharts() {
+            // Component Weights (Doughnut)
+            const weightsCtx = document.getElementById('weights-chart');
+            if (weightsCtx && !weightsChart) {
+                weightsChart = new Chart(weightsCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Theme', 'Technical', 'AI', 'Sentiment'],
+                        datasets: [{
+                            data: [30, 25, 25, 20],
+                            backgroundColor: [
+                                'rgba(168, 85, 247, 0.8)',
+                                'rgba(59, 130, 246, 0.8)',
+                                'rgba(34, 197, 94, 0.8)',
+                                'rgba(234, 179, 8, 0.8)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { color: '#fafafa', font: { size: 12 } }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Component Performance (Bar)
+            const compPerfCtx = document.getElementById('component-performance-chart');
+            if (compPerfCtx && !componentPerfChart) {
+                componentPerfChart = new Chart(compPerfCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Theme', 'Technical', 'AI', 'Sentiment'],
+                        datasets: [{
+                            label: 'Win Probability',
+                            data: [0.65, 0.58, 0.62, 0.55],
+                            backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 1,
+                                ticks: {
+                                    color: '#a1a1aa',
+                                    callback: function(value) { return (value * 100) + '%'; }
+                                },
+                                grid: { color: '#27272a' }
+                            },
+                            x: {
+                                ticks: { color: '#a1a1aa' },
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Refresh all learning data and charts
+        async function refreshLearningDashboard() {
+            try {
+                const statsRes = await fetch(`${API_BASE}/learning/statistics`).catch(() => null);
+                const weightsRes = await fetch(`${API_BASE}/learning/weights`).catch(() => null);
+                const regimeRes = await fetch(`${API_BASE}/learning/regime`).catch(() => null);
+                const perfRes = await fetch(`${API_BASE}/learning/performance`).catch(() => null);
+
+                if (statsRes && statsRes.ok) {
+                    learningData.statistics = await statsRes.json();
+                    updateStatistics(learningData.statistics);
+                }
+
+                if (weightsRes && weightsRes.ok) {
+                    learningData.weights = await weightsRes.json();
+                    updateWeights(learningData.weights);
+                }
+
+                if (regimeRes && regimeRes.ok) {
+                    learningData.regime = await regimeRes.json();
+                    updateRegime(learningData.regime);
+                }
+
+                if (perfRes && perfRes.ok) {
+                    learningData.performance = await perfRes.json();
+                    updatePerformance(learningData.performance);
+                }
+            } catch (error) {
+                console.error('Error refreshing learning dashboard:', error);
+            }
+        }
+
+        // Update functions
+        function updateStatistics(data) {
+            if (!data || !data.ok) return;
+            const stats = data.statistics;
+            if (!stats) return;
+
+            document.getElementById('learning-stat-trades').textContent = stats.overview?.total_trades || 0;
+            document.getElementById('learning-stat-active').textContent = stats.overview?.learning_active ? '✓' : '✗';
+
+            const breakerEl = document.getElementById('learning-stat-breaker');
+            if (stats.overview?.circuit_breaker_active) {
+                breakerEl.textContent = '🔴 ACTIVE';
+                breakerEl.style.color = 'var(--red)';
+            } else {
+                breakerEl.textContent = '🟢 OK';
+                breakerEl.style.color = 'var(--green)';
+            }
+
+            document.getElementById('learning-stat-regime').textContent =
+                (stats.overview?.current_regime || 'unknown').replace('_', ' ');
+        }
+
+        function updateWeights(data) {
+            if (!data || !data.ok) return;
+            const weights = data.weights;
+            if (!weights || !weightsChart) return;
+
+            weightsChart.data.datasets[0].data = [
+                (weights.theme || 0.3) * 100,
+                (weights.technical || 0.25) * 100,
+                (weights.ai || 0.25) * 100,
+                (weights.sentiment || 0.2) * 100
+            ];
+            weightsChart.update();
+
+            const confidence = data.confidence || 0;
+            document.getElementById('weights-confidence').textContent =
+                `Confidence: ${(confidence * 100).toFixed(0)}%`;
+        }
+
+        function updateRegime(data) {
+            if (!data || !data.ok) return;
+            const regime = data.regime || 'unknown';
+            const confidence = data.confidence || 0;
+
+            document.getElementById('regime-confidence').textContent =
+                `Confidence: ${(confidence * 100).toFixed(0)}%`;
+
+            const timeline = document.getElementById('regime-timeline');
+            const regimeColors = {
+                'bull_momentum': '#22c55e',
+                'bear_defensive': '#ef4444',
+                'choppy_range': '#eab308',
+                'crisis_mode': '#dc2626',
+                'theme_driven': '#a855f7',
+                'unknown': '#71717a'
+            };
+
+            const color = regimeColors[regime] || regimeColors.unknown;
+            timeline.innerHTML = `
+                <div style="padding: 16px; background: ${color}20; border-left: 4px solid ${color}; border-radius: 4px;">
+                    <div style="font-size: 1.25rem; font-weight: 600; color: ${color}; margin-bottom: 8px;">
+                        ${regime.replace('_', ' ').toUpperCase()}
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--text-muted);">
+                        Confidence: ${(confidence * 100).toFixed(1)}%
+                    </div>
+                </div>
+            `;
+        }
+
+        function updatePerformance(data) {
+            if (!data || !data.ok) return;
+            const metrics = data.metrics;
+            if (!metrics) return;
+
+            const sharpe = metrics.sharpe_ratio || 0;
+            document.getElementById('metric-sharpe').textContent = sharpe.toFixed(2);
+            document.getElementById('metric-sharpe').style.color =
+                sharpe >= 1.5 ? 'var(--green)' : sharpe >= 0.8 ? 'var(--yellow)' : 'var(--red)';
+
+            const winRate = metrics.win_rate || 0;
+            document.getElementById('metric-winrate').textContent = (winRate * 100).toFixed(0) + '%';
+            document.getElementById('metric-winrate').style.color =
+                winRate >= 0.65 ? 'var(--green)' : winRate >= 0.55 ? 'var(--yellow)' : 'var(--red)';
+
+            const pf = metrics.profit_factor || 0;
+            document.getElementById('metric-pf').textContent = pf.toFixed(2);
+            document.getElementById('metric-pf').style.color =
+                pf >= 2.0 ? 'var(--green)' : pf >= 1.5 ? 'var(--yellow)' : 'var(--red)';
+
+            const dd = Math.abs(metrics.max_drawdown || 0);
+            document.getElementById('metric-dd').textContent = dd.toFixed(1) + '%';
+            document.getElementById('metric-dd').style.color =
+                dd <= 10 ? 'var(--green)' : dd <= 15 ? 'var(--yellow)' : 'var(--red)';
+        }
+
+        // Control functions
+        async function toggleCircuitBreaker() {
+            try {
+                const currentActive = learningData.statistics?.statistics?.overview?.circuit_breaker_active || false;
+                const res = await fetch(`${API_BASE}/learning/circuit-breaker`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({active: !currentActive})
+                });
+
+                if (res.ok) {
+                    alert(`Circuit breaker ${!currentActive ? 'activated' : 'deactivated'}`);
+                    refreshLearningDashboard();
+                }
+            } catch (error) {
+                console.error('Toggle circuit breaker error:', error);
+            }
+        }
+
+        async function exportLearningData() {
+            try {
+                const res = await fetch(`${API_BASE}/learning/statistics`);
+                const data = await res.json();
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `learning_data_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Export error:', error);
+            }
+        }
+
+        async function viewFullReport() {
+            try {
+                const res = await fetch(`${API_BASE}/learning/report`);
+                const data = await res.json();
+                if (data.ok) {
+                    const win = window.open('', '_blank', 'width=800,height=600');
+                    win.document.write('<pre style="background: #09090b; color: #fafafa; padding: 20px; font-family: monospace;">' + data.report + '</pre>');
+                }
+            } catch (error) {
+                console.error('View report error:', error);
+            }
+        }

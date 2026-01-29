@@ -96,8 +96,8 @@ class RotationPredictor:
             try:
                 with open(ROTATION_HISTORY_FILE) as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load rotation history: {e}")
         return []
 
     def _save_rotation_history(self):
@@ -350,8 +350,8 @@ class RotationPredictor:
                         try:
                             start = datetime.fromisoformat(stage_start)
                             days_at_peak = (datetime.now() - start).days
-                        except:
-                            pass
+                        except (ValueError, TypeError) as e:
+                            logger.debug(f"Failed to parse stage_start_date for {theme_id}: {e}")
 
                     # Recommended action
                     if warning_level == 'confirmed':

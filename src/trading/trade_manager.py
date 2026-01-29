@@ -9,11 +9,14 @@ Handles:
 """
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 
 from .models import Trade, Tranche, TradeStatus, ScalingPlan, ScalingStrategy
+
+logger = logging.getLogger(__name__)
 
 # Storage configuration
 TRADES_DIR = Path('user_data/trades')
@@ -45,7 +48,7 @@ class TradeManager:
                     trade = Trade.from_dict(data)
                     self._trades_cache[trade.id] = trade
             except Exception as e:
-                print(f"Error loading trade {trade_file}: {e}")
+                logger.error(f"Error loading trade {trade_file}: {e}")
 
     def _save_trade(self, trade: Trade) -> None:
         """Save a trade to storage."""
@@ -361,7 +364,7 @@ class TradeManager:
                 self._save_trade(trade)
                 count += 1
             except Exception as e:
-                print(f"Error importing trade: {e}")
+                logger.error(f"Error importing trade: {e}")
         return count
 
 

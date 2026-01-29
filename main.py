@@ -9,6 +9,10 @@ Usage:
     python main.py bot           # Run Telegram bot listener
     python main.py api           # Start Flask API server
     python main.py test          # Run tests
+
+Environment Variables:
+    USE_AI_BRAIN_RANKING=true    # Enable AI brain ranking (optional, slower but more accurate)
+    XAI_API_KEY=<key>            # Enable X Intelligence via xAI Grok (optional, real-time sentiment)
 """
 
 import sys
@@ -24,12 +28,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def run_scan(test_mode=False):
-    """Run the async stock scanner."""
+def run_scan(test_mode=False, use_learning=True):
+    """
+    Run the async stock scanner.
+
+    Args:
+        test_mode: If True, scan only 10 test tickers
+        use_learning: If True, integrate with learning system (default)
+    """
     from src.core.async_scanner import AsyncScanner
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     async def scan():
         scanner = AsyncScanner(max_concurrent=50)
+
+        # Initialize learning system if enabled
+        learning_brain = None
+        if use_learning:
+            try:
+                from src.learning import get_learning_brain
+                learning_brain = get_learning_brain()
+                logger.info("✓ Learning system initialized")
+            except Exception as e:
+                logger.warning(f"Learning system not available: {e}")
+                learning_brain = None
 
         try:
             if test_mode:
@@ -41,7 +65,7 @@ def run_scan(test_mode=False):
                 tickers = um.get_scan_universe()
                 print(f"Running FULL scan on {len(tickers)} tickers...")
 
-            results = await scanner.run_scan_async(tickers)
+            results = await scanner.run_scan_async(tickers, learning_brain=learning_brain)
 
             if isinstance(results, tuple):
                 df = results[0]
@@ -49,6 +73,18 @@ def run_scan(test_mode=False):
                 df = results
 
             print(f"\nScan complete: {len(df)} stocks analyzed")
+
+            # Display learned weights if learning is active
+            if learning_brain:
+                weights = learning_brain.current_weights
+                print(f"\n📊 Learned Component Weights:")
+                print(f"  Theme:     {weights.theme:.1%}")
+                print(f"  Technical: {weights.technical:.1%}")
+                print(f"  AI:        {weights.ai:.1%}")
+                print(f"  Sentiment: {weights.sentiment:.1%}")
+                print(f"  Earnings:  {weights.earnings:.1%}")
+                print(f"  (Confidence: {weights.confidence:.1%}, Sample: {weights.sample_size} trades)")
+
             print("\nTop 10 by Story Score:")
             for i, row in df.head(10).iterrows():
                 ticker = row.get('ticker', 'N/A')

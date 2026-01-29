@@ -1126,7 +1126,8 @@ def scan_news_sentiment(tickers):
                 try:
                     stock = yf.Ticker(ticker)
                     price = stock.fast_info.get('lastPrice', 0)
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to get price for {ticker}: {e}")
                     price = 0
 
                 # Determine news type from headlines

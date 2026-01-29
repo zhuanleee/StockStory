@@ -171,8 +171,8 @@ class GovContractIntelligence:
             try:
                 with open(CACHE_FILE) as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load gov contracts cache: {e}")
         return {}
 
     def _save_cache(self):

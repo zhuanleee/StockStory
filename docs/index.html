@@ -6,6 +6,7 @@
     <title>Stock Scanner</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg: #09090b;
@@ -721,6 +722,9 @@
         <div class="tabs-inner">
             <div class="tab active" data-tab="overview">Overview</div>
             <div class="tab" data-tab="scan">Scan Results</div>
+            <div class="tab" data-tab="watchlist">Watchlist</div>
+            <div class="tab" data-tab="learning">Learning</div>
+            <div class="tab" data-tab="intelligence">Intelligence</div>
             <div class="tab" data-tab="themes">Themes</div>
             <div class="tab" data-tab="themeradar">Theme Radar</div>
             <div class="tab" data-tab="sec">SEC Intel</div>
@@ -916,12 +920,378 @@
                                     <th>Change</th>
                                     <th>Volume</th>
                                     <th>RS</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="scan-table-body">
                                 
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Watchlist Tab -->
+        <div id="watchlist" class="tab-content">
+            <!-- Statistics Row -->
+            <div class="stats-row" style="margin-bottom: 16px;">
+                <div class="stat">
+                    <div class="stat-label">Total Items</div>
+                    <div class="stat-value blue" id="watchlist-stat-total">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Ready to Trade</div>
+                    <div class="stat-value green" id="watchlist-stat-ready">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">High Priority</div>
+                    <div class="stat-value yellow" id="watchlist-stat-high">0</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">⭐ Watchlist</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="updateAllPrices()">↻ Update Prices</button>
+                        <select id="watchlist-filter-priority" class="btn btn-ghost" onchange="filterWatchlist()">
+                            <option value="">All Priorities</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                        <input type="text" id="watchlist-search" placeholder="Search..."
+                               style="padding: 4px 12px; font-size: 0.75rem; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; color: var(--text);"
+                               oninput="searchWatchlist(this.value)">
+                    </div>
+                </div>
+                <div class="card-body no-padding">
+                    <div class="table-wrapper">
+                        <table class="table" id="watchlist-table">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Price</th>
+                                    <th>Change</th>
+                                    <th>Priority</th>
+                                    <th>Score</th>
+                                    <th>Quality</th>
+                                    <th>Ready</th>
+                                    <th>X Sentiment</th>
+                                    <th>AI Decision</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="watchlist-table-body">
+                                <tr>
+                                    <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                                        Loading watchlist...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Learning System Tab -->
+        <div id="learning" class="tab-content">
+            <!-- Status Row -->
+            <div class="stats-row" style="margin-bottom: 16px;">
+                <div class="stat">
+                    <div class="stat-label">Total Trades</div>
+                    <div class="stat-value blue" id="learning-stat-trades">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Learning Active</div>
+                    <div class="stat-value green" id="learning-stat-active">✗</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Circuit Breaker</div>
+                    <div class="stat-value" id="learning-stat-breaker">🟢 OK</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Current Regime</div>
+                    <div class="stat-value purple" id="learning-stat-regime">unknown</div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header">
+                    <div class="card-title">📊 Performance Metrics</div>
+                    <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshLearningDashboard()">↻ Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                        <!-- Sharpe Ratio -->
+                        <div style="text-align: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">Sharpe Ratio</div>
+                            <div style="font-size: 2rem; font-weight: 700;" id="metric-sharpe">0.00</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);" id="metric-sharpe-target">Target: 1.50</div>
+                        </div>
+
+                        <!-- Win Rate -->
+                        <div style="text-align: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">Win Rate</div>
+                            <div style="font-size: 2rem; font-weight: 700;" id="metric-winrate">0%</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">Target: 65%</div>
+                        </div>
+
+                        <!-- Profit Factor -->
+                        <div style="text-align: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">Profit Factor</div>
+                            <div style="font-size: 2rem; font-weight: 700;" id="metric-pf">0.00</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">Target: 2.00</div>
+                        </div>
+
+                        <!-- Max Drawdown -->
+                        <div style="text-align: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">Max Drawdown</div>
+                            <div style="font-size: 2rem; font-weight: 700;" id="metric-dd">0%</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">Limit: 15%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <!-- Component Weights -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚖️ Component Weights</div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);" id="weights-confidence">Confidence: 0%</span>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="weights-chart" style="max-height: 250px;"></canvas>
+                    </div>
+                </div>
+
+                <!-- Component Performance -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎯 Component Performance</div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Win Probability</span>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="component-performance-chart" style="max-height: 250px;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weights Evolution Over Time -->
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header">
+                    <div class="card-title">📈 Weight Evolution Over Time</div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Last 50 trades</span>
+                </div>
+                <div class="card-body">
+                    <canvas id="weights-evolution-chart" style="max-height: 300px;"></canvas>
+                </div>
+            </div>
+
+            <!-- Regime Timeline -->
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header">
+                    <div class="card-title">🔄 Market Regime Detection</div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);" id="regime-confidence">Confidence: 0%</span>
+                </div>
+                <div class="card-body">
+                    <div id="regime-timeline" style="min-height: 100px;">
+                        <div style="color: var(--text-muted); text-align: center; padding: 24px;">
+                            Loading regime data...
+                        </div>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <canvas id="regime-probabilities-chart" style="max-height: 200px;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Meta-Learner (Tier 4) -->
+            <div class="card" style="margin-bottom: 16px;" id="meta-learner-section">
+                <div class="card-header">
+                    <div class="card-title">🧠 Meta-Learner (Tier 4)</div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Ensemble Performance</span>
+                </div>
+                <div class="card-body">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div>
+                            <canvas id="learner-selection-chart" style="max-height: 250px;"></canvas>
+                        </div>
+                        <div>
+                            <canvas id="learner-performance-chart" style="max-height: 250px;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">⚙️ Controls</div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="toggleCircuitBreaker()">Toggle Circuit Breaker</button>
+                        <button class="btn btn-ghost" onclick="exportLearningData()">Export Data</button>
+                        <button class="btn btn-ghost" onclick="viewFullReport()">View Full Report</button>
+                        <button class="btn btn-ghost" onclick="refreshLearningDashboard()">Refresh Dashboard</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Intelligence Tab -->
+        <div id="intelligence" class="tab-content">
+            <!-- Header Stats -->
+            <div class="stats-row" style="margin-bottom: 16px;">
+                <div class="stat">
+                    <div class="stat-label">Gov Contracts</div>
+                    <div class="stat-value blue" id="intel-contracts">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Recent Patents</div>
+                    <div class="stat-value green" id="intel-patents">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">X Sentiment</div>
+                    <div class="stat-value purple" id="intel-x-sentiment">N/A</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Trends Breakouts</div>
+                    <div class="stat-value yellow" id="intel-trends">0</div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <!-- X Sentiment Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">𝕏 X Sentiment (xAI)</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshXSentiment()">↻</button>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="x-sentiment-chart" style="max-height: 250px;"></canvas>
+                        <div id="x-sentiment-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
+                                Set XAI_API_KEY to enable X Intelligence
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google Trends Chart -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🔍 Google Trends</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="refreshGoogleTrends()">↻</button>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="google-trends-chart" style="max-height: 250px;"></canvas>
+                        <div id="trends-breakouts" style="margin-top: 12px;">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
+                                Loading trends data...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <!-- Government Contracts -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🏛️ Government Contracts</div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Last 6 months</span>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="gov-contracts-chart" style="max-height: 250px;"></canvas>
+                        <div id="gov-contracts-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
+                                Loading contracts data...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Patent Activity -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📜 Patent Activity</div>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Last 6 months</span>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="patent-activity-chart" style="max-height: 250px;"></canvas>
+                        <div id="patent-list" style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">
+                                Set PATENTSVIEW_API_KEY to enable patent tracking
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Supply Chain Relationships -->
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="card-header">
+                    <div class="card-title">🔗 Supply Chain Relationships</div>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="theme-selector" style="padding: 4px 8px; border-radius: 4px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border);">
+                            <option value="ai_infrastructure">AI Infrastructure</option>
+                            <option value="nuclear_energy">Nuclear Energy</option>
+                            <option value="defense_tech">Defense Tech</option>
+                            <option value="ev_battery">EV/Battery</option>
+                            <option value="biotech_glp1">Biotech (GLP-1)</option>
+                            <option value="cybersecurity">Cybersecurity</option>
+                        </select>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="loadSupplyChain()">Load</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="supply-chain-viz" style="min-height: 300px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;" id="supply-chain-grid">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Catalyst Sources Breakdown -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">🎯 Catalyst Sources Distribution</div>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">From latest scan</span>
+                </div>
+                <div class="card-body">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <canvas id="catalyst-sources-chart" style="max-height: 300px;"></canvas>
+                        <div id="catalyst-breakdown">
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
+                                    <span>📰 News</span>
+                                    <span id="catalyst-news">0</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
+                                    <span>🏛️ Gov Contracts</span>
+                                    <span id="catalyst-contracts">0</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
+                                    <span>📜 Patents</span>
+                                    <span id="catalyst-patents">0</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
+                                    <span>📋 SEC Filings</span>
+                                    <span id="catalyst-sec">0</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg); border-radius: 4px;">
+                                    <span>👤 Insider Activity</span>
+                                    <span id="catalyst-insider">0</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1837,6 +2207,25 @@
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
             document.getElementById(tabId).classList.add('active');
+
+            // Load watchlist when tab is activated
+            if (tabId === 'watchlist') {
+                loadWatchlist();
+            }
+
+            // Load learning dashboard when tab is activated
+            if (tabId === 'learning') {
+                if (typeof initLearningDashboard === 'function') {
+                    initLearningDashboard();
+                }
+            }
+
+            // Load intelligence dashboard when tab is activated
+            if (tabId === 'intelligence') {
+                if (typeof initIntelligenceDashboard === 'function') {
+                    initIntelligenceDashboard();
+                }
+            }
         }
 
         // Modal
@@ -2053,6 +2442,9 @@
                     <td style="color: ${(s.change_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'};">${(s.change_pct || 0) >= 0 ? '+' : ''}${(s.change_pct || 0).toFixed(2)}%</td>
                     <td>${formatVolume(s.volume || 0)}</td>
                     <td>${(s.rs_rating || 0).toFixed(0)}</td>
+                    <td>
+                        <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.75rem;" onclick='addToWatchlist(${JSON.stringify(s)})'>+ Watchlist</button>
+                    </td>
                 </tr>
             `).join('');
         }
@@ -3934,6 +4326,339 @@
             }) + ' MYT';
         }
 
+        // =============================================================================
+        // WATCHLIST FUNCTIONS
+        // =============================================================================
+
+        window.watchlistData = [];
+
+        async function loadWatchlist() {
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    window.watchlistData = data.items || [];
+
+                    // Update statistics
+                    const stats = data.statistics || {};
+                    document.getElementById('watchlist-stat-total').textContent = stats.total_items || 0;
+                    document.getElementById('watchlist-stat-ready').textContent = stats.ready_to_trade || 0;
+                    document.getElementById('watchlist-stat-high').textContent = stats.by_priority?.high || 0;
+
+                    renderWatchlistTable(window.watchlistData);
+                } else {
+                    console.warn('Load watchlist failed:', data.error);
+                }
+            } catch (e) {
+                console.warn('Load watchlist error:', e);
+                document.getElementById('watchlist-table-body').innerHTML =
+                    '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">Failed to load watchlist</td></tr>';
+            }
+        }
+
+        async function addToWatchlist(stockData) {
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/scan`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({results: [stockData]})
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    addActivityItem(`Added ${stockData.ticker} to watchlist`, 'create');
+                    await loadWatchlist();
+                } else {
+                    alert('Failed to add to watchlist: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Add to watchlist error:', e);
+                alert('Failed to add to watchlist');
+            }
+        }
+
+        function editWatchlistItem(ticker) {
+            // Find the item
+            const item = window.watchlistData.find(i => i.ticker === ticker);
+            if (!item) return;
+
+            const notes = prompt('Notes:', item.notes || '');
+            if (notes === null) return; // Cancelled
+
+            const thesis = prompt('Thesis:', item.thesis || '');
+            if (thesis === null) return;
+
+            const catalyst = prompt('Catalyst:', item.catalyst || '');
+            if (catalyst === null) return;
+
+            const priority = prompt('Priority (high/medium/low):', item.priority || 'medium');
+            if (priority === null) return;
+
+            const targetEntry = prompt('Target Entry Price:', item.target_entry || '');
+            const stopLoss = prompt('Stop Loss:', item.stop_loss || '');
+
+            updateWatchlistItem(ticker, {
+                notes,
+                thesis,
+                catalyst,
+                priority,
+                target_entry: targetEntry ? parseFloat(targetEntry) : null,
+                stop_loss: stopLoss ? parseFloat(stopLoss) : null
+            });
+        }
+
+        async function updateWatchlistItem(ticker, updates) {
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/${ticker}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    addActivityItem(`Updated ${ticker} in watchlist`, 'general');
+                    await loadWatchlist();
+                } else {
+                    alert('Failed to update: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Update error:', e);
+                alert('Failed to update watchlist item');
+            }
+        }
+
+        async function deleteWatchlistItem(ticker) {
+            if (!confirm(`Remove ${ticker} from watchlist?`)) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/${ticker}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    addActivityItem(`Removed ${ticker} from watchlist`, 'delete');
+                    await loadWatchlist();
+                } else {
+                    alert('Failed to delete: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Delete error:', e);
+                alert('Failed to delete watchlist item');
+            }
+        }
+
+        async function updateSentiment(ticker) {
+            try {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Updating...';
+
+                const res = await fetch(`${API_BASE}/watchlist/update/sentiment/${ticker}`, {
+                    method: 'POST'
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    btn.textContent = '✓ Updated';
+                    addActivityItem(`Updated X sentiment for ${ticker}`, 'general');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        loadWatchlist();
+                    }, 1500);
+                } else {
+                    btn.textContent = '❌ Failed';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2000);
+                }
+            } catch (e) {
+                console.error('Update sentiment error:', e);
+                alert('Failed to update sentiment');
+            }
+        }
+
+        async function updateAI(ticker) {
+            try {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Analyzing...';
+
+                const res = await fetch(`${API_BASE}/watchlist/update/ai/${ticker}`, {
+                    method: 'POST'
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    btn.textContent = '✓ Updated';
+                    addActivityItem(`Updated AI analysis for ${ticker}`, 'general');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        loadWatchlist();
+                    }, 1500);
+                } else {
+                    btn.textContent = '❌ Failed';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2000);
+                }
+            } catch (e) {
+                console.error('Update AI error:', e);
+                alert('Failed to update AI analysis');
+            }
+        }
+
+        async function updateAllPrices() {
+            try {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Updating...';
+
+                const res = await fetch(`${API_BASE}/watchlist/update/prices`, {
+                    method: 'POST'
+                });
+
+                const data = await res.json();
+
+                if (data.ok) {
+                    btn.textContent = '✓ Updated';
+                    addActivityItem('Updated all watchlist prices', 'general');
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        loadWatchlist();
+                    }, 1500);
+                } else {
+                    btn.textContent = '❌ Failed';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2000);
+                }
+            } catch (e) {
+                console.error('Update prices error:', e);
+                alert('Failed to update prices');
+            }
+        }
+
+        function filterWatchlist() {
+            const priority = document.getElementById('watchlist-filter-priority').value;
+            let filtered = window.watchlistData || [];
+
+            if (priority) {
+                filtered = filtered.filter(item => item.priority === priority);
+            }
+
+            renderWatchlistTable(filtered);
+        }
+
+        function searchWatchlist(query) {
+            if (!query) {
+                renderWatchlistTable(window.watchlistData);
+                return;
+            }
+
+            const q = query.toLowerCase();
+            const filtered = (window.watchlistData || []).filter(item =>
+                item.ticker.toLowerCase().includes(q) ||
+                (item.notes && item.notes.toLowerCase().includes(q)) ||
+                (item.thesis && item.thesis.toLowerCase().includes(q)) ||
+                (item.catalyst && item.catalyst.toLowerCase().includes(q))
+            );
+
+            renderWatchlistTable(filtered);
+        }
+
+        function renderWatchlistTable(items) {
+            const tbody = document.getElementById('watchlist-table-body');
+
+            if (!items || items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">No watchlist items</td></tr>';
+                return;
+            }
+
+            // Sort by priority (high > medium > low) then by overall_score
+            const sortedItems = [...items].sort((a, b) => {
+                const priorityOrder = {high: 0, medium: 1, low: 2};
+                const priorityDiff = (priorityOrder[a.priority] || 99) - (priorityOrder[b.priority] || 99);
+                if (priorityDiff !== 0) return priorityDiff;
+                return (b.overall_score || 0) - (a.overall_score || 0);
+            });
+
+            tbody.innerHTML = sortedItems.map(item => {
+                const priceColor = (item.price_change_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+                const priceSign = (item.price_change_pct || 0) >= 0 ? '+' : '';
+
+                const priorityColors = {
+                    high: 'var(--red)',
+                    medium: 'var(--yellow)',
+                    low: 'var(--text-muted)'
+                };
+
+                const qualityColors = {
+                    excellent: 'var(--green)',
+                    good: 'var(--blue)',
+                    fair: 'var(--yellow)',
+                    poor: 'var(--red)',
+                    unknown: 'var(--text-muted)'
+                };
+
+                const sentimentEmoji = {
+                    bullish: '🟢',
+                    neutral: '⚪',
+                    bearish: '🔴'
+                };
+
+                const aiDecisionEmoji = {
+                    buy: '🟢',
+                    hold: '⚪',
+                    sell: '🔴'
+                };
+
+                return `
+                    <tr>
+                        <td class="ticker-cell" onclick="showTicker('${item.ticker}')">${item.ticker}</td>
+                        <td>$${item.current_price?.toFixed(2) || 'N/A'}</td>
+                        <td style="color: ${priceColor};">${priceSign}${(item.price_change_pct || 0).toFixed(2)}%</td>
+                        <td style="color: ${priorityColors[item.priority] || 'var(--text)'}; font-weight: 600;">${item.priority || 'medium'}</td>
+                        <td>
+                            <strong style="font-size: 1.1em; color: ${qualityColors[item.signal_quality] || 'var(--text)'};">
+                                ${item.overall_score !== null && item.overall_score !== undefined ? item.overall_score + '/10' : 'N/A'}
+                            </strong>
+                        </td>
+                        <td style="color: ${qualityColors[item.signal_quality] || 'var(--text)'};">${item.signal_quality || 'unknown'}</td>
+                        <td style="text-align: center; font-size: 1.2em;">
+                            ${item.setup_complete ? '<span style="color: var(--green);">✓</span>' : '<span style="color: var(--text-muted);">-</span>'}
+                        </td>
+                        <td>${sentimentEmoji[item.x_sentiment] || '⚪'} ${item.x_sentiment || 'neutral'}</td>
+                        <td>${aiDecisionEmoji[item.ai_decision] || '⚪'} ${item.ai_decision || 'hold'}</td>
+                        <td>
+                            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.7rem;" onclick="editWatchlistItem('${item.ticker}')">Edit</button>
+                                <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.7rem;" onclick="updateSentiment('${item.ticker}')">💬 X</button>
+                                <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.7rem;" onclick="updateAI('${item.ticker}')">🤖 AI</button>
+                                <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.7rem; color: var(--red);" onclick="deleteWatchlistItem('${item.ticker}')">✕</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         // Init
         document.addEventListener('DOMContentLoaded', () => {
             refreshAll();
@@ -3943,13 +4668,885 @@
                 syncClient.connect();
             }, 1000);
         });
+        // =============================================================================
+        // LEARNING DASHBOARD FUNCTIONS
+        // =============================================================================
 
-        // Also refresh AI advisor after trades are loaded
-        setTimeout(() => {
-            if (typeof refreshAIAdvisor === 'function') {
-                refreshAIAdvisor();
+        // Chart instances (global)
+        let weightsChart = null;
+        let componentPerfChart = null;
+        let weightsEvolutionChart = null;
+        let regimeProbsChart = null;
+        let learnerSelectionChart = null;
+        let learnerPerfChart = null;
+
+        // Learning data cache
+        let learningData = {
+            statistics: null,
+            weights: null,
+            regime: null,
+            performance: null
+        };
+
+        // Initialize learning dashboard when tab is activated
+        function initLearningDashboard() {
+            console.log('Initializing learning dashboard...');
+            createAllCharts();
+            refreshLearningDashboard();
+        }
+
+        // Create all chart instances
+        function createAllCharts() {
+            // Component Weights (Doughnut)
+            const weightsCtx = document.getElementById('weights-chart');
+            if (weightsCtx && !weightsChart) {
+                weightsChart = new Chart(weightsCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Theme', 'Technical', 'AI', 'Sentiment'],
+                        datasets: [{
+                            data: [30, 25, 25, 20],
+                            backgroundColor: [
+                                'rgba(168, 85, 247, 0.8)',
+                                'rgba(59, 130, 246, 0.8)',
+                                'rgba(34, 197, 94, 0.8)',
+                                'rgba(234, 179, 8, 0.8)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { color: '#fafafa', font: { size: 12 } }
+                            }
+                        }
+                    }
+                });
             }
-        }, 2000);
+
+            // Component Performance (Bar)
+            const compPerfCtx = document.getElementById('component-performance-chart');
+            if (compPerfCtx && !componentPerfChart) {
+                componentPerfChart = new Chart(compPerfCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Theme', 'Technical', 'AI', 'Sentiment'],
+                        datasets: [{
+                            label: 'Win Probability',
+                            data: [0.65, 0.58, 0.62, 0.55],
+                            backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 1,
+                                ticks: {
+                                    color: '#a1a1aa',
+                                    callback: function(value) { return (value * 100) + '%'; }
+                                },
+                                grid: { color: '#27272a' }
+                            },
+                            x: {
+                                ticks: { color: '#a1a1aa' },
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+
+            // Weights Evolution Over Time (Line)
+            const weightsEvolCtx = document.getElementById('weights-evolution-chart');
+            if (weightsEvolCtx && !weightsEvolutionChart) {
+                weightsEvolutionChart = new Chart(weightsEvolCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: 'Theme',
+                                data: [],
+                                borderColor: 'rgba(168, 85, 247, 1)',
+                                backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            },
+                            {
+                                label: 'Technical',
+                                data: [],
+                                borderColor: 'rgba(59, 130, 246, 1)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            },
+                            {
+                                label: 'AI',
+                                data: [],
+                                borderColor: 'rgba(34, 197, 94, 1)',
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            },
+                            {
+                                label: 'Sentiment',
+                                data: [],
+                                borderColor: 'rgba(234, 179, 8, 1)',
+                                backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 1,
+                                ticks: {
+                                    color: '#a1a1aa',
+                                    callback: function(value) { return (value * 100) + '%'; }
+                                },
+                                grid: { color: '#27272a' }
+                            },
+                            x: {
+                                ticks: { color: '#a1a1aa' },
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { color: '#fafafa', font: { size: 11 } }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Regime Probabilities (Bar)
+            const regimeProbsCtx = document.getElementById('regime-probabilities-chart');
+            if (regimeProbsCtx && !regimeProbsChart) {
+                regimeProbsChart = new Chart(regimeProbsCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Bull', 'Bear', 'Choppy', 'Crisis', 'Theme'],
+                        datasets: [{
+                            label: 'Probability',
+                            data: [0.2, 0.2, 0.2, 0.2, 0.2],
+                            backgroundColor: [
+                                'rgba(34, 197, 94, 0.8)',
+                                'rgba(239, 68, 68, 0.8)',
+                                'rgba(234, 179, 8, 0.8)',
+                                'rgba(220, 38, 38, 0.8)',
+                                'rgba(168, 85, 247, 0.8)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 1,
+                                ticks: {
+                                    color: '#a1a1aa',
+                                    callback: function(value) { return (value * 100) + '%'; }
+                                },
+                                grid: { color: '#27272a' }
+                            },
+                            x: {
+                                ticks: { color: '#a1a1aa' },
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+
+            // Learner Selection (Doughnut)
+            const learnerSelCtx = document.getElementById('learner-selection-chart');
+            if (learnerSelCtx && !learnerSelectionChart) {
+                learnerSelectionChart = new Chart(learnerSelCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Conservative', 'Aggressive', 'Balanced'],
+                        datasets: [{
+                            data: [33, 33, 34],
+                            backgroundColor: [
+                                'rgba(59, 130, 246, 0.8)',
+                                'rgba(239, 68, 68, 0.8)',
+                                'rgba(34, 197, 94, 0.8)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: { color: '#fafafa', font: { size: 12 } }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Learner Performance (Bar)
+            const learnerPerfCtx = document.getElementById('learner-performance-chart');
+            if (learnerPerfCtx && !learnerPerfChart) {
+                learnerPerfChart = new Chart(learnerPerfCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Conservative', 'Aggressive', 'Balanced'],
+                        datasets: [{
+                            label: 'Sharpe Ratio',
+                            data: [1.2, 0.9, 1.5],
+                            backgroundColor: [
+                                'rgba(59, 130, 246, 0.8)',
+                                'rgba(239, 68, 68, 0.8)',
+                                'rgba(34, 197, 94, 0.8)'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { color: '#a1a1aa' },
+                                grid: { color: '#27272a' }
+                            },
+                            x: {
+                                ticks: { color: '#a1a1aa' },
+                                grid: { display: false }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Refresh all learning data and charts
+        async function refreshLearningDashboard() {
+            try {
+                const statsRes = await fetch(`${API_BASE}/learning/statistics`).catch(() => null);
+                const weightsRes = await fetch(`${API_BASE}/learning/weights`).catch(() => null);
+                const regimeRes = await fetch(`${API_BASE}/learning/regime`).catch(() => null);
+                const perfRes = await fetch(`${API_BASE}/learning/performance`).catch(() => null);
+
+                if (statsRes && statsRes.ok) {
+                    learningData.statistics = await statsRes.json();
+                    updateStatistics(learningData.statistics);
+
+                    // Update meta-learner charts if Tier 4 data available
+                    if (learningData.statistics.statistics?.meta_learner) {
+                        updateMetaLearner(learningData.statistics.statistics.meta_learner);
+                    }
+                }
+
+                if (weightsRes && weightsRes.ok) {
+                    learningData.weights = await weightsRes.json();
+                    updateWeights(learningData.weights);
+                }
+
+                if (regimeRes && regimeRes.ok) {
+                    learningData.regime = await regimeRes.json();
+                    updateRegime(learningData.regime);
+                }
+
+                if (perfRes && perfRes.ok) {
+                    learningData.performance = await perfRes.json();
+                    updatePerformance(learningData.performance);
+                }
+            } catch (error) {
+                console.error('Error refreshing learning dashboard:', error);
+            }
+        }
+
+        // Update functions
+        function updateStatistics(data) {
+            if (!data || !data.ok) return;
+            const stats = data.statistics;
+            if (!stats) return;
+
+            document.getElementById('learning-stat-trades').textContent = stats.overview?.total_trades || 0;
+            document.getElementById('learning-stat-active').textContent = stats.overview?.learning_active ? '✓' : '✗';
+
+            const breakerEl = document.getElementById('learning-stat-breaker');
+            if (stats.overview?.circuit_breaker_active) {
+                breakerEl.textContent = '🔴 ACTIVE';
+                breakerEl.style.color = 'var(--red)';
+            } else {
+                breakerEl.textContent = '🟢 OK';
+                breakerEl.style.color = 'var(--green)';
+            }
+
+            document.getElementById('learning-stat-regime').textContent =
+                (stats.overview?.current_regime || 'unknown').replace('_', ' ');
+        }
+
+        function updateWeights(data) {
+            if (!data || !data.ok) return;
+            const weights = data.weights;
+            if (!weights || !weightsChart) return;
+
+            weightsChart.data.datasets[0].data = [
+                (weights.theme || 0.3) * 100,
+                (weights.technical || 0.25) * 100,
+                (weights.ai || 0.25) * 100,
+                (weights.sentiment || 0.2) * 100
+            ];
+            weightsChart.update();
+
+            const confidence = data.confidence || 0;
+            document.getElementById('weights-confidence').textContent =
+                `Confidence: ${(confidence * 100).toFixed(0)}%`;
+        }
+
+        function updateRegime(data) {
+            if (!data || !data.ok) return;
+            const regime = data.regime || 'unknown';
+            const confidence = data.confidence || 0;
+
+            document.getElementById('regime-confidence').textContent =
+                `Confidence: ${(confidence * 100).toFixed(0)}%`;
+
+            const timeline = document.getElementById('regime-timeline');
+            const regimeColors = {
+                'bull_momentum': '#22c55e',
+                'bear_defensive': '#ef4444',
+                'choppy_range': '#eab308',
+                'crisis_mode': '#dc2626',
+                'theme_driven': '#a855f7',
+                'unknown': '#71717a'
+            };
+
+            const color = regimeColors[regime] || regimeColors.unknown;
+            timeline.innerHTML = `
+                <div style="padding: 16px; background: ${color}20; border-left: 4px solid ${color}; border-radius: 4px;">
+                    <div style="font-size: 1.25rem; font-weight: 600; color: ${color}; margin-bottom: 8px;">
+                        ${regime.replace('_', ' ').toUpperCase()}
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--text-muted);">
+                        Confidence: ${(confidence * 100).toFixed(1)}%
+                    </div>
+                </div>
+            `;
+
+            // Update regime probabilities chart if available
+            if (data.probabilities && regimeProbsChart) {
+                const probs = data.probabilities;
+                regimeProbsChart.data.datasets[0].data = [
+                    probs.bull_momentum || 0,
+                    probs.bear_defensive || 0,
+                    probs.choppy_range || 0,
+                    probs.crisis_mode || 0,
+                    probs.theme_driven || 0
+                ];
+                regimeProbsChart.update();
+            }
+        }
+
+        function updatePerformance(data) {
+            if (!data || !data.ok) return;
+            const metrics = data.metrics;
+            if (!metrics) return;
+
+            const sharpe = metrics.sharpe_ratio || 0;
+            document.getElementById('metric-sharpe').textContent = sharpe.toFixed(2);
+            document.getElementById('metric-sharpe').style.color =
+                sharpe >= 1.5 ? 'var(--green)' : sharpe >= 0.8 ? 'var(--yellow)' : 'var(--red)';
+
+            const winRate = metrics.win_rate || 0;
+            document.getElementById('metric-winrate').textContent = (winRate * 100).toFixed(0) + '%';
+            document.getElementById('metric-winrate').style.color =
+                winRate >= 0.65 ? 'var(--green)' : winRate >= 0.55 ? 'var(--yellow)' : 'var(--red)';
+
+            const pf = metrics.profit_factor || 0;
+            document.getElementById('metric-pf').textContent = pf.toFixed(2);
+            document.getElementById('metric-pf').style.color =
+                pf >= 2.0 ? 'var(--green)' : pf >= 1.5 ? 'var(--yellow)' : 'var(--red)';
+
+            const dd = Math.abs(metrics.max_drawdown || 0);
+            document.getElementById('metric-dd').textContent = dd.toFixed(1) + '%';
+            document.getElementById('metric-dd').style.color =
+                dd <= 10 ? 'var(--green)' : dd <= 15 ? 'var(--yellow)' : 'var(--red)';
+
+            // Update weights evolution chart if data available
+            if (data.weights_history && weightsEvolutionChart) {
+                updateWeightsEvolution(data.weights_history);
+            }
+        }
+
+        function updateWeightsEvolution(history) {
+            if (!history || !weightsEvolutionChart) return;
+
+            // Extract last 50 data points
+            const labels = [];
+            const themeData = [];
+            const technicalData = [];
+            const aiData = [];
+            const sentimentData = [];
+
+            const maxPoints = 50;
+            const startIdx = Math.max(0, history.length - maxPoints);
+
+            for (let i = startIdx; i < history.length; i++) {
+                const entry = history[i];
+                labels.push(entry.trade_number || i + 1);
+                themeData.push(entry.weights.theme || 0.3);
+                technicalData.push(entry.weights.technical || 0.25);
+                aiData.push(entry.weights.ai || 0.25);
+                sentimentData.push(entry.weights.sentiment || 0.2);
+            }
+
+            weightsEvolutionChart.data.labels = labels;
+            weightsEvolutionChart.data.datasets[0].data = themeData;
+            weightsEvolutionChart.data.datasets[1].data = technicalData;
+            weightsEvolutionChart.data.datasets[2].data = aiData;
+            weightsEvolutionChart.data.datasets[3].data = sentimentData;
+            weightsEvolutionChart.update();
+        }
+
+        function updateMetaLearner(data) {
+            if (!data || !learnerSelectionChart || !learnerPerfChart) return;
+
+            // Update learner selection frequency
+            if (data.learner_selection) {
+                const selection = data.learner_selection;
+                learnerSelectionChart.data.datasets[0].data = [
+                    selection.conservative || 0,
+                    selection.aggressive || 0,
+                    selection.balanced || 0
+                ];
+                learnerSelectionChart.update();
+            }
+
+            // Update learner performance
+            if (data.learner_performance) {
+                const perf = data.learner_performance;
+                learnerPerfChart.data.datasets[0].data = [
+                    perf.conservative?.sharpe || 0,
+                    perf.aggressive?.sharpe || 0,
+                    perf.balanced?.sharpe || 0
+                ];
+                learnerPerfChart.update();
+            }
+        }
+
+        // Control functions
+        async function toggleCircuitBreaker() {
+            try {
+                const currentActive = learningData.statistics?.statistics?.overview?.circuit_breaker_active || false;
+                const res = await fetch(`${API_BASE}/learning/circuit-breaker`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({active: !currentActive})
+                });
+
+                if (res.ok) {
+                    alert(`Circuit breaker ${!currentActive ? 'activated' : 'deactivated'}`);
+                    refreshLearningDashboard();
+                }
+            } catch (error) {
+                console.error('Toggle circuit breaker error:', error);
+            }
+        }
+
+        async function exportLearningData() {
+            try {
+                const res = await fetch(`${API_BASE}/learning/statistics`);
+                const data = await res.json();
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `learning_data_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Export error:', error);
+            }
+        }
+
+        async function viewFullReport() {
+            try {
+                const res = await fetch(`${API_BASE}/learning/report`);
+                const data = await res.json();
+                if (data.ok) {
+                    const win = window.open('', '_blank', 'width=800,height=600');
+                    win.document.write('<pre style="background: #09090b; color: #fafafa; padding: 20px; font-family: monospace;">' + data.report + '</pre>');
+                }
+            } catch (error) {
+                console.error('View report error:', error);
+            }
+        }
+
+        // =============================================================================
+        // INTELLIGENCE DASHBOARD
+        // =============================================================================
+
+        let xSentimentChart, trendsChart, contractsChart, patentsChart, catalystChart;
+
+        async function initIntelligenceDashboard() {
+            // Initialize X Sentiment chart
+            const xCtx = document.getElementById('xSentimentChart').getContext('2d');
+            xSentimentChart = new Chart(xCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Sentiment Score',
+                        data: [],
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            ticks: {color: '#fafafa'}
+                        },
+                        x: {ticks: {color: '#fafafa'}}
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fafafa'}},
+                        title: {
+                            display: true,
+                            text: 'X Sentiment Scores (Last 24h)',
+                            color: '#fafafa'
+                        }
+                    }
+                }
+            });
+
+            // Initialize Google Trends chart
+            const trendsCtx = document.getElementById('trendsChart').getContext('2d');
+            trendsChart = new Chart(trendsCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Search Interest',
+                        data: [],
+                        backgroundColor: 'rgba(34, 197, 94, 0.5)',
+                        borderColor: 'rgb(34, 197, 94)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {color: '#fafafa'}
+                        },
+                        x: {ticks: {color: '#fafafa'}}
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fafafa'}},
+                        title: {
+                            display: true,
+                            text: 'Google Trends - Search Interest',
+                            color: '#fafafa'
+                        }
+                    }
+                }
+            });
+
+            // Initialize Contracts chart
+            const contractsCtx = document.getElementById('contractsChart').getContext('2d');
+            contractsChart = new Chart(contractsCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Contract Value ($M)',
+                        data: [],
+                        backgroundColor: 'rgba(168, 85, 247, 0.5)',
+                        borderColor: 'rgb(168, 85, 247)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {color: '#fafafa'}
+                        },
+                        x: {ticks: {color: '#fafafa'}}
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fafafa'}},
+                        title: {
+                            display: true,
+                            text: 'Government Contracts',
+                            color: '#fafafa'
+                        }
+                    }
+                }
+            });
+
+            // Initialize Patents chart
+            const patentsCtx = document.getElementById('patentsChart').getContext('2d');
+            patentsChart = new Chart(patentsCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Patent Filings',
+                        data: [],
+                        backgroundColor: 'rgba(251, 191, 36, 0.2)',
+                        borderColor: 'rgb(251, 191, 36)',
+                        borderWidth: 2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {color: '#fafafa'}
+                        },
+                        x: {ticks: {color: '#fafafa'}}
+                    },
+                    plugins: {
+                        legend: {labels: {color: '#fafafa'}},
+                        title: {
+                            display: true,
+                            text: 'Patent Activity',
+                            color: '#fafafa'
+                        }
+                    }
+                }
+            });
+
+            // Initialize Catalyst Sources chart
+            const catalystCtx = document.getElementById('catalystChart').getContext('2d');
+            catalystChart = new Chart(catalystCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['X Sentiment', 'Google Trends', 'Contracts', 'Patents', 'Supply Chain', 'News', 'SEC', 'Social', 'Price', 'Volume'],
+                    datasets: [{
+                        data: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(34, 197, 94, 0.8)',
+                            'rgba(168, 85, 247, 0.8)',
+                            'rgba(251, 191, 36, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(236, 72, 153, 0.8)',
+                            'rgba(20, 184, 166, 0.8)',
+                            'rgba(249, 115, 22, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(107, 114, 128, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {color: '#fafafa'}
+                        },
+                        title: {
+                            display: true,
+                            text: 'Catalyst Sources Distribution',
+                            color: '#fafafa'
+                        }
+                    }
+                }
+            });
+
+            // Load initial data
+            await refreshXSentiment();
+            await refreshGoogleTrends();
+            await loadSupplyChain('ai_infrastructure');
+            await loadCatalystBreakdown();
+        }
+
+        async function refreshXSentiment() {
+            try {
+                const res = await fetch(`${API_BASE}/intelligence/x-sentiment`);
+                if (!res.ok) {
+                    console.warn('X sentiment endpoint not available');
+                    return;
+                }
+
+                const data = await res.json();
+
+                // Update chart
+                const tickers = data.tickers || [];
+                xSentimentChart.data.labels = tickers.map(t => t.ticker);
+                xSentimentChart.data.datasets[0].data = tickers.map(t => t.sentiment_score);
+                xSentimentChart.update();
+
+                // Update stats
+                document.getElementById('xSentimentCount').textContent = tickers.length;
+
+                // Update list
+                const listEl = document.getElementById('xSentimentList');
+                if (tickers.length > 0) {
+                    listEl.innerHTML = tickers.slice(0, 5).map(t => `
+                        <div class="p-3 bg-zinc-900 rounded border border-zinc-800">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold">${t.ticker}</span>
+                                <span class="text-sm ${t.sentiment === 'bullish' ? 'text-green-400' : t.sentiment === 'bearish' ? 'text-red-400' : 'text-gray-400'}">
+                                    ${t.sentiment.toUpperCase()}
+                                </span>
+                            </div>
+                            <div class="text-sm text-gray-400 mt-1">${t.mentions} mentions • Score: ${t.sentiment_score.toFixed(2)}</div>
+                            ${t.viral_posts.length > 0 ? `<div class="text-xs text-blue-400 mt-1">🔥 ${t.viral_posts.length} viral posts</div>` : ''}
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div class="text-gray-400">No X sentiment data available</div>';
+                }
+            } catch (error) {
+                console.error('X sentiment error:', error);
+            }
+        }
+
+        async function refreshGoogleTrends() {
+            try {
+                const res = await fetch(`${API_BASE}/intelligence/google-trends`);
+                if (!res.ok) {
+                    console.warn('Google Trends endpoint not available');
+                    return;
+                }
+
+                const data = await res.json();
+
+                // Update chart
+                const tickers = data.tickers || [];
+                trendsChart.data.labels = tickers.map(t => t.ticker);
+                trendsChart.data.datasets[0].data = tickers.map(t => t.search_interest);
+                trendsChart.update();
+
+                // Update stats
+                const breakouts = tickers.filter(t => t.is_breakout);
+                document.getElementById('trendsBreakouts').textContent = breakouts.length;
+
+                // Update breakout list
+                const listEl = document.getElementById('trendsBreakoutList');
+                if (breakouts.length > 0) {
+                    listEl.innerHTML = breakouts.slice(0, 5).map(t => `
+                        <div class="p-3 bg-zinc-900 rounded border border-zinc-800">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold">${t.ticker}</span>
+                                <span class="text-sm text-yellow-400">🔥 BREAKOUT</span>
+                            </div>
+                            <div class="text-sm text-gray-400 mt-1">
+                                Search Interest: ${t.search_interest}/100 • ${t.trend_direction === 'rising' ? '📈' : '➡️'} ${t.trend_direction.toUpperCase()}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div class="text-gray-400">No breakouts detected</div>';
+                }
+            } catch (error) {
+                console.error('Google Trends error:', error);
+            }
+        }
+
+        async function loadSupplyChain(themeId) {
+            try {
+                const res = await fetch(`${API_BASE}/intelligence/supply-chain/${themeId}`);
+                if (!res.ok) {
+                    console.warn('Supply chain endpoint not available');
+                    return;
+                }
+
+                const data = await res.json();
+                const chain = data.chain || {};
+
+                // Update supply chain visualizer
+                const vizEl = document.getElementById('supplyChainViz');
+                vizEl.innerHTML = Object.entries(chain).map(([role, tickers]) => `
+                    <div class="mb-4">
+                        <div class="text-sm font-semibold text-blue-400 mb-2">${role.toUpperCase()}</div>
+                        <div class="flex flex-wrap gap-2">
+                            ${tickers.map(ticker => `
+                                <span class="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-sm">${ticker}</span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Supply chain error:', error);
+            }
+        }
+
+        async function loadCatalystBreakdown() {
+            try {
+                const res = await fetch(`${API_BASE}/intelligence/catalyst-breakdown`);
+                if (!res.ok) {
+                    console.warn('Catalyst breakdown endpoint not available');
+                    return;
+                }
+
+                const data = await res.json();
+                const sources = data.sources || {};
+
+                // Update chart
+                const labels = Object.keys(sources);
+                const values = Object.values(sources);
+                catalystChart.data.labels = labels;
+                catalystChart.data.datasets[0].data = values;
+                catalystChart.update();
+
+                // Update breakdown list
+                const listEl = document.getElementById('catalystBreakdownList');
+                listEl.innerHTML = labels.map((label, i) => `
+                    <div class="flex justify-between items-center p-2 bg-zinc-900 rounded">
+                        <span class="text-sm">${label}</span>
+                        <span class="text-sm font-bold text-blue-400">${values[i]}%</span>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Catalyst breakdown error:', error);
+            }
+        }
     </script>
 </body>
 </html>

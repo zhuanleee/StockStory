@@ -194,8 +194,8 @@ def load_theme_history() -> Dict:
         try:
             with open(HISTORY_FILE) as f:
                 return json.load(f)
-        except:
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load theme history: {e}")
     return {'themes': {}, 'last_update': None}
 
 
@@ -213,8 +213,8 @@ def load_alerts_history() -> List[Dict]:
         try:
             with open(ALERTS_FILE) as f:
                 return json.load(f)
-        except:
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load alerts history: {e}")
     return []
 
 
@@ -316,7 +316,8 @@ class ThemeIntelligenceHub:
                     result = get_social_buzz_score(ticker)
                     if result and result.get('buzz_score'):
                         scores.append(result['buzz_score'])
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to get social buzz for {ticker}: {e}")
                     continue
 
             return sum(scores) / len(scores) if scores else 0
@@ -342,7 +343,8 @@ class ThemeIntelligenceHub:
                 try:
                     news = fetch_news_free(ticker, num_articles=10)
                     total_articles += len(news)
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to fetch news for {ticker}: {e}")
                     continue
 
             # Score based on news volume (max 100)
@@ -369,7 +371,8 @@ class ThemeIntelligenceHub:
                 try:
                     result = detect_ma_activity(ticker)
                     scores.append(result.get('ma_score', 0))
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to detect M&A activity for {ticker}: {e}")
                     continue
 
             return sum(scores) / len(scores) if scores else 0
@@ -500,7 +503,8 @@ class ThemeIntelligenceHub:
                 stage_start = prev_stage_start
                 start_date = datetime.fromisoformat(stage_start)
                 days_in_stage = (datetime.now() - start_date).days
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to parse stage_start for {theme_id}: {e}")
                 days_in_stage = 0
                 stage_start = datetime.now().isoformat()
 
@@ -722,7 +726,8 @@ class ThemeIntelligenceHub:
                 ts = datetime.fromisoformat(a['timestamp'])
                 if ts > cutoff:
                     recent.append(ThemeAlert(**a))
-            except:
+            except (ValueError, TypeError, KeyError) as e:
+                logger.debug(f"Failed to parse alert: {e}")
                 continue
 
         return recent

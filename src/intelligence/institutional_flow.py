@@ -104,7 +104,8 @@ def get_theme_tickers():
     try:
         from src.intelligence.theme_intelligence import THEME_TICKER_MAP
         return THEME_TICKER_MAP
-    except:
+    except ImportError as e:
+        logger.debug(f"Could not import THEME_TICKER_MAP: {e}")
         return {}
 
 
@@ -123,8 +124,8 @@ class InstitutionalFlowTracker:
             try:
                 with open(FLOW_HISTORY_FILE) as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load flow history: {e}")
         return []
 
     def _save_flow_history(self):
@@ -536,7 +537,8 @@ class InstitutionalFlowTracker:
                 ts = datetime.fromisoformat(signal.get('timestamp', ''))
                 if ts > cutoff:
                     recent.append(signal)
-            except:
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to parse timestamp in flow signal: {e}")
                 continue
 
         return recent

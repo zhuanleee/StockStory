@@ -542,7 +542,8 @@ def run_scan(use_story_first=True):
                     if len(df) >= 20:
                         returns = df.pct_change().dropna().tolist()
                         returns_data[ticker] = returns
-                except:
+                except Exception as e:
+                    logger.debug(f"Failed to get returns for {ticker}: {e}")
                     continue
 
             # Run learning cycle asynchronously

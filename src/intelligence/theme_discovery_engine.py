@@ -279,8 +279,8 @@ class ThemeDiscoveryEngine:
                                         'volume_ratio': round(vol_ratio, 2),
                                         'story_score': float(story_scores.get(ticker, 0))
                                     })
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Failed to process mover {ticker}: {e}")
             except Exception as e:
                 logger.debug(f"Movers fetch failed: {e}")
 
@@ -297,8 +297,8 @@ class ThemeDiscoveryEngine:
                                 'bullish_pct': float(buzz.get('bullish_percent', 50)),
                                 'trending': bool(buzz.get('trending', False))
                             })
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to process social buzz for {ticker}: {e}")
             except Exception as e:
                 logger.debug(f"Social buzz fetch failed: {e}")
 
@@ -318,8 +318,8 @@ class ThemeDiscoveryEngine:
                                     'description': f.get('description', ''),
                                     'date': f.get('filing_date', '')
                                 })
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to process filings for {ticker}: {e}")
             except Exception as e:
                 logger.debug(f"SEC filings fetch failed: {e}")
 
@@ -339,8 +339,8 @@ class ThemeDiscoveryEngine:
                         if len(hist) >= 2:
                             change = float((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
                             data['sector_performance'][sector] = round(change, 2)
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to get sector performance for {sector}: {e}")
             except Exception as e:
                 logger.debug(f"Sector performance fetch failed: {e}")
 
@@ -575,8 +575,8 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
             hist = stock.history(period=f'{days}d')
             if len(hist) >= 2:
                 return float((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to get price performance for {ticker}: {e}")
         return 0.0
 
     def _validate_with_patents(self, tickers: List[str], theme_keywords: List[str]) -> float:
@@ -598,7 +598,8 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
                     checked += 1
 
             return total_score / max(1, checked)
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to validate with patents: {e}")
             return 0
 
     def _validate_with_contracts(self, tickers: List[str]) -> float:
@@ -615,7 +616,8 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
 
             # Score based on total contract value
             return min(100, total_value / 1e9 * 20)  # $5B = 100
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to validate with contracts: {e}")
             return 0
 
     def _validate_with_insider(self, tickers: List[str]) -> float:
@@ -631,7 +633,8 @@ Focus on QUALITY over quantity. Only include high-conviction ideas with clear re
                     total_activity += len(transactions)
 
             return min(100, total_activity * 10)
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to validate with insider activity: {e}")
             return 0
 
     def analyze_supply_chain(self, theme_id: str) -> Optional[EmergingTheme]:

@@ -776,8 +776,8 @@ class UniverseManager:
             try:
                 with open(HISTORY_FILE, 'r') as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load universe history: {e}")
         return {}
 
     def _save_history(self, history: Dict):
@@ -912,8 +912,8 @@ class UniverseManager:
             try:
                 with open(HEALTH_FILE, 'r') as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load health summary: {e}")
         return self.run_health_check().__dict__
 
     def clear_cache(self):

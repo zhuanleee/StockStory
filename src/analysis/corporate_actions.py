@@ -301,7 +301,8 @@ class DealTracker:
         if path.exists():
             try:
                 return json.loads(path.read_text())
-            except:
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load deals from {self.deals_file}: {e}")
                 return []
         return []
 

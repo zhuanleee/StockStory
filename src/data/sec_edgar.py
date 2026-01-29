@@ -171,7 +171,8 @@ class SECEdgarClient:
                     filing_date = datetime.strptime(filed_date, '%Y-%m-%d')
                     if filing_date < cutoff_date:
                         continue
-                except:
+                except (ValueError, TypeError) as e:
+                    logger.debug(f"Failed to parse filing date '{filed_date}': {e}")
                     continue
 
                 # Build filing URL

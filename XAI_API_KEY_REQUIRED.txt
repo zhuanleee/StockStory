@@ -1,0 +1,63 @@
+================================
+   XAI API KEY REQUIRED
+================================
+
+To run the REAL A/B test (no simulations), you need to provide your xAI API key.
+
+STEPS TO GET xAI API KEY:
+==========================
+
+1. Visit: https://console.x.ai/
+2. Sign in with your X/Twitter account
+3. Go to "API Keys" section
+4. Click "Create New Key"
+5. Copy your API key (starts with "xai-")
+
+HOW TO ADD IT:
+==============
+
+Option A: Add to .env file
+---------------------------
+cd /Users/johnlee/stock_scanner_bot
+echo "XAI_API_KEY=xai-your-actual-key-here" >> .env
+
+Option B: Export in terminal
+-----------------------------
+export XAI_API_KEY="xai-your-actual-key-here"
+
+Option C: Provide it now
+-------------------------
+Just paste your xAI API key and I'll add it for you.
+
+WHAT HAPPENS NEXT:
+==================
+
+Once the key is added, I will:
+1. Run REAL API calls to both DeepSeek AND xAI
+2. Test ALL AI tasks in your project:
+   ✓ Theme naming & thesis generation
+   ✓ Role classification
+   ✓ Stage detection
+   ✓ Supply chain discovery
+   ✓ Emerging theme detection
+   ✓ Membership validation
+   ✓ Sentiment analysis
+   ✓ News summarization
+   ✓ Market analysis
+   ✓ Pattern recognition
+   ✓ Ecosystem mapping
+
+3. Measure for EACH task:
+   - Response time
+   - Quality score
+   - Token usage
+   - Cost
+   - Success rate
+
+4. Generate comprehensive comparison report
+5. Provide production recommendations
+
+PASTE YOUR XAI API KEY BELOW OR ADD TO .ENV:
+=============================================
+
+(The key will be saved securely in your .env file, which is gitignored)

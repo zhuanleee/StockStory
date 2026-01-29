@@ -84,9 +84,12 @@ class AIService:
     """
 
     # Task type to provider mapping
+    # xAI is now preferred for most tasks (2x faster, only 2.3x cost)
+    # Use DeepSeek only for high-volume batch processing
     HEAVY_TASKS = {"heavy", "news", "portfolio", "narrative", "catalyst",
-                   "theme", "strategy", "reasoning", "analysis"}
+                   "theme", "strategy", "reasoning", "analysis", "default"}
     SIMPLE_TASKS = {"simple", "sentiment", "calculation", "quick", "classification"}
+    BATCH_ONLY = {"batch", "background", "bulk"}  # Force DeepSeek for pure batch
 
     # Daily budget limits
     DAILY_BUDGET_DEEPSEEK = 1000  # calls per day
@@ -115,7 +118,7 @@ class AIService:
             name="xAI/Grok",
             api_key=os.environ.get('XAI_API_KEY', ''),
             api_url="https://api.x.ai/v1/chat/completions",
-            model=os.environ.get('XAI_MODEL', 'grok-2-latest'),
+            model=os.environ.get('XAI_MODEL', 'grok-4-1-fast-non-reasoning'),
             temperature=0.3
         )
 
@@ -281,16 +284,22 @@ class AIService:
                 return cached
 
         # Determine routing
-        use_xai_first = prefer_xai
+        # Default to xAI (2x faster, only 2.3x cost - worth it!)
+        # Only use DeepSeek for explicit batch tasks
+        use_xai_first = True  # Changed default to xAI
 
-        if not use_xai_first:
-            if task_type in self.HEAVY_TASKS:
+        if not prefer_xai:
+            if task_type in self.BATCH_ONLY:
+                # Explicitly batch processing - use cheaper DeepSeek
+                use_xai_first = False
+            elif task_type in self.HEAVY_TASKS:
                 use_xai_first = True
             elif task_type in self.SIMPLE_TASKS:
-                use_xai_first = False
+                # Even simple tasks benefit from 2x speed
+                use_xai_first = True
             elif task_type == "default":
-                # Auto-detect: heavy if complex output expected
-                use_xai_first = max_tokens > 500
+                # Default to xAI for better UX
+                use_xai_first = True
 
         # Try primary provider
         primary = self.xai if use_xai_first else self.deepseek

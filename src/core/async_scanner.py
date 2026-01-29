@@ -999,6 +999,7 @@ class AsyncScanner:
         tickers: List[str] = None,
         use_story_first: bool = True,
         price_data_dict: Dict[str, pd.DataFrame] = None,
+        learning_brain = None,
     ) -> Tuple[pd.DataFrame, Dict]:
         """
         Run async scan on all tickers.
@@ -1007,6 +1008,7 @@ class AsyncScanner:
             tickers: List of tickers to scan (default: from universe_manager)
             use_story_first: Whether to use story-first scoring
             price_data_dict: Pre-fetched price data by ticker
+            learning_brain: Optional learning brain instance for recording opportunities
 
         Returns:
             Tuple of (results DataFrame, price_data dict)
@@ -1023,6 +1025,35 @@ class AsyncScanner:
                 return pd.DataFrame(), {}
 
         logger.info(f"Async scanning {len(tickers)} tickers with max_concurrent={self.max_concurrent}")
+
+        # Get sector rotation forecast for score adjustments
+        rotation_adjustments = {}
+        try:
+            from src.intelligence.rotation_predictor import get_rotation_forecast
+            rotation_forecast = get_rotation_forecast()
+
+            if rotation_forecast.get('ok'):
+                # Hot themes (rotating in) get boost
+                for theme in rotation_forecast.get('rotating_in', []):
+                    prob = theme.get('rotation_probability', 0)
+                    if prob > 0.6:
+                        rotation_adjustments[theme['theme_id']] = 1.2  # 20% boost
+                    elif prob > 0.4:
+                        rotation_adjustments[theme['theme_id']] = 1.1  # 10% boost
+
+                # Cold themes (rotating out) get penalty
+                for theme in rotation_forecast.get('rotating_out', []):
+                    prob = theme.get('rotation_probability', 0)
+                    if prob > 0.6:
+                        rotation_adjustments[theme['theme_id']] = 0.8  # 20% penalty
+                    elif prob > 0.4:
+                        rotation_adjustments[theme['theme_id']] = 0.9  # 10% penalty
+
+                if rotation_adjustments:
+                    logger.info(f"Sector rotation: {len([a for a in rotation_adjustments.values() if a > 1])} hot, "
+                               f"{len([a for a in rotation_adjustments.values() if a < 1])} cold themes")
+        except Exception as e:
+            logger.debug(f"Rotation forecast error: {e}")
 
         # Fetch price data if not provided
         if price_data_dict is None:
@@ -1049,10 +1080,76 @@ class AsyncScanner:
         # Create DataFrame
         if valid_results:
             df_results = pd.DataFrame(valid_results)
+
+            # Apply sector rotation adjustments
+            if rotation_adjustments and 'hottest_theme' in df_results.columns:
+                adjusted_count = 0
+                for idx, row in df_results.iterrows():
+                    theme = row.get('hottest_theme', '')
+                    if theme in rotation_adjustments:
+                        original_score = row['story_score']
+                        adjustment = rotation_adjustments[theme]
+                        df_results.at[idx, 'story_score'] = original_score * adjustment
+                        df_results.at[idx, 'rotation_adjusted'] = True
+                        df_results.at[idx, 'rotation_multiplier'] = adjustment
+                        adjusted_count += 1
+
+                if adjusted_count > 0:
+                    logger.info(f"Applied rotation adjustments to {adjusted_count} tickers")
+
             df_results['rank'] = df_results['story_score'].rank(ascending=False).astype(int)
             df_results = df_results.sort_values('story_score', ascending=False)
         else:
             df_results = pd.DataFrame()
+
+        # Optional AI brain ranking for high-scoring tickers
+        ai_brain_enabled = os.environ.get('USE_AI_BRAIN_RANKING', '').lower() in ['true', '1', 'yes']
+
+        if ai_brain_enabled and not df_results.empty:
+            try:
+                from src.ai.evolutionary_agentic_brain import analyze_opportunity_evolutionary
+
+                logger.info("Running AI brain analysis on top scorers...")
+
+                # Only analyze top 50 tickers to limit AI cost
+                top_tickers = df_results.head(50)
+
+                for idx, row in top_tickers.iterrows():
+                    try:
+                        ticker = row.get('ticker', '')
+                        if not ticker:
+                            continue
+
+                        # Analyze with AI brain
+                        decision = analyze_opportunity_evolutionary(
+                            ticker=ticker,
+                            signal_type='story_scan',
+                            signal_data={
+                                'story_score': row.get('story_score', 0),
+                                'theme': row.get('hottest_theme', ''),
+                                'catalyst': row.get('next_catalyst', ''),
+                                'sentiment': row.get('sentiment_label', 'neutral'),
+                                'rs_composite': row.get('rs_composite', 0),
+                                'vol_ratio': row.get('vol_ratio', 1.0),
+                                'above_20': row.get('above_20', False),
+                                'price': row.get('price', 0),
+                            }
+                        )
+
+                        # Add AI decision to dataframe
+                        df_results.at[idx, 'ai_decision'] = decision.decision.value
+                        df_results.at[idx, 'ai_confidence'] = decision.confidence
+                        df_results.at[idx, 'ai_reasoning'] = decision.reasoning[:200] if decision.reasoning else ''
+                        df_results.at[idx, 'ai_decision_id'] = decision.decision_id
+
+                    except Exception as e:
+                        logger.debug(f"AI brain analysis failed for {ticker}: {e}")
+                        continue
+
+                logger.info(f"✓ AI brain analyzed {len(top_tickers)} tickers")
+
+            except Exception as e:
+                logger.warning(f"AI brain ranking disabled: {e}")
 
         # Log stats
         elapsed = time.time() - self._stats['start_time']
@@ -1061,6 +1158,111 @@ class AsyncScanner:
             f"{self._stats['errors']} errors, {elapsed:.1f}s total, "
             f"{elapsed/len(tickers):.2f}s/ticker"
         )
+
+        # Record opportunities to learning system
+        if learning_brain and not df_results.empty:
+            try:
+                from src.learning.rl_models import ComponentScores, MarketContext
+                from src.scoring.earnings_scorer import get_earnings_scorer
+
+                earnings_scorer = get_earnings_scorer()
+                opportunities_recorded = 0
+
+                # Get market context from SPY
+                spy_data = price_data_dict.get('SPY')
+                spy_change_pct = 0.0
+                if spy_data is not None and len(spy_data) > 1:
+                    try:
+                        spy_close = spy_data['Close'] if 'Close' in spy_data.columns else spy_data.get('close')
+                        if spy_close is not None and len(spy_close) >= 2:
+                            spy_change_pct = ((float(spy_close.iloc[-1]) - float(spy_close.iloc[-2])) /
+                                             float(spy_close.iloc[-2]) * 100)
+                    except (ValueError, TypeError, KeyError) as e:
+                        logger.debug(f"Could not calculate SPY change: {e}")
+
+                market_context = MarketContext(
+                    spy_change_pct=spy_change_pct,
+                    vix_level=15.0  # Default, could fetch real VIX
+                )
+
+                # Initialize X Intelligence (if API key available)
+                x_intel = None
+                try:
+                    from src.intelligence.x_intelligence import get_x_intelligence
+                    if os.environ.get('XAI_API_KEY'):
+                        x_intel = get_x_intelligence()
+                        logger.info("✓ X Intelligence initialized (xAI)")
+                except Exception as e:
+                    logger.debug(f"X Intelligence not available: {e}")
+
+                # Initialize Institutional Flow Tracker
+                inst_flow = None
+                try:
+                    from src.intelligence.institutional_flow import get_flow_tracker
+                    inst_flow = get_flow_tracker()
+                    logger.info("✓ Institutional Flow Tracker initialized")
+                except Exception as e:
+                    logger.debug(f"Institutional Flow Tracker not available: {e}")
+
+                # Record top opportunities (limit to top 50 to avoid overwhelming the system)
+                for _, row in df_results.head(50).iterrows():
+                    try:
+                        ticker = row.get('ticker', '')
+                        if not ticker:
+                            continue
+
+                        # Get earnings score
+                        earnings_confidence = earnings_scorer.score(ticker)
+
+                        # Get X sentiment (if available)
+                        x_sentiment_score = 0.5  # Default neutral
+                        if x_intel:
+                            try:
+                                x_sentiment = x_intel.get_ticker_sentiment(ticker)
+                                x_sentiment_score = x_sentiment.sentiment_score
+                                logger.debug(f"{ticker}: X sentiment = {x_sentiment.sentiment} ({x_sentiment_score:.2f})")
+                            except Exception as e:
+                                logger.debug(f"Failed to get X sentiment for {ticker}: {e}")
+
+                        # Get institutional flow (if available)
+                        institutional_score = 0.5  # Default neutral
+                        if inst_flow:
+                            try:
+                                inst_signals = inst_flow.get_institutional_signals(ticker)
+                                if inst_signals:
+                                    # Average strength across all institutional signals
+                                    total_strength = sum(s.strength for s in inst_signals)
+                                    avg_strength = total_strength / len(inst_signals)
+                                    institutional_score = avg_strength / 100  # Normalize to 0-1
+                                    logger.debug(f"{ticker}: Institutional flow = {institutional_score:.2f} ({len(inst_signals)} signals)")
+                            except Exception as e:
+                                logger.debug(f"Failed to get institutional flow for {ticker}: {e}")
+
+                        # Create component scores from scan results
+                        scores = ComponentScores(
+                            theme_score=row.get('story_quality', {}).get('theme_strength', 0) if isinstance(row.get('story_quality'), dict) else 0,
+                            technical_score=row.get('confirmation', {}).get('score', 0) if isinstance(row.get('confirmation'), dict) else 0,
+                            ai_confidence=0.5,  # Default, could integrate AI brain later
+                            x_sentiment_score=x_sentiment_score,  # Now using real X Intelligence!
+                            earnings_confidence=earnings_confidence,
+                            institutional_flow_score=institutional_score  # Component #40: Smart money tracking
+                        )
+
+                        learning_brain.record_opportunity(
+                            ticker=ticker,
+                            scores=scores,
+                            market_context=market_context
+                        )
+                        opportunities_recorded += 1
+
+                    except (ValueError, TypeError, KeyError) as e:
+                        logger.debug(f"Could not record opportunity for {ticker}: {e}")
+                        continue
+
+                logger.info(f"✓ Recorded {opportunities_recorded} opportunities to learning system")
+
+            except Exception as e:
+                logger.warning(f"Failed to record opportunities to learning system: {e}")
 
         # Save results to CSV for dashboard
         if not df_results.empty:
@@ -1096,16 +1298,18 @@ class AsyncScanner:
 async def run_async_scan(
     tickers: List[str] = None,
     max_concurrent: int = 50,
+    learning_brain = None,
 ) -> Tuple[pd.DataFrame, Dict]:
     """
     Convenience function to run async scan.
 
     Usage:
         results, price_data = await run_async_scan()
+        results, price_data = await run_async_scan(learning_brain=brain)
     """
     scanner = AsyncScanner(max_concurrent=max_concurrent)
     try:
-        return await scanner.run_scan_async(tickers)
+        return await scanner.run_scan_async(tickers, learning_brain=learning_brain)
     finally:
         await scanner.close()
 
@@ -1113,14 +1317,16 @@ async def run_async_scan(
 def run_async_scan_sync(
     tickers: List[str] = None,
     max_concurrent: int = 50,
+    learning_brain = None,
 ) -> Tuple[pd.DataFrame, Dict]:
     """
     Synchronous wrapper for async scan.
 
     Usage:
         results, price_data = run_async_scan_sync()
+        results, price_data = run_async_scan_sync(learning_brain=brain)
     """
-    return asyncio.run(run_async_scan(tickers, max_concurrent))
+    return asyncio.run(run_async_scan(tickers, max_concurrent, learning_brain))
 
 
 # =============================================================================

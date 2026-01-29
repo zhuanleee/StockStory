@@ -143,7 +143,8 @@ class DeepSeekIntelligence:
                     self.usage = defaultdict(int)
                 else:
                     self.usage = defaultdict(int, data.get('usage', {}))
-            except:
+            except (json.JSONDecodeError, IOError, KeyError) as e:
+                logger.warning(f"Failed to load usage data: {e}")
                 self.usage = defaultdict(int)
 
     def _save_usage(self):
@@ -251,7 +252,7 @@ class DeepSeekIntelligence:
         try:
             # Try direct JSON parse
             return json.loads(response)
-        except:
+        except json.JSONDecodeError:
             pass
 
         # Try to extract JSON from markdown code block
@@ -260,7 +261,7 @@ class DeepSeekIntelligence:
         if json_match:
             try:
                 return json.loads(json_match.group(1))
-            except:
+            except json.JSONDecodeError:
                 pass
 
         # Try to find JSON object
@@ -268,7 +269,7 @@ class DeepSeekIntelligence:
         if json_match:
             try:
                 return json.loads(json_match.group(0))
-            except:
+            except json.JSONDecodeError:
                 pass
 
         return None
