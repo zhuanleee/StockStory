@@ -1982,9 +1982,47 @@
                 const res = await fetch(`${API_BASE}/scan/trigger?mode=${mode}`, { method: 'POST' });
                 const data = await res.json();
 
-                if (data.ok) {
+                if (data.ok && data.status === 'started') {
+                    // Scan started in background (202 Accepted)
+                    btn.textContent = `⏳ Scanning ${data.universe_size} stocks...`;
+                    toast.success(`Scan started! Processing ${data.universe_size} stocks in background.`, 5000);
+
+                    // Poll for results every 10 seconds
+                    let pollCount = 0;
+                    const maxPolls = 30; // 5 minutes max
+                    const pollInterval = setInterval(async () => {
+                        pollCount++;
+                        try {
+                            await fetchScan();
+                            // If we got new data, stop polling
+                            clearInterval(pollInterval);
+                            btn.textContent = '✅ Scan complete!';
+                            toast.success('Scan results updated!');
+                            setTimeout(() => {
+                                btn.textContent = originalText;
+                                btn.disabled = false;
+                            }, 2000);
+                        } catch (e) {
+                            // Continue polling
+                            if (pollCount >= maxPolls) {
+                                clearInterval(pollInterval);
+                                btn.textContent = '⏰ Timed out';
+                                setTimeout(() => {
+                                    btn.textContent = originalText;
+                                    btn.disabled = false;
+                                }, 2000);
+                            }
+                        }
+                    }, 10000); // Poll every 10 seconds
+
+                    // Re-enable button after 5 seconds (allow manual refresh)
+                    setTimeout(() => {
+                        btn.disabled = false;
+                    }, 5000);
+
+                } else if (data.ok && data.scanned !== undefined) {
+                    // Legacy response (scan completed immediately)
                     btn.textContent = `✅ ${data.scanned} stocks!`;
-                    // Refresh the scan data
                     await fetchScan();
                     setTimeout(() => {
                         btn.textContent = originalText;
