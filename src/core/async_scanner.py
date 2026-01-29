@@ -15,12 +15,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
 
-from cache_manager import (
+from src.data.cache_manager import (
     CacheManager, CacheConfig,
     stocktwits_cache_key, reddit_cache_key, sec_cache_key,
     sector_cache_key, news_cache_key,
 )
-import param_helper as params
+from src.scoring import param_helper as params
 
 logger = logging.getLogger(__name__)
 

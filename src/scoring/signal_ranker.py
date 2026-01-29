@@ -17,7 +17,7 @@ from pathlib import Path
 import yfinance as yf
 
 from utils import get_logger
-import param_helper as params  # Learned parameters
+from src.scoring import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
 

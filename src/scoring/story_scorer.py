@@ -27,7 +27,7 @@ from datetime import datetime
 import re
 
 from utils import get_logger, normalize_dataframe_columns
-import param_helper as params  # Learned parameters
+from src.scoring import param_helper as params  # Learned parameters
 
 logger = get_logger(__name__)
 

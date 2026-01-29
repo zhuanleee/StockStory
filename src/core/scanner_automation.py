@@ -34,7 +34,7 @@ logger = get_logger(__name__)
 
 # Try to import dynamic universe manager
 try:
-    from universe_manager import get_universe_manager
+    from src.data.universe_manager import get_universe_manager
     HAS_UNIVERSE_MANAGER = True
 except ImportError:
     HAS_UNIVERSE_MANAGER = False
@@ -42,7 +42,7 @@ except ImportError:
 
 # Try to import theme learner
 try:
-    from theme_learner import get_learner as get_theme_learner
+    from src.themes.theme_learner import get_learner as get_theme_learner
     HAS_THEME_LEARNER = True
 except ImportError:
     HAS_THEME_LEARNER = False
@@ -581,7 +581,7 @@ async def run_scan_async(use_story_first=True):
     Returns:
         Tuple of (results DataFrame, price_data dict)
     """
-    from async_scanner import AsyncScanner
+    from src.core.async_scanner import AsyncScanner
 
     logger.info(f"Starting ASYNC {'STORY-FIRST' if use_story_first else 'LEGACY'} scan at {datetime.now()}")
 

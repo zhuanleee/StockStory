@@ -3319,7 +3319,7 @@ def handle_themes(chat_id):
 def handle_universe(chat_id):
     """Handle /universe command - Show universe manager status."""
     try:
-        from universe_manager import get_universe_manager
+        from src.data.universe_manager import get_universe_manager
 
         um = get_universe_manager()
         health = um.run_health_check()
@@ -3359,7 +3359,7 @@ def handle_themehealth(chat_id):
     """Handle /themehealth command - Theme registry health check."""
     try:
         from theme_registry import get_registry
-        from theme_learner import get_learner
+        from src.themes.theme_learner import get_learner
 
         registry = get_registry()
         reg_health = registry.run_health_check()
@@ -4449,7 +4449,7 @@ def api_ticker_themes(ticker):
 def api_trigger_learning():
     """Trigger a theme learning cycle."""
     try:
-        from theme_learner import get_learner
+        from src.themes.theme_learner import get_learner
 
         learner = get_learner()
 
@@ -4471,7 +4471,7 @@ def api_trigger_learning():
 def api_learner_status():
     """Get theme learner status."""
     try:
-        from theme_learner import get_learner
+        from src.themes.theme_learner import get_learner
         from dataclasses import asdict
 
         learner = get_learner()
@@ -4492,7 +4492,7 @@ def api_learner_status():
 def api_universe_status():
     """Get universe manager status."""
     try:
-        from universe_manager import get_universe_manager
+        from src.data.universe_manager import get_universe_manager
         from dataclasses import asdict
 
         um = get_universe_manager()
@@ -4515,7 +4515,7 @@ def api_universe_status():
 def api_universe_tickers():
     """Get current universe tickers."""
     try:
-        from universe_manager import get_universe_manager
+        from src.data.universe_manager import get_universe_manager
 
         um = get_universe_manager()
 
@@ -4548,7 +4548,7 @@ def api_universe_tickers():
 def api_universe_refresh():
     """Force refresh universe data."""
     try:
-        from universe_manager import get_universe_manager
+        from src.data.universe_manager import get_universe_manager
 
         um = get_universe_manager()
         um.clear_cache()
