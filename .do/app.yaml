@@ -1,0 +1,73 @@
+name: stock-scanner-bot
+region: nyc
+services:
+  - name: api
+    github:
+      repo: zhuanleee/stock_scanner_bot
+      branch: main
+      deploy_on_push: true
+    build_command: pip install --upgrade pip && pip install -r requirements.txt
+    run_command: python main.py api
+    environment_slug: python
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 5000
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 60
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 3
+    routes:
+      - path: /
+    envs:
+      # Required - Financial Data
+      - key: POLYGON_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      # Required - Telegram
+      - key: TELEGRAM_BOT_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: TELEGRAM_CHAT_ID
+        scope: RUN_TIME
+        type: SECRET
+
+      # Required - AI Services
+      - key: DEEPSEEK_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: XAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      # Required - Earnings Intelligence
+      - key: ALPHA_VANTAGE_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      # Optional - Enhanced Features
+      - key: FINNHUB_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: PATENTSVIEW_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      # Feature Flags
+      - key: USE_AI_BRAIN_RANKING
+        value: "true"
+        scope: RUN_TIME
+      - key: USE_LEARNING_SYSTEM
+        value: "true"
+        scope: RUN_TIME
+      - key: MAX_CONCURRENT_SCANS
+        value: "50"
+        scope: RUN_TIME
+
+      # Python environment
+      - key: PYTHONUNBUFFERED
+        value: "1"
+        scope: RUN_TIME
