@@ -29,8 +29,8 @@ compute_config = {
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
-    .copy_local_dir("src", "/root/src")
-    .copy_local_dir("config", "/root/config")
+    .add_local_dir("src", remote_path="/root/src")
+    .add_local_dir("config", remote_path="/root/config")
 )
 
 
