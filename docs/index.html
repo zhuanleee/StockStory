@@ -1960,15 +1960,20 @@
             try {
                 const res = await fetch(`${API_BASE}/scan`);
                 const data = await res.json();
-                if (data.ok && data.stocks) {
-                    renderTopPicks(data.stocks);
-                    renderScanTable(data.stocks);
+                // Fix: API returns 'results' not 'stocks'
+                const stocks = data.results || data.stocks || [];
+                if (data.ok && stocks.length > 0) {
+                    renderTopPicks(stocks);
+                    renderScanTable(stocks);
 
                     // Update stats
-                    document.getElementById('stat-scanned').textContent = data.stocks.length;
-                    document.getElementById('stat-hot').textContent = data.stocks.filter(s => s.story_strength === 'hot').length;
-                    document.getElementById('stat-developing').textContent = data.stocks.filter(s => s.story_strength === 'developing').length;
-                    document.getElementById('stat-watchlist').textContent = data.stocks.filter(s => s.story_strength === 'watchlist').length;
+                    document.getElementById('stat-scanned').textContent = stocks.length;
+                    document.getElementById('stat-hot').textContent = stocks.filter(s => s.story_strength === 'hot').length;
+                    document.getElementById('stat-developing').textContent = stocks.filter(s => s.story_strength === 'developing').length;
+                    document.getElementById('stat-watchlist').textContent = stocks.filter(s => s.story_strength === 'watchlist').length;
+                } else {
+                    // Show empty state when no data
+                    console.log('No scan data available:', data.message || 'Scanner has not run yet');
                 }
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
