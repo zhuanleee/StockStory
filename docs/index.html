@@ -873,10 +873,18 @@
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
-                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
-                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
+                            <div style="padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px;">
+                                <div style="font-size: 0.875rem; color: var(--text-muted);">
+                                    ⏰ <strong>Automatic Daily Scan</strong><br>
+                                    Runs every day at 6 AM PST with GPU acceleration<br>
+                                    <span style="color: var(--green);">✓ Last scan: 515 stocks analyzed</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" onclick="fetchScan()" style="width: 100%;">↻ Refresh Data</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
+                            <div style="margin-top: 8px; padding: 8px; background: var(--blue-bg); border-radius: 6px; font-size: 0.75rem; color: var(--text-muted);">
+                                💡 Manual scans disabled (Modal security). Data auto-refreshes daily.
+                            </div>
                         </div>
                     </div>
                 </div>
