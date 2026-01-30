@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'modal_scanner.py'
+      - 'modal_api.py'
       - 'src/**'
       - '.github/workflows/deploy_modal.yml'
   workflow_dispatch:  # Manual trigger
@@ -34,12 +35,15 @@ jobs:
             --token-id "$MODAL_TOKEN_ID" \
             --token-secret "$MODAL_TOKEN_SECRET"
 
-      - name: Deploy to Modal
+      - name: Deploy Scanner to Modal
         run: modal deploy modal_scanner.py
+
+      - name: Deploy API to Modal
+        run: modal deploy modal_api.py
 
       - name: Deployment complete
         run: |
           echo "✅ Modal deployment complete!"
-          echo "📊 Your scanner is now running on Modal"
-          echo "🕐 Daily scans scheduled for 6 AM PST"
+          echo "📊 Scanner deployed: Daily scans at 6 AM PST"
+          echo "🌐 API deployed: Dashboard endpoints live"
 # Triggering deployment
