@@ -4562,8 +4562,25 @@ def api_themes_registry():
 
 @app.route('/api/themes/list')
 def api_themes_list():
-    """Get all themes with details."""
+    """Get all themes with details (cached 60 minutes)."""
+    cache_key = 'themes_list'
+
+    # Check cache first (60 minute TTL)
+    cached_data, is_cached = _endpoint_cache.get(cache_key, 3600)
+    if is_cached:
+        cached_data['cached'] = True
+        return jsonify(cached_data)
+
+    # Return stale cache if computation in progress
+    if _endpoint_cache.is_computing(cache_key):
+        if cached_data:
+            cached_data['cached'] = True
+            cached_data['computing'] = True
+            return jsonify(cached_data)
+        return jsonify({'ok': False, 'error': 'Computing themes, try again in a moment', 'computing': True})
+
     try:
+        _endpoint_cache.start_computing(cache_key)
         from theme_registry import get_registry
 
         registry = get_registry()
@@ -4582,15 +4599,22 @@ def api_themes_list():
                 'discovered_at': theme.discovered_at,
             })
 
-        return jsonify({
+        response = {
             'ok': True,
             'themes': sorted(themes, key=lambda x: x['heat_score'], reverse=True),
             'total': len(themes),
-        })
+            'timestamp': datetime.now().isoformat(),
+            'cached': False
+        }
+        _endpoint_cache.set(cache_key, response)
+        return jsonify(response)
     except ImportError:
         return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
     except Exception as e:
+        logger.error(f"Themes list error: {e}")
         return jsonify({'ok': False, 'error': str(e)}), 500
+    finally:
+        _endpoint_cache.stop_computing(cache_key)
 
 
 @app.route('/api/themes/members/<theme_id>')
