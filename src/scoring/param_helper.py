@@ -21,7 +21,7 @@ def _get_registry():
     if not _registry_checked:
         _registry_checked = True
         try:
-            from parameter_learning import get_registry
+            from learning.parameter_learning import get_registry
             _registry = get_registry()
         except ImportError:
             logger.warning("Parameter learning not available, using defaults")
@@ -429,7 +429,7 @@ def record_alert_outcome(ticker: str, score: float, score_breakdown: dict,
                           market_regime: str = 'unknown') -> str:
     """Record an alert with its parameter snapshot for learning"""
     try:
-        from parameter_learning import record_alert_with_params
+        from learning.parameter_learning import record_alert_with_params
         return record_alert_with_params(ticker, score, score_breakdown, market_regime)
     except ImportError:
         return None
@@ -438,7 +438,7 @@ def record_alert_outcome(ticker: str, score: float, score_breakdown: dict,
 def update_outcome(alert_id: str, outcomes: dict) -> bool:
     """Update an alert with its actual outcome"""
     try:
-        from parameter_learning import update_alert_outcome
+        from learning.parameter_learning import update_alert_outcome
         return update_alert_outcome(alert_id, outcomes)
     except ImportError:
         return False
@@ -451,7 +451,7 @@ def update_outcome(alert_id: str, outcomes: dict) -> bool:
 def get_learning_status() -> Dict[str, Any]:
     """Get comprehensive learning status"""
     try:
-        from parameter_learning import get_learning_status as _get_status
+        from learning.parameter_learning import get_learning_status as _get_status
         return _get_status()
     except ImportError:
         return {'error': 'Parameter learning not available'}
@@ -460,7 +460,7 @@ def get_learning_status() -> Dict[str, Any]:
 def run_health_check() -> Dict[str, Any]:
     """Run health check on parameter learning system"""
     try:
-        from parameter_learning import run_health_check as _health_check
+        from learning.parameter_learning import run_health_check as _health_check
         return _health_check()
     except ImportError:
         return {'error': 'Parameter learning not available', 'status': 'unavailable'}
