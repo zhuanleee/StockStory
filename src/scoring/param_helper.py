@@ -12,12 +12,14 @@ logger = logging.getLogger('param_helper')
 
 # Lazy-loaded registry
 _registry = None
+_registry_checked = False  # Track if we've already checked
 
 
 def _get_registry():
     """Get the parameter registry (lazy load)"""
-    global _registry
-    if _registry is None:
+    global _registry, _registry_checked
+    if not _registry_checked:
+        _registry_checked = True
         try:
             from parameter_learning import get_registry
             _registry = get_registry()

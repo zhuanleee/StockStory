@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 PATENTSVIEW_BASE = "https://search.patentsview.org/api/v1"
 PATENTSVIEW_API_KEY = os.environ.get('PATENTSVIEW_API_KEY', '')
 
+# Track if we've already warned about missing API key
+_warned_no_api_key = False
+
 # Cache
 DATA_DIR = Path("data/patents")
 CACHE_FILE = DATA_DIR / "patent_cache.json"
@@ -207,7 +210,10 @@ class PatentIntelligence:
 
         # Check if API key is available
         if not self._api_available():
-            logger.warning("PatentsView API key not set. Set PATENTSVIEW_API_KEY env var.")
+            global _warned_no_api_key
+            if not _warned_no_api_key:
+                logger.warning("PatentsView API key not set. Set PATENTSVIEW_API_KEY env var.")
+                _warned_no_api_key = True
             return []
 
         try:
@@ -298,7 +304,10 @@ class PatentIntelligence:
 
         # Check if API key is available
         if not self._api_available():
-            logger.warning("PatentsView API key not set. Returning empty activity.")
+            global _warned_no_api_key
+            if not _warned_no_api_key:
+                logger.warning("PatentsView API key not set. Returning empty activity.")
+                _warned_no_api_key = True
             return PatentActivity(
                 entity=ticker,
                 entity_type='company',
