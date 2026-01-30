@@ -98,6 +98,25 @@ MAX_PROCESSED = 1000  # Limit memory usage
 
 
 # =============================================================================
+# SIMPLE HEALTH CHECK - For Digital Ocean monitoring
+# =============================================================================
+
+@app.route('/health')
+def simple_health_check():
+    """
+    Simple health check endpoint that responds immediately.
+    Used by Digital Ocean to verify the app is alive.
+    Does NOT make any external API calls.
+    """
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'service': 'stock-scanner-bot',
+        'workers': 4
+    }), 200
+
+
+# =============================================================================
 # CACHING SYSTEM - Reduce load on heavy endpoints
 # =============================================================================
 
@@ -2237,14 +2256,34 @@ def _get_real_market_health_data():
     """Fetch real market data for health indicators with parallel processing."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def safe_download(ticker, period='6mo'):
-        """Safely download and normalize data."""
+    def safe_download(ticker, period='6mo', timeout=10):
+        """Safely download and normalize data with timeout protection."""
+        import signal
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"Download timeout for {ticker}")
+
         try:
+            # Set timeout alarm (only works on Unix)
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout)
+
             data = yf.download(ticker, period=period, progress=False)
+
+            # Cancel alarm
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)
+
             if data is None or len(data) == 0:
                 return None
             return normalize_dataframe_columns(data)
-        except Exception:
+        except (Exception, TimeoutError) as e:
+            # Cancel alarm on error
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)
+            if isinstance(e, TimeoutError):
+                logger.warning(f"Timeout downloading {ticker}")
             return None
 
     def get_last_close(df):

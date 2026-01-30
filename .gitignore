@@ -93,3 +93,4 @@ docs/_build/
 !data/user/.gitkeep
 .do_api_token
 README_DO_API.md
+.do_helper.sh
