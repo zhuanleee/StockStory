@@ -7404,6 +7404,68 @@ except Exception as e:
     logger.warning(f"Learning System API not available: {e}")
 
 
+@app.route('/api/debug/scan-status')
+def api_debug_scan_status():
+    """Debug endpoint to check scan file status and recent activity."""
+    try:
+        from pathlib import Path
+        import os
+
+        # Check for scan CSV files
+        scan_files = list(Path('.').glob('scan_*.csv'))
+
+        # Get current working directory
+        cwd = os.getcwd()
+
+        # Check if we can write to current directory
+        can_write = os.access('.', os.W_OK)
+
+        # Get directory listing
+        try:
+            all_files = [f.name for f in Path('.').iterdir() if f.is_file()]
+            csv_files = [f for f in all_files if f.endswith('.csv')]
+        except Exception as e:
+            all_files = []
+            csv_files = []
+
+        # Format scan file info
+        scan_files_info = []
+        if scan_files:
+            for f in sorted(scan_files, key=lambda x: x.stat().st_mtime, reverse=True):
+                try:
+                    size = f.stat().st_size
+                    mtime = datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+                    scan_files_info.append({
+                        'name': f.name,
+                        'size_bytes': size,
+                        'modified': mtime,
+                        'readable': f.is_file()
+                    })
+                except Exception as e:
+                    scan_files_info.append({
+                        'name': f.name,
+                        'error': str(e)
+                    })
+
+        return jsonify({
+            'ok': True,
+            'working_directory': cwd,
+            'can_write_to_cwd': can_write,
+            'scan_files_found': len(scan_files),
+            'scan_files': scan_files_info,
+            'all_csv_files': csv_files[:20],  # Limit to 20
+            'total_files_in_cwd': len(all_files),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Debug scan status error: {e}", exc_info=True)
+        return jsonify({
+            'ok': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+
+
 if __name__ == '__main__':
     if socketio:
         # Run with SocketIO for real-time sync support
