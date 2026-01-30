@@ -56,15 +56,18 @@ def add_cors_headers_first(response):
     return response
 
 # Initialize SocketIO for real-time sync
+# DISABLED: SocketIO initialization was blocking app startup, causing 504 timeouts
+# TODO: Re-enable with proper async/non-blocking initialization
 socketio = None
-try:
-    from src.sync.socketio_server import init_socketio
-    socketio = init_socketio(app)
-    logger.info("SocketIO sync enabled")
-except ImportError as e:
-    logger.warning(f"SocketIO not available: {e}")
-except Exception as e:
-    logger.warning(f"SocketIO init failed: {e}")
+# try:
+#     from src.sync.socketio_server import init_socketio
+#     socketio = init_socketio(app)
+#     logger.info("SocketIO sync enabled")
+# except ImportError as e:
+#     logger.warning(f"SocketIO not available: {e}")
+# except Exception as e:
+#     logger.warning(f"SocketIO init failed: {e}")
+logger.info("SocketIO disabled - running without real-time sync")
 
 
 # Global error handler to return JSON instead of HTML on errors
