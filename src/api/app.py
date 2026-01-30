@@ -1660,6 +1660,143 @@ def handle_api_options():
     return '', 204
 
 
+# =============================================================================
+# API AGGREGATOR ROUTES - Summary endpoints that aggregate multiple sources
+# =============================================================================
+
+@app.route('/api/themes')
+def api_themes_aggregate():
+    """
+    Aggregate themes data from multiple sources.
+    This endpoint combines data from themes/list, themes/registry, and evolution/themes.
+    """
+    try:
+        result = {
+            'ok': True,
+            'themes': [],
+            'registry': {},
+            'evolution_themes': [],
+            'available': False
+        }
+
+        # Try to get themes from various sources
+        try:
+            # Note: These internal functions may not exist yet
+            # Return placeholder data for now
+            result['available'] = False
+            result['message'] = 'Theme aggregation not fully implemented'
+        except Exception as e:
+            logger.warning(f"Theme aggregation error: {e}")
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Themes aggregate error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/evolution')
+def api_evolution_aggregate():
+    """
+    Aggregate evolution engine data.
+    Returns status, weights, and accuracy if available.
+    """
+    try:
+        result = {
+            'ok': True,
+            'available': False,
+            'status': 'unavailable',
+            'message': 'Evolution engine not initialized'
+        }
+
+        # Check if evolution engine is available
+        try:
+            import torch
+            result['torch_available'] = True
+        except ImportError:
+            result['torch_available'] = False
+            result['message'] = 'PyTorch not installed - Evolution engine unavailable'
+
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Evolution aggregate error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/weights')
+def api_weights_redirect():
+    """Redirect to evolution weights endpoint."""
+    try:
+        result = {
+            'ok': True,
+            'available': False,
+            'message': 'Evolution weights not available',
+            'redirect': '/api/evolution/weights'
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/radar')
+def api_radar_placeholder():
+    """Theme radar placeholder endpoint."""
+    try:
+        result = {
+            'ok': True,
+            'radar': [],
+            'available': False,
+            'message': 'Theme radar data not available'
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ma-radar')
+def api_ma_radar_placeholder():
+    """M&A radar placeholder endpoint."""
+    try:
+        result = {
+            'ok': True,
+            'deals': [],
+            'available': False,
+            'message': 'M&A radar data not available'
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/alerts')
+def api_alerts_placeholder():
+    """Alerts placeholder endpoint."""
+    try:
+        result = {
+            'ok': True,
+            'alerts': [],
+            'available': False,
+            'message': 'Alerts data not available'
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/risk')
+def api_risk_placeholder():
+    """Risk analysis placeholder endpoint."""
+    try:
+        result = {
+            'ok': True,
+            'risk_score': 50,
+            'available': False,
+            'message': 'Risk analysis not available'
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/api/stories')
 def api_stories():
     """Get current hot stories/themes (cached)."""
