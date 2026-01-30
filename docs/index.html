@@ -1034,29 +1034,29 @@
                     <span id="sync-status-text" style="font-size: 0.7rem; color: var(--text-muted);">OFFLINE</span>
                 </div>
                 <span class="update-time">Updated: <span id="last-update">--:--</span></span>
-                <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
+                <button class="btn btn-ghost" onclick="refreshAll()" aria-label="Refresh all data">↻ Refresh</button>
                 <a href="https://t.me/Stocks_Story_Bot" target="_blank" class="btn btn-primary">Open Bot</a>
             </div>
         </div>
     </header>
 
     <!-- Tabs -->
-    <nav class="tabs">
+    <nav class="tabs" role="tablist" aria-label="Dashboard navigation">
         <div class="tabs-inner">
-            <div class="tab active" data-tab="overview">Overview</div>
-            <div class="tab" data-tab="scan">Scan Results</div>
-            <div class="tab" data-tab="themes">Themes</div>
-            <div class="tab" data-tab="themeradar">Theme Radar</div>
-            <div class="tab" data-tab="sec">SEC Intel</div>
-            <div class="tab" data-tab="trades">Trades</div>
-            <div class="tab" data-tab="analytics">Analytics</div>
+            <button class="tab active" data-tab="overview" role="tab" aria-selected="true" aria-controls="overview">Overview</button>
+            <button class="tab" data-tab="scan" role="tab" aria-selected="false" aria-controls="scan">Scan Results</button>
+            <button class="tab" data-tab="themes" role="tab" aria-selected="false" aria-controls="themes">Themes</button>
+            <button class="tab" data-tab="themeradar" role="tab" aria-selected="false" aria-controls="themeradar">Theme Radar</button>
+            <button class="tab" data-tab="sec" role="tab" aria-selected="false" aria-controls="sec">SEC Intel</button>
+            <button class="tab" data-tab="trades" role="tab" aria-selected="false" aria-controls="trades">Trades</button>
+            <button class="tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="analytics">Analytics</button>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="main">
         <!-- Overview Tab -->
-        <div id="overview" class="tab-content active">
+        <div id="overview" class="tab-content active" role="tabpanel" aria-labelledby="overview-tab">
             <!-- Stats Row -->
             <div class="stats-row">
                 <div class="stat">
@@ -1197,9 +1197,9 @@
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
-                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
-                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
+                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;" aria-label="Scan S&P 500 and NASDAQ 100 stocks"><span aria-hidden="true">🔄</span> Scan S&P + NASDAQ (~600)</button>
+                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;" aria-label="Scan all US stocks with 300 million plus market cap"><span aria-hidden="true">🌐</span> Full Scan (300M+ mcap)</button>
+                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;" aria-label="Refresh scan results"><span aria-hidden="true">📊</span> Refresh Results</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
                         </div>
                     </div>
@@ -1208,7 +1208,7 @@
         </div>
 
         <!-- Scan Results Tab -->
-        <div id="scan" class="tab-content">
+        <div id="scan" class="tab-content" role="tabpanel" aria-labelledby="scan-tab">
             <div class="card">
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
@@ -1252,7 +1252,7 @@
         </div>
 
         <!-- Themes Tab -->
-        <div id="themes" class="tab-content">
+        <div id="themes" class="tab-content" role="tabpanel" aria-labelledby="themes-tab">
             <div class="themes-row" style="margin-bottom: 24px;" id="all-themes">
                 
             </div>
@@ -1263,7 +1263,7 @@
         </div>
 
         <!-- Theme Radar Tab (Theme Intelligence Hub) -->
-        <div id="themeradar" class="tab-content">
+        <div id="themeradar" class="tab-content" role="tabpanel" aria-labelledby="themeradar-tab">
             <div class="grid grid-3">
                 <!-- Theme Radar Visual -->
                 <div class="card" style="grid-column: span 2;">
@@ -1368,7 +1368,7 @@
         </div>
 
         <!-- SEC Intelligence Tab -->
-        <div id="sec" class="tab-content">
+        <div id="sec" class="tab-content" role="tabpanel" aria-labelledby="sec-tab">
             <div class="grid grid-3">
                 <!-- M&A Radar -->
                 <div class="card">
@@ -1544,7 +1544,7 @@
         </div>
 
         <!-- Trades Tab - Professional Trading Dashboard -->
-        <div id="trades" class="tab-content">
+        <div id="trades" class="tab-content" role="tabpanel" aria-labelledby="trades-tab">
             <!-- Enhanced Stats Row -->
             <div class="stats-row" style="grid-template-columns: repeat(6, 1fr);">
                 <div class="stat">
@@ -1755,7 +1755,7 @@
         </div>
 
         <!-- Analytics Tab -->
-        <div id="analytics" class="tab-content">
+        <div id="analytics" class="tab-content" role="tabpanel" aria-labelledby="analytics-tab">
             <div class="grid grid-2">
                 <!-- Evolution Engine -->
                 <div class="card">
@@ -4329,6 +4329,167 @@
                 refreshAIAdvisor();
             }
         }, 2000);
+
+        // ===================================================================
+        // UI/UX Helper Functions
+        // ===================================================================
+
+        /**
+         * Show validation error on input field
+         * @param {string} fieldId - ID of the input field
+         * @param {string} message - Error message to display
+         */
+        function showFieldError(fieldId, message) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+
+            field.classList.add('input-error');
+            field.classList.remove('input-success');
+
+            // Remove existing error
+            const existingError = field.parentElement.querySelector('.error-message');
+            if (existingError) existingError.remove();
+
+            // Add new error
+            const error = document.createElement('div');
+            error.className = 'error-message';
+            error.innerHTML = `<span aria-hidden="true">⚠️</span> ${message}`;
+            error.setAttribute('role', 'alert');
+            field.parentElement.appendChild(error);
+        }
+
+        /**
+         * Show validation success on input field
+         * @param {string} fieldId - ID of the input field
+         */
+        function showFieldSuccess(fieldId) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+
+            field.classList.remove('input-error');
+            field.classList.add('input-success');
+
+            const error = field.parentElement.querySelector('.error-message');
+            if (error) error.remove();
+        }
+
+        /**
+         * Set button loading state
+         * @param {HTMLElement} button - Button element
+         * @param {boolean} loading - Whether button should be in loading state
+         */
+        function setButtonLoading(button, loading = true) {
+            if (!button) return;
+
+            if (loading) {
+                button.dataset.originalText = button.textContent;
+                button.classList.add('btn-loading');
+                button.disabled = true;
+            } else {
+                button.textContent = button.dataset.originalText || button.textContent;
+                button.classList.remove('btn-loading');
+                button.disabled = false;
+            }
+        }
+
+        /**
+         * Update progress bar
+         * @param {string} containerId - ID of progress container
+         * @param {number} percent - Progress percentage (0-100)
+         * @param {string} message - Progress message
+         */
+        function updateProgress(containerId, percent, message = '') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            let progressBar = container.querySelector('.progress-bar');
+            if (!progressBar) {
+                container.innerHTML = `
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text"></div>
+                `;
+                progressBar = container.querySelector('.progress-bar');
+            }
+
+            const fill = progressBar.querySelector('.progress-fill');
+            const text = container.querySelector('.progress-text');
+
+            if (fill) fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+            if (text) text.textContent = message;
+        }
+
+        /**
+         * Show loading spinner in container
+         * @param {string} containerId - ID of container element
+         * @param {string} message - Loading message
+         */
+        function showLoading(containerId, message = 'Loading...') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            container.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <div class="loading-text">${message}</div>
+                </div>
+            `;
+        }
+
+        /**
+         * Update tab ARIA attributes
+         * @param {HTMLElement} selectedTab - The tab that was selected
+         */
+        function updateTabARIA(selectedTab) {
+            const tabs = document.querySelectorAll('[role="tab"]');
+            tabs.forEach(tab => {
+                tab.setAttribute('aria-selected', tab === selectedTab ? 'true' : 'false');
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + K: Focus first input
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const firstInput = document.querySelector('input[type="text"]');
+                if (firstInput) firstInput.focus();
+            }
+
+            // Ctrl/Cmd + R: Refresh (override browser default)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                e.preventDefault();
+                refreshAll();
+            }
+
+            // Number keys 1-7: Switch tabs (when not in input)
+            if (e.key >= '1' && e.key <= '7' && !e.ctrlKey && !e.metaKey) {
+                const target = e.target;
+                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && target.tagName !== 'SELECT') {
+                    const tabs = document.querySelectorAll('[role="tab"]');
+                    const index = parseInt(e.key) - 1;
+                    if (tabs[index]) {
+                        tabs[index].click();
+                    }
+                }
+            }
+        });
+
+        // Enhance existing showTab function with ARIA support
+        const originalShowTab = window.showTab;
+        window.showTab = function(tabName) {
+            if (originalShowTab) {
+                originalShowTab(tabName);
+            }
+
+            // Update ARIA attributes
+            const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+            if (selectedTab) {
+                updateTabARIA(selectedTab);
+            }
+        };
+
     </script>
 </body>
 </html>
