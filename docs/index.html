@@ -1542,6 +1542,52 @@
             : 'https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run';
 
         // =============================================================================
+        // DEBUG HELPER - Test API connection
+        // =============================================================================
+        window.testConnection = async function() {
+            console.log('🧪 Testing API Connection...');
+            console.log('📍 Current hostname:', window.location.hostname);
+            console.log('📡 API_BASE:', API_BASE);
+            console.log('');
+
+            try {
+                // Test 1: Health endpoint
+                console.log('Test 1: Health endpoint');
+                const healthUrl = `${API_BASE}/health`;
+                console.log('  URL:', healthUrl);
+                const healthRes = await fetch(healthUrl);
+                console.log('  Status:', healthRes.status);
+                const healthData = await healthRes.json();
+                console.log('  Response:', healthData);
+                console.log('');
+
+                // Test 2: Scan endpoint
+                console.log('Test 2: Scan endpoint');
+                const scanUrl = `${API_BASE}/scan`;
+                console.log('  URL:', scanUrl);
+                const scanRes = await fetch(scanUrl);
+                console.log('  Status:', scanRes.status);
+                const scanData = await scanRes.json();
+                console.log('  Response:', scanData);
+                console.log('');
+
+                console.log('✅ Connection test complete!');
+                console.log('💡 To manually refresh: refreshAll()');
+                console.log('💡 To test scan fetch: fetchScan()');
+
+                return { health: healthData, scan: scanData };
+            } catch (e) {
+                console.error('❌ Connection test failed:', e);
+                return { error: e.message };
+            }
+        };
+
+        // Log API configuration on page load
+        console.log('🚀 Stock Scanner Dashboard loaded');
+        console.log('📡 API_BASE:', API_BASE);
+        console.log('💡 Run testConnection() to verify API');
+
+        // =============================================================================
         // SOCKET.IO SYNC CLIENT
         // =============================================================================
 
@@ -1957,12 +2003,25 @@
         }
 
         async function fetchScan() {
+            console.log('🔄 fetchScan() called');
+            console.log('📡 API_BASE:', API_BASE);
+
             try {
-                const res = await fetch(`${API_BASE}/scan`);
+                const url = `${API_BASE}/scan`;
+                console.log('📍 Fetching:', url);
+
+                const res = await fetch(url);
+                console.log('✅ Response status:', res.status, res.statusText);
+
                 const data = await res.json();
+                console.log('📦 Response data:', data);
+
                 // Fix: API returns 'results' not 'stocks'
                 const stocks = data.results || data.stocks || [];
+                console.log('📊 Stocks array length:', stocks.length);
+
                 if (data.ok && stocks.length > 0) {
+                    console.log('✅ Rendering', stocks.length, 'stocks');
                     renderTopPicks(stocks);
                     renderScanTable(stocks);
 
@@ -1973,9 +2032,14 @@
                     document.getElementById('stat-watchlist').textContent = stocks.filter(s => s.story_strength === 'watchlist').length;
                 } else {
                     // Show empty state when no data
-                    console.log('No scan data available:', data.message || 'Scanner has not run yet');
+                    console.log('⚠️ No scan data available:', data.message || 'Scanner has not run yet');
+                    console.log('   data.ok:', data.ok);
+                    console.log('   stocks.length:', stocks.length);
                 }
-            } catch (e) { console.warn('Scan fetch failed:', e); }
+            } catch (e) {
+                console.error('❌ Scan fetch failed:', e);
+                console.error('   Error details:', e.message, e.stack);
+            }
         }
 
         async function triggerScan(mode = 'indices', evt = null) {
@@ -3973,6 +4037,7 @@
         }
 
         async function refreshAll() {
+            console.log('🔄 refreshAll() called');
             document.getElementById('last-update').textContent = 'Refreshing...';
 
             await Promise.all([
