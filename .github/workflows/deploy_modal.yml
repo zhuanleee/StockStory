@@ -42,3 +42,4 @@ jobs:
           echo "✅ Modal deployment complete!"
           echo "📊 Your scanner is now running on Modal"
           echo "🕐 Daily scans scheduled for 6 AM PST"
+# Triggering deployment
