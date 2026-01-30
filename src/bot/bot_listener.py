@@ -240,8 +240,12 @@ def handle_commands():
 
             elif text.lower() == '/help':
                 msg = "*BOT COMMANDS*\n\n"
-                msg += "Send any ticker (e.g., `NVDA`) for analysis\n"
+                msg += "Send any ticker (e.g., `NVDA`) for analysis\n\n"
+                msg += "*Scan Commands:*\n"
+                msg += "`/scan` - Trigger full scan (515 stocks)\n"
                 msg += "`/top` - Show top 10 stocks\n"
+                msg += "`/status` - Check scan status\n\n"
+                msg += "*Info:*\n"
                 msg += "`/help` - Show this help\n"
                 send_telegram_message(msg)
 
@@ -252,6 +256,52 @@ def handle_commands():
                     msg = f"*Status:* {len(df_results)} stocks in database\n"
                     msg += f"Last updated: Check scan file date"
                 send_telegram_message(msg)
+
+            elif text.lower() == '/scan':
+                # Trigger a scan via Modal
+                msg = "🔄 *Triggering scan...*\n\n"
+                msg += "Starting full scan on Modal (515 stocks)\n"
+                msg += "This will take 5-10 minutes.\n\n"
+                msg += "You'll receive a notification when complete! ⏳"
+                send_telegram_message(msg)
+
+                try:
+                    import subprocess
+                    # Trigger scan via Modal CLI
+                    result = subprocess.run(
+                        ['python3', '-m', 'modal', 'run', 'modal_scanner.py', '--daily'],
+                        cwd=project_root,
+                        capture_output=True,
+                        text=True,
+                        timeout=600  # 10 minute timeout
+                    )
+
+                    if result.returncode == 0:
+                        msg = "✅ *Scan started successfully!*\n\n"
+                        msg += "The scan is running on Modal's servers.\n"
+                        msg += "You'll get a notification when it completes (~5-10 min)"
+                    else:
+                        msg = "❌ *Scan failed to start*\n\n"
+                        msg += f"Error: {result.stderr[:200]}\n\n"
+                        msg += "Possible issues:\n"
+                        msg += "• Modal not authenticated\n"
+                        msg += "• Network connection issue\n"
+                        msg += "• Modal service unavailable"
+
+                    send_telegram_message(msg)
+
+                except subprocess.TimeoutExpired:
+                    msg = "⏰ *Scan timed out*\n\n"
+                    msg += "The scan is taking longer than expected.\n"
+                    msg += "Check Modal dashboard or try again later."
+                    send_telegram_message(msg)
+
+                except Exception as e:
+                    msg = f"❌ *Error triggering scan*\n\n"
+                    msg += f"Error: {str(e)[:200]}\n\n"
+                    msg += "You may need to run the scan manually:\n"
+                    msg += "`modal run modal_scanner.py --daily`"
+                    send_telegram_message(msg)
 
             # Trade management commands
             elif text.startswith('/'):
