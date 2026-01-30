@@ -765,7 +765,7 @@ class AsyncStoryScorer:
         # =====================================================
         # STORY-FIRST SCORING
         # =====================================================
-        from story_scoring import calculate_story_score
+        from src.core.story_scoring import calculate_story_score
 
         # Prepare price data dict for story scorer
         price_dict = {
