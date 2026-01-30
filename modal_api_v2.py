@@ -105,37 +105,22 @@ def create_fastapi_app():
 
     @web_app.post("/scan/trigger")
     def scan_trigger(mode: str = Query("quick")):
-        """Trigger a manual scan."""
-        try:
-            import modal as modal_sdk
+        """
+        Trigger a manual scan.
 
-            # Look up the scanner app and function
-            # App name: "stock-scanner-ai-brain" (from modal_scanner.py line 16)
-            scanner_app = modal_sdk.App.lookup("stock-scanner-ai-brain", create_if_missing=False)
+        NOTE: Modal SDK doesn't allow calling functions across apps from within a function.
+        This is a limitation of Modal's security model - functions can't spawn other app's functions.
 
-            # Get the main scan function (the cron-scheduled function)
-            daily_scan_func = scanner_app.lookup("daily_scan")
-
-            # Trigger the scan asynchronously
-            call = daily_scan_func.spawn()
-
-            return {
-                "ok": True,
-                "status": "started",
-                "message": "Scan started in background. Check back in 5-10 minutes.",
-                "mode": mode,
-                "call_id": call.object_id,
-                "info": "Scanner running on Modal with GPU. Results will appear when complete."
-            }
-        except Exception as e:
-            # If trigger fails, return helpful error
-            import traceback
-            return {
-                "ok": False,
-                "error": str(e),
-                "message": "Manual scan trigger is disabled. Scanner runs automatically daily at 6 AM PST.",
-                "details": traceback.format_exc()
-            }
+        Manual trigger disabled. Use: modal run modal_scanner.py --daily
+        Or wait for automatic cron schedule (daily at 6 AM PST).
+        """
+        return {
+            "ok": False,
+            "error": "Modal security restriction",
+            "message": "Manual scan trigger not available from API due to Modal SDK limitations.",
+            "workaround": "Scanner runs automatically daily at 6 AM PST, or use: modal run modal_scanner.py --daily",
+            "info": "Modal doesn't allow cross-app function calls from within functions for security reasons."
+        }
 
     @web_app.get("/ticker/{ticker_symbol}")
     def ticker(ticker_symbol: str):
