@@ -28,20 +28,9 @@ compute_config = {
 # Create custom image with all dependencies
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install(
-        "pandas>=2.0.0",
-        "yfinance>=0.2.0",
-        "aiohttp>=3.9.0",
-        "requests>=2.31.0",
-        "numpy>=1.24.0",
-    )
-    # Add your requirements
-    .copy_local_file("requirements.txt", "/root/requirements.txt")
-    .run_commands("pip install -r /root/requirements.txt || true")
-    # Copy your code
+    .pip_install_from_requirements("requirements.txt")
     .copy_local_dir("src", "/root/src")
     .copy_local_dir("config", "/root/config")
-    .copy_local_file("config.py", "/root/config.py")
 )
 
 
