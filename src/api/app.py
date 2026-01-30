@@ -2034,10 +2034,24 @@ def api_scan_trigger():
 
         def run_background_scan(ticker_list, scan_mode):
             """Run scan in background thread and save results to CSV."""
-            import asyncio
-            from src.core.async_scanner import AsyncScanner
-            import pandas as pd
-            from pathlib import Path
+            try:
+                import asyncio
+                from src.core.async_scanner import AsyncScanner
+                import pandas as pd
+                from pathlib import Path
+            except Exception as e:
+                error_msg = f"Import error: {type(e).__name__}: {str(e)}"
+                logger.error(f"Failed to import dependencies: {e}", exc_info=True)
+                update_scan_status({
+                    'status': 'error',
+                    'started_at': datetime.now().isoformat(),
+                    'completed_at': datetime.now().isoformat(),
+                    'error': error_msg,
+                    'mode': scan_mode,
+                    'ticker_count': len(ticker_list),
+                    'result_count': 0
+                })
+                return
 
             # Update status: starting
             update_scan_status({
@@ -2077,11 +2091,25 @@ def api_scan_trigger():
             asyncio.set_event_loop(loop)
             df = None
             try:
-                df = loop.run_until_complete(scan())
+                # Run with timeout (5 minutes max)
+                timeout_seconds = 300
+                df = loop.run_until_complete(asyncio.wait_for(scan(), timeout=timeout_seconds))
+            except asyncio.TimeoutError:
+                error_msg = f"Scan timeout after {timeout_seconds}s"
+                logger.error(error_msg)
+                update_scan_status({
+                    'status': 'error',
+                    'completed_at': datetime.now().isoformat(),
+                    'error': error_msg
+                })
             except Exception as e:
                 error_msg = f"Event loop error: {type(e).__name__}: {str(e)}"
                 logger.error(f"Event loop error: {e}", exc_info=True)
-                update_scan_status({'error': error_msg})
+                update_scan_status({
+                    'status': 'error',
+                    'completed_at': datetime.now().isoformat(),
+                    'error': error_msg
+                })
             finally:
                 try:
                     loop.close()
