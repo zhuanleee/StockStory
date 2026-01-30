@@ -43,7 +43,7 @@ image = (
         #   POLYGON_API_KEY=xxx \
         #   XAI_API_KEY=xxx \
         #   DEEPSEEK_API_KEY=xxx ...
-        modal.Secret.from_name("stock-api-keys", required=False)
+        modal.Secret.from_name("stock-api-keys")
     ],
 )
 def scan_stock_with_ai_brain(ticker: str) -> dict:
