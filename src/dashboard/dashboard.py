@@ -895,8 +895,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-primary" onclick="triggerScan('indices')" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
-                            <button class="btn btn-ghost" onclick="triggerScan('full')" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
+                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
+                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
                             <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
                         </div>
@@ -911,8 +911,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('indices')">🔄 Scan</button>
-                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('full')">🌐 Full</button>
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('indices', event)">🔄 Scan</button>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="triggerScan('full', event)">🌐 Full</button>
                         <select id="filter-strength" class="btn btn-ghost" onchange="filterTable()">
                             <option value="">All Strength</option>
                             <option value="hot">Hot</option>
@@ -1555,8 +1555,13 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
+    <!-- Load modular JavaScript -->
+    <script type="module" src="js/main.js"></script>
+
     <script>
-        const API_BASE = 'https://web-production-46562.up.railway.app/api';
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:5000/api'
+            : `${window.location.protocol}//${window.location.host}/api`;
 
         // =============================================================================
         // SOCKET.IO SYNC CLIENT
@@ -1982,8 +1987,17 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
 
-        async function triggerScan(mode = 'indices') {
-            const btn = event.target;
+        async function triggerScan(mode = 'indices', evt = null) {
+            // Safety: Check if toast is loaded
+            const safeToast = window.toast || { error: console.error, success: console.log };
+
+            // Fix: Get button reference safely - use passed event or find button
+            const btn = evt?.target || document.querySelector(`button[onclick*="triggerScan('${mode}')"]`) || null;
+            if (!btn) {
+                safeToast.error('Button reference not found');
+                return;
+            }
+
             const originalText = btn.textContent;
             const modeLabel = mode === 'full' ? 'Full Universe' : mode === 'indices' ? 'S&P+NASDAQ' : 'Quick';
             btn.textContent = `⏳ Scanning ${modeLabel}...`;
@@ -1993,24 +2007,65 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 const res = await fetch(`${API_BASE}/scan/trigger?mode=${mode}`, { method: 'POST' });
                 const data = await res.json();
 
-                if (data.ok) {
+                if (data.ok && data.status === 'started') {
+                    // Scan started in background (202 Accepted)
+                    btn.textContent = `⏳ Scanning ${data.universe_size} stocks...`;
+                    safeToast.success(`Scan started! Processing ${data.universe_size} stocks in background.`, 5000);
+
+                    // Poll for results every 10 seconds
+                    let pollCount = 0;
+                    const maxPolls = 30; // 5 minutes max
+                    const pollInterval = setInterval(async () => {
+                        pollCount++;
+                        try {
+                            await fetchScan();
+                            // If we got new data, stop polling
+                            clearInterval(pollInterval);
+                            btn.textContent = '✅ Scan complete!';
+                            safeToast.success('Scan results updated!');
+                            setTimeout(() => {
+                                btn.textContent = originalText;
+                                btn.disabled = false;
+                            }, 2000);
+                        } catch (e) {
+                            // Continue polling
+                            if (pollCount >= maxPolls) {
+                                clearInterval(pollInterval);
+                                btn.textContent = '⏰ Timed out';
+                                setTimeout(() => {
+                                    btn.textContent = originalText;
+                                    btn.disabled = false;
+                                }, 2000);
+                            }
+                        }
+                    }, 10000); // Poll every 10 seconds
+
+                    // Re-enable button after 5 seconds (allow manual refresh)
+                    setTimeout(() => {
+                        btn.disabled = false;
+                    }, 5000);
+
+                } else if (data.ok && data.scanned !== undefined) {
+                    // Legacy response (scan completed immediately)
                     btn.textContent = `✅ ${data.scanned} stocks!`;
-                    // Refresh the scan data
                     await fetchScan();
                     setTimeout(() => {
                         btn.textContent = originalText;
                         btn.disabled = false;
                     }, 2000);
                 } else {
-                    btn.textContent = '❌ ' + (data.error || 'Failed').substring(0, 20);
+                    const errorMsg = data.error || 'Scan failed';
+                    btn.textContent = '❌ ' + errorMsg.substring(0, 20);
+                    safeToast.error('Scan failed: ' + errorMsg);
                     setTimeout(() => {
                         btn.textContent = originalText;
                         btn.disabled = false;
                     }, 3000);
                 }
             } catch (e) {
-                console.warn('Trigger scan failed:', e);
+                console.error('Trigger scan failed:', e);
                 btn.textContent = '❌ Error';
+                safeToast.error('Scan error: ' + (e.message || 'Network issue'));
                 setTimeout(() => {
                     btn.textContent = originalText;
                     btn.disabled = false;
