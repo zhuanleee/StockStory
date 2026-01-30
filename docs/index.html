@@ -2028,7 +2028,9 @@
                 const stocks = data.results || data.stocks || [];
                 console.log('📊 Stocks array length:', stocks.length);
 
-                if (data.ok && stocks.length > 0) {
+                // Fix: Check for data.status === 'success' OR stocks.length > 0
+                // API returns {status: 'success', results: [...]} not {ok: true}
+                if ((data.status === 'success' || data.ok) && stocks.length > 0) {
                     console.log('✅ Rendering', stocks.length, 'stocks');
                     renderTopPicks(stocks);
                     renderScanTable(stocks);
@@ -2042,6 +2044,7 @@
                     // Show empty state when no data
                     console.log('⚠️ No scan data available:', data.message || 'Scanner has not run yet');
                     console.log('   data.ok:', data.ok);
+                    console.log('   data.status:', data.status);
                     console.log('   stocks.length:', stocks.length);
                 }
             } catch (e) {
