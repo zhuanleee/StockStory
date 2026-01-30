@@ -96,6 +96,17 @@ def handle_exception(error):
 processed_updates = set()
 MAX_PROCESSED = 1000  # Limit memory usage
 
+# Track last scan status for debugging
+last_scan_status = {
+    'status': 'idle',
+    'started_at': None,
+    'completed_at': None,
+    'error': None,
+    'mode': None,
+    'ticker_count': 0,
+    'result_count': 0
+}
+
 
 # =============================================================================
 # SIMPLE HEALTH CHECK - For Digital Ocean monitoring
@@ -2002,10 +2013,22 @@ def api_scan_trigger():
 
         def run_background_scan(ticker_list, scan_mode):
             """Run scan in background thread and save results to CSV."""
+            global last_scan_status
             import asyncio
             from src.core.async_scanner import AsyncScanner
             import pandas as pd
             from pathlib import Path
+
+            # Update status: starting
+            last_scan_status.update({
+                'status': 'running',
+                'started_at': datetime.now().isoformat(),
+                'completed_at': None,
+                'error': None,
+                'mode': scan_mode,
+                'ticker_count': len(ticker_list),
+                'result_count': 0
+            })
 
             async def scan():
                 max_concurrent = 50 if len(ticker_list) > 100 else 25
@@ -2020,7 +2043,9 @@ def api_scan_trigger():
                     logger.info(f"Background scan complete: {len(df) if df is not None else 0} stocks scanned")
                     return df
                 except Exception as e:
+                    error_msg = f"{type(e).__name__}: {str(e)}"
                     logger.error(f"Background scan error: {e}", exc_info=True)
+                    last_scan_status['error'] = error_msg
                     return None
                 finally:
                     try:
@@ -2034,7 +2059,9 @@ def api_scan_trigger():
             try:
                 df = loop.run_until_complete(scan())
             except Exception as e:
+                error_msg = f"Event loop error: {type(e).__name__}: {str(e)}"
                 logger.error(f"Event loop error: {e}", exc_info=True)
+                last_scan_status['error'] = error_msg
             finally:
                 try:
                     loop.close()
@@ -2048,10 +2075,28 @@ def api_scan_trigger():
                     csv_filename = f'scan_{timestamp}.csv'
                     df.to_csv(csv_filename, index=False)
                     logger.info(f"✅ Scan results saved to {csv_filename} ({len(df)} stocks)")
+                    last_scan_status.update({
+                        'status': 'completed',
+                        'completed_at': datetime.now().isoformat(),
+                        'result_count': len(df),
+                        'csv_file': csv_filename
+                    })
                 except Exception as e:
+                    error_msg = f"Failed to save CSV: {type(e).__name__}: {str(e)}"
                     logger.error(f"❌ Failed to save scan results to CSV: {e}", exc_info=True)
+                    last_scan_status.update({
+                        'status': 'error',
+                        'completed_at': datetime.now().isoformat(),
+                        'error': error_msg
+                    })
             else:
-                logger.warning(f"⚠️  Scan completed but no valid results to save (df type: {type(df)}, len: {len(df) if df is not None else 'None'})")
+                warning_msg = f"No valid results (df type: {type(df)}, len: {len(df) if df is not None else 'None'})"
+                logger.warning(f"⚠️  Scan completed but no valid results to save - {warning_msg}")
+                last_scan_status.update({
+                    'status': 'completed_no_results',
+                    'completed_at': datetime.now().isoformat(),
+                    'error': warning_msg if df is None else None
+                })
 
         # Start scan in background thread
         scan_thread = threading.Thread(
@@ -7407,6 +7452,7 @@ except Exception as e:
 @app.route('/api/debug/scan-status')
 def api_debug_scan_status():
     """Debug endpoint to check scan file status and recent activity."""
+    global last_scan_status
     try:
         from pathlib import Path
         import os
@@ -7455,6 +7501,7 @@ def api_debug_scan_status():
             'scan_files': scan_files_info,
             'all_csv_files': csv_files[:20],  # Limit to 20
             'total_files_in_cwd': len(all_files),
+            'last_scan': last_scan_status,
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
