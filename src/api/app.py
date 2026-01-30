@@ -2018,11 +2018,11 @@ def api_scan_trigger():
             tickers = um.get_scan_universe(use_polygon_full=True, min_market_cap=min_mcap)
             logger.info(f"Full scan: {len(tickers)} tickers (min mcap ${min_mcap/1e6:.0f}M)")
         elif mode == 'indices':
-            # S&P 500 + NASDAQ 100 (faster, ~600 stocks)
+            # S&P 500 + NASDAQ stocks with 300M+ market cap
             from src.data.universe_manager import get_universe_manager
             um = get_universe_manager()
-            tickers = um.get_scan_universe(use_polygon_full=False)
-            logger.info(f"Indices scan: {len(tickers)} tickers (S&P500 + NASDAQ100)")
+            tickers = um.get_scan_universe(use_polygon_full=False, min_market_cap=300_000_000)
+            logger.info(f"Indices scan: {len(tickers)} tickers (S&P500 + NASDAQ 300M+)")
         else:
             # Quick scan: top theme stocks
             tickers = [
@@ -2091,8 +2091,8 @@ def api_scan_trigger():
             asyncio.set_event_loop(loop)
             df = None
             try:
-                # Run with timeout (5 minutes max)
-                timeout_seconds = 300
+                # Run with timeout (30 minutes max for comprehensive AI analysis)
+                timeout_seconds = 1800
                 df = loop.run_until_complete(asyncio.wait_for(scan(), timeout=timeout_seconds))
             except asyncio.TimeoutError:
                 error_msg = f"Scan timeout after {timeout_seconds}s"
