@@ -3,7 +3,8 @@
 Modal.com Scanner - AI Brain with Parallel Processing
 
 This runs your full Comprehensive Agentic Brain on Modal's serverless platform.
-Scans 500 stocks in 2 minutes instead of 8 hours.
+Scans 500 stocks in ~5 minutes (10 concurrent GPUs) instead of 8+ hours sequential.
+With GPU: ~6 seconds per stock = 500 stocks in ~5 minutes (50x batches of 10)
 """
 
 import modal
@@ -114,7 +115,8 @@ def daily_scan():
     Daily scan of all S&P 500 + NASDAQ stocks with AI brain.
 
     Runs automatically every day at 6 AM PST.
-    All stocks are scanned IN PARALLEL - takes ~2 minutes for 500 stocks!
+    Scans in batches of 10 (GPU concurrency limit) - takes ~5 minutes for 500 stocks.
+    Each stock: ~6 seconds with GPU, 10 concurrent = 50 batches for 500 stocks.
     """
     import pandas as pd
     import sys
@@ -144,12 +146,14 @@ def daily_scan():
     print(f"⏰ Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print()
 
-    # Run ALL stocks in parallel!
-    print(f"🔄 Scanning {len(tickers)} stocks in PARALLEL...")
-    print("   (Each stock gets its own container with 2 CPU + 4GB RAM)")
+    # Run stocks in parallel (batched by GPU concurrency limit)
+    print(f"🔄 Scanning {len(tickers)} stocks in batches of 10 (GPU limit)...")
+    print("   (Each stock gets: 2 CPU + 4GB RAM + T4 GPU)")
+    print(f"   Expected time: ~{(len(tickers) / 10 * 6):.0f} seconds")
     print()
 
-    # Map function runs all in parallel
+    # Map function runs in parallel, respecting GPU concurrency limit
+    # Modal automatically batches: 10 concurrent GPU containers at a time
     results = list(scan_stock_with_ai_brain.map(tickers))
 
     end_time = datetime.now()
