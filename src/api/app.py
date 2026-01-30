@@ -1845,9 +1845,11 @@ def api_scan_trigger():
             logger.info(f"Quick scan: {len(tickers)} tickers")
 
         def run_background_scan(ticker_list, scan_mode):
-            """Run scan in background thread."""
+            """Run scan in background thread and save results to CSV."""
             import asyncio
             from src.core.async_scanner import AsyncScanner
+            import pandas as pd
+            from pathlib import Path
 
             async def scan():
                 max_concurrent = 50 if len(ticker_list) > 100 else 25
@@ -1863,16 +1865,37 @@ def api_scan_trigger():
                     return df
                 except Exception as e:
                     logger.error(f"Background scan error: {e}", exc_info=True)
-                    raise
+                    return None
                 finally:
-                    await scanner.close()
+                    try:
+                        await scanner.close()
+                    except Exception as e:
+                        logger.error(f"Error closing scanner: {e}")
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            df = None
             try:
-                loop.run_until_complete(scan())
+                df = loop.run_until_complete(scan())
+            except Exception as e:
+                logger.error(f"Event loop error: {e}", exc_info=True)
             finally:
-                loop.close()
+                try:
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"Error closing event loop: {e}")
+
+            # Save results to CSV file if scan succeeded
+            if df is not None and isinstance(df, pd.DataFrame) and len(df) > 0:
+                try:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    csv_filename = f'scan_{timestamp}.csv'
+                    df.to_csv(csv_filename, index=False)
+                    logger.info(f"✅ Scan results saved to {csv_filename} ({len(df)} stocks)")
+                except Exception as e:
+                    logger.error(f"❌ Failed to save scan results to CSV: {e}", exc_info=True)
+            else:
+                logger.warning(f"⚠️  Scan completed but no valid results to save (df type: {type(df)}, len: {len(df) if df is not None else 'None'})")
 
         # Start scan in background thread
         scan_thread = threading.Thread(
