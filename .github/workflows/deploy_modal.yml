@@ -5,8 +5,7 @@ on:
     branches: [main]
     paths:
       - 'modal_scanner.py'
-      - 'modal_api.py'
-      - 'modal_api_full.py'
+      - 'modal_api*.py'
       - 'src/**'
       - '.github/workflows/deploy_modal.yml'
   workflow_dispatch:  # Manual trigger
@@ -40,7 +39,7 @@ jobs:
         run: modal deploy modal_scanner.py
 
       - name: Deploy API to Modal
-        run: modal deploy modal_api_full.py
+        run: modal deploy modal_api_consolidated.py
 
       - name: Deployment complete
         run: |
