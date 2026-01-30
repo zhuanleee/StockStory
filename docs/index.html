@@ -1965,7 +1965,7 @@
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
 
-        async function triggerScan(mode = 'indices', evt = null) {
+        async function triggerScan(mode = 'full', evt = null) {
             // Safety: Check if toast is loaded
             const safeToast = window.toast || { error: console.error, success: console.log };
 
