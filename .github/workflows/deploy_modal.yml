@@ -1,0 +1,44 @@
+name: Deploy to Modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'modal_scanner.py'
+      - 'src/**'
+      - '.github/workflows/deploy_modal.yml'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Modal
+        run: pip install modal
+
+      - name: Authenticate Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          modal token set \
+            --token-id "$MODAL_TOKEN_ID" \
+            --token-secret "$MODAL_TOKEN_SECRET"
+
+      - name: Deploy to Modal
+        run: modal deploy modal_scanner.py
+
+      - name: Deployment complete
+        run: |
+          echo "✅ Modal deployment complete!"
+          echo "📊 Your scanner is now running on Modal"
+          echo "🕐 Daily scans scheduled for 6 AM PST"
