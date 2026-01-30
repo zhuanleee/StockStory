@@ -21,10 +21,11 @@ volume = modal.Volume.from_name("scan-results", create_if_missing=True)
 # Mount path for volume
 VOLUME_PATH = "/data"
 
-# Same image as scanner
+# Same image as scanner + FastAPI for web endpoints
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
+    .pip_install("fastapi[standard]")  # Required for web endpoints
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
 )
@@ -64,7 +65,7 @@ def load_scan_results():
     volumes={VOLUME_PATH: volume},
     secrets=[modal.Secret.from_name("stock-api-keys")],
 )
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def health():
     """
     Health check endpoint
@@ -83,7 +84,7 @@ def health():
     volumes={VOLUME_PATH: volume},
     secrets=[modal.Secret.from_name("stock-api-keys")],
 )
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def scan():
     """
     Get latest scan results
@@ -114,7 +115,7 @@ def scan():
     volumes={VOLUME_PATH: volume},
     secrets=[modal.Secret.from_name("stock-api-keys")],
 )
-@modal.web_endpoint(method="GET")
+@modal.fastapi_endpoint(method="GET")
 def ticker(ticker_symbol: str):
     """
     Get specific ticker data
@@ -156,7 +157,7 @@ def ticker(ticker_symbol: str):
     secrets=[modal.Secret.from_name("stock-api-keys")],
     timeout=600,  # 10 minutes for manual scans
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def scan_trigger(mode: str = "quick"):
     """
     Trigger a new scan
