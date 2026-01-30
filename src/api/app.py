@@ -4562,59 +4562,79 @@ def api_themes_registry():
 
 @app.route('/api/themes/list')
 def api_themes_list():
-    """Get all themes with details (cached 60 minutes)."""
-    cache_key = 'themes_list'
+    """
+    Get all themes with details (reads from background-updated cache).
 
-    # Check cache first (60 minute TTL)
-    cached_data, is_cached = _endpoint_cache.get(cache_key, 3600)
-    if is_cached:
-        cached_data['cached'] = True
-        return jsonify(cached_data)
+    This endpoint reads from a cache file updated by background jobs.
+    Returns instantly without making heavy external API calls.
+    """
+    from pathlib import Path
+    import json
 
-    # Return stale cache if computation in progress
-    if _endpoint_cache.is_computing(cache_key):
-        if cached_data:
-            cached_data['cached'] = True
-            cached_data['computing'] = True
-            return jsonify(cached_data)
-        return jsonify({'ok': False, 'error': 'Computing themes, try again in a moment', 'computing': True})
+    cache_file = Path('.cache/themes_list.json')
 
+    # Try to read from cache file
     try:
-        _endpoint_cache.start_computing(cache_key)
-        from theme_registry import get_registry
+        if cache_file.exists():
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
 
-        registry = get_registry()
-        themes = []
+            # Add metadata
+            data['from_cache'] = True
+            data['cache_age_minutes'] = None
 
-        for theme_id, theme in registry.themes.items():
-            themes.append({
-                'id': theme_id,
-                'name': theme.template.name,
-                'category': theme.template.category,
-                'stage': theme.stage.value,
-                'heat_score': theme.heat_score,
-                'members': len(theme.members),
-                'drivers': theme.get_drivers(),
-                'discovery_method': theme.discovery_method,
-                'discovered_at': theme.discovered_at,
+            if 'updated_at' in data:
+                try:
+                    from datetime import datetime
+                    updated = datetime.fromisoformat(data['updated_at'])
+                    age = (datetime.now() - updated).total_seconds() / 60
+                    data['cache_age_minutes'] = round(age, 1)
+                except:
+                    pass
+
+            return jsonify(data)
+        else:
+            # Cache file doesn't exist yet - trigger background update
+            logger.warning("Themes cache file not found - needs background update")
+
+            # Try to trigger background job (non-blocking)
+            try:
+                import subprocess
+                subprocess.Popen(
+                    ['python3', 'src/jobs/update_themes_cache.py'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                logger.info("Triggered background themes cache update")
+            except:
+                pass
+
+            return jsonify({
+                'ok': False,
+                'error': 'Themes cache not ready',
+                'message': 'Background update triggered. Try again in 2-3 minutes.',
+                'themes': [],
+                'total': 0
             })
 
-        response = {
-            'ok': True,
-            'themes': sorted(themes, key=lambda x: x['heat_score'], reverse=True),
-            'total': len(themes),
-            'timestamp': datetime.now().isoformat(),
-            'cached': False
-        }
-        _endpoint_cache.set(cache_key, response)
-        return jsonify(response)
-    except ImportError:
-        return jsonify({'ok': False, 'error': 'Theme registry not available'}), 503
+    except json.JSONDecodeError as e:
+        logger.error(f"Themes cache file corrupted: {e}")
+        return jsonify({
+            'ok': False,
+            'error': 'Cache file corrupted',
+            'message': 'Background update needed',
+            'themes': [],
+            'total': 0
+        }), 500
+
     except Exception as e:
-        logger.error(f"Themes list error: {e}")
-        return jsonify({'ok': False, 'error': str(e)}), 500
-    finally:
-        _endpoint_cache.stop_computing(cache_key)
+        logger.error(f"Error reading themes cache: {e}")
+        return jsonify({
+            'ok': False,
+            'error': str(e),
+            'themes': [],
+            'total': 0
+        }), 500
 
 
 @app.route('/api/themes/members/<theme_id>')

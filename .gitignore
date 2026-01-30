@@ -94,3 +94,6 @@ docs/_build/
 .do_api_token
 README_DO_API.md
 .do_helper.sh
+
+# Cache files from background jobs
+.cache/
