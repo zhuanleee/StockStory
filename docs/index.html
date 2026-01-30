@@ -1554,6 +1554,13 @@
             }
 
             connect() {
+                // SocketIO is disabled on the backend
+                // Real-time sync is not available in this deployment
+                console.debug('Real-time sync disabled - SocketIO not available on backend');
+                this.updateSyncStatus('unavailable');
+                return;
+
+                /* Disabled - SocketIO not enabled on backend
                 try {
                     // Connect to same origin (API server) with Socket.IO
                     const serverUrl = API_BASE.replace('/api', '');
@@ -1587,6 +1594,7 @@
                     console.debug('Sync server unavailable');
                     this.updateSyncStatus('unavailable');
                 }
+                */
             }
 
             onConnect() {
