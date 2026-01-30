@@ -10,9 +10,16 @@ With GPU: ~6 seconds per stock = 500 stocks in ~5 minutes (50x batches of 10)
 import modal
 from datetime import datetime
 from pathlib import Path
+import json
 
 # Create Modal app
 app = modal.App("stock-scanner-ai-brain")
+
+# Create persistent volume for storing scan results
+volume = modal.Volume.from_name("scan-results", create_if_missing=True)
+
+# Mount path for volume
+VOLUME_PATH = "/data"
 
 # Define compute requirements per stock
 # Each stock gets its own container with these resources
@@ -109,6 +116,7 @@ def scan_stock_with_ai_brain(ticker: str) -> dict:
     image=image,
     timeout=3600,  # 1 hour max for full scan
     schedule=modal.Cron("0 14 * * *"),  # Run daily at 6 AM PST (14:00 UTC)
+    volumes={VOLUME_PATH: volume},
 )
 def daily_scan():
     """
@@ -185,12 +193,31 @@ def daily_scan():
     if 'story_score' in df.columns:
         df = df.sort_values('story_score', ascending=False)
 
-    # Save results to CSV
+    # Save results to CSV and JSON
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     csv_filename = f'scan_{timestamp}.csv'
+    json_filename = f'scan_{timestamp}.json'
 
     print(f"\n💾 Saving results to {csv_filename}...")
     df.to_csv(csv_filename, index=False)
+
+    # Save to JSON in Modal Volume for API access
+    scan_data = {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "total": len(tickers),
+        "successful": len(successful),
+        "failed": len(failed),
+        "duration_seconds": duration,
+        "results": successful
+    }
+
+    json_path = Path(VOLUME_PATH) / json_filename
+    with open(json_path, 'w') as f:
+        json.dump(scan_data, f, indent=2)
+
+    volume.commit()  # Persist to volume
+    print(f"💾 Saved to Modal Volume: {json_filename}")
 
     # Print top 10
     print(f"\n📈 Top 10 Stocks by Story Score:")
@@ -210,8 +237,34 @@ def daily_scan():
     print(f"⚡ Average time per stock: {duration/len(tickers):.2f} seconds")
     print("=" * 70)
 
-    # TODO: Upload CSV to Digital Ocean Spaces or S3
-    # TODO: Notify via Telegram
+    # Send Telegram notification with top picks
+    try:
+        import os
+        telegram_enabled = os.environ.get('TELEGRAM_BOT_TOKEN') and os.environ.get('TELEGRAM_CHAT_ID')
+
+        if telegram_enabled:
+            top_picks = df.head(10)
+            message = f"🤖 *Daily Scan Complete!*\n\n"
+            message += f"📊 Scanned: {len(successful)}/{len(tickers)} stocks\n"
+            message += f"⏱️  Time: {duration/60:.1f} minutes\n\n"
+            message += f"📈 *Top 10 Picks:*\n"
+
+            for i, row in top_picks.iterrows():
+                ticker = row.get('ticker', 'Unknown')
+                score = row.get('story_score', 0)
+                strength = row.get('story_strength', 'unknown')
+                message += f"{i+1}. `{ticker}` - {score:.1f} ({strength})\n"
+
+            message += f"\n🔗 View: https://zhuanleee.github.io/stock_scanner_bot"
+
+            # Send notification
+            from modal_api import send_telegram_notification
+            send_telegram_notification.remote(message)
+            print("📱 Telegram notification sent")
+        else:
+            print("⚠️  Telegram not configured - skipping notification")
+    except Exception as e:
+        print(f"⚠️  Telegram notification failed: {e}")
 
     return {
         'success': True,
