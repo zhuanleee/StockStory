@@ -1,0 +1,57 @@
+name: Bot Listener
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9 AM - 5 PM EST, Mon-Fri)
+    - cron: '*/15 13-22 * * 1-5'  # UTC times (13:00-22:00 UTC = 9 AM-5 PM EST)
+
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  listen:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install modal
+
+      - name: Authenticate Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          modal token set \
+            --token-id "$MODAL_TOKEN_ID" \
+            --token-secret "$MODAL_TOKEN_SECRET"
+
+      - name: Check for Telegram commands
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          python main.py bot
+
+      - name: Commit offset file
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add telegram_offset.json || true
+          git commit -m "Update bot offset [skip ci]" || true
+          git push || true
