@@ -105,7 +105,27 @@ def create_fastapi_app():
 
     @web_app.post("/scan/trigger")
     def scan_trigger(mode: str = Query("quick")):
-        return {"ok": False, "message": "Use Modal scanner directly for scans"}
+        """Trigger a manual scan by calling the Modal scanner function."""
+        try:
+            # Import the scanner function
+            from modal_scanner import app as scanner_app
+
+            # Trigger the scan asynchronously
+            # Note: This will use Modal compute credits
+            scanner_function = scanner_app.lookup("run_scan")
+
+            # Call the scanner function asynchronously
+            call = scanner_function.spawn()
+
+            return {
+                "ok": True,
+                "status": "started",
+                "message": "Scan started in background",
+                "mode": mode,
+                "call_id": call.object_id
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e), "message": "Failed to trigger scan"}
 
     @web_app.get("/ticker/{ticker_symbol}")
     def ticker(ticker_symbol: str):
