@@ -110,11 +110,14 @@ def create_fastapi_app():
             import modal as modal_sdk
 
             # Look up the scanner app and function
-            scanner_app = modal_sdk.App.lookup("stock-scanner", create_if_missing=False)
-            run_scan = scanner_app.function("run_scan")
+            # App name: "stock-scanner-ai-brain" (from modal_scanner.py line 16)
+            scanner_app = modal_sdk.App.lookup("stock-scanner-ai-brain", create_if_missing=False)
+
+            # Get the main scan function (the cron-scheduled function)
+            daily_scan_func = scanner_app.lookup("daily_scan")
 
             # Trigger the scan asynchronously
-            call = run_scan.spawn()
+            call = daily_scan_func.spawn()
 
             return {
                 "ok": True,
