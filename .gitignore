@@ -91,3 +91,5 @@ docs/_build/
 !data/cache/.gitkeep
 !data/learning/.gitkeep
 !data/user/.gitkeep
+.do_api_token
+README_DO_API.md
