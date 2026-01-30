@@ -7497,6 +7497,46 @@ except Exception as e:
     logger.warning(f"Learning System API not available: {e}")
 
 
+@app.route('/api/debug/test-scan')
+def api_debug_test_scan():
+    """Test scan endpoint that creates a dummy CSV to verify infrastructure."""
+    try:
+        import pandas as pd
+        from pathlib import Path
+
+        # Create dummy scan data
+        dummy_data = {
+            'ticker': ['NVDA', 'AMD', 'AAPL'],
+            'story_score': [85.5, 78.2, 72.1],
+            'story_strength': ['hot', 'developing', 'developing'],
+            'hottest_theme': ['AI/ML', 'Semiconductors', 'Consumer Tech'],
+            'change_pct': [2.5, 1.8, 0.9],
+            'volume': [50000000, 35000000, 45000000],
+            'rs_rating': [95, 88, 82],
+            'sector': ['Technology', 'Technology', 'Technology']
+        }
+
+        df = pd.DataFrame(dummy_data)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_filename = f'scan_{timestamp}.csv'
+        df.to_csv(csv_filename, index=False)
+
+        return jsonify({
+            'ok': True,
+            'message': f'Test CSV created: {csv_filename}',
+            'rows': len(df),
+            'file': csv_filename,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Test scan error: {e}", exc_info=True)
+        return jsonify({
+            'ok': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
+
+
 @app.route('/api/debug/scan-status')
 def api_debug_scan_status():
     """Debug endpoint to check scan file status and recent activity."""
