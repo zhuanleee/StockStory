@@ -689,10 +689,12 @@ class AsyncStoryScorer:
         # Get theme data from registry
         theme_data = []
         try:
-            from theme_registry import get_theme_membership_for_scoring
+            from src.themes.theme_registry import get_theme_membership_for_scoring
             theme_data = get_theme_membership_for_scoring(ticker) or []
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.debug(f"Theme registry not available: {e}")
+        except Exception as e:
+            logger.debug(f"Failed to get theme data for {ticker}: {e}")
 
         # Calculate technical data from price data
         price = 0
