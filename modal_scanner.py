@@ -240,9 +240,12 @@ def daily_scan():
     # Send Telegram notification with top picks
     try:
         import os
-        telegram_enabled = os.environ.get('TELEGRAM_BOT_TOKEN') and os.environ.get('TELEGRAM_CHAT_ID')
+        import requests
 
-        if telegram_enabled:
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+        if bot_token and chat_id:
             top_picks = df.head(10)
             message = f"🤖 *Daily Scan Complete!*\n\n"
             message += f"📊 Scanned: {len(successful)}/{len(tickers)} stocks\n"
@@ -257,10 +260,19 @@ def daily_scan():
 
             message += f"\n🔗 View: https://zhuanleee.github.io/stock_scanner_bot"
 
-            # Send notification
-            from modal_api import send_telegram_notification
-            send_telegram_notification.remote(message)
-            print("📱 Telegram notification sent")
+            # Send notification directly (no cross-app imports)
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            }
+
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                print("📱 Telegram notification sent")
+            else:
+                print(f"⚠️  Telegram failed: {response.status_code}")
         else:
             print("⚠️  Telegram not configured - skipping notification")
     except Exception as e:

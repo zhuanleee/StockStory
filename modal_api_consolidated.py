@@ -9,8 +9,6 @@ Total Routes: 40+
 """
 
 import modal
-from fastapi import FastAPI, Query, Path as FastAPIPath
-from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from pathlib import Path
 import json
@@ -36,17 +34,7 @@ image = (
     .add_local_dir("config", remote_path="/root/config")
 )
 
-# Create FastAPI app
-web_app = FastAPI(title="Stock Scanner API", version="2.0")
-
-# Add CORS
-web_app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# FastAPI app will be created inside Modal function
 
 
 # =============================================================================
@@ -601,4 +589,22 @@ def fastapi_app():
     Single Modal endpoint serving ALL routes via FastAPI.
     Bypasses 8 endpoint limit.
     """
+    # Import FastAPI inside function (only available in container)
+    from fastapi import FastAPI, Query
+    from fastapi.middleware.cors import CORSMiddleware
+
+    # Create app
+    web_app = FastAPI(title="Stock Scanner API", version="2.0")
+
+    # Add CORS
+    web_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Note: All route definitions above will need to be moved here
+    # or registered programmatically
     return web_app
