@@ -517,6 +517,21 @@ def get_executive_sentiment(ticker: str) -> str:
 # TELEGRAM FORMATTING
 # =============================================================================
 
+def generate_executive_briefing() -> dict:
+    """
+    Generate a simple executive briefing for the dashboard.
+    Returns a summary of market state and key themes.
+    """
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "market_state": "No scan data available yet",
+        "summary": "Daily scanner will run at 6 AM PST to populate briefing data",
+        "key_themes": [],
+        "hot_stocks": [],
+        "message": "Briefing will be available after the first scan completes"
+    }
+
+
 def format_commentary_message(commentary: ExecutiveCommentarySummary) -> str:
     """Format executive commentary for Telegram."""
     msg = f"🎤 *EXECUTIVE COMMENTARY: ${commentary.ticker}*\n"
