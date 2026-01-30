@@ -139,8 +139,24 @@ def create_fastapi_app():
     @web_app.get("/themes/list")
     def themes_list():
         try:
-            from src.intelligence.theme_discovery import get_all_themes
-            themes = get_all_themes()
+            # Extract themes from scan results
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": False, "data": []}
+
+            # Count stocks per theme
+            theme_counts = {}
+            for stock in results['results']:
+                theme = stock.get('hottest_theme', 'No Theme')
+                if theme and theme != 'No Theme':
+                    theme_counts[theme] = theme_counts.get(theme, 0) + 1
+
+            # Format as list
+            themes = [
+                {"name": theme, "count": count, "active": True}
+                for theme, count in sorted(theme_counts.items(), key=lambda x: -x[1])
+            ]
+
             return {"ok": True, "data": themes}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -148,9 +164,43 @@ def create_fastapi_app():
     @web_app.get("/theme-intel/radar")
     def theme_radar():
         try:
-            from src.intelligence.theme_intelligence import get_theme_radar
-            radar = get_theme_radar()
-            return {"ok": True, "data": radar}
+            # Extract theme radar from scan results
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": True, "data": []}
+
+            # Aggregate theme data
+            theme_data = {}
+            for stock in results['results']:
+                theme = stock.get('hottest_theme', 'No Theme')
+                if theme and theme != 'No Theme':
+                    if theme not in theme_data:
+                        theme_data[theme] = {
+                            "theme": theme,
+                            "stocks": [],
+                            "avg_score": 0,
+                            "total_score": 0,
+                            "count": 0
+                        }
+                    theme_data[theme]["stocks"].append(stock.get('ticker'))
+                    theme_data[theme]["total_score"] += stock.get('story_score', 0)
+                    theme_data[theme]["count"] += 1
+
+            # Calculate averages and format
+            radar = []
+            for theme, data in theme_data.items():
+                radar.append({
+                    "theme": theme,
+                    "stock_count": data["count"],
+                    "avg_score": round(data["total_score"] / data["count"], 1) if data["count"] > 0 else 0,
+                    "top_stocks": data["stocks"][:5],  # Top 5
+                    "heat": "hot" if data["count"] >= 10 else "developing"
+                })
+
+            # Sort by stock count
+            radar.sort(key=lambda x: -x["stock_count"])
+
+            return {"ok": True, "data": radar[:20]}  # Top 20 themes
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -276,9 +326,9 @@ def create_fastapi_app():
     @web_app.get("/sec/ma-radar")
     def sec_ma_radar():
         try:
-            from src.data.sec_edgar import get_ma_radar
-            radar = get_ma_radar()
-            return {"ok": True, "data": radar}
+            from src.data.sec_edgar import get_pending_mergers_from_sec
+            radar = get_pending_mergers_from_sec()
+            return {"ok": True, "data": radar[:20] if radar else []}  # Top 20
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
