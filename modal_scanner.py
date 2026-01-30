@@ -115,14 +115,14 @@ def scan_stock_with_ai_brain(ticker: str) -> dict:
 @app.function(
     image=image,
     timeout=3600,  # 1 hour max for full scan
-    schedule=modal.Cron("0 14 * * *"),  # Run daily at 6 AM PST (14:00 UTC)
+    schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6 AM PST (14:00 UTC)
     volumes={VOLUME_PATH: volume},
 )
 def daily_scan():
     """
     Daily scan of all S&P 500 + NASDAQ stocks with AI brain.
 
-    Runs automatically every day at 6 AM PST.
+    Runs automatically Mon-Fri at 6 AM PST when markets are open.
     Scans in batches of 10 (GPU concurrency limit) - takes ~5 minutes for 500 stocks.
     Each stock: ~6 seconds with GPU, 10 concurrent = 50 batches for 500 stocks.
     """
@@ -133,6 +133,61 @@ def daily_scan():
     print("=" * 70)
     print("🚀 STARTING DAILY AI BRAIN SCAN")
     print("=" * 70)
+
+    # Check if market is open today (skip holidays)
+    today = datetime.now()
+
+    # US Market Holidays 2026 (NYSE/NASDAQ)
+    market_holidays_2026 = [
+        datetime(2026, 1, 1),   # New Year's Day
+        datetime(2026, 1, 19),  # MLK Day
+        datetime(2026, 2, 16),  # Presidents Day
+        datetime(2026, 4, 3),   # Good Friday
+        datetime(2026, 5, 25),  # Memorial Day
+        datetime(2026, 7, 3),   # Independence Day (observed)
+        datetime(2026, 9, 7),   # Labor Day
+        datetime(2026, 11, 26), # Thanksgiving
+        datetime(2026, 12, 25), # Christmas
+    ]
+
+    # Check if today is a holiday
+    today_date = datetime(today.year, today.month, today.day)
+    if today_date in market_holidays_2026:
+        holiday_name = {
+            (1, 1): "New Year's Day",
+            (1, 19): "Martin Luther King Jr. Day",
+            (2, 16): "Presidents Day",
+            (4, 3): "Good Friday",
+            (5, 25): "Memorial Day",
+            (7, 3): "Independence Day",
+            (9, 7): "Labor Day",
+            (11, 26): "Thanksgiving",
+            (12, 25): "Christmas"
+        }.get((today.month, today.day), "Market Holiday")
+
+        print(f"📅 Today is {holiday_name} - Market is CLOSED")
+        print("⏭️  Skipping scan. Next scan: Next market open day")
+        print("=" * 70)
+        return {
+            'success': False,
+            'reason': 'market_holiday',
+            'holiday': holiday_name,
+            'date': today.strftime('%Y-%m-%d')
+        }
+
+    # Check if weekend (should not happen with Mon-Fri cron, but just in case)
+    if today.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        print(f"📅 Today is {today.strftime('%A')} - Market is CLOSED")
+        print("⏭️  Skipping scan. Next scan: Monday")
+        print("=" * 70)
+        return {
+            'success': False,
+            'reason': 'weekend',
+            'date': today.strftime('%Y-%m-%d')
+        }
+
+    print(f"📅 Market is OPEN - {today.strftime('%A, %B %d, %Y')}")
+    print()
 
     # Get stock universe
     try:
