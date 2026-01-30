@@ -928,7 +928,7 @@ class AsyncScanner:
                     logger.warning(f"Polygon only got {len(price_data_dict)}/{len(tickers)} tickers, trying yfinance")
 
             except Exception as e:
-                logger.error(f"Polygon price data error: {e}, falling back to yfinance")
+                logger.error(f"Polygon price data error: {type(e).__name__}: {e}, falling back to yfinance", exc_info=True)
 
         # Fallback to yfinance
         logger.info("Using yfinance for price data...")
@@ -967,12 +967,12 @@ class AsyncScanner:
                                 ticker_df = ticker_df.rename(columns={'adj close': 'close'})
                             price_data_dict[ticker] = ticker_df
                     except Exception as e:
-                        logger.debug(f"yfinance parse error for {ticker}: {e}")
+                        logger.warning(f"yfinance parse error for {ticker}: {type(e).__name__}: {e}")
 
                 logger.info(f"yfinance fetched {len(price_data_dict)} tickers")
 
         except Exception as e:
-            logger.error(f"yfinance price data error: {e}")
+            logger.error(f"yfinance price data error: {type(e).__name__}: {e}", exc_info=True)
 
         return price_data_dict
 
@@ -990,7 +990,7 @@ class AsyncScanner:
                 self._stats['scanned'] += 1
                 return result
             except Exception as e:
-                logger.debug(f"Error scanning {ticker}: {e}")
+                logger.error(f"Error scanning {ticker}: {type(e).__name__}: {e}", exc_info=True)
                 self._stats['errors'] += 1
                 return None
 
@@ -1075,7 +1075,7 @@ class AsyncScanner:
             if isinstance(result, dict):
                 valid_results.append(result)
             elif isinstance(result, Exception):
-                logger.debug(f"Scan error for {tickers[i]}: {result}")
+                logger.error(f"Scan error for {tickers[i]}: {type(result).__name__}: {result}")
 
         # Create DataFrame
         if valid_results:

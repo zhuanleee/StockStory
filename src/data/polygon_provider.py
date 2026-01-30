@@ -71,13 +71,13 @@ class PolygonProvider:
                     logger.warning("Polygon rate limit hit")
                     return None
                 else:
-                    logger.debug(f"Polygon API error: {response.status}")
+                    logger.error(f"Polygon API error {response.status} for {endpoint}: {await response.text()}")
                     return None
         except asyncio.TimeoutError:
-            logger.debug(f"Polygon request timeout: {endpoint}")
+            logger.warning(f"Polygon request timeout: {endpoint}")
             return None
         except Exception as e:
-            logger.debug(f"Polygon request error: {e}")
+            logger.error(f"Polygon request error for {endpoint}: {type(e).__name__}: {e}", exc_info=True)
             return None
 
     async def get_aggregates(
