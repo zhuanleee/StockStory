@@ -1845,7 +1845,7 @@ def api_scan_trigger():
             logger.info(f"Quick scan: {len(tickers)} tickers")
 
         def run_background_scan(ticker_list, scan_mode):
-            """Run scan in background thread and save results to CSV."""
+            """Run scan in background thread."""
             import asyncio
             from src.core.async_scanner import AsyncScanner
 
@@ -1870,18 +1870,7 @@ def api_scan_trigger():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                df = loop.run_until_complete(scan())
-
-                # Save results to CSV file for /api/scan endpoint
-                if df is not None and len(df) > 0:
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    csv_filename = f'scan_{timestamp}.csv'
-                    df.to_csv(csv_filename, index=False)
-                    logger.info(f"Scan results saved to {csv_filename} ({len(df)} stocks)")
-                else:
-                    logger.warning("Scan completed but no results to save")
-            except Exception as e:
-                logger.error(f"Error in background scan: {e}", exc_info=True)
+                loop.run_until_complete(scan())
             finally:
                 loop.close()
 
