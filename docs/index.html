@@ -20,8 +20,8 @@
             --red-bg: rgba(239, 68, 68, 0.1);
             --blue: #3b82f6;
             --blue-bg: rgba(59, 130, 246, 0.1);
-            --yellow: #fbbf24;  /* Updated for WCAG AA contrast (5.1:1) */
-            --yellow-bg: rgba(251, 191, 36, 0.1);
+            --yellow: #eab308;
+            --yellow-bg: rgba(234, 179, 8, 0.1);
             --purple: #a855f7;
             --purple-bg: rgba(168, 85, 247, 0.1);
         }
@@ -34,19 +34,6 @@
             color: var(--text);
             line-height: 1.5;
             min-height: 100vh;
-        }
-
-        /* Screen Reader Only */
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
         }
 
         /* Header */
@@ -125,58 +112,6 @@
         .btn-ghost:hover {
             background: var(--bg-hover);
             color: var(--text);
-        }
-
-        /* Keyboard Focus Indicators */
-        *:focus {
-            outline: 2px solid var(--blue);
-            outline-offset: 2px;
-        }
-
-        *:focus:not(:focus-visible) {
-            outline: none;
-        }
-
-        *:focus-visible {
-            outline: 2px solid var(--blue);
-            outline-offset: 2px;
-        }
-
-        .btn:focus-visible {
-            outline: 2px solid var(--blue);
-            outline-offset: 2px;
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
-        }
-
-        input:focus-visible,
-        select:focus-visible,
-        textarea:focus-visible {
-            outline: 2px solid var(--blue);
-            outline-offset: 2px;
-            border-color: var(--blue);
-        }
-
-        /* Button States */
-        .btn:active {
-            transform: translateY(1px);
-        }
-
-        .btn:disabled,
-        .btn[disabled] {
-            opacity: 0.5;
-            cursor: not-allowed;
-            pointer-events: none;
-        }
-
-        .btn-primary:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
-        }
-
-        .btn-ghost:hover {
-            background: var(--bg-hover);
-            transform: translateY(-1px);
         }
 
         .update-time {
@@ -298,33 +233,8 @@
         .grid-5 { grid-template-columns: repeat(5, 1fr); }
         .grid-sidebar { grid-template-columns: 1fr 320px; }
 
-        /* Tablet (768px-1024px) */
-        @media (min-width: 768px) and (max-width: 1024px) {
-            .grid-3 {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .grid-4 {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .grid-5 {
-                grid-template-columns: repeat(3, 1fr);
-            }
-
-            .market-pulse {
-                display: flex !important;
-                flex-wrap: wrap;
-                gap: 12px;
-            }
-
-            .pulse-item {
-                font-size: 0.8rem;
-            }
-        }
-
         @media (max-width: 1024px) {
-            .grid-2, .grid-sidebar { grid-template-columns: 1fr; }
+            .grid-2, .grid-3, .grid-4, .grid-5, .grid-sidebar { grid-template-columns: 1fr; }
         }
 
         /* Cards */
@@ -333,12 +243,6 @@
             border: 1px solid var(--border);
             border-radius: 12px;
             overflow: hidden;
-            transition: all 0.15s ease;
-        }
-
-        .card:hover {
-            border-color: var(--blue);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         .card-header {
@@ -402,15 +306,7 @@
             transition: background 0.15s;
         }
 
-        .top-pick {
-            transition: all 0.15s ease;
-        }
-
-        .top-pick:hover {
-            background: var(--bg-hover);
-            transform: translateX(4px);
-        }
-
+        .top-pick:hover { background: var(--bg-hover); }
         .top-pick:last-child { border-bottom: none; }
 
         .pick-rank {
@@ -479,17 +375,12 @@
             font-size: 0.8125rem;
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.15s ease;
             transition: all 0.15s;
             border: 1px solid var(--border);
             background: var(--bg-card);
         }
 
-        .theme-pill:hover {
-            background: var(--blue-bg);
-            border-color: var(--blue);
-            transform: translateY(-2px);
-        }
+        .theme-pill:hover { border-color: var(--blue); }
         .theme-pill.active {
             background: var(--blue);
             border-color: var(--blue);
@@ -698,34 +589,14 @@
         /* Empty State */
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 48px 24px;
             color: var(--text-muted);
         }
 
         .empty-state-icon {
-            font-size: 4rem;
-            opacity: 0.8;
-            margin-bottom: 16px;
-            filter: grayscale(0.3);
-        }
-
-        .empty-state-title {
-            font-size: 1.125rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: var(--text);
-        }
-
-        .empty-state-description {
-            font-size: 0.875rem;
-            margin-bottom: 24px;
-            max-width: 400px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .empty-state-cta {
-            margin-top: 16px;
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+            opacity: 0.5;
         }
 
         /* Modal */
@@ -738,16 +609,9 @@
             justify-content: center;
             z-index: 1000;
             padding: 24px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            pointer-events: none;
         }
 
-        .modal-overlay.active {
-            display: flex;
-            opacity: 1;
-            pointer-events: all;
-        }
+        .modal-overlay.active { display: flex; }
 
         .modal {
             background: var(--bg-card);
@@ -756,14 +620,6 @@
             max-width: 600px;
             max-height: 80vh;
             overflow: auto;
-            transform: scale(0.95) translateY(-20px);
-            opacity: 0;
-            transition: transform 0.2s ease, opacity 0.2s ease;
-        }
-
-        .modal-overlay.active .modal {
-            transform: scale(1) translateY(0);
-            opacity: 1;
         }
 
         .modal-header {
@@ -794,30 +650,10 @@
 
         /* Loading */
         .skeleton {
-            background: linear-gradient(
-                90deg,
-                var(--bg-card) 25%,
-                var(--bg-hover) 50%,
-                var(--bg-card) 75%
-            );
+            background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%);
             background-size: 200% 100%;
             animation: shimmer 1.5s infinite;
-            border-radius: 6px;
-        }
-
-        .skeleton-text {
-            height: 16px;
-            margin-bottom: 8px;
-        }
-
-        .skeleton-heading {
-            height: 24px;
-            width: 60%;
-            margin-bottom: 12px;
-        }
-
-        .skeleton-card {
-            height: 120px;
+            border-radius: 4px;
         }
 
         @keyframes shimmer {
@@ -825,172 +661,12 @@
             100% { background-position: -200% 0; }
         }
 
-        /* Loading Spinner */
-        .loading-spinner {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-            gap: 16px;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border);
-            border-top-color: var(--blue);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .loading-text {
-            color: var(--text-muted);
-            font-size: 0.875rem;
-        }
-
-        /* Loading Button State */
-        .btn-loading {
-            position: relative;
-            color: transparent;
-            pointer-events: none;
-        }
-
-        .btn-loading::after {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            top: 50%;
-            left: 50%;
-            margin-left: -8px;
-            margin-top: -8px;
-            border: 2px solid transparent;
-            border-top-color: currentColor;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-
-        /* Progress Bar */
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: var(--border);
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 12px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--blue);
-            transition: width 0.3s ease;
-            border-radius: 2px;
-        }
-
-        .progress-text {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 8px;
-            text-align: center;
-        }
-
-        /* Form Validation */
-        .input-wrapper {
-            position: relative;
-            margin-bottom: 20px;
-        }
-
-        .input-error {
-            border-color: var(--red) !important;
-            background: var(--red-bg);
-        }
-
-        .input-success {
-            border-color: var(--green) !important;
-        }
-
-        .error-message {
-            color: var(--red);
-            font-size: 0.75rem;
-            margin-top: 4px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .success-message {
-            color: var(--green);
-            font-size: 0.75rem;
-            margin-top: 4px;
-        }
-
         /* Responsive */
-        /* Mobile (max-width: 768px) */
         @media (max-width: 768px) {
-            .header-content {
-                flex-wrap: wrap;
-                gap: 12px;
-            }
-
-            .market-pulse {
-                order: 3;
-                width: 100%;
-                justify-content: space-between;
-                font-size: 0.75rem;
-            }
-
+            .header-content { flex-wrap: wrap; }
+            .market-pulse { display: none; }
             .main { padding: 16px; }
-
             .stats-row { grid-template-columns: repeat(2, 1fr); }
-
-            .modal {
-                width: 95vw;
-                max-height: 90vh;
-                overflow-y: auto;
-                margin: 20px auto;
-            }
-
-            /* Better table scrolling */
-            .table-wrapper {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                margin: 0 -20px;
-                padding: 0 20px;
-            }
-
-            /* Touch-friendly targets */
-            .btn {
-                min-height: 44px;
-                padding: 12px 16px;
-            }
-
-            input,
-            select,
-            textarea {
-                min-height: 44px;
-                font-size: 16px;  /* prevent iOS zoom */
-            }
-        }
-
-        /* Extra Small Mobile (max-width: 400px) */
-        @media (max-width: 400px) {
-            .btn {
-                padding: 6px 12px;
-                font-size: 0.8rem;
-            }
-
-            .stats-row {
-                grid-template-columns: 1fr;
-            }
-
-            .logo {
-                font-size: 1rem;
-            }
         }
 
         /* Scrollbar */
@@ -1034,34 +710,34 @@
                     <span id="sync-status-text" style="font-size: 0.7rem; color: var(--text-muted);">OFFLINE</span>
                 </div>
                 <span class="update-time">Updated: <span id="last-update">--:--</span></span>
-                <button class="btn btn-ghost" onclick="refreshAll()" aria-label="Refresh all data">↻ Refresh</button>
+                <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
                 <a href="https://t.me/Stocks_Story_Bot" target="_blank" class="btn btn-primary">Open Bot</a>
             </div>
         </div>
     </header>
 
     <!-- Tabs -->
-    <nav class="tabs" role="tablist" aria-label="Dashboard navigation">
+    <nav class="tabs">
         <div class="tabs-inner">
-            <button class="tab active" data-tab="overview" role="tab" aria-selected="true" aria-controls="overview">Overview</button>
-            <button class="tab" data-tab="scan" role="tab" aria-selected="false" aria-controls="scan">Scan Results</button>
-            <button class="tab" data-tab="themes" role="tab" aria-selected="false" aria-controls="themes">Themes</button>
-            <button class="tab" data-tab="themeradar" role="tab" aria-selected="false" aria-controls="themeradar">Theme Radar</button>
-            <button class="tab" data-tab="sec" role="tab" aria-selected="false" aria-controls="sec">SEC Intel</button>
-            <button class="tab" data-tab="trades" role="tab" aria-selected="false" aria-controls="trades">Trades</button>
-            <button class="tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="analytics">Analytics</button>
+            <div class="tab active" data-tab="overview">Overview</div>
+            <div class="tab" data-tab="scan">Scan Results</div>
+            <div class="tab" data-tab="themes">Themes</div>
+            <div class="tab" data-tab="themeradar">Theme Radar</div>
+            <div class="tab" data-tab="sec">SEC Intel</div>
+            <div class="tab" data-tab="trades">Trades</div>
+            <div class="tab" data-tab="analytics">Analytics</div>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="main">
         <!-- Overview Tab -->
-        <div id="overview" class="tab-content active" role="tabpanel" aria-labelledby="overview-tab">
+        <div id="overview" class="tab-content active">
             <!-- Stats Row -->
             <div class="stats-row">
                 <div class="stat">
                     <div class="stat-label">Stocks Scanned</div>
-                    <div class="stat-value blue" id="stat-scanned">0</div>
+                    <div class="stat-value blue" id="stat-scanned">50</div>
                 </div>
                 <div class="stat">
                     <div class="stat-label">Hot Opportunities</div>
@@ -1197,9 +873,9 @@
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;" aria-label="Scan S&P 500 and NASDAQ 100 stocks"><span aria-hidden="true">🔄</span> Scan S&P + NASDAQ (~600)</button>
-                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;" aria-label="Scan all US stocks with 300 million plus market cap"><span aria-hidden="true">🌐</span> Full Scan (300M+ mcap)</button>
-                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;" aria-label="Refresh scan results"><span aria-hidden="true">📊</span> Refresh Results</button>
+                            <button class="btn btn-primary" onclick="triggerScan('indices', event)" style="width: 100%;">🔄 Scan S&P + NASDAQ (~600)</button>
+                            <button class="btn btn-ghost" onclick="triggerScan('full', event)" style="width: 100%;">🌐 Full Scan (300M+ mcap)</button>
+                            <button class="btn btn-ghost" onclick="fetchScan()" style="width: 100%;">📊 Refresh Results</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
                         </div>
                     </div>
@@ -1208,7 +884,7 @@
         </div>
 
         <!-- Scan Results Tab -->
-        <div id="scan" class="tab-content" role="tabpanel" aria-labelledby="scan-tab">
+        <div id="scan" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
@@ -1243,7 +919,457 @@
                                 </tr>
                             </thead>
                             <tbody id="scan-table-body">
-                                
+                                <tr>
+                    <td>1</td>
+                    <td class="ticker-cell" onclick="showTicker('MRK')">MRK</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 30.8%"></span></span> 31</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>2</td>
+                    <td class="ticker-cell" onclick="showTicker('HAS')">HAS</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 30.8%"></span></span> 31</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>3</td>
+                    <td class="ticker-cell" onclick="showTicker('IR')">IR</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 30.4%"></span></span> 30</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>4</td>
+                    <td class="ticker-cell" onclick="showTicker('WM')">WM</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 30.0%"></span></span> 30</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>5</td>
+                    <td class="ticker-cell" onclick="showTicker('BEN')">BEN</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 30.0%"></span></span> 30</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>6</td>
+                    <td class="ticker-cell" onclick="showTicker('SCHW')">SCHW</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>7</td>
+                    <td class="ticker-cell" onclick="showTicker('KEYS')">KEYS</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>8</td>
+                    <td class="ticker-cell" onclick="showTicker('ECL')">ECL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>9</td>
+                    <td class="ticker-cell" onclick="showTicker('COP')">COP</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>10</td>
+                    <td class="ticker-cell" onclick="showTicker('F')">F</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>11</td>
+                    <td class="ticker-cell" onclick="showTicker('LIN')">LIN</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>12</td>
+                    <td class="ticker-cell" onclick="showTicker('MDT')">MDT</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>13</td>
+                    <td class="ticker-cell" onclick="showTicker('META')">META</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>14</td>
+                    <td class="ticker-cell" onclick="showTicker('HD')">HD</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>15</td>
+                    <td class="ticker-cell" onclick="showTicker('TFC')">TFC</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>16</td>
+                    <td class="ticker-cell" onclick="showTicker('CMI')">CMI</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.6%"></span></span> 29</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>17</td>
+                    <td class="ticker-cell" onclick="showTicker('VZ')">VZ</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.2%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>18</td>
+                    <td class="ticker-cell" onclick="showTicker('KIM')">KIM</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 28.1%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>19</td>
+                    <td class="ticker-cell" onclick="showTicker('CARR')">CARR</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.8%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>20</td>
+                    <td class="ticker-cell" onclick="showTicker('BALL')">BALL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>21</td>
+                    <td class="ticker-cell" onclick="showTicker('CB')">CB</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>22</td>
+                    <td class="ticker-cell" onclick="showTicker('HCA')">HCA</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>23</td>
+                    <td class="ticker-cell" onclick="showTicker('GM')">GM</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>24</td>
+                    <td class="ticker-cell" onclick="showTicker('JBL')">JBL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>25</td>
+                    <td class="ticker-cell" onclick="showTicker('GL')">GL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.7%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>26</td>
+                    <td class="ticker-cell" onclick="showTicker('Q')">Q</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.6%"></span></span> 28</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>27</td>
+                    <td class="ticker-cell" onclick="showTicker('SO')">SO</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 27.3%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>28</td>
+                    <td class="ticker-cell" onclick="showTicker('ES')">ES</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.8%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>29</td>
+                    <td class="ticker-cell" onclick="showTicker('DOV')">DOV</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.8%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>30</td>
+                    <td class="ticker-cell" onclick="showTicker('RSG')">RSG</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.8%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>31</td>
+                    <td class="ticker-cell" onclick="showTicker('SPG')">SPG</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.8%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>32</td>
+                    <td class="ticker-cell" onclick="showTicker('HOLX')">HOLX</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.7%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>33</td>
+                    <td class="ticker-cell" onclick="showTicker('NCLH')">NCLH</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.7%"></span></span> 27</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>34</td>
+                    <td class="ticker-cell" onclick="showTicker('ADI')">ADI</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.4%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>35</td>
+                    <td class="ticker-cell" onclick="showTicker('RCL')">RCL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.4%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>36</td>
+                    <td class="ticker-cell" onclick="showTicker('HON')">HON</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.4%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>37</td>
+                    <td class="ticker-cell" onclick="showTicker('ADM')">ADM</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.3%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>38</td>
+                    <td class="ticker-cell" onclick="showTicker('OKE')">OKE</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.3%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>39</td>
+                    <td class="ticker-cell" onclick="showTicker('MPC')">MPC</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.2%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>40</td>
+                    <td class="ticker-cell" onclick="showTicker('BG')">BG</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 26.0%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>41</td>
+                    <td class="ticker-cell" onclick="showTicker('AVY')">AVY</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>42</td>
+                    <td class="ticker-cell" onclick="showTicker('EXC')">EXC</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>43</td>
+                    <td class="ticker-cell" onclick="showTicker('TDG')">TDG</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>44</td>
+                    <td class="ticker-cell" onclick="showTicker('MSI')">MSI</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>45</td>
+                    <td class="ticker-cell" onclick="showTicker('IFF')">IFF</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>46</td>
+                    <td class="ticker-cell" onclick="showTicker('MCD')">MCD</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>47</td>
+                    <td class="ticker-cell" onclick="showTicker('HST')">HST</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>48</td>
+                    <td class="ticker-cell" onclick="showTicker('CRL')">CRL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>49</td>
+                    <td class="ticker-cell" onclick="showTicker('SW')">SW</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr><tr>
+                    <td>50</td>
+                    <td class="ticker-cell" onclick="showTicker('ROL')">ROL</td>
+                    <td><span class="score-bar"><span class="score-bar-fill" style="width: 25.9%"></span></span> 26</td>
+                    <td>waiting</td>
+                    <td>nan</td>
+                    <td style="color: var(--green);">+0.00%</td>
+                    <td>0</td>
+                    <td>0</td>
+                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -1252,7 +1378,7 @@
         </div>
 
         <!-- Themes Tab -->
-        <div id="themes" class="tab-content" role="tabpanel" aria-labelledby="themes-tab">
+        <div id="themes" class="tab-content">
             <div class="themes-row" style="margin-bottom: 24px;" id="all-themes">
                 
             </div>
@@ -1263,7 +1389,7 @@
         </div>
 
         <!-- Theme Radar Tab (Theme Intelligence Hub) -->
-        <div id="themeradar" class="tab-content" role="tabpanel" aria-labelledby="themeradar-tab">
+        <div id="themeradar" class="tab-content">
             <div class="grid grid-3">
                 <!-- Theme Radar Visual -->
                 <div class="card" style="grid-column: span 2;">
@@ -1368,7 +1494,7 @@
         </div>
 
         <!-- SEC Intelligence Tab -->
-        <div id="sec" class="tab-content" role="tabpanel" aria-labelledby="sec-tab">
+        <div id="sec" class="tab-content">
             <div class="grid grid-3">
                 <!-- M&A Radar -->
                 <div class="card">
@@ -1544,7 +1670,7 @@
         </div>
 
         <!-- Trades Tab - Professional Trading Dashboard -->
-        <div id="trades" class="tab-content" role="tabpanel" aria-labelledby="trades-tab">
+        <div id="trades" class="tab-content">
             <!-- Enhanced Stats Row -->
             <div class="stats-row" style="grid-template-columns: repeat(6, 1fr);">
                 <div class="stat">
@@ -1755,7 +1881,7 @@
         </div>
 
         <!-- Analytics Tab -->
-        <div id="analytics" class="tab-content" role="tabpanel" aria-labelledby="analytics-tab">
+        <div id="analytics" class="tab-content">
             <div class="grid grid-2">
                 <!-- Evolution Engine -->
                 <div class="card">
@@ -2289,7 +2415,7 @@
             } catch (e) { console.warn('Scan fetch failed:', e); }
         }
 
-        async function triggerScan(mode = 'full', evt = null) {
+        async function triggerScan(mode = 'indices', evt = null) {
             // Safety: Check if toast is loaded
             const safeToast = window.toast || { error: console.error, success: console.log };
 
@@ -4329,167 +4455,6 @@
                 refreshAIAdvisor();
             }
         }, 2000);
-
-        // ===================================================================
-        // UI/UX Helper Functions
-        // ===================================================================
-
-        /**
-         * Show validation error on input field
-         * @param {string} fieldId - ID of the input field
-         * @param {string} message - Error message to display
-         */
-        function showFieldError(fieldId, message) {
-            const field = document.getElementById(fieldId);
-            if (!field) return;
-
-            field.classList.add('input-error');
-            field.classList.remove('input-success');
-
-            // Remove existing error
-            const existingError = field.parentElement.querySelector('.error-message');
-            if (existingError) existingError.remove();
-
-            // Add new error
-            const error = document.createElement('div');
-            error.className = 'error-message';
-            error.innerHTML = `<span aria-hidden="true">⚠️</span> ${message}`;
-            error.setAttribute('role', 'alert');
-            field.parentElement.appendChild(error);
-        }
-
-        /**
-         * Show validation success on input field
-         * @param {string} fieldId - ID of the input field
-         */
-        function showFieldSuccess(fieldId) {
-            const field = document.getElementById(fieldId);
-            if (!field) return;
-
-            field.classList.remove('input-error');
-            field.classList.add('input-success');
-
-            const error = field.parentElement.querySelector('.error-message');
-            if (error) error.remove();
-        }
-
-        /**
-         * Set button loading state
-         * @param {HTMLElement} button - Button element
-         * @param {boolean} loading - Whether button should be in loading state
-         */
-        function setButtonLoading(button, loading = true) {
-            if (!button) return;
-
-            if (loading) {
-                button.dataset.originalText = button.textContent;
-                button.classList.add('btn-loading');
-                button.disabled = true;
-            } else {
-                button.textContent = button.dataset.originalText || button.textContent;
-                button.classList.remove('btn-loading');
-                button.disabled = false;
-            }
-        }
-
-        /**
-         * Update progress bar
-         * @param {string} containerId - ID of progress container
-         * @param {number} percent - Progress percentage (0-100)
-         * @param {string} message - Progress message
-         */
-        function updateProgress(containerId, percent, message = '') {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            let progressBar = container.querySelector('.progress-bar');
-            if (!progressBar) {
-                container.innerHTML = `
-                    <div class="progress-bar">
-                        <div class="progress-fill"></div>
-                    </div>
-                    <div class="progress-text"></div>
-                `;
-                progressBar = container.querySelector('.progress-bar');
-            }
-
-            const fill = progressBar.querySelector('.progress-fill');
-            const text = container.querySelector('.progress-text');
-
-            if (fill) fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
-            if (text) text.textContent = message;
-        }
-
-        /**
-         * Show loading spinner in container
-         * @param {string} containerId - ID of container element
-         * @param {string} message - Loading message
-         */
-        function showLoading(containerId, message = 'Loading...') {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            container.innerHTML = `
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <div class="loading-text">${message}</div>
-                </div>
-            `;
-        }
-
-        /**
-         * Update tab ARIA attributes
-         * @param {HTMLElement} selectedTab - The tab that was selected
-         */
-        function updateTabARIA(selectedTab) {
-            const tabs = document.querySelectorAll('[role="tab"]');
-            tabs.forEach(tab => {
-                tab.setAttribute('aria-selected', tab === selectedTab ? 'true' : 'false');
-            });
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            // Ctrl/Cmd + K: Focus first input
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                const firstInput = document.querySelector('input[type="text"]');
-                if (firstInput) firstInput.focus();
-            }
-
-            // Ctrl/Cmd + R: Refresh (override browser default)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
-                e.preventDefault();
-                refreshAll();
-            }
-
-            // Number keys 1-7: Switch tabs (when not in input)
-            if (e.key >= '1' && e.key <= '7' && !e.ctrlKey && !e.metaKey) {
-                const target = e.target;
-                if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && target.tagName !== 'SELECT') {
-                    const tabs = document.querySelectorAll('[role="tab"]');
-                    const index = parseInt(e.key) - 1;
-                    if (tabs[index]) {
-                        tabs[index].click();
-                    }
-                }
-            }
-        });
-
-        // Enhance existing showTab function with ARIA support
-        const originalShowTab = window.showTab;
-        window.showTab = function(tabName) {
-            if (originalShowTab) {
-                originalShowTab(tabName);
-            }
-
-            // Update ARIA attributes
-            const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
-            if (selectedTab) {
-                updateTabARIA(selectedTab);
-            }
-        };
-
     </script>
 </body>
 </html>
