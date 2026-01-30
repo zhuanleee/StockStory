@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Diagnostic</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        .test { margin: 10px 0; padding: 10px; background: #2a2a2a; }
+        .pass { color: #0f0; }
+        .fail { color: #f00; }
+        button { padding: 10px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Stock Scanner Dashboard Diagnostic</h1>
+
+    <div class="test">
+        <h3>1. Module Loading Test</h3>
+        <div id="module-test">Testing...</div>
+    </div>
+
+    <div class="test">
+        <h3>2. API Endpoint Tests</h3>
+        <button onclick="testAPI()">Test /api/scan</button>
+        <button onclick="testScanTrigger()">Test /api/scan/trigger</button>
+        <div id="api-test"></div>
+    </div>
+
+    <div class="test">
+        <h3>3. JavaScript Console Errors</h3>
+        <div id="console-test">Check browser console (F12) for errors</div>
+    </div>
+
+    <script type="module">
+        // Test if modules load
+        try {
+            const response = await fetch('/js/main.js');
+            if (response.ok) {
+                document.getElementById('module-test').innerHTML = '<span class="pass">✅ Modules accessible</span>';
+            } else {
+                document.getElementById('module-test').innerHTML = '<span class="fail">❌ Modules failed: HTTP ' + response.status + '</span>';
+            }
+        } catch (e) {
+            document.getElementById('module-test').innerHTML = '<span class="fail">❌ Module error: ' + e.message + '</span>';
+        }
+    </script>
+
+    <script>
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:5000/api'
+            : `${window.location.protocol}//${window.location.host}/api`;
+
+        async function testAPI() {
+            const result = document.getElementById('api-test');
+            result.innerHTML = 'Testing...';
+            try {
+                const res = await fetch(`${API_BASE}/scan`);
+                const data = await res.json();
+                result.innerHTML = `<span class="pass">✅ /api/scan works: ${data.total} stocks</span>`;
+            } catch (e) {
+                result.innerHTML = `<span class="fail">❌ /api/scan failed: ${e.message}</span>`;
+            }
+        }
+
+        async function testScanTrigger() {
+            const result = document.getElementById('api-test');
+            result.innerHTML = 'Testing...';
+            try {
+                const res = await fetch(`${API_BASE}/scan/trigger?mode=quick`, { method: 'POST' });
+                const data = await res.json();
+                result.innerHTML = `<span class="pass">✅ /api/scan/trigger works: ${data.message}</span>`;
+            } catch (e) {
+                result.innerHTML = `<span class="fail">❌ /api/scan/trigger failed: ${e.message}</span>`;
+            }
+        }
+
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e);
+            const consoleDiv = document.getElementById('console-test');
+            consoleDiv.innerHTML += `<div class="fail">❌ ${e.message} at ${e.filename}:${e.lineno}</div>`;
+        });
+    </script>
+</body>
+</html>
