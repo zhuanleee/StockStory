@@ -39,7 +39,7 @@ jobs:
         run: modal deploy modal_scanner.py
 
       - name: Deploy API to Modal
-        run: modal deploy modal_api_consolidated.py
+        run: modal deploy modal_api_v2.py
 
       - name: Deployment complete
         run: |
