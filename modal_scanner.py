@@ -19,11 +19,8 @@ compute_config = {
     "cpu": 2.0,          # 2 CPUs per stock
     "memory": 4096,      # 4GB RAM per stock
     "timeout": 300,      # 5 minute timeout per stock
+    "gpu": "T4",         # GPU for 10x speed boost (~$0.60/hour)
 }
-
-# Optional: Add GPU for 10x speed boost
-# Uncomment this line to use GPU:
-# compute_config["gpu"] = "T4"  # ~$0.60/hour
 
 # Create custom image with all dependencies
 image = (
