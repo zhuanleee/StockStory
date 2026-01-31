@@ -51,8 +51,9 @@ def create_fastapi_app():
     All imports happen here (in container where packages are available).
     """
     # Imports only available in container
-    from fastapi import FastAPI, Query
+    from fastapi import FastAPI, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import JSONResponse
     import sys
     sys.path.insert(0, '/root')
 
@@ -227,6 +228,95 @@ def create_fastapi_app():
             logger = logging.getLogger("api")
             logger.warning(f"Startup optimization failed: {e}")
 
+    # =============================================================================
+    # AUTHENTICATION SETUP
+    # =============================================================================
+
+    # Initialize auth components
+    from src.core.auth import APIKeyManager, RateLimiter, extract_api_key, validate_request
+    import os
+
+    api_key_manager = APIKeyManager(keys_file=f"{VOLUME_PATH}/api_keys.json")
+    rate_limiter = RateLimiter(requests_per_second=10.0)
+
+    # Grace period: Allow requests without API keys until this date
+    # Set REQUIRE_API_KEYS=true environment variable to enforce authentication
+    REQUIRE_API_KEYS = os.environ.get('REQUIRE_API_KEYS', 'false').lower() == 'true'
+    GRACE_PERIOD_DAYS = 7  # Days from first deployment
+
+    # Public endpoints that don't require authentication
+    PUBLIC_ENDPOINTS = {
+        '/',
+        '/health',
+        '/docs',
+        '/openapi.json',
+        '/redoc',
+        '/api-keys/request',  # Allow users to request API keys
+        '/api-keys/generate',  # Allow key generation during grace period
+    }
+
+    # Add authentication middleware
+    @web_app.middleware("http")
+    async def auth_middleware(request, call_next):
+        """Authenticate requests using API keys"""
+        # Skip auth for public endpoints
+        if request.url.path in PUBLIC_ENDPOINTS:
+            return await call_next(request)
+
+        # Extract API key from header
+        auth_header = request.headers.get('Authorization', '')
+        api_key = extract_api_key(auth_header)
+
+        if not api_key:
+            # Grace period: Allow requests without API keys (with warning)
+            if not REQUIRE_API_KEYS:
+                logger.warning(
+                    f"Request without API key from {request.client.host if request.client else 'unknown'} "
+                    f"to {request.url.path} (grace period active)"
+                )
+                response = await call_next(request)
+                response.headers['X-API-Warning'] = 'API keys will be required soon. Get yours at /api-keys/request'
+                return response
+
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "ok": False,
+                    "error": "Missing API key",
+                    "message": "Include 'Authorization: Bearer <your-api-key>' header",
+                    "get_key": "/api-keys/request"
+                }
+            )
+
+        # Validate request
+        is_valid, error_msg, rate_info = validate_request(api_key, api_key_manager, rate_limiter)
+
+        if not is_valid:
+            status_code = 429 if "rate limit" in error_msg.lower() else 401
+            content = {
+                "ok": False,
+                "error": "Authentication failed",
+                "message": error_msg
+            }
+            if rate_info:
+                content["rate_limit"] = rate_info
+
+            return JSONResponse(status_code=status_code, content=content)
+
+        # Add rate limit info to request state
+        request.state.api_key = api_key
+        request.state.rate_limit = rate_info
+
+        # Continue with request
+        response = await call_next(request)
+
+        # Add rate limit headers
+        if rate_info:
+            response.headers['X-RateLimit-Remaining'] = str(rate_info['requests_remaining'])
+            response.headers['X-RateLimit-Reset'] = rate_info['reset_at'].isoformat()
+
+        return response
+
     # Helper to load scan results
     def load_scan_results():
         data_dir = Path(VOLUME_PATH)
@@ -296,6 +386,119 @@ def create_fastapi_app():
             }
         except ImportError:
             return {"ok": False, "error": "Performance monitoring not available"}
+
+    # =============================================================================
+    # ROUTES - API KEY MANAGEMENT
+    # =============================================================================
+
+    @web_app.post("/api-keys/generate")
+    def generate_api_key(
+        user_id: str = Query(..., description="Unique user identifier"),
+        tier: str = Query("free", description="API tier: free, pro, enterprise"),
+        email: str = Query(None, description="Contact email (optional)")
+    ):
+        """
+        Generate a new API key.
+
+        Tiers:
+        - free: 1,000 requests/day
+        - pro: 10,000 requests/day
+        - enterprise: 100,000 requests/day
+
+        Example: POST /api-keys/generate?user_id=user123&tier=free
+        """
+        # Determine rate limits based on tier
+        rate_limits = {
+            'free': 1000,
+            'pro': 10000,
+            'enterprise': 100000
+        }
+
+        requests_per_day = rate_limits.get(tier, 1000)
+
+        try:
+            api_key = api_key_manager.generate_key(
+                user_id=user_id,
+                tier=tier,
+                requests_per_day=requests_per_day
+            )
+
+            return {
+                "ok": True,
+                "api_key": api_key,
+                "tier": tier,
+                "requests_per_day": requests_per_day,
+                "created_at": datetime.now().isoformat(),
+                "usage": "Include in request headers as: Authorization: Bearer <api_key>"
+            }
+        except Exception as e:
+            return {"ok": False, "error": f"Failed to generate API key: {str(e)}"}
+
+    @web_app.get("/api-keys/usage")
+    def get_api_key_usage(request: Request):
+        """
+        Get usage statistics for the authenticated API key.
+
+        Requires: Authorization header with API key
+
+        Example: GET /api-keys/usage
+        """
+        api_key = getattr(request.state, 'api_key', None)
+        if not api_key:
+            return {"ok": False, "error": "No API key in request"}
+
+        usage_stats = api_key_manager.get_usage_stats(api_key)
+        if not usage_stats:
+            return {"ok": False, "error": "API key not found"}
+
+        return {
+            "ok": True,
+            "usage": usage_stats,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    @web_app.post("/api-keys/revoke")
+    def revoke_api_key(api_key: str = Query(..., description="API key to revoke")):
+        """
+        Revoke an API key.
+
+        Example: POST /api-keys/revoke?api_key=ssk_live_...
+        """
+        success = api_key_manager.revoke_key(api_key)
+
+        if success:
+            return {
+                "ok": True,
+                "message": "API key revoked successfully",
+                "api_key": api_key[:15] + "..."  # Show only prefix
+            }
+        else:
+            return {"ok": False, "error": "API key not found"}
+
+    @web_app.get("/api-keys/request")
+    def request_api_key():
+        """
+        Public endpoint: Instructions for requesting an API key.
+
+        Example: GET /api-keys/request
+        """
+        return {
+            "ok": True,
+            "message": "API Key Request Instructions",
+            "instructions": [
+                "1. Email your request to: support@stockscanner.example.com",
+                "2. Include: your name, email, intended use case",
+                "3. You'll receive an API key within 24 hours",
+                "4. Free tier: 1,000 requests/day",
+                "5. Pro tier: 10,000 requests/day (contact for pricing)"
+            ],
+            "tiers": {
+                "free": {"requests_per_day": 1000, "price": "$0"},
+                "pro": {"requests_per_day": 10000, "price": "$49/month"},
+                "enterprise": {"requests_per_day": 100000, "price": "Contact us"}
+            },
+            "usage": "Authorization: Bearer <your-api-key>"
+        }
 
     @web_app.get("/scan")
     def scan():
