@@ -540,47 +540,50 @@ def create_fastapi_app():
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @web_app.get("/evolution/correlations")
+    @web_app.get("/evolution/correlations", status_code=501)
     def evolution_correlations():
-        return {"ok": True, "data": {"message": "Not yet implemented"}}
+        return {
+            "ok": False,
+            "error": "Signal correlation analysis not implemented",
+            "message": "Correlation matrix planned for future release.",
+            "planned_features": [
+                "Signal-to-signal correlations",
+                "Theme-to-performance correlations",
+                "Lag analysis between signals",
+                "Conditional correlation matrices"
+            ],
+            "estimated_release": "Q2 2026"
+        }
 
-    @web_app.get("/debug/learning-import")
-    def debug_learning_import():
-        """Debug endpoint to test parameter_learning import"""
+    @web_app.get("/debug/health", status_code=200)
+    def debug_health():
+        """System health check endpoint (production-safe)"""
         import sys
-        import traceback
-        errors = []
-
-        # Test 1: Check if src.learning exists
-        try:
-            import src.learning
-            errors.append({"test": "src.learning", "status": "OK"})
-        except Exception as e:
-            errors.append({"test": "src.learning", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
-
-        # Test 2: Check if parameter_learning can be imported
-        try:
-            from src.learning import parameter_learning
-            errors.append({"test": "src.learning.parameter_learning", "status": "OK"})
-        except Exception as e:
-            errors.append({"test": "src.learning.parameter_learning", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
-
-        # Test 3: Check if get_learning_status exists
         try:
             from src.learning.parameter_learning import get_learning_status
-            errors.append({"test": "get_learning_status function", "status": "OK"})
+            learning_status = get_learning_status()
+            learning_ok = "error" not in learning_status
         except Exception as e:
-            errors.append({"test": "get_learning_status function", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
+            learning_status = {"error": str(e)}
+            learning_ok = False
 
-        # Test 4: Try calling it
-        try:
-            from src.learning.parameter_learning import get_learning_status
-            result = get_learning_status()
-            errors.append({"test": "call get_learning_status()", "status": "OK", "result_keys": list(result.keys())})
-        except Exception as e:
-            errors.append({"test": "call get_learning_status()", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
-
-        return {"ok": True, "tests": errors, "python_path": sys.path}
+        return {
+            "ok": True,
+            "timestamp": datetime.now().isoformat(),
+            "system": {
+                "python_version": sys.version.split()[0],
+                "platform": sys.platform
+            },
+            "services": {
+                "api": "operational",
+                "learning_system": "operational" if learning_ok else "degraded",
+                "volume_mount": "operational" if Path(VOLUME_PATH).exists() else "unavailable"
+            },
+            "parameters": {
+                "total": learning_status.get("parameters", {}).get("total", 0) if learning_ok else 0,
+                "status": "healthy" if learning_ok else "degraded"
+            }
+        }
 
     @web_app.get("/parameters/status")
     def parameters_status():
@@ -596,49 +599,97 @@ def create_fastapi_app():
     # ROUTES - TRADES (STUBS)
     # =============================================================================
 
-    @web_app.get("/trades/positions")
+    # =============================================================================
+    # TRADING ENDPOINTS (NOT IMPLEMENTED - Analysis-only mode)
+    # =============================================================================
+    # Returns HTTP 501 Not Implemented with roadmap information
+
+    @web_app.get("/trades/positions", status_code=501)
     def trades_positions():
-        return {"ok": True, "data": []}
+        return {
+            "ok": False,
+            "error": "Trading execution not implemented",
+            "message": "This endpoint is planned for future release. Currently in read-only analysis mode.",
+            "roadmap": ["Paper trading", "Alpaca integration", "Risk management"],
+            "alternatives": ["Use /scan for analysis", "Use /conviction/alerts for setups"]
+        }
 
-    @web_app.get("/trades/watchlist")
+    @web_app.get("/trades/watchlist", status_code=501)
     def trades_watchlist():
-        return {"ok": True, "data": []}
+        return {
+            "ok": False,
+            "error": "Watchlist feature not implemented",
+            "message": "Use browser localStorage or external tools for watchlists."
+        }
 
-    @web_app.get("/trades/activity")
+    @web_app.get("/trades/activity", status_code=501)
     def trades_activity():
-        return {"ok": True, "data": []}
+        return {
+            "ok": False,
+            "error": "Trade activity tracking not implemented"
+        }
 
-    @web_app.get("/trades/risk")
+    @web_app.get("/trades/risk", status_code=501)
     def trades_risk():
-        return {"ok": True, "data": {"risk_level": "low", "exposure": 0}}
+        return {
+            "ok": False,
+            "error": "Risk analysis not implemented",
+            "planned_metrics": ["Beta", "VaR", "Sharpe ratio", "Max drawdown"]
+        }
 
-    @web_app.get("/trades/journal")
+    @web_app.get("/trades/journal", status_code=501)
     def trades_journal():
-        return {"ok": True, "data": []}
+        return {
+            "ok": False,
+            "error": "Trade journal not implemented"
+        }
 
-    @web_app.get("/trades/daily-report")
+    @web_app.get("/trades/daily-report", status_code=501)
     def trades_daily_report():
-        return {"ok": True, "data": {"message": "No trades today"}}
+        return {
+            "ok": False,
+            "error": "Daily report not implemented"
+        }
 
-    @web_app.get("/trades/scan")
+    @web_app.get("/trades/scan", status_code=501)
     def trades_scan():
-        return {"ok": True, "data": []}
+        return {
+            "ok": False,
+            "error": "Trade scanning not implemented",
+            "alternative": "Use /scan endpoint instead"
+        }
 
-    @web_app.post("/trades/create")
+    @web_app.post("/trades/create", status_code=501)
     def trades_create():
-        return {"ok": False, "error": "Trading not enabled"}
+        return {
+            "ok": False,
+            "error": "Trade execution not implemented",
+            "message": "Live trading disabled. Analysis-only system.",
+            "reason": "No broker integration. Paper trading planned for Q2 2026."
+        }
 
-    @web_app.get("/trades/{trade_id}")
+    @web_app.get("/trades/{trade_id}", status_code=501)
     def trades_detail(trade_id: str):
-        return {"ok": False, "error": "Trade not found"}
+        return {
+            "ok": False,
+            "error": "Trade lookup not implemented"
+        }
 
-    @web_app.post("/trades/{trade_id}/sell")
+    @web_app.post("/trades/{trade_id}/sell", status_code=501)
     def trades_sell(trade_id: str):
-        return {"ok": False, "error": "Trading not enabled"}
+        return {
+            "ok": False,
+            "error": "Trade execution not implemented"
+        }
 
-    @web_app.post("/sec/deals/add")
+    @web_app.post("/sec/deals/add", status_code=501)
     def sec_deals_add():
-        return {"ok": False, "error": "Not implemented"}
+        return {
+            "ok": False,
+            "error": "Manual deal entry not implemented",
+            "message": "M&A deals are auto-discovered from SEC filings.",
+            "alternative": "Deals are automatically tracked. Check /sec/deals for discovered M&A activity."
+        }
 
     @web_app.post("/supplychain/ai-discover")
     def supplychain_ai_discover():
