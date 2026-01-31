@@ -22,7 +22,11 @@ socketio: Optional[SocketIO] = None
 
 
 def init_socketio(app, **kwargs):
-    """Initialize SocketIO with Flask app."""
+    """
+    Initialize SocketIO with Flask app (async/non-blocking).
+
+    Uses eventlet async_mode for better scalability and non-blocking I/O.
+    """
     global socketio
 
     # CORS origins for GitHub Pages + local development
@@ -33,22 +37,29 @@ def init_socketio(app, **kwargs):
         'https://web-production-46562.up.railway.app',
     ]
 
-    # Default config for production
+    # Production config with eventlet for async/non-blocking
     default_config = {
         'cors_allowed_origins': allowed_origins,
-        'async_mode': 'threading',
+        'async_mode': 'eventlet',  # Changed from 'threading' for non-blocking I/O
         'ping_timeout': 60,
         'ping_interval': 25,
+        'logger': False,  # Disable SocketIO's verbose logging
+        'engineio_logger': False,  # Disable engine.io logging
+        'always_connect': True,  # Auto-reconnect on disconnection
     }
     default_config.update(kwargs)
 
-    socketio = SocketIO(app, **default_config)
+    try:
+        socketio = SocketIO(app, **default_config)
 
-    # Register event handlers
-    register_handlers(socketio)
+        # Register event handlers
+        register_handlers(socketio)
 
-    logger.info("SocketIO initialized")
-    return socketio
+        logger.info("✅ SocketIO initialized (async mode: eventlet)")
+        return socketio
+    except Exception as e:
+        logger.error(f"❌ SocketIO initialization failed: {e}")
+        return None
 
 
 def get_socketio() -> Optional[SocketIO]:

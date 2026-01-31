@@ -55,19 +55,30 @@ def add_cors_headers_first(response):
         response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
-# Initialize SocketIO for real-time sync
-# DISABLED: SocketIO initialization was blocking app startup, causing 504 timeouts
-# TODO: Re-enable with proper async/non-blocking initialization
+# Initialize SocketIO for real-time sync (async/non-blocking with eventlet)
 socketio = None
-# try:
-#     from src.sync.socketio_server import init_socketio
-#     socketio = init_socketio(app)
-#     logger.info("SocketIO sync enabled")
-# except ImportError as e:
-#     logger.warning(f"SocketIO not available: {e}")
-# except Exception as e:
-#     logger.warning(f"SocketIO init failed: {e}")
-logger.info("SocketIO disabled - running without real-time sync")
+try:
+    # Check if eventlet is available
+    try:
+        import eventlet
+        eventlet.monkey_patch()
+        logger.info("Eventlet monkey patching applied for async I/O")
+    except ImportError:
+        logger.warning("Eventlet not installed - SocketIO will use fallback mode")
+
+    from src.sync.socketio_server import init_socketio
+    socketio = init_socketio(app)
+
+    if socketio:
+        logger.info("✅ SocketIO real-time sync enabled (async mode)")
+    else:
+        logger.warning("⚠️ SocketIO initialization returned None")
+except ImportError as e:
+    logger.warning(f"SocketIO not available: {e}")
+    logger.info("Running without real-time sync (API polling will still work)")
+except Exception as e:
+    logger.warning(f"SocketIO init failed: {e}")
+    logger.info("Running without real-time sync (API polling will still work)")
 
 
 # Global error handler to return JSON instead of HTML on errors

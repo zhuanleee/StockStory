@@ -25,17 +25,14 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
 import time
+from src.utils.file_utils import ensure_data_dir
 
 logger = logging.getLogger(__name__)
 
 # Cache
-DATA_DIR = Path("data/google_trends")
+DATA_DIR = Path(ensure_data_dir("google_trends"))
 CACHE_FILE = DATA_DIR / "trends_cache.json"
 CACHE_TTL = 3600  # 1 hour
-
-
-def ensure_data_dir():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
