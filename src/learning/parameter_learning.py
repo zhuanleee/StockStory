@@ -36,9 +36,12 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger('parameter_learning')
 
-# Data directory
+# Data directory (created lazily to support read-only filesystems like Modal)
 DATA_DIR = Path(__file__).parent / 'parameter_data'
-DATA_DIR.mkdir(exist_ok=True)
+
+def _ensure_data_dir():
+    """Ensure data directory exists (lazy initialization)"""
+    DATA_DIR.mkdir(exist_ok=True)
 
 REGISTRY_FILE = DATA_DIR / 'parameter_registry.json'
 OUTCOMES_FILE = DATA_DIR / 'outcome_history.json'
@@ -158,6 +161,7 @@ class ParameterRegistry:
 
     def _save_registry(self):
         """Save parameter registry to disk"""
+        _ensure_data_dir()
         path = self._get_registry_path()
         data = {
             'version': '1.0',
@@ -667,6 +671,7 @@ class OutcomeTracker:
 
     def _save_outcomes(self):
         """Save outcome history to disk"""
+        _ensure_data_dir()
         # Keep last 10000 outcomes to prevent unbounded growth
         recent = self.outcomes[-10000:]
         data = {
@@ -938,6 +943,7 @@ class ABTestingFramework:
 
     def _save_experiments(self):
         """Save experiments to disk"""
+        _ensure_data_dir()
         data = {
             'version': '1.0',
             'last_updated': datetime.now().isoformat(),
@@ -1371,6 +1377,7 @@ class SelfHealthMonitor:
 
     def _save_health(self, health: Dict):
         """Save health check to disk"""
+        _ensure_data_dir()
         self.health_history.append(health)
         # Keep last 1000 health checks
         self.health_history = self.health_history[-1000:]
