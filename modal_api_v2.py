@@ -59,14 +59,48 @@ def create_fastapi_app():
     # Create FastAPI app
     web_app = FastAPI(title="Stock Scanner API v2", version="2.0")
 
-    # Add CORS
+    # Add CORS (restricted to known origins)
     web_app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[
+            "https://zhuanleee.github.io",
+            "http://localhost:5000",
+            "http://127.0.0.1:5000"
+        ],
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"]
     )
+
+    # Add security headers middleware
+    @web_app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run wss://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run"
+        return response
+
+    # Add request logging middleware
+    @web_app.middleware("http")
+    async def log_requests(request, call_next):
+        import time
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        # Log request details
+        import logging
+        logger = logging.getLogger("api")
+        logger.info(
+            f"{request.method} {request.url.path} "
+            f"status={response.status_code} "
+            f"duration={process_time:.3f}s "
+            f"client={request.client.host if request.client else 'unknown'}"
+        )
+        return response
 
     # Helper to load scan results
     def load_scan_results():
