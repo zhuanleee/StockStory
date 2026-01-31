@@ -1255,6 +1255,7 @@
             <div class="tab" data-tab="sec">SEC Intel</div>
             <div class="tab" data-tab="trades">Trades</div>
             <div class="tab" data-tab="analytics">Analytics</div>
+            <div class="tab" data-tab="options">Options</div>
         </div>
     </nav>
 
@@ -1383,6 +1384,17 @@
                         </div>
                         <div class="card-body" id="supplychain-container">
                             <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading lagging opportunities...</div>
+                        </div>
+                    </div>
+
+                    <!-- Unusual Options Activity -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">🔥 Unusual Options</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchUnusualOptions()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="unusual-options-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading unusual activity...</div>
                         </div>
                     </div>
 
@@ -1954,6 +1966,17 @@
                         </div>
                     </div>
 
+                    <!-- Options Flow -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📊 Options Flow</div>
+                            <button class="btn btn-ghost" onclick="refreshOptionsFlow()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Refresh</button>
+                        </div>
+                        <div class="card-body" id="options-flow-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Select a position to view options flow</div>
+                        </div>
+                    </div>
+
                     <!-- Recent Activity -->
                     <div class="card">
                         <div class="card-header">
@@ -2005,6 +2028,30 @@
                     </div>
                 </div>
 
+                <!-- Technical Signals -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📈 Technical Signals</div>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                            <input
+                                type="text"
+                                id="technical-ticker-input"
+                                placeholder="Ticker"
+                                style="flex: 1; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;"
+                                onkeypress="if(event.key==='Enter') loadTechnicalIndicators()"
+                            />
+                            <button class="btn btn-ghost" onclick="loadTechnicalIndicators()" style="padding: 8px 16px; font-size: 0.75rem;">
+                                Analyze
+                            </button>
+                        </div>
+                        <div id="technical-indicators-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Enter a ticker to analyze</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Parameter Learning -->
                 <div class="card">
                     <div class="card-header">
@@ -2049,6 +2096,123 @@
                 </div>
                 <div class="card-body" id="briefing-container">
                     <div style="color: var(--text-muted); font-size: 0.8125rem;">Click refresh to generate AI briefing...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Options Tab -->
+        <div id="options" class="tab-content">
+            <!-- Ticker Search -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <div class="card-title">🔎 Options Chain Lookup</div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <input
+                            type="text"
+                            id="options-ticker-input"
+                            placeholder="Enter ticker (e.g., AAPL, SPY)"
+                            style="flex: 1; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 8px; font-size: 0.9rem;"
+                            onkeypress="if(event.key==='Enter') loadOptionsChain()"
+                        />
+                        <button class="btn btn-primary" onclick="loadOptionsChain()" style="padding: 12px 24px;">
+                            Load Chain
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Grid -->
+            <div class="grid grid-4" id="options-summary" style="display: none; margin-bottom: 20px;">
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">SENTIMENT</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;" id="opt-sentiment">--</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">PUT/CALL RATIO</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;" id="opt-pc-ratio">--</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL CALL VOLUME</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--green);" id="opt-call-vol">--</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL PUT VOLUME</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--red);" id="opt-put-vol">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Options Tables -->
+            <div class="grid grid-2" id="options-tables" style="display: none;">
+                <!-- Calls Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📞 Calls</div>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div style="max-height: 600px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                                <thead style="position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border);">
+                                    <tr>
+                                        <th style="padding: 8px; text-align: left;">Strike</th>
+                                        <th style="padding: 8px; text-align: right;">Bid</th>
+                                        <th style="padding: 8px; text-align: right;">Ask</th>
+                                        <th style="padding: 8px; text-align: right;">Vol</th>
+                                        <th style="padding: 8px; text-align: right;">OI</th>
+                                        <th style="padding: 8px; text-align: right;">IV</th>
+                                        <th style="padding: 8px; text-align: right;">Delta</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="calls-table-body">
+                                    <tr>
+                                        <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                            Enter a ticker to load options chain
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Puts Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📉 Puts</div>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div style="max-height: 600px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                                <thead style="position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border);">
+                                    <tr>
+                                        <th style="padding: 8px; text-align: left;">Strike</th>
+                                        <th style="padding: 8px; text-align: right;">Bid</th>
+                                        <th style="padding: 8px; text-align: right;">Ask</th>
+                                        <th style="padding: 8px; text-align: right;">Vol</th>
+                                        <th style="padding: 8px; text-align: right;">OI</th>
+                                        <th style="padding: 8px; text-align: right;">IV</th>
+                                        <th style="padding: 8px; text-align: right;">Delta</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="puts-table-body">
+                                    <tr>
+                                        <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                            Enter a ticker to load options chain
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2454,11 +2618,18 @@
         async function showTicker(ticker) {
             openModal(ticker, '<div style="text-align: center; padding: 20px;">Loading...</div>');
             try {
-                const res = await fetch(`${API_BASE}/ticker/${ticker}`);
-                const data = await res.json();
+                // Fetch both stock data and options overview in parallel
+                const [stockRes, optionsRes] = await Promise.all([
+                    fetch(`${API_BASE}/ticker/${ticker}`),
+                    fetch(`${API_BASE}/options/overview/${ticker}`)
+                ]);
+
+                const data = await stockRes.json();
+                const optionsData = await optionsRes.json();
+
                 if (data.ok && data.stock) {
                     const s = data.stock;
-                    const content = `
+                    let content = `
                         <div style="display: grid; gap: 16px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div>
@@ -2486,8 +2657,49 @@
                             </div>
                             ${s.hottest_theme ? `<div style="padding: 8px 12px; background: var(--blue-bg); border-radius: 8px; font-size: 0.875rem;"><strong>Theme:</strong> ${s.hottest_theme}</div>` : ''}
                             ${s.catalyst ? `<div style="padding: 8px 12px; background: var(--yellow-bg); border-radius: 8px; font-size: 0.875rem;"><strong>Catalyst:</strong> ${s.catalyst}</div>` : ''}
-                        </div>
                     `;
+
+                    // Add options overview if available
+                    if (optionsData.ok && optionsData.data && !optionsData.data.error) {
+                        const opts = optionsData.data;
+                        const flow = opts.flow || {};
+                        const unusual = opts.unusual_activity || {};
+
+                        if (flow.sentiment || flow.put_call_ratio) {
+                            const sentiment = flow.sentiment || 'neutral';
+                            const sentimentColor = sentiment === 'bullish' ? 'var(--green)' :
+                                                   sentiment === 'bearish' ? 'var(--red)' :
+                                                   'var(--text-muted)';
+
+                            content += `
+                                <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px; border-left: 3px solid ${sentimentColor};">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">📊 OPTIONS FLOW</div>
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                                        <div>
+                                            <div style="font-size: 0.7rem; color: var(--text-muted);">Sentiment</div>
+                                            <div style="font-weight: 600; color: ${sentimentColor}; text-transform: uppercase;">${sentiment}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.7rem; color: var(--text-muted);">P/C Ratio</div>
+                                            <div style="font-weight: 600;">${flow.put_call_ratio?.toFixed(2) || '--'}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 0.7rem; color: var(--text-muted);">Call Vol</div>
+                                            <div style="font-weight: 600; color: var(--green);">${formatVolume(flow.total_call_volume || 0)}</div>
+                                        </div>
+                                    </div>
+                                    ${unusual.unusual_activity ?
+                                        `<div style="margin-top: 8px; padding: 6px 10px; background: rgba(255, 193, 7, 0.1); border-radius: 4px; font-size: 0.75rem; color: var(--yellow);">
+                                            ⚠️ Unusual activity detected (${unusual.unusual_contracts?.length || 0} contracts)
+                                        </div>` :
+                                        ''
+                                    }
+                                </div>
+                            `;
+                        }
+                    }
+
+                    content += `</div>`;
                     document.getElementById('modal-body').innerHTML = content;
                 }
             } catch (e) {
@@ -4259,6 +4471,9 @@
                         </div>
                     `;
                     document.getElementById('modal-body').innerHTML = content;
+
+                    // Update options flow sidebar
+                    showOptionsFlowForTicker(t.ticker);
                 }
             } catch (e) {
                 document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to load trade details</div>';
@@ -4644,6 +4859,334 @@
             renderActivityFeed();
         }
 
+        // =============================================================================
+        // OPTIONS FEATURES (POLYGON)
+        // =============================================================================
+
+        async function fetchUnusualOptions() {
+            try {
+                const res = await fetch(`${API_BASE}/options/scan/unusual?limit=10`);
+                const data = await res.json();
+
+                if (!data.ok || !data.data || data.data.length === 0) {
+                    document.getElementById('unusual-options-container').innerHTML =
+                        '<div style="color: var(--text-muted); font-size: 0.8125rem;">No unusual activity detected</div>';
+                    return;
+                }
+
+                let html = '';
+                data.data.slice(0, 5).forEach(item => {
+                    const signals = item.signals || [];
+                    const sentiment = signals.find(s => s.type === 'BEARISH_FLOW' || s.type === 'BULLISH_FLOW');
+                    const sentimentColor = sentiment ?
+                        (sentiment.type === 'BULLISH_FLOW' ? 'var(--green)' : 'var(--red)') :
+                        'var(--text-muted)';
+
+                    html += `
+                        <div class="sidebar-item" style="cursor: pointer;" onclick="showOptionsDetail('${item.ticker}')">
+                            <div>
+                                <div style="font-weight: 600;">${item.ticker}</div>
+                                <div style="font-size: 0.7rem; color: ${sentimentColor};">
+                                    ${item.unusual_contracts} unusual contracts
+                                </div>
+                            </div>
+                            <div style="text-align: right; font-size: 0.75rem; color: var(--text-muted);">
+                                ${sentiment ? sentiment.strength : 'moderate'}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                document.getElementById('unusual-options-container').innerHTML = html;
+            } catch (e) {
+                console.error('Failed to fetch unusual options:', e);
+                document.getElementById('unusual-options-container').innerHTML =
+                    '<div style="color: var(--red); font-size: 0.8125rem;">Failed to load</div>';
+            }
+        }
+
+        function showOptionsDetail(ticker) {
+            // Switch to Options tab
+            showTab('options');
+
+            // Load options chain for ticker
+            document.getElementById('options-ticker-input').value = ticker;
+            loadOptionsChain();
+
+            // Also load technical indicators
+            document.getElementById('technical-ticker-input').value = ticker;
+            loadTechnicalIndicators();
+        }
+
+        // Options flow for Trades tab
+        let currentFlowTicker = null;
+
+        async function showOptionsFlowForTicker(ticker) {
+            if (!ticker) {
+                document.getElementById('options-flow-container').innerHTML =
+                    '<div style="color: var(--text-muted); font-size: 0.8125rem;">Select a position to view options flow</div>';
+                currentFlowTicker = null;
+                return;
+            }
+
+            currentFlowTicker = ticker;
+
+            try {
+                const res = await fetch(`${API_BASE}/options/flow/${ticker}`);
+                const data = await res.json();
+
+                if (!data.ok || data.data.error) {
+                    document.getElementById('options-flow-container').innerHTML =
+                        '<div style="color: var(--text-muted); font-size: 0.8125rem;">No options data available</div>';
+                    return;
+                }
+
+                const flow = data.data;
+                const sentiment = flow.sentiment || 'neutral';
+                const sentimentColor = sentiment === 'bullish' ? 'var(--green)' :
+                                      sentiment === 'bearish' ? 'var(--red)' :
+                                      'var(--text-muted)';
+
+                const html = `
+                    <div style="margin-bottom: 1rem;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Sentiment</div>
+                        <div style="font-size: 1.25rem; font-weight: 600; color: ${sentimentColor}; text-transform: uppercase;">
+                            ${sentiment}
+                        </div>
+                        ${flow.sentiment_score !== undefined ?
+                            `<div style="font-size: 0.7rem; color: var(--text-muted);">${flow.sentiment_score}/100</div>` :
+                            ''}
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Put/Call Ratio</span>
+                        <span class="sidebar-value">${flow.put_call_ratio?.toFixed(2) || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Call Volume</span>
+                        <span class="sidebar-value green">${flow.total_call_volume?.toLocaleString() || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Put Volume</span>
+                        <span class="sidebar-value red">${flow.total_put_volume?.toLocaleString() || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Call OI</span>
+                        <span class="sidebar-value">${flow.total_call_oi?.toLocaleString() || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Put OI</span>
+                        <span class="sidebar-value">${flow.total_put_oi?.toLocaleString() || '--'}</span>
+                    </div>
+                    ${flow.has_unusual_activity ?
+                        '<div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255, 193, 7, 0.1); border-radius: 0.5rem; font-size: 0.75rem; color: var(--yellow);">⚠️ Unusual activity detected</div>' :
+                        ''}
+                `;
+
+                document.getElementById('options-flow-container').innerHTML = html;
+            } catch (e) {
+                console.error('Failed to fetch options flow:', e);
+                document.getElementById('options-flow-container').innerHTML =
+                    '<div style="color: var(--red); font-size: 0.8125rem;">Failed to load</div>';
+            }
+        }
+
+        async function refreshOptionsFlow() {
+            if (currentFlowTicker) {
+                await showOptionsFlowForTicker(currentFlowTicker);
+            }
+        }
+
+        // Options chain loader
+        async function loadOptionsChain() {
+            const ticker = document.getElementById('options-ticker-input').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+
+            try {
+                // Show loading state
+                document.getElementById('calls-table-body').innerHTML =
+                    '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">Loading...</td></tr>';
+                document.getElementById('puts-table-body').innerHTML =
+                    '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">Loading...</td></tr>';
+
+                // Fetch options chain
+                const res = await fetch(`${API_BASE}/options/chain/${ticker}`);
+                const data = await res.json();
+
+                if (!data.ok || data.data.error) {
+                    throw new Error(data.data?.error || 'Failed to load options chain');
+                }
+
+                const chain = data.data;
+
+                // Show summary grid
+                document.getElementById('options-summary').style.display = 'grid';
+                document.getElementById('options-tables').style.display = 'grid';
+
+                // Populate summary
+                const summary = chain.summary || {};
+                const sentiment = summary.sentiment || 'neutral';
+                const sentimentColor = sentiment === 'bullish' ? 'var(--green)' :
+                                      sentiment === 'bearish' ? 'var(--red)' :
+                                      'var(--text-muted)';
+
+                document.getElementById('opt-sentiment').textContent = sentiment.toUpperCase();
+                document.getElementById('opt-sentiment').style.color = sentimentColor;
+                document.getElementById('opt-pc-ratio').textContent = (summary.put_call_ratio || 0).toFixed(2);
+                document.getElementById('opt-call-vol').textContent = (summary.total_call_volume || 0).toLocaleString();
+                document.getElementById('opt-put-vol').textContent = (summary.total_put_volume || 0).toLocaleString();
+
+                // Render calls table
+                const calls = chain.calls || [];
+                if (calls.length === 0) {
+                    document.getElementById('calls-table-body').innerHTML =
+                        '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">No call contracts available</td></tr>';
+                } else {
+                    document.getElementById('calls-table-body').innerHTML = calls.slice(0, 50).map(c => {
+                        const deltaColor = (c.delta || 0) >= 0.5 ? 'var(--green)' : 'var(--text-muted)';
+                        return `
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <td style="padding: 8px; font-weight: 600;">$${c.strike || '--'}</td>
+                                <td style="padding: 8px; text-align: right;">$${(c.bid || 0).toFixed(2)}</td>
+                                <td style="padding: 8px; text-align: right;">$${(c.ask || 0).toFixed(2)}</td>
+                                <td style="padding: 8px; text-align: right;">${(c.volume || 0).toLocaleString()}</td>
+                                <td style="padding: 8px; text-align: right;">${(c.open_interest || 0).toLocaleString()}</td>
+                                <td style="padding: 8px; text-align: right;">${c.implied_volatility ? (c.implied_volatility * 100).toFixed(1) + '%' : '--'}</td>
+                                <td style="padding: 8px; text-align: right; color: ${deltaColor}; font-weight: 600;">${c.delta ? c.delta.toFixed(3) : '--'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                // Render puts table
+                const puts = chain.puts || [];
+                if (puts.length === 0) {
+                    document.getElementById('puts-table-body').innerHTML =
+                        '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">No put contracts available</td></tr>';
+                } else {
+                    document.getElementById('puts-table-body').innerHTML = puts.slice(0, 50).map(p => {
+                        const deltaColor = (p.delta || 0) <= -0.5 ? 'var(--red)' : 'var(--text-muted)';
+                        return `
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                <td style="padding: 8px; font-weight: 600;">$${p.strike || '--'}</td>
+                                <td style="padding: 8px; text-align: right;">$${(p.bid || 0).toFixed(2)}</td>
+                                <td style="padding: 8px; text-align: right;">$${(p.ask || 0).toFixed(2)}</td>
+                                <td style="padding: 8px; text-align: right;">${(p.volume || 0).toLocaleString()}</td>
+                                <td style="padding: 8px; text-align: right;">${(p.open_interest || 0).toLocaleString()}</td>
+                                <td style="padding: 8px; text-align: right;">${p.implied_volatility ? (p.implied_volatility * 100).toFixed(1) + '%' : '--'}</td>
+                                <td style="padding: 8px; text-align: right; color: ${deltaColor}; font-weight: 600;">${p.delta ? p.delta.toFixed(3) : '--'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+            } catch (e) {
+                console.error('Failed to load options chain:', e);
+                alert('Failed to load options chain: ' + e.message);
+                document.getElementById('calls-table-body').innerHTML =
+                    '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
+                document.getElementById('puts-table-body').innerHTML =
+                    '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
+            }
+        }
+
+        // Technical indicators loader
+        async function loadTechnicalIndicators() {
+            const ticker = document.getElementById('technical-ticker-input').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+
+            try {
+                // Show loading state
+                document.getElementById('technical-indicators-container').innerHTML =
+                    '<div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>';
+
+                // Fetch technical indicators
+                const res = await fetch(`${API_BASE}/options/technical/${ticker}`);
+                const data = await res.json();
+
+                if (!data.ok || data.data.error) {
+                    throw new Error(data.data?.error || 'Failed to load technical indicators');
+                }
+
+                const tech = data.data;
+
+                // Determine trend color
+                const trendColors = {
+                    'bullish': 'var(--green)',
+                    'bearish': 'var(--red)',
+                    'neutral': 'var(--text-muted)',
+                    'sideways': 'var(--text-muted)'
+                };
+                const trendColor = trendColors[tech.trend?.toLowerCase()] || 'var(--text-muted)';
+
+                // RSI color coding
+                let rsiColor = 'var(--text)';
+                if (tech.rsi >= 70) rsiColor = 'var(--red)';
+                else if (tech.rsi <= 30) rsiColor = 'var(--green)';
+
+                // Build HTML
+                let html = `
+                    <div style="margin-bottom: 12px;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">TREND</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: ${trendColor}; text-transform: uppercase;">
+                            ${tech.trend || 'N/A'}
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Price: $${tech.price?.toFixed(2) || '--'}</div>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">SMA 20</span>
+                        <span class="sidebar-value">${tech.sma_20 ? '$' + tech.sma_20.toFixed(2) : '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">SMA 50</span>
+                        <span class="sidebar-value">${tech.sma_50 ? '$' + tech.sma_50.toFixed(2) : '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">SMA 200</span>
+                        <span class="sidebar-value">${tech.sma_200 ? '$' + tech.sma_200.toFixed(2) : '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">RSI (14)</span>
+                        <span class="sidebar-value" style="color: ${rsiColor}; font-weight: 600;">${tech.rsi?.toFixed(1) || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">MACD</span>
+                        <span class="sidebar-value">${tech.macd?.toFixed(2) || '--'}</span>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-label">Signal</span>
+                        <span class="sidebar-value">${tech.macd_signal?.toFixed(2) || '--'}</span>
+                    </div>
+                `;
+
+                // Add signals if available
+                if (tech.signals && tech.signals.length > 0) {
+                    html += `
+                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">ACTIVE SIGNALS</div>
+                            ${tech.signals.map(signal => `
+                                <div style="font-size: 0.75rem; padding: 4px 8px; background: var(--bg-hover); border-radius: 4px; margin-bottom: 4px;">
+                                    ${signal}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
+                document.getElementById('technical-indicators-container').innerHTML = html;
+
+            } catch (e) {
+                console.error('Failed to load technical indicators:', e);
+                document.getElementById('technical-indicators-container').innerHTML =
+                    '<div style="color: var(--red); font-size: 0.8125rem;">Failed to load: ' + e.message + '</div>';
+            }
+        }
+
         async function refreshAll() {
             console.log('🔄 refreshAll() called');
             document.getElementById('last-update').textContent = 'Refreshing...';
@@ -4666,6 +5209,7 @@
                 fetchThemeRadar(),
                 fetchThemeAlerts(),
                 fetchTrades(),
+                fetchUnusualOptions(),
             ]);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
@@ -4678,6 +5222,9 @@
         // Init
         document.addEventListener('DOMContentLoaded', () => {
             refreshAll();
+
+            // Auto-refresh unusual options every 5 minutes
+            setInterval(fetchUnusualOptions, 300000);
 
             // Initialize sync client
             setTimeout(() => {

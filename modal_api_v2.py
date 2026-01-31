@@ -360,6 +360,76 @@ def create_fastapi_app():
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
+    # ROUTES - OPTIONS (POLYGON)
+    # =============================================================================
+
+    @web_app.get("/options/flow/{ticker_symbol}")
+    def options_flow(ticker_symbol: str):
+        """Get options flow sentiment for a ticker"""
+        try:
+            from src.data.options import get_options_flow
+            flow = get_options_flow(ticker_symbol.upper())
+            return {"ok": True, "data": flow}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/unusual/{ticker_symbol}")
+    def options_unusual(ticker_symbol: str, threshold: float = Query(2.0)):
+        """Detect unusual options activity for a ticker"""
+        try:
+            from src.data.options import get_unusual_activity
+            unusual = get_unusual_activity(ticker_symbol.upper(), threshold)
+            return {"ok": True, "data": unusual}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/chain/{ticker_symbol}")
+    def options_chain(ticker_symbol: str, expiration: str = Query(None)):
+        """Get options chain with Greeks for a ticker"""
+        try:
+            from src.data.options import get_options_chain
+            chain = get_options_chain(ticker_symbol.upper(), expiration)
+            return {"ok": True, "data": chain}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/technical/{ticker_symbol}")
+    def options_technical(ticker_symbol: str):
+        """Get technical indicators (SMA, RSI, MACD) for a ticker"""
+        try:
+            from src.data.options import get_technical_indicators
+            technical = get_technical_indicators(ticker_symbol.upper())
+            return {"ok": True, "data": technical}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/overview/{ticker_symbol}")
+    def options_overview(ticker_symbol: str):
+        """Get comprehensive options overview combining flow, unusual activity, and technicals"""
+        try:
+            from src.data.options import get_options_overview
+            overview = get_options_overview(ticker_symbol.upper())
+            return {"ok": True, "data": overview}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/scan/unusual")
+    def options_scan_unusual(limit: int = Query(20)):
+        """Scan all tracked stocks for unusual options activity"""
+        try:
+            from src.data.options import scan_unusual_options_universe
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": False, "error": "No scan data available"}
+
+            # Get top 100 stocks from scan results
+            tickers = [s['ticker'] for s in results['results'][:100]]
+            unusual = scan_unusual_options_universe(tickers, limit=limit)
+            return {"ok": True, "data": unusual}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =============================================================================
     # ROUTES - CONTRACTS
     # =============================================================================
 
