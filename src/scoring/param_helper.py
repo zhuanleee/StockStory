@@ -451,10 +451,23 @@ def update_outcome(alert_id: str, outcomes: dict) -> bool:
 def get_learning_status() -> Dict[str, Any]:
     """Get comprehensive learning status"""
     try:
-        from src.learning.parameter_learning import get_learning_status as _get_status
-        return _get_status()
-    except ImportError:
-        return {'error': 'Parameter learning not available'}
+        # Import directly from module file to avoid loading heavy ML dependencies
+        import importlib.util
+        import os
+        from pathlib import Path
+
+        # Find parameter_learning.py relative to this file
+        learning_dir = Path(__file__).parent.parent / "learning"
+        param_learning_path = learning_dir / "parameter_learning.py"
+
+        spec = importlib.util.spec_from_file_location("parameter_learning", param_learning_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.get_learning_status()
+    except Exception as e:
+        import traceback
+        logger.error(f"Failed to load parameter learning: {e}\n{traceback.format_exc()}")
+        return {'error': f'Parameter learning not available: {str(e)}'}
 
 
 def run_health_check() -> Dict[str, Any]:
