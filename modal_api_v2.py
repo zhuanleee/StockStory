@@ -59,6 +59,15 @@ def create_fastapi_app():
     # Create FastAPI app
     web_app = FastAPI(title="Stock Scanner API v2", version="2.0")
 
+    # Configure logging
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    logger = logging.getLogger("api")
+
     # Add CORS (restricted to known origins)
     web_app.add_middleware(
         CORSMiddleware,
@@ -87,24 +96,124 @@ def create_fastapi_app():
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run wss://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run"
         return response
 
-    # Add request logging middleware
+    # Global metrics for monitoring
+    from collections import defaultdict
+    import time as time_module
+
+    class APIMetrics:
+        def __init__(self):
+            self.total_requests = 0
+            self.total_errors = 0
+            self.status_codes = defaultdict(int)
+            self.endpoint_calls = defaultdict(int)
+            self.endpoint_errors = defaultdict(int)
+            self.latencies = []
+            self.error_log = []  # Store recent errors
+            self.start_time = time_module.time()
+
+        def record_request(self, path: str, status_code: int, duration: float):
+            self.total_requests += 1
+            self.status_codes[status_code] += 1
+            self.endpoint_calls[path] += 1
+            self.latencies.append(duration)
+
+            # Keep only last 1000 latencies
+            if len(self.latencies) > 1000:
+                self.latencies = self.latencies[-1000:]
+
+            # Track errors (4xx and 5xx)
+            if status_code >= 400:
+                self.total_errors += 1
+                self.endpoint_errors[path] += 1
+
+        def record_error(self, path: str, error: str):
+            self.error_log.append({
+                'path': path,
+                'error': error,
+                'timestamp': datetime.now().isoformat()
+            })
+            # Keep only last 100 errors
+            if len(self.error_log) > 100:
+                self.error_log = self.error_log[-100:]
+
+        def get_stats(self):
+            uptime = time_module.time() - self.start_time
+            latencies = sorted(self.latencies) if self.latencies else [0]
+
+            return {
+                'uptime_seconds': round(uptime, 2),
+                'total_requests': self.total_requests,
+                'total_errors': self.total_errors,
+                'error_rate': round(self.total_errors / max(self.total_requests, 1) * 100, 2),
+                'status_codes': dict(self.status_codes),
+                'top_endpoints': dict(sorted(self.endpoint_calls.items(), key=lambda x: x[1], reverse=True)[:10]),
+                'error_endpoints': dict(sorted(self.endpoint_errors.items(), key=lambda x: x[1], reverse=True)[:10]),
+                'latency_p50': round(latencies[len(latencies) // 2] * 1000, 2),
+                'latency_p95': round(latencies[int(len(latencies) * 0.95)] * 1000, 2),
+                'latency_p99': round(latencies[int(len(latencies) * 0.99)] * 1000, 2),
+                'recent_errors': self.error_log[-10:]  # Last 10 errors
+            }
+
+    api_metrics = APIMetrics()
+
+    # Add request logging and metrics middleware
     @web_app.middleware("http")
     async def log_requests(request, call_next):
         import time
         start_time = time.time()
-        response = await call_next(request)
-        process_time = time.time() - start_time
 
-        # Log request details
-        import logging
-        logger = logging.getLogger("api")
-        logger.info(
-            f"{request.method} {request.url.path} "
-            f"status={response.status_code} "
-            f"duration={process_time:.3f}s "
-            f"client={request.client.host if request.client else 'unknown'}"
-        )
-        return response
+        try:
+            response = await call_next(request)
+            process_time = time.time() - start_time
+
+            # Record metrics
+            api_metrics.record_request(request.url.path, response.status_code, process_time)
+
+            # Log request details
+            import logging
+            logger = logging.getLogger("api")
+
+            # Log level based on status code
+            if response.status_code >= 500:
+                logger.error(
+                    f"{request.method} {request.url.path} "
+                    f"status={response.status_code} "
+                    f"duration={process_time:.3f}s "
+                    f"client={request.client.host if request.client else 'unknown'}"
+                )
+            elif response.status_code >= 400:
+                logger.warning(
+                    f"{request.method} {request.url.path} "
+                    f"status={response.status_code} "
+                    f"duration={process_time:.3f}s "
+                    f"client={request.client.host if request.client else 'unknown'}"
+                )
+            else:
+                logger.info(
+                    f"{request.method} {request.url.path} "
+                    f"status={response.status_code} "
+                    f"duration={process_time:.3f}s "
+                    f"client={request.client.host if request.client else 'unknown'}"
+                )
+
+            return response
+
+        except Exception as e:
+            process_time = time.time() - start_time
+
+            # Record error metrics
+            api_metrics.record_request(request.url.path, 500, process_time)
+            api_metrics.record_error(request.url.path, str(e))
+
+            # Log error
+            import logging
+            logger = logging.getLogger("api")
+            logger.exception(
+                f"Unhandled exception in {request.method} {request.url.path}: {e}"
+            )
+
+            # Re-raise to let FastAPI handle it
+            raise
 
     # Startup optimization: preload hot data into cache
     @web_app.on_event("startup")
@@ -146,6 +255,47 @@ def create_fastapi_app():
             return {"ok": True, **health_data}
         except Exception as e:
             return {"ok": True, "status": "healthy", "service": "modal", "timestamp": datetime.now().isoformat()}
+
+    @web_app.get("/admin/metrics")
+    def get_metrics():
+        """
+        View API metrics and performance statistics.
+
+        Tracks:
+        - Request counts and error rates
+        - Latency percentiles (p50, p95, p99)
+        - Top endpoints by traffic
+        - Recent errors
+        - Uptime
+
+        Example: GET /admin/metrics
+        """
+        stats = api_metrics.get_stats()
+        return {
+            "ok": True,
+            "timestamp": datetime.now().isoformat(),
+            "metrics": stats
+        }
+
+    @web_app.get("/admin/performance")
+    def get_performance():
+        """
+        View performance monitor statistics from scoring functions.
+
+        Shows detailed timing stats for all monitored operations.
+
+        Example: GET /admin/performance
+        """
+        try:
+            from src.core.performance import perf_monitor
+            stats = perf_monitor.get_all_stats()
+            return {
+                "ok": True,
+                "timestamp": datetime.now().isoformat(),
+                "performance": stats
+            }
+        except ImportError:
+            return {"ok": False, "error": "Performance monitoring not available"}
 
     @web_app.get("/scan")
     def scan():
