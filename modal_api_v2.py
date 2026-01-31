@@ -510,6 +510,44 @@ def create_fastapi_app():
     def evolution_correlations():
         return {"ok": True, "data": {"message": "Not yet implemented"}}
 
+    @web_app.get("/debug/learning-import")
+    def debug_learning_import():
+        """Debug endpoint to test parameter_learning import"""
+        import sys
+        import traceback
+        errors = []
+
+        # Test 1: Check if src.learning exists
+        try:
+            import src.learning
+            errors.append({"test": "src.learning", "status": "OK"})
+        except Exception as e:
+            errors.append({"test": "src.learning", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
+
+        # Test 2: Check if parameter_learning can be imported
+        try:
+            from src.learning import parameter_learning
+            errors.append({"test": "src.learning.parameter_learning", "status": "OK"})
+        except Exception as e:
+            errors.append({"test": "src.learning.parameter_learning", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
+
+        # Test 3: Check if get_learning_status exists
+        try:
+            from src.learning.parameter_learning import get_learning_status
+            errors.append({"test": "get_learning_status function", "status": "OK"})
+        except Exception as e:
+            errors.append({"test": "get_learning_status function", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
+
+        # Test 4: Try calling it
+        try:
+            from src.learning.parameter_learning import get_learning_status
+            result = get_learning_status()
+            errors.append({"test": "call get_learning_status()", "status": "OK", "result_keys": list(result.keys())})
+        except Exception as e:
+            errors.append({"test": "call get_learning_status()", "status": "FAIL", "error": str(e), "trace": traceback.format_exc()})
+
+        return {"ok": True, "tests": errors, "python_path": sys.path}
+
     @web_app.get("/parameters/status")
     def parameters_status():
         try:
