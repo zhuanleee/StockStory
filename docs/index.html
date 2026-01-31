@@ -3027,10 +3027,62 @@
             try {
                 const res = await fetch(`${API_BASE}/themes/list`);
                 const data = await res.json();
-                if (data.ok && data.themes) {
-                    window.themesData = data.themes;
+
+                // Handle both data.themes and data.data structures
+                const themesArray = data.themes || data.data || [];
+
+                if (data.ok) {
+                    // Convert array to object if needed
+                    if (Array.isArray(themesArray)) {
+                        window.themesData = {};
+                        themesArray.forEach(theme => {
+                            if (theme.name) {
+                                window.themesData[theme.name] = theme;
+                            }
+                        });
+                    } else {
+                        window.themesData = themesArray;
+                    }
+
+                    // Render themes to DOM
+                    renderThemes();
                 }
-            } catch (e) { console.warn('Themes fetch failed:', e); }
+            } catch (e) {
+                console.warn('Themes fetch failed:', e);
+                renderThemes(); // Show empty state
+            }
+        }
+
+        function renderThemes() {
+            const themes = window.themesData || {};
+            const themeNames = Object.keys(themes);
+
+            // Render theme pills
+            const allThemesContainer = document.getElementById('all-themes');
+            if (themeNames.length === 0) {
+                allThemesContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.875rem; padding: 16px;">No themes available. Themes will appear here after a scan is completed.</div>';
+                document.getElementById('theme-cards').innerHTML = '';
+                return;
+            }
+
+            allThemesContainer.innerHTML = themeNames.map(name => `
+                <span class="theme-pill" onclick="selectTheme('${name}')">${name}</span>
+            `).join('');
+
+            // Render theme cards
+            const themeCardsContainer = document.getElementById('theme-cards');
+            themeCardsContainer.innerHTML = themeNames.map(name => {
+                const theme = themes[name];
+                const tickerCount = theme.tickers ? theme.tickers.length : 0;
+                return `
+                    <div class="card card-glass" style="cursor: pointer;" onclick="selectTheme('${name}')">
+                        <div class="card-body">
+                            <div style="font-weight: var(--font-semibold); font-size: var(--text-lg); margin-bottom: 8px; color: var(--text);">${name}</div>
+                            <div style="color: var(--text-muted); font-size: var(--text-sm);">${tickerCount} stocks</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function selectTheme(themeName) {
