@@ -72,6 +72,10 @@ def create_fastapi_app():
         allow_headers=["*"]
     )
 
+    # Add GZip compression for responses
+    from fastapi.middleware.gzip import GZipMiddleware
+    web_app.add_middleware(GZipMiddleware, minimum_size=1000)
+
     # Add security headers middleware
     @web_app.middleware("http")
     async def add_security_headers(request, call_next):
@@ -101,6 +105,18 @@ def create_fastapi_app():
             f"client={request.client.host if request.client else 'unknown'}"
         )
         return response
+
+    # Startup optimization: preload hot data into cache
+    @web_app.on_event("startup")
+    async def startup():
+        """Preload frequently accessed data on container startup"""
+        try:
+            from src.core.performance import optimize_startup
+            await optimize_startup()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger("api")
+            logger.warning(f"Startup optimization failed: {e}")
 
     # Helper to load scan results
     def load_scan_results():
