@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Scanner API - Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(99, 102, 241, 0.3);
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #334155;
+        }
+
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #a78bfa;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .metric-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+
+        .metric-value.good {
+            color: #10b981;
+        }
+
+        .metric-value.warning {
+            color: #f59e0b;
+        }
+
+        .metric-value.error {
+            color: #ef4444;
+        }
+
+        .big-number {
+            font-size: 48px;
+            font-weight: 700;
+            text-align: center;
+            margin: 20px 0;
+            color: #6366f1;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.active {
+            background: #10b98133;
+            color: #10b981;
+        }
+
+        .status-badge.disabled {
+            background: #ef444433;
+            color: #ef4444;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+
+        th {
+            color: #a78bfa;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        td {
+            color: #e2e8f0;
+        }
+
+        .error-log {
+            background: #1e1b2e;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .error-item {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: #2d2438;
+            border-left: 3px solid #ef4444;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .error-path {
+            color: #f59e0b;
+            font-weight: 600;
+        }
+
+        .error-message {
+            color: #ef4444;
+            margin-top: 4px;
+        }
+
+        .error-time {
+            color: #64748b;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .refresh-btn {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn:hover {
+            background: #4f46e5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+
+        .chart-container {
+            height: 200px;
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .bar {
+            position: absolute;
+            bottom: 0;
+            background: linear-gradient(to top, #6366f1, #8b5cf6);
+            border-radius: 4px 4px 0 0;
+            transition: height 0.3s;
+        }
+
+        .bar-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .uptime-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #10b98133;
+            color: #10b981;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Stock Scanner API Dashboard</h1>
+            <p class="subtitle">Real-time monitoring and performance metrics</p>
+        </header>
+
+        <button class="refresh-btn" onclick="loadAllData()">🔄 Refresh Data</button>
+
+        <!-- Overview Cards -->
+        <div class="grid">
+            <div class="card">
+                <h2>System Status</h2>
+                <div class="metric">
+                    <span class="metric-label">Status</span>
+                    <span class="uptime-badge">
+                        <span class="pulse"></span>
+                        Operational
+                    </span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Uptime</span>
+                    <span class="metric-value" id="uptime">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Requests</span>
+                    <span class="metric-value" id="total-requests">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Error Rate</span>
+                    <span class="metric-value" id="error-rate">-</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Performance</h2>
+                <div class="metric">
+                    <span class="metric-label">p50 Latency</span>
+                    <span class="metric-value good" id="p50-latency">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">p95 Latency</span>
+                    <span class="metric-value" id="p95-latency">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">p99 Latency</span>
+                    <span class="metric-value warning" id="p99-latency">-</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>API Features</h2>
+                <div class="metric">
+                    <span class="metric-label">Authentication</span>
+                    <span class="status-badge disabled" id="auth-status">Grace Period</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">AI Brain</span>
+                    <span class="status-badge disabled">Disabled</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Learning System</span>
+                    <span class="status-badge active">Active</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Codes -->
+        <div class="card">
+            <h2>Status Code Distribution</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Status Code</th>
+                        <th>Count</th>
+                        <th>Percentage</th>
+                    </tr>
+                </thead>
+                <tbody id="status-codes-table">
+                    <tr><td colspan="3" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Top Endpoints -->
+        <div class="card">
+            <h2>Top Endpoints by Traffic</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Endpoint</th>
+                        <th>Requests</th>
+                        <th>Errors</th>
+                    </tr>
+                </thead>
+                <tbody id="endpoints-table">
+                    <tr><td colspan="3" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Recent Errors -->
+        <div class="card">
+            <h2>Recent Errors (Last 10)</h2>
+            <div class="error-log" id="error-log">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Function Performance -->
+        <div class="card" id="performance-card" style="display: none;">
+            <h2>Function Performance</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Function</th>
+                        <th>Calls</th>
+                        <th>Avg (ms)</th>
+                        <th>p95 (ms)</th>
+                        <th>p99 (ms)</th>
+                    </tr>
+                </thead>
+                <tbody id="performance-table">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        function formatUptime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${minutes}m`;
+        }
+
+        function formatLatency(ms) {
+            return `${ms.toFixed(0)}ms`;
+        }
+
+        async function loadMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/metrics`);
+                const data = await response.json();
+
+                if (data.ok && data.metrics) {
+                    const m = data.metrics;
+
+                    // Overview
+                    document.getElementById('uptime').textContent = formatUptime(m.uptime_seconds);
+                    document.getElementById('total-requests').textContent = m.total_requests.toLocaleString();
+                    document.getElementById('error-rate').textContent = `${m.error_rate}%`;
+
+                    // Latency
+                    document.getElementById('p50-latency').textContent = formatLatency(m.latency_p50);
+                    document.getElementById('p95-latency').textContent = formatLatency(m.latency_p95);
+                    document.getElementById('p99-latency').textContent = formatLatency(m.latency_p99);
+
+                    // Color code latency
+                    const p99 = m.latency_p99;
+                    const p99El = document.getElementById('p99-latency');
+                    if (p99 < 500) {
+                        p99El.className = 'metric-value good';
+                    } else if (p99 < 1000) {
+                        p99El.className = 'metric-value warning';
+                    } else {
+                        p99El.className = 'metric-value error';
+                    }
+
+                    // Status codes
+                    const tbody = document.getElementById('status-codes-table');
+                    tbody.innerHTML = '';
+                    const totalRequests = m.total_requests;
+                    for (const [code, count] of Object.entries(m.status_codes)) {
+                        const pct = ((count / totalRequests) * 100).toFixed(1);
+                        const row = `<tr>
+                            <td>${code}</td>
+                            <td>${count.toLocaleString()}</td>
+                            <td>${pct}%</td>
+                        </tr>`;
+                        tbody.innerHTML += row;
+                    }
+
+                    // Top endpoints
+                    const endpointsTable = document.getElementById('endpoints-table');
+                    endpointsTable.innerHTML = '';
+                    const topEndpoints = Object.entries(m.top_endpoints).slice(0, 10);
+                    for (const [path, count] of topEndpoints) {
+                        const errors = m.error_endpoints[path] || 0;
+                        const row = `<tr>
+                            <td>${path}</td>
+                            <td>${count.toLocaleString()}</td>
+                            <td style="color: ${errors > 0 ? '#ef4444' : '#10b981'}">${errors}</td>
+                        </tr>`;
+                        endpointsTable.innerHTML += row;
+                    }
+
+                    // Recent errors
+                    const errorLog = document.getElementById('error-log');
+                    if (m.recent_errors && m.recent_errors.length > 0) {
+                        errorLog.innerHTML = '';
+                        for (const error of m.recent_errors) {
+                            const div = document.createElement('div');
+                            div.className = 'error-item';
+                            div.innerHTML = `
+                                <div class="error-path">${error.path}</div>
+                                <div class="error-message">${error.error}</div>
+                                <div class="error-time">${error.timestamp}</div>
+                            `;
+                            errorLog.appendChild(div);
+                        }
+                    } else {
+                        errorLog.innerHTML = '<div style="color: #10b981; text-align: center;">No errors 🎉</div>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load metrics:', error);
+            }
+        }
+
+        async function loadPerformance() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/performance`);
+                const data = await response.json();
+
+                if (data.ok && data.performance && Object.keys(data.performance).length > 0) {
+                    document.getElementById('performance-card').style.display = 'block';
+
+                    const tbody = document.getElementById('performance-table');
+                    tbody.innerHTML = '';
+
+                    for (const [name, stats] of Object.entries(data.performance)) {
+                        const row = `<tr>
+                            <td>${name}</td>
+                            <td>${stats.total_calls.toLocaleString()}</td>
+                            <td>${(stats.avg * 1000).toFixed(0)}</td>
+                            <td>${(stats.p95 * 1000).toFixed(0)}</td>
+                            <td>${(stats.p99 * 1000).toFixed(0)}</td>
+                        </tr>`;
+                        tbody.innerHTML += row;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load performance:', error);
+            }
+        }
+
+        function loadAllData() {
+            loadMetrics();
+            loadPerformance();
+        }
+
+        // Initial load
+        loadAllData();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadAllData, 30000);
+    </script>
+</body>
+</html>

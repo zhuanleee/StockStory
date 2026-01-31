@@ -30,6 +30,7 @@ image = (
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
+    .add_local_dir("static", remote_path="/root/static")
 )
 
 
@@ -53,7 +54,7 @@ def create_fastapi_app():
     # Imports only available in container
     from fastapi import FastAPI, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
     import sys
     sys.path.insert(0, '/root')
 
@@ -253,6 +254,9 @@ def create_fastapi_app():
         '/redoc',
         '/api-keys/request',  # Allow users to request API keys
         '/api-keys/generate',  # Allow key generation during grace period
+        '/admin/dashboard',  # Admin dashboard (consider adding auth later)
+        '/admin/metrics',  # Metrics endpoint
+        '/admin/performance',  # Performance endpoint
     }
 
     # Add authentication middleware
@@ -386,6 +390,46 @@ def create_fastapi_app():
             }
         except ImportError:
             return {"ok": False, "error": "Performance monitoring not available"}
+
+    @web_app.get("/admin/dashboard", response_class=HTMLResponse)
+    def admin_dashboard():
+        """
+        Admin dashboard with real-time metrics visualization.
+
+        Shows:
+        - System status and uptime
+        - Request/error statistics
+        - Latency percentiles
+        - Status code distribution
+        - Top endpoints by traffic
+        - Recent errors
+        - Function performance stats
+
+        Example: GET /admin/dashboard
+        """
+        try:
+            # Read dashboard HTML from static directory
+            dashboard_path = Path(__file__).parent / "static" / "admin_dashboard.html"
+            if dashboard_path.exists():
+                with open(dashboard_path, 'r') as f:
+                    return f.read()
+            else:
+                # Fallback: simple dashboard
+                return """
+                <html>
+                <head><title>Admin Dashboard</title></head>
+                <body style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #e2e8f0;">
+                    <h1>📊 Stock Scanner API Dashboard</h1>
+                    <p>Dashboard HTML not found. View metrics at:</p>
+                    <ul>
+                        <li><a href="/admin/metrics" style="color: #6366f1;">API Metrics</a></li>
+                        <li><a href="/admin/performance" style="color: #6366f1;">Performance Stats</a></li>
+                    </ul>
+                </body>
+                </html>
+                """
+        except Exception as e:
+            return f"<html><body><h1>Error loading dashboard</h1><p>{str(e)}</p></body></html>"
 
     # =============================================================================
     # ROUTES - API KEY MANAGEMENT
