@@ -494,7 +494,8 @@ def create_fastapi_app():
             status = get_learning_status()
             return {"ok": True, "data": status}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
 
     @web_app.get("/evolution/weights")
     def evolution_weights():
@@ -516,7 +517,8 @@ def create_fastapi_app():
             status = get_learning_status()
             return {"ok": True, "data": status}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
 
     # =============================================================================
     # ROUTES - TRADES (STUBS)
