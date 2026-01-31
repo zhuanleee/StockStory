@@ -90,7 +90,7 @@ def create_fastapi_app():
     @web_app.get("/health")
     def health():
         try:
-            from src.analysis.market_breadth import get_market_health
+            from src.analysis.market_health import get_market_health
             health_data = get_market_health()
             return {"ok": True, **health_data}
         except Exception as e:
