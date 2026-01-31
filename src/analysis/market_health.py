@@ -126,18 +126,20 @@ def get_breadth_universe() -> list:
     return BREADTH_UNIVERSE
 
 
-def get_stock_data(ticker, period='3mo'):
+def get_ticker_data_polygon_first(ticker, period='3mo', days=None):
     """
-    Fetch stock data with error handling.
-    Uses Polygon.io as primary, yfinance as fallback.
+    Universal data fetcher: Polygon.io FIRST, yfinance fallback.
+
+    PRIORITY: Always try Polygon.io first since user has paid subscription.
     """
     import os
 
     # Convert period to days
-    period_days = {'1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '5d': 5, '1d': 1}
-    days = period_days.get(period, 90)
+    if days is None:
+        period_days = {'1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '5d': 5, '1d': 1}
+        days = period_days.get(period, 90)
 
-    # Try Polygon first
+    # PRIORITY 1: Try Polygon first (ALWAYS - user has paid plan)
     polygon_key = os.environ.get('POLYGON_API_KEY', '')
     if polygon_key:
         try:
@@ -145,18 +147,31 @@ def get_stock_data(ticker, period='3mo'):
             df = get_price_data_sync(ticker, days=days)
             if df is not None and len(df) > 0:
                 df = normalize_dataframe_columns(df)
-                return ticker, df
+                logger.debug(f"✅ Polygon data for {ticker}")
+                return df
         except Exception as e:
-            logger.debug(f"Polygon fetch failed for {ticker}: {e}")
+            logger.debug(f"Polygon fetch failed for {ticker}, falling back to yfinance: {e}")
 
-    # Fallback to yfinance
+    # PRIORITY 2: Fallback to yfinance
     try:
         df = yf.download(ticker, period=period, progress=False)
         df = normalize_dataframe_columns(df)
-        return ticker, df
+        logger.debug(f"⚠️ yfinance fallback for {ticker}")
+        return df
     except Exception as e:
-        logger.error(f"Error fetching data for {ticker}: {e}")
-        return ticker, None
+        logger.error(f"Error fetching data for {ticker} (both Polygon and yfinance failed): {e}")
+        return None
+
+
+def get_stock_data(ticker, period='3mo'):
+    """
+    Fetch stock data with error handling.
+    Uses Polygon.io as primary, yfinance as fallback.
+
+    (Wrapper for backward compatibility)
+    """
+    df = get_ticker_data_polygon_first(ticker, period)
+    return ticker, df
 
 
 def safe_get_series(df, column, ticker=None):
@@ -213,21 +228,40 @@ def get_last_close(df, ticker=None):
 
 def get_real_put_call_ratio():
     """
-    Get Put/Call ratio estimate based on VIX.
+    Get Put/Call ratio from Polygon options data (PRIORITY) or VIX estimate (fallback).
 
-    Note: ^PCALL and ^CPCE symbols are no longer available on Yahoo Finance.
-    We use VIX-based estimation instead.
+    PRIORITY: User has paid Polygon subscription with options data.
+    Use real options flow data to calculate accurate Put/Call ratio.
     """
+    import os
+
+    # PRIORITY 1: Try Polygon options data (REAL Put/Call ratio)
+    polygon_key = os.environ.get('POLYGON_API_KEY', '')
+    if polygon_key:
+        try:
+            from src.data.polygon_provider import get_options_flow_sync
+
+            # Get options flow for SPY (broad market proxy)
+            flow = get_options_flow_sync('SPY')
+            if flow and 'put_call_ratio' in flow:
+                pc_ratio = flow['put_call_ratio']
+                logger.info(f"✅ Real Put/Call ratio from Polygon options: {pc_ratio}")
+                return round(pc_ratio, 2), 'POLYGON_OPTIONS'
+        except Exception as e:
+            logger.debug(f"Polygon options fetch failed, falling back to VIX estimate: {e}")
+
+    # PRIORITY 2: Fallback to VIX-based estimation
     try:
         # Use VIX to estimate put/call ratio
         # Higher VIX = more puts = higher P/C ratio
-        vix = yf.download('^VIX', period='5d', progress=False)
-        if vix is not None and len(vix) > 0:
-            vix_val = get_last_close(vix, '^VIX')
+        vix_df = get_ticker_data_polygon_first('^VIX', period='5d')
+        if vix_df is not None and len(vix_df) > 0:
+            vix_val = get_last_close(vix_df, '^VIX')
             if vix_val:
                 # Estimate P/C ratio from VIX
                 # VIX 12 -> P/C ~0.7, VIX 20 -> P/C ~0.9, VIX 30 -> P/C ~1.1
                 estimated_pcr = 0.5 + (vix_val / 50)
+                logger.debug(f"⚠️ VIX-estimated Put/Call ratio: {estimated_pcr}")
                 return round(estimated_pcr, 2), 'VIX_ESTIMATE'
     except Exception as e:
         logger.error(f"Error estimating put/call ratio from VIX: {e}")
@@ -240,13 +274,13 @@ def get_nyse_highs_lows():
     Get NYSE New Highs and New Lows data.
     Returns (new_highs, new_lows) or (None, None) if unavailable.
 
-    Note: ^HIGN and ^LOWN may not be available on Yahoo Finance.
-    Returns None if data unavailable.
+    PRIORITY: Tries Polygon first, then yfinance.
+    Note: ^HIGN and ^LOWN symbols are delisted on Yahoo Finance.
     """
     try:
-        # NYSE New Highs
-        highs = yf.download('^HIGN', period='5d', progress=False)
-        lows = yf.download('^LOWN', period='5d', progress=False)
+        # PRIORITY: Try Polygon first (likely won't have these symbols either)
+        highs = get_ticker_data_polygon_first('^HIGN', period='5d')
+        lows = get_ticker_data_polygon_first('^LOWN', period='5d')
 
         # Check if we got valid DataFrames
         if highs is None or not hasattr(highs, 'columns') or len(highs) == 0:
@@ -464,7 +498,8 @@ def calculate_fear_greed_index():
     try:
         # 1. VIX Level (20%)
         try:
-            vix = yf.download('^VIX', period='5d', progress=False)
+            # PRIORITY: Use Polygon first
+            vix = get_ticker_data_polygon_first('^VIX', period='5d')
             vix_current = get_last_close(vix, '^VIX')
             if vix_current is None:
                 raise ValueError("No VIX data")
@@ -564,7 +599,8 @@ def calculate_fear_greed_index():
 
         # 4. Safe Haven Demand (15%) - SPY vs TLT (bonds)
         try:
-            tlt = yf.download('TLT', period='1mo', progress=False)
+            # PRIORITY: Use Polygon first for ETF data
+            tlt = get_ticker_data_polygon_first('TLT', period='1mo')
             tlt_close = safe_get_series(tlt, 'Close', 'TLT')
             if tlt_close is None or len(tlt_close) < 10:
                 raise ValueError("Not enough TLT data")
@@ -594,8 +630,9 @@ def calculate_fear_greed_index():
 
         # 5. Junk Bond Demand (10%) - HYG vs LQD
         try:
-            hyg = yf.download('HYG', period='1mo', progress=False)
-            lqd = yf.download('LQD', period='1mo', progress=False)
+            # PRIORITY: Use Polygon first for ETF data
+            hyg = get_ticker_data_polygon_first('HYG', period='1mo')
+            lqd = get_ticker_data_polygon_first('LQD', period='1mo')
 
             hyg_close = safe_get_series(hyg, 'Close', 'HYG')
             lqd_close = safe_get_series(lqd, 'Close', 'LQD')
@@ -725,9 +762,12 @@ def calculate_fear_greed_index():
 def get_market_health_lite():
     """
     Fast market health using only VIX (for free tier / quick responses).
+
+    PRIORITY: Uses Polygon if available, falls back to yfinance.
     """
     try:
-        vix = yf.download('^VIX', period='5d', progress=False)
+        # PRIORITY: Use Polygon first
+        vix = get_ticker_data_polygon_first('^VIX', period='5d')
         vix_val = get_last_close(vix, '^VIX')
 
         if vix_val is None:
