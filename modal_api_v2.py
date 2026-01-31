@@ -58,8 +58,86 @@ def create_fastapi_app():
     import sys
     sys.path.insert(0, '/root')
 
-    # Create FastAPI app
-    web_app = FastAPI(title="Stock Scanner API v2", version="2.0")
+    # Create FastAPI app with comprehensive documentation
+    web_app = FastAPI(
+        title="Stock Scanner API",
+        version="2.0.0",
+        description="""
+# Stock Scanner API
+
+A comprehensive stock analysis API featuring story-first scoring, theme intelligence,
+and institutional-grade data sources.
+
+## Features
+
+* **Story-First Scoring** - Find stocks with compelling narratives before the crowd
+* **Theme Intelligence** - Track emerging themes and sector momentum
+* **Multi-Source Data** - Polygon, DeepSeek, StockTwits, Reddit, SEC Edgar
+* **Self-Learning System** - 124 parameters that evolve based on outcomes
+* **Real-Time Monitoring** - Social sentiment, news momentum, unusual activity
+* **API Authentication** - Secure access with rate limiting
+* **Performance Optimized** - Response compression, cache preloading, parallel fetching
+
+## Authentication
+
+Most endpoints require an API key. Include in requests as:
+
+```
+Authorization: Bearer <your-api-key>
+```
+
+Get an API key at `/api-keys/request`
+
+## Rate Limits
+
+* **Free tier:** 1,000 requests/day
+* **Pro tier:** 10,000 requests/day
+* **Enterprise tier:** 100,000 requests/day
+
+## Support
+
+* **Documentation:** https://github.com/yourusername/stock_scanner_bot
+* **Issues:** https://github.com/yourusername/stock_scanner_bot/issues
+        """,
+        contact={
+            "name": "Stock Scanner API Support",
+            "email": "support@example.com",
+        },
+        license_info={
+            "name": "MIT License",
+            "url": "https://opensource.org/licenses/MIT",
+        },
+        openapi_tags=[
+            {
+                "name": "Core",
+                "description": "Core API endpoints for health checks and scan results"
+            },
+            {
+                "name": "Admin",
+                "description": "Administrative endpoints for monitoring and metrics"
+            },
+            {
+                "name": "API Keys",
+                "description": "API key management and usage tracking"
+            },
+            {
+                "name": "Scanning",
+                "description": "Stock scanning and analysis endpoints"
+            },
+            {
+                "name": "Conviction",
+                "description": "High-conviction trade setups and alerts"
+            },
+            {
+                "name": "Intelligence",
+                "description": "Theme intelligence and market insights"
+            },
+            {
+                "name": "Learning",
+                "description": "Self-learning system parameters and evolution"
+            },
+        ]
+    )
 
     # Configure logging
     import logging
@@ -337,12 +415,33 @@ def create_fastapi_app():
     # ROUTES - CORE
     # =============================================================================
 
-    @web_app.get("/")
+    @web_app.get("/", tags=["Core"])
     def root():
-        return {"ok": True, "service": "stock-scanner-api-v2", "version": "2.0"}
+        """
+        API Root
 
-    @web_app.get("/health")
+        Returns basic API information and version.
+        """
+        return {
+            "ok": True,
+            "service": "stock-scanner-api-v2",
+            "version": "2.0.0",
+            "documentation": "/docs",
+            "dashboard": "/admin/dashboard"
+        }
+
+    @web_app.get("/health", tags=["Core"])
     def health():
+        """
+        Health Check
+
+        Returns API health status and market health metrics.
+
+        Returns:
+        - status: System status (healthy/degraded)
+        - market_health: Overall market health metrics
+        - timestamp: Current server time
+        """
         try:
             from src.analysis.market_health import get_market_health
             health_data = get_market_health()
@@ -350,7 +449,7 @@ def create_fastapi_app():
         except Exception as e:
             return {"ok": True, "status": "healthy", "service": "modal", "timestamp": datetime.now().isoformat()}
 
-    @web_app.get("/admin/metrics")
+    @web_app.get("/admin/metrics", tags=["Admin"])
     def get_metrics():
         """
         View API metrics and performance statistics.
@@ -371,7 +470,7 @@ def create_fastapi_app():
             "metrics": stats
         }
 
-    @web_app.get("/admin/performance")
+    @web_app.get("/admin/performance", tags=["Admin"])
     def get_performance():
         """
         View performance monitor statistics from scoring functions.
@@ -391,7 +490,7 @@ def create_fastapi_app():
         except ImportError:
             return {"ok": False, "error": "Performance monitoring not available"}
 
-    @web_app.get("/admin/dashboard", response_class=HTMLResponse)
+    @web_app.get("/admin/dashboard", response_class=HTMLResponse, tags=["Admin"])
     def admin_dashboard():
         """
         Admin dashboard with real-time metrics visualization.
@@ -435,7 +534,7 @@ def create_fastapi_app():
     # ROUTES - API KEY MANAGEMENT
     # =============================================================================
 
-    @web_app.post("/api-keys/generate")
+    @web_app.post("/api-keys/generate", tags=["API Keys"])
     def generate_api_key(
         user_id: str = Query(..., description="Unique user identifier"),
         tier: str = Query("free", description="API tier: free, pro, enterprise"),
@@ -478,7 +577,7 @@ def create_fastapi_app():
         except Exception as e:
             return {"ok": False, "error": f"Failed to generate API key: {str(e)}"}
 
-    @web_app.get("/api-keys/usage")
+    @web_app.get("/api-keys/usage", tags=["API Keys"])
     def get_api_key_usage(request: Request):
         """
         Get usage statistics for the authenticated API key.
@@ -501,7 +600,7 @@ def create_fastapi_app():
             "timestamp": datetime.now().isoformat()
         }
 
-    @web_app.post("/api-keys/revoke")
+    @web_app.post("/api-keys/revoke", tags=["API Keys"])
     def revoke_api_key(api_key: str = Query(..., description="API key to revoke")):
         """
         Revoke an API key.
@@ -519,7 +618,7 @@ def create_fastapi_app():
         else:
             return {"ok": False, "error": "API key not found"}
 
-    @web_app.get("/api-keys/request")
+    @web_app.get("/api-keys/request", tags=["API Keys"])
     def request_api_key():
         """
         Public endpoint: Instructions for requesting an API key.
@@ -544,7 +643,7 @@ def create_fastapi_app():
             "usage": "Authorization: Bearer <your-api-key>"
         }
 
-    @web_app.get("/scan")
+    @web_app.get("/scan", tags=["Scanning"])
     def scan():
         results = load_scan_results()
         if not results:
