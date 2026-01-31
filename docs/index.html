@@ -2701,7 +2701,23 @@
 
         function renderScanTable(stocks) {
             window.scanData = stocks;
+
+            // Populate theme filter dropdown
+            populateThemeFilter(stocks);
+
             filterTable();
+        }
+
+        function populateThemeFilter(stocks) {
+            const themeFilter = document.getElementById('filter-theme');
+            if (!themeFilter || !stocks || stocks.length === 0) return;
+
+            // Extract unique themes from scan data
+            const themes = [...new Set(stocks.map(s => s.hottest_theme).filter(t => t && t !== '-'))].sort();
+
+            // Keep "All Themes" option and add discovered themes
+            themeFilter.innerHTML = '<option value="">All Themes</option>' +
+                themes.map(theme => `<option value="${theme}">${theme}</option>`).join('');
         }
 
         function filterTable() {
