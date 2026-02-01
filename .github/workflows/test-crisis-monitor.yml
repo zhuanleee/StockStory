@@ -44,6 +44,7 @@ jobs:
 
     - name: Show recent logs
       if: always()
+      timeout-minutes: 1
       run: |
         echo "📋 Recent crisis monitor activity:"
-        modal app logs stock-scanner-ai-brain 2>&1 | grep -A 20 "CRISIS MONITOR" | tail -30 || echo "No recent logs available"
+        timeout 30 modal app logs stock-scanner-ai-brain 2>&1 | grep -A 20 "CRISIS MONITOR" | tail -30 || echo "No recent logs available (logs may take a few minutes to appear)"
