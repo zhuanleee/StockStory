@@ -1944,106 +1944,91 @@ def daily_correlation_analysis():
 
 @app.function(
     image=image,
-    timeout=3600,  # 1 hour max for full scan
-    schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6 AM PST (14:00 UTC)
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6:00 AM PST (14:00 UTC)
     volumes={VOLUME_PATH: volume},
 )
-def daily_scan_bundle():
+def morning_mega_bundle():
     """
-    Bundle 1: Daily Scan
+    Bundle 1: Morning Mega Bundle (Daily Scan + All Alerts)
     Runs Mon-Fri at 6:00 AM PST (14:00 UTC)
 
-    This is kept as a single function (already bundled).
-    """
-    print("=" * 70)
-    print("📦 BUNDLE 1: DAILY SCAN")
-    print("=" * 70)
-
-    result = _run_daily_scan()
-
-    print("=" * 70)
-    print("✅ BUNDLE 1 COMPLETE")
-    print("=" * 70)
-
-    return result
-
-
-@app.function(
-    image=image,
-    timeout=3600,  # 1 hour max
-    schedule=modal.Cron("45 14 * * 1-5"),  # Run Mon-Fri at 6:45 AM PST (14:45 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def morning_alerts_bundle():
-    """
-    Bundle 2: Morning Alerts Bundle
-    Runs Mon-Fri at 6:45 AM PST (14:45 UTC)
-
     Executes in sequence:
-    1. automated_theme_discovery
-    2. conviction_alerts
-    3. unusual_options_alerts
-    4. sector_rotation_alerts
-    5. institutional_flow_alerts
-    6. executive_commentary_alerts
-    7. daily_executive_briefing
+    1. daily_scan (main stock scanning)
+    2. automated_theme_discovery
+    3. conviction_alerts
+    4. unusual_options_alerts
+    5. sector_rotation_alerts
+    6. institutional_flow_alerts
+    7. executive_commentary_alerts
+    8. daily_executive_briefing
     """
     print("=" * 70)
-    print("📦 BUNDLE 2: MORNING ALERTS")
+    print("📦 BUNDLE 1: MORNING MEGA BUNDLE (SCAN + ALERTS)")
     print("=" * 70)
 
     results = {}
 
-    # 1. Theme Discovery
-    print("\n[1/7] Running automated_theme_discovery...")
+    # 1. Daily Scan (MUST run first - all alerts depend on this)
+    print("\n[1/8] Running daily_scan...")
+    try:
+        results['daily_scan'] = _run_daily_scan()
+    except Exception as e:
+        print(f"❌ Daily scan failed: {e}")
+        results['daily_scan'] = {'success': False, 'error': str(e)}
+        # If scan fails, still try alerts but they may have limited data
+        print("⚠️  Daily scan failed, but continuing with alerts using previous data...")
+
+    # 2. Theme Discovery
+    print("\n[2/8] Running automated_theme_discovery...")
     try:
         results['theme_discovery'] = _run_automated_theme_discovery()
     except Exception as e:
         print(f"❌ Theme discovery failed: {e}")
         results['theme_discovery'] = {'success': False, 'error': str(e)}
 
-    # 2. Conviction Alerts
-    print("\n[2/7] Running conviction_alerts...")
+    # 3. Conviction Alerts
+    print("\n[3/8] Running conviction_alerts...")
     try:
         results['conviction'] = _run_conviction_alerts()
     except Exception as e:
         print(f"❌ Conviction alerts failed: {e}")
         results['conviction'] = {'success': False, 'error': str(e)}
 
-    # 3. Unusual Options Alerts
-    print("\n[3/7] Running unusual_options_alerts...")
+    # 4. Unusual Options Alerts
+    print("\n[4/8] Running unusual_options_alerts...")
     try:
         results['unusual_options'] = _run_unusual_options_alerts()
     except Exception as e:
         print(f"❌ Unusual options failed: {e}")
         results['unusual_options'] = {'success': False, 'error': str(e)}
 
-    # 4. Sector Rotation Alerts
-    print("\n[4/7] Running sector_rotation_alerts...")
+    # 5. Sector Rotation Alerts
+    print("\n[5/8] Running sector_rotation_alerts...")
     try:
         results['sector_rotation'] = _run_sector_rotation_alerts()
     except Exception as e:
         print(f"❌ Sector rotation failed: {e}")
         results['sector_rotation'] = {'success': False, 'error': str(e)}
 
-    # 5. Institutional Flow Alerts
-    print("\n[5/7] Running institutional_flow_alerts...")
+    # 6. Institutional Flow Alerts
+    print("\n[6/8] Running institutional_flow_alerts...")
     try:
         results['institutional_flow'] = _run_institutional_flow_alerts()
     except Exception as e:
         print(f"❌ Institutional flow failed: {e}")
         results['institutional_flow'] = {'success': False, 'error': str(e)}
 
-    # 6. Executive Commentary Alerts
-    print("\n[6/7] Running executive_commentary_alerts...")
+    # 7. Executive Commentary Alerts
+    print("\n[7/8] Running executive_commentary_alerts...")
     try:
         results['executive_commentary'] = _run_executive_commentary_alerts()
     except Exception as e:
         print(f"❌ Executive commentary failed: {e}")
         results['executive_commentary'] = {'success': False, 'error': str(e)}
 
-    # 7. Daily Executive Briefing
-    print("\n[7/7] Running daily_executive_briefing...")
+    # 8. Daily Executive Briefing
+    print("\n[8/8] Running daily_executive_briefing...")
     try:
         results['briefing'] = _run_daily_executive_briefing()
     except Exception as e:
@@ -2051,11 +2036,11 @@ def morning_alerts_bundle():
         results['briefing'] = {'success': False, 'error': str(e)}
 
     print("=" * 70)
-    print("✅ BUNDLE 2 COMPLETE")
+    print("✅ BUNDLE 1 COMPLETE (8/8 functions)")
     print("=" * 70)
 
     return {
-        'bundle': 'morning_alerts',
+        'bundle': 'morning_mega',
         'results': results,
         'success': True
     }
@@ -2069,7 +2054,7 @@ def morning_alerts_bundle():
 )
 def afternoon_analysis_bundle():
     """
-    Bundle 3: Afternoon Analysis
+    Bundle 2: Afternoon Analysis
     Runs Mon-Fri at 1:00 PM PST (21:00 UTC)
 
     Executes in sequence:
@@ -2077,7 +2062,7 @@ def afternoon_analysis_bundle():
     2. batch_insider_transactions_update
     """
     print("=" * 70)
-    print("📦 BUNDLE 3: AFTERNOON ANALYSIS")
+    print("📦 BUNDLE 2: AFTERNOON ANALYSIS")
     print("=" * 70)
 
     results = {}
@@ -2117,7 +2102,7 @@ def afternoon_analysis_bundle():
 )
 def weekly_reports_bundle():
     """
-    Bundle 4: Weekly Reports
+    Bundle 3: Weekly Reports
     Runs Mondays at 2:00 AM UTC (Sunday 6:00 PM PST)
 
     Executes in sequence:
@@ -2127,7 +2112,7 @@ def weekly_reports_bundle():
     4. batch_patent_data_update (conditional: only if first Monday of month)
     """
     print("=" * 70)
-    print("📦 BUNDLE 4: WEEKLY REPORTS")
+    print("📦 BUNDLE 3: WEEKLY REPORTS")
     print("=" * 70)
 
     results = {}
@@ -2191,7 +2176,7 @@ def weekly_reports_bundle():
 )
 def monitoring_cycle_bundle():
     """
-    Bundle 5: Monitoring Cycle
+    Bundle 4: Monitoring Cycle
     Runs every 6 hours
 
     Executes in sequence:
@@ -2199,7 +2184,7 @@ def monitoring_cycle_bundle():
     2. batch_google_trends_prefetch (conditional: only during market hours 14-22 UTC)
     """
     print("=" * 70)
-    print("📦 BUNDLE 5: MONITORING CYCLE")
+    print("📦 BUNDLE 4: MONITORING CYCLE")
     print("=" * 70)
 
     results = {}
