@@ -43,6 +43,8 @@ from src.ai.comprehensive_agentic_brain import (
     Decision
 )
 
+logger = logging.getLogger(__name__)
+
 # Import notification system for crisis alerts
 try:
     from src.notifications.notification_manager import get_notification_manager, NotificationPriority
@@ -50,8 +52,6 @@ try:
 except ImportError:
     NOTIFICATIONS_AVAILABLE = False
     logger.warning("Notification system not available - crisis alerts will only be logged")
-
-logger = logging.getLogger(__name__)
 
 # Import X Intelligence (Component #37)
 try:
