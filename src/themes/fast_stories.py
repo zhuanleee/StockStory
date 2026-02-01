@@ -503,8 +503,6 @@ def format_fast_stories_report(result):
 
 def _background_refresh_worker():
     """Background worker that refreshes stories periodically."""
-    global _refresh_running
-
     while _refresh_running:
         try:
             # Run detection (bypasses cache to get fresh data)

@@ -208,15 +208,12 @@ def _send_to_telegram_sync(hub: SyncHub, event: SyncEvent):
 
 def broadcast_event(event: SyncEvent):
     """Broadcast an event to all connected clients."""
-    global socketio
     if socketio:
         socketio.emit('sync_event', {'event': event.to_dict()})
 
 
 def broadcast_telegram_command(command: str, args: str = "", user: str = ""):
     """Broadcast a Telegram command to dashboard."""
-    global socketio
-
     hub = get_sync_hub()
     event = hub.create_event(
         EventType.COMMAND_RECEIVED,
