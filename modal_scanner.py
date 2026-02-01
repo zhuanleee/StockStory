@@ -1390,7 +1390,7 @@ def _run_x_intelligence_crisis_check():
         print("🔍 Analyzing X/Twitter for market threats...")
 
         # Check for crises
-        crisis_alerts = x_intel.check_for_crises()
+        crisis_alerts = x_intel.monitor_x_for_crises()
 
         if not crisis_alerts:
             print("✅ No significant threats detected")
