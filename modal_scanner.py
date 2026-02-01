@@ -48,7 +48,7 @@ image = (
         #   POLYGON_API_KEY=xxx \
         #   XAI_API_KEY=xxx \
         #   DEEPSEEK_API_KEY=xxx ...
-        modal.Secret.from_name("stock-api-keys")
+        modal.Secret.from_name("Stock_Story")
     ],
 )
 def scan_stock_with_ai_brain(ticker: str) -> dict:
@@ -2353,7 +2353,7 @@ def monitoring_cycle_bundle():
     image=image,
     timeout=300,  # 5 minutes max
     schedule=modal.Cron("*/15 * * * *"),  # Run every 15 minutes
-    secrets=[modal.Secret.from_name("stock-api-keys")],
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def x_intelligence_crisis_monitor():
     """
