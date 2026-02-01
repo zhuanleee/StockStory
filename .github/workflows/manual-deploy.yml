@@ -1,0 +1,76 @@
+name: Manual Modal Cleanup and Deploy
+
+on:
+  workflow_dispatch:  # Can be triggered manually from GitHub UI
+
+jobs:
+  cleanup-and-deploy:
+    name: Cleanup and Deploy to Modal
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Modal
+      run: |
+        python -m pip install --upgrade pip
+        pip install modal
+
+    - name: Configure Modal credentials
+      env:
+        MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      run: |
+        modal token set --token-id "$MODAL_TOKEN_ID" --token-secret "$MODAL_TOKEN_SECRET"
+
+    - name: Stop old deployments
+      run: |
+        echo "Stopping old deployments to clear schedules..."
+        modal app stop stock-scanner-ai-brain || echo "App may not exist"
+        modal app stop stock-scanner-api-v2 || echo "App may not exist"
+        echo "Waiting 10 seconds for cleanup..."
+        sleep 10
+
+    - name: Deploy API to Modal
+      run: |
+        echo "Deploying API (no schedules)..."
+        modal deploy modal_api_v2.py
+        echo "✅ API deployed"
+
+    - name: Deploy Scanner to Modal
+      run: |
+        echo "Deploying Scanner (4 schedules)..."
+        modal deploy modal_scanner.py
+        echo "✅ Scanner deployed"
+
+    - name: Deployment summary
+      if: success()
+      run: |
+        echo "🚀 Deployment successful!"
+        echo ""
+        echo "Your 4 automated schedules are now active:"
+        echo "  1. morning_mega_bundle (Mon-Fri 6:00 AM PST)"
+        echo "  2. afternoon_analysis_bundle (Mon-Fri 1:00 PM PST)"
+        echo "  3. weekly_reports_bundle (Sunday 6:00 PM PST)"
+        echo "  4. monitoring_cycle_bundle (Every 6 hours)"
+        echo ""
+        echo "First automated run: Tomorrow morning at 6:00 AM PST"
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "❌ Deployment failed!"
+        echo "This likely means phantom schedules still exist."
+        echo ""
+        echo "Manual cleanup required:"
+        echo "1. Go to https://modal.com and login"
+        echo "2. Navigate to 'Schedules' section"
+        echo "3. Delete all old schedules"
+        echo "4. Re-run this workflow"
+        echo ""
+        echo "Or upgrade to Team plan: https://modal.com/settings/zhuanleee/plans"
