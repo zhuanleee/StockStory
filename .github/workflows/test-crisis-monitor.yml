@@ -1,0 +1,49 @@
+name: Test X Intelligence Crisis Monitor
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  test-crisis-monitor:
+    name: Test Crisis Detection
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Modal
+      run: |
+        python -m pip install --upgrade pip
+        pip install modal
+
+    - name: Configure Modal credentials
+      env:
+        MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+        MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      run: |
+        modal token set --token-id "$MODAL_TOKEN_ID" --token-secret "$MODAL_TOKEN_SECRET"
+
+    - name: Test X Intelligence Crisis Monitor
+      run: |
+        echo "🧪 Testing X Intelligence Crisis Monitor..."
+        echo "This will check X/Twitter for market threats and send Telegram alerts if found."
+        echo ""
+
+        # Run the crisis monitor function
+        modal run modal_scanner.py::x_intelligence_crisis_monitor
+
+        echo ""
+        echo "✅ Crisis monitor test complete"
+        echo ""
+        echo "Check your Telegram for any crisis alerts (if threats were detected)"
+
+    - name: Show recent logs
+      if: always()
+      run: |
+        echo "📋 Recent crisis monitor activity:"
+        modal app logs stock-scanner-ai-brain 2>&1 | grep -A 20 "CRISIS MONITOR" | tail -30 || echo "No recent logs available"
