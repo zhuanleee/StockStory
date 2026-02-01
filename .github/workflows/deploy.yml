@@ -1,8 +1,14 @@
-name: Deploy to Modal
+name: Deploy to Modal (Production)
 
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'modal_scanner.py'
+      - 'modal_api*.py'
+      - 'src/**'
+      - 'requirements.txt'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       environment:
