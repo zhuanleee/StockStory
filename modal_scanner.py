@@ -2296,7 +2296,6 @@ def weekly_reports_bundle():
     timeout=1800,  # 30 minutes max
     schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
     volumes={VOLUME_PATH: volume},
-    secrets=[modal.Secret.from_name("stock-api-keys")],
 )
 def monitoring_cycle_bundle():
     """
@@ -2306,7 +2305,6 @@ def monitoring_cycle_bundle():
     Executes in sequence:
     1. data_staleness_monitor
     2. batch_google_trends_prefetch (conditional: only during market hours 14-22 UTC)
-    3. x_intelligence_crisis_check (X/Twitter monitoring for market threats)
     """
     print("=" * 70)
     print("📦 BUNDLE 4: MONITORING CYCLE")
@@ -2315,7 +2313,7 @@ def monitoring_cycle_bundle():
     results = {}
 
     # 1. Data Staleness Monitor
-    print("\n[1/3] Running data_staleness_monitor...")
+    print("\n[1/2] Running data_staleness_monitor...")
     try:
         results['staleness'] = _run_data_staleness_monitor()
     except Exception as e:
@@ -2330,23 +2328,15 @@ def monitoring_cycle_bundle():
     is_weekday = now.weekday() < 5  # Monday = 0, Friday = 4
 
     if is_market_hours and is_weekday:
-        print("\n[2/3] Running batch_google_trends_prefetch (market hours)...")
+        print("\n[2/2] Running batch_google_trends_prefetch (market hours)...")
         try:
             results['trends'] = _run_batch_google_trends_prefetch()
         except Exception as e:
             print(f"❌ Trends prefetch failed: {e}")
             results['trends'] = {'success': False, 'error': str(e)}
     else:
-        print("\n[2/3] Skipping batch_google_trends_prefetch (outside market hours)")
+        print("\n[2/2] Skipping batch_google_trends_prefetch (outside market hours)")
         results['trends'] = {'success': True, 'skipped': True}
-
-    # 3. X Intelligence Crisis Check
-    print("\n[3/3] Running x_intelligence_crisis_check...")
-    try:
-        results['x_intelligence'] = _run_x_intelligence_crisis_check()
-    except Exception as e:
-        print(f"❌ X Intelligence check failed: {e}")
-        results['x_intelligence'] = {'success': False, 'error': str(e)}
 
     print("=" * 70)
     print("✅ BUNDLE 4 COMPLETE")
@@ -2357,6 +2347,53 @@ def monitoring_cycle_bundle():
         'results': results,
         'success': True
     }
+
+
+@app.function(
+    image=image,
+    timeout=300,  # 5 minutes max
+    schedule=modal.Cron("*/15 * * * *"),  # Run every 15 minutes
+    secrets=[modal.Secret.from_name("stock-api-keys")],
+)
+def x_intelligence_crisis_monitor():
+    """
+    Bundle 5: X Intelligence Crisis Monitor
+    Runs every 15 minutes
+
+    Real-time monitoring of X/Twitter for market threats.
+    Sends Telegram alerts when crises detected.
+
+    Severity levels:
+    - 9-10: CRITICAL - Emergency protocol (halt all trading)
+    - 7-8: MAJOR - Tighten controls (avoid affected sectors)
+    - 1-6: WARNING - Informational awareness
+
+    This is our 5th and final cron job (5/5 limit on free tier).
+    """
+    print("=" * 70)
+    print("🚨 X INTELLIGENCE CRISIS MONITOR")
+    print("=" * 70)
+    print(f"Check frequency: Every 15 minutes")
+    print(f"Next check: In 15 minutes")
+    print("=" * 70)
+
+    try:
+        result = _run_x_intelligence_crisis_check()
+
+        if result.get('success'):
+            crises = result.get('crises_detected', 0)
+            if crises > 0:
+                print(f"\n⚠️  {crises} threat(s) detected and notifications sent")
+            else:
+                print(f"\n✅ No threats detected - markets clear")
+
+        return result
+
+    except Exception as e:
+        print(f"❌ Crisis monitor failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
 
 
 # ============================================================================
