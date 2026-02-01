@@ -1358,6 +1358,129 @@ def _run_batch_google_trends_prefetch():
         return {'success': False, 'error': str(e)}
 
 
+def _run_x_intelligence_crisis_check():
+    """
+    X Intelligence Crisis Monitoring.
+
+    Monitors X/Twitter for market threats using xAI analysis.
+    Sends Telegram alerts when crises detected.
+
+    Severity levels:
+    - 9-10: CRITICAL - Emergency protocol (halt trading)
+    - 7-8: MAJOR - Tighten controls (avoid sectors)
+    - 1-6: WARNING - Awareness (informational)
+
+    Runs every 6 hours.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("🚨 X INTELLIGENCE CRISIS CHECK")
+    print("=" * 70)
+
+    try:
+        from src.ai.xai_x_intelligence import XAIXIntelligence, CrisisType
+        from src.notifications.notification_manager import get_notification_manager, NotificationPriority
+
+        # Initialize X Intelligence
+        x_intel = XAIXIntelligence()
+        notification_manager = get_notification_manager()
+
+        print("🔍 Analyzing X/Twitter for market threats...")
+
+        # Check for crises
+        crisis_alerts = x_intel.check_for_crises()
+
+        if not crisis_alerts:
+            print("✅ No significant threats detected")
+            return {
+                'success': True,
+                'crises_detected': 0,
+                'status': 'clear'
+            }
+
+        # Process each crisis alert
+        print(f"⚠️  {len(crisis_alerts)} potential threat(s) detected")
+
+        critical_count = 0
+        major_count = 0
+        warning_count = 0
+
+        for alert in crisis_alerts:
+            print(f"\n  Topic: {alert.topic}")
+            print(f"  Type: {alert.crisis_type.value}")
+            print(f"  Severity: {alert.severity}/10")
+            print(f"  Verified: {alert.verified}")
+
+            # Determine alert type and priority
+            if alert.severity >= 9 and alert.verified:
+                alert_type = 'crisis_emergency'
+                priority = NotificationPriority.CRITICAL
+                protocol_type = 'emergency'
+                critical_count += 1
+            elif alert.severity >= 7:
+                alert_type = 'crisis_major'
+                priority = NotificationPriority.CRITICAL
+                protocol_type = 'major'
+                major_count += 1
+            else:
+                alert_type = 'crisis_alert'
+                priority = NotificationPriority.HIGH
+                protocol_type = 'warning'
+                warning_count += 1
+
+            # Prepare crisis data for notification
+            crisis_data = {
+                'severity': alert.severity,
+                'topic': alert.topic,
+                'crisis_type': alert.crisis_type.value if hasattr(alert.crisis_type, 'value') else str(alert.crisis_type),
+                'description': alert.description,
+                'verified': alert.verified,
+                'credibility_score': alert.credibility_score,
+                'affected_sectors': alert.affected_sectors,
+                'affected_tickers': alert.affected_tickers,
+                'immediate_actions': alert.immediate_actions,
+                'protocol_type': protocol_type
+            }
+
+            # Send Telegram notification
+            try:
+                result = notification_manager.send_alert(
+                    alert_type=alert_type,
+                    data=crisis_data,
+                    priority=priority
+                )
+                if result.get('telegram'):
+                    print(f"  ✓ Telegram notification sent ({protocol_type})")
+                else:
+                    print(f"  ✗ Telegram notification failed")
+            except Exception as e:
+                print(f"  ✗ Notification error: {e}")
+
+        print("\n" + "=" * 70)
+        print(f"✅ Crisis check complete:")
+        print(f"   Critical: {critical_count}")
+        print(f"   Major: {major_count}")
+        print(f"   Warning: {warning_count}")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'crises_detected': len(crisis_alerts),
+            'critical': critical_count,
+            'major': major_count,
+            'warning': warning_count,
+            'status': 'alerts_sent' if crisis_alerts else 'clear'
+        }
+
+    except Exception as e:
+        print(f"❌ X Intelligence check failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
 def _run_batch_patent_data_update():
     """
     Batch Patent Data Update.
@@ -2173,6 +2296,7 @@ def weekly_reports_bundle():
     timeout=1800,  # 30 minutes max
     schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("stock-api-keys")],
 )
 def monitoring_cycle_bundle():
     """
@@ -2182,6 +2306,7 @@ def monitoring_cycle_bundle():
     Executes in sequence:
     1. data_staleness_monitor
     2. batch_google_trends_prefetch (conditional: only during market hours 14-22 UTC)
+    3. x_intelligence_crisis_check (X/Twitter monitoring for market threats)
     """
     print("=" * 70)
     print("📦 BUNDLE 4: MONITORING CYCLE")
@@ -2190,7 +2315,7 @@ def monitoring_cycle_bundle():
     results = {}
 
     # 1. Data Staleness Monitor
-    print("\n[1/2] Running data_staleness_monitor...")
+    print("\n[1/3] Running data_staleness_monitor...")
     try:
         results['staleness'] = _run_data_staleness_monitor()
     except Exception as e:
@@ -2205,18 +2330,26 @@ def monitoring_cycle_bundle():
     is_weekday = now.weekday() < 5  # Monday = 0, Friday = 4
 
     if is_market_hours and is_weekday:
-        print("\n[2/2] Running batch_google_trends_prefetch (market hours)...")
+        print("\n[2/3] Running batch_google_trends_prefetch (market hours)...")
         try:
             results['trends'] = _run_batch_google_trends_prefetch()
         except Exception as e:
             print(f"❌ Trends prefetch failed: {e}")
             results['trends'] = {'success': False, 'error': str(e)}
     else:
-        print("\n[2/2] Skipping batch_google_trends_prefetch (outside market hours)")
+        print("\n[2/3] Skipping batch_google_trends_prefetch (outside market hours)")
         results['trends'] = {'success': True, 'skipped': True}
 
+    # 3. X Intelligence Crisis Check
+    print("\n[3/3] Running x_intelligence_crisis_check...")
+    try:
+        results['x_intelligence'] = _run_x_intelligence_crisis_check()
+    except Exception as e:
+        print(f"❌ X Intelligence check failed: {e}")
+        results['x_intelligence'] = {'success': False, 'error': str(e)}
+
     print("=" * 70)
-    print("✅ BUNDLE 5 COMPLETE")
+    print("✅ BUNDLE 4 COMPLETE")
     print("=" * 70)
 
     return {
