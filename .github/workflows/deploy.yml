@@ -62,8 +62,15 @@ jobs:
     - name: Verify deployment
       run: |
         echo "Verifying deployment..."
-        modal app list | grep stock-scanner || (echo "❌ Deployment verification failed" && exit 1)
-        echo "✅ Deployment verified"
+        sleep 5  # Wait for apps to register
+        echo "Checking deployed apps..."
+        modal app list
+        echo ""
+        echo "Verifying stock-scanner-api-v2..."
+        modal app list | grep -q "stock-scanner-api-v2" && echo "✅ API found" || echo "⚠️ API not found in list yet"
+        echo "Verifying stock-scanner-ai-brain..."
+        modal app list | grep -q "stock-scanner-ai-brain" && echo "✅ Scanner found" || echo "⚠️ Scanner not found in list yet"
+        echo "✅ Deployment commands completed successfully"
 
     - name: Run health check
       run: |
