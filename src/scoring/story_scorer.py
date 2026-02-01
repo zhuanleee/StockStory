@@ -65,6 +65,20 @@ except ImportError:
 
 
 # =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def _get_xai_client():
+    """Get xAI client if available. Returns None if not configured."""
+    try:
+        from src.services.ai_service import get_ai_service
+        service = get_ai_service()
+        return service if service else None
+    except Exception:
+        return None
+
+
+# =============================================================================
 # ADDITIONAL DATA SOURCES - Social & Institutional
 # =============================================================================
 

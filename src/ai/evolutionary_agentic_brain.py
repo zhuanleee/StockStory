@@ -43,6 +43,8 @@ from src.ai.comprehensive_agentic_brain import (
     Decision
 )
 
+logger = logging.getLogger(__name__)
+
 # Import X Intelligence (Component #37)
 try:
     from src.ai.xai_x_intelligence import (
@@ -57,8 +59,6 @@ try:
 except ImportError:
     X_INTELLIGENCE_AVAILABLE = False
     logger.warning("xAI X Intelligence not available - crisis monitoring disabled")
-
-logger = logging.getLogger(__name__)
 
 # Storage location
 PERFORMANCE_DATA_DIR = Path.home() / '.claude' / 'agentic_brain'

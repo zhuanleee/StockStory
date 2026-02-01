@@ -30,6 +30,14 @@ logger = get_logger(__name__)
 def get_initial_trust_score():
     return params.signal_initial_trust()
 
+# Default source score for when no sources are specified
+DEFAULT_SOURCE_SCORE = 50.0
+
+# Get source tier (legacy function - returns default tier since all sources start equal)
+def get_source_tier(source: str) -> dict:
+    """Returns default tier for a source. All sources start equal."""
+    return {'tier': 3, 'name': source}
+
 # Source metadata (for display only, not scoring)
 SOURCE_METADATA = {
     # Newsletters
