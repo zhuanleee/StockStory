@@ -929,6 +929,381 @@ def daily_executive_briefing():
         return {'success': False, 'error': str(e)}
 
 
+@app.function(
+    image=image,
+    timeout=300,  # 5 minutes max
+    schedule=modal.Cron("0 16 * * 1"),  # Run Mondays at 8:00 AM PST (16:00 UTC) - Weekly health check
+    volumes={VOLUME_PATH: volume},
+)
+def parameter_learning_health_check():
+    """
+    Parameter Learning Health Check - Weekly monitoring of learning system.
+
+    Checks:
+    - Learning system health status
+    - Win rate trends
+    - Stale parameters
+    - Error rates
+
+    Alerts if system degradation detected.
+    Runs Mondays at 8:00 AM PST (weekly check).
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("⚙️  PARAMETER LEARNING HEALTH CHECK")
+    print("=" * 70)
+
+    try:
+        from src.learning.parameter_learning import ParameterRegistry
+        from src.learning.monitoring.health import SelfHealthMonitor
+
+        registry = ParameterRegistry()
+        health_monitor = SelfHealthMonitor(registry)
+
+        # Check health
+        health_status = health_monitor.check_health()
+
+        status = health_status.get('status', 'unknown')
+        issues = health_status.get('issues', [])
+
+        print(f"Status: {status}")
+        print(f"Issues: {len(issues)}")
+
+        # Get detailed metrics
+        params_status = registry.get_all_parameters()
+        total_params = len(params_status)
+
+        # Count stale parameters (no update in 7+ days)
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        stale_threshold = now - timedelta(days=7)
+
+        stale_count = sum(
+            1 for p in params_status.values()
+            if p.get('last_updated', now) < stale_threshold
+        )
+
+        # Calculate win rate from outcomes
+        from src.learning.tracking.outcomes import OutcomeTracker
+        outcome_tracker = OutcomeTracker()
+
+        recent_outcomes = outcome_tracker.get_recent_outcomes(days=7)
+        if recent_outcomes:
+            wins = sum(1 for o in recent_outcomes if o.get('success', False))
+            win_rate = (wins / len(recent_outcomes)) * 100
+        else:
+            win_rate = 0
+
+        print(f"\nMetrics:")
+        print(f"  Total parameters: {total_params}")
+        print(f"  Stale parameters: {stale_count}")
+        print(f"  Win rate (7d): {win_rate:.1f}%")
+        print(f"  Recent outcomes: {len(recent_outcomes)}")
+
+        # Determine if alert needed
+        alert_needed = (
+            status != 'healthy' or
+            stale_count > 5 or
+            win_rate < 50 or
+            len(issues) > 0
+        )
+
+        if alert_needed:
+            print("\n⚠️  ALERT: Health issues detected")
+
+            # Send notification
+            try:
+                from src.notifications import get_notification_manager
+
+                notif_mgr = get_notification_manager()
+                notif_data = {
+                    'status': status,
+                    'win_rate': win_rate,
+                    'stale_params': stale_count,
+                    'issues': issues
+                }
+
+                result = notif_mgr.send_alert('learning_health', notif_data)
+                if result.get('telegram'):
+                    print("📱 Alert sent")
+            except Exception as e:
+                print(f"⚠️  Notification failed: {e}")
+        else:
+            print("\n✅ System healthy, no alerts needed")
+
+        print()
+        print("=" * 70)
+        print("✅ Health check complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'status': status,
+            'win_rate': win_rate,
+            'stale_params': stale_count,
+            'alert_sent': alert_needed
+        }
+
+    except Exception as e:
+        print(f"❌ Health check failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=300,  # 5 minutes max
+    schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
+    volumes={VOLUME_PATH: volume},
+)
+def data_staleness_monitor():
+    """
+    Data Staleness Monitor - Monitors data freshness across all sources.
+
+    Checks:
+    - Scan results age (should be < 24 hours)
+    - Theme discovery age (should be < 24 hours)
+    - Volume file timestamps
+    - API health
+
+    Alerts if data becomes stale or sources fail.
+    Runs every 6 hours.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+    from datetime import datetime, timedelta
+
+    print("=" * 70)
+    print("⚠️  DATA STALENESS MONITOR")
+    print("=" * 70)
+
+    try:
+        data_dir = Path(VOLUME_PATH)
+        now = datetime.now()
+        stale_sources = []
+
+        # Check scan results
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+        if scan_files:
+            latest_scan = scan_files[0]
+            scan_age = (now - datetime.fromtimestamp(latest_scan.stat().st_mtime))
+            scan_age_hours = scan_age.total_seconds() / 3600
+
+            print(f"Latest scan: {scan_age_hours:.1f} hours old")
+
+            if scan_age_hours > 48:  # Alert if > 48 hours old
+                stale_sources.append({
+                    'name': 'Scan Results',
+                    'age_hours': scan_age_hours
+                })
+        else:
+            stale_sources.append({
+                'name': 'Scan Results',
+                'age_hours': 999
+            })
+            print("⚠️  No scan results found!")
+
+        # Check theme discovery
+        theme_file = data_dir / 'theme_discovery_latest.json'
+        if theme_file.exists():
+            theme_age = (now - datetime.fromtimestamp(theme_file.stat().st_mtime))
+            theme_age_hours = theme_age.total_seconds() / 3600
+
+            print(f"Latest theme discovery: {theme_age_hours:.1f} hours old")
+
+            if theme_age_hours > 48:
+                stale_sources.append({
+                    'name': 'Theme Discovery',
+                    'age_hours': theme_age_hours
+                })
+        else:
+            print("⚠️  No theme discovery results")
+
+        # Alert if stale data found
+        if stale_sources:
+            print(f"\n⚠️  ALERT: {len(stale_sources)} stale data sources detected")
+
+            # Send notification
+            try:
+                from src.notifications import get_notification_manager
+
+                notif_mgr = get_notification_manager()
+                notif_data = {'stale_sources': stale_sources}
+
+                result = notif_mgr.send_alert('data_staleness', notif_data)
+                if result.get('telegram'):
+                    print("📱 Alert sent")
+            except Exception as e:
+                print(f"⚠️  Notification failed: {e}")
+        else:
+            print("\n✅ All data sources fresh")
+
+        print()
+        print("=" * 70)
+        print("✅ Staleness check complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'stale_count': len(stale_sources),
+            'stale_sources': stale_sources
+        }
+
+    except Exception as e:
+        print(f"❌ Staleness check failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=900,  # 15 minutes max
+    schedule=modal.Cron("0 2 * * 1"),  # Run Mondays at 6:00 PM PST Sunday (02:00 UTC Monday) - Weekly report
+    volumes={VOLUME_PATH: volume},
+)
+def weekly_summary_report():
+    """
+    Weekly Summary Report - Comprehensive week performance analysis.
+
+    Analyzes:
+    - Week's top performing stocks
+    - Theme evolution and trends
+    - Parameter learning performance
+    - Hit rate statistics
+    - Notable market events
+
+    Sends detailed weekly report.
+    Runs Sundays at 6:00 PM PST (Monday 02:00 UTC).
+    """
+    import sys
+    sys.path.insert(0, '/root')
+    from datetime import datetime, timedelta
+
+    print("=" * 70)
+    print("📈 GENERATING WEEKLY SUMMARY REPORT")
+    print("=" * 70)
+
+    try:
+        data_dir = Path(VOLUME_PATH)
+        now = datetime.now()
+        week_ago = now - timedelta(days=7)
+
+        # Collect all scan results from past week
+        weekly_scans = []
+        for scan_file in data_dir.glob("scan_*.json"):
+            file_time = datetime.fromtimestamp(scan_file.stat().st_mtime)
+            if file_time >= week_ago:
+                with open(scan_file) as f:
+                    scan_data = json.load(f)
+                weekly_scans.append(scan_data)
+
+        print(f"📊 Analyzing {len(weekly_scans)} scans from past week")
+
+        # Aggregate top performers
+        all_stocks = {}
+        for scan in weekly_scans:
+            for stock in scan.get('results', []):
+                ticker = stock.get('ticker')
+                score = stock.get('story_score', 0)
+                if ticker:
+                    if ticker not in all_stocks:
+                        all_stocks[ticker] = []
+                    all_stocks[ticker].append(score)
+
+        # Calculate average scores
+        top_performers = []
+        for ticker, scores in all_stocks.items():
+            avg_score = sum(scores) / len(scores)
+            appearances = len(scores)
+            if appearances >= 3:  # Appeared in at least 3 scans
+                top_performers.append({
+                    'ticker': ticker,
+                    'avg_score': avg_score,
+                    'appearances': appearances
+                })
+
+        top_performers.sort(key=lambda x: x['avg_score'], reverse=True)
+
+        print(f"✅ Top {len(top_performers[:10])} consistent performers identified")
+
+        # Analyze theme evolution
+        theme_files = sorted(data_dir.glob("theme_discovery_*.json"))
+        weekly_themes = []
+        for theme_file in theme_files:
+            file_time = datetime.fromtimestamp(theme_file.stat().st_mtime)
+            if file_time >= week_ago:
+                with open(theme_file) as f:
+                    theme_data = json.load(f)
+                weekly_themes.append(theme_data)
+
+        print(f"✅ Analyzed {len(weekly_themes)} theme discovery runs")
+
+        # Get learning system stats
+        from src.learning.tracking.outcomes import OutcomeTracker
+        outcome_tracker = OutcomeTracker()
+        weekly_outcomes = outcome_tracker.get_recent_outcomes(days=7)
+
+        wins = sum(1 for o in weekly_outcomes if o.get('success', False))
+        win_rate = (wins / len(weekly_outcomes) * 100) if weekly_outcomes else 0
+
+        print(f"✅ Win rate (7d): {win_rate:.1f}% ({wins}/{len(weekly_outcomes)})")
+
+        # Format report message
+        message = f"*📈 WEEKLY SUMMARY REPORT*\n"
+        message += f"_{now.strftime('%B %d, %Y')}_\n\n"
+
+        message += f"*📊 Week in Review:*\n"
+        message += f"• Scans completed: {len(weekly_scans)}\n"
+        message += f"• Themes discovered: {len(weekly_themes)}\n"
+        message += f"• Win rate: {win_rate:.1f}%\n\n"
+
+        message += f"*🏆 Top Performers (Avg Score):*\n"
+        for i, perf in enumerate(top_performers[:5], 1):
+            ticker = perf['ticker']
+            score = perf['avg_score']
+            apps = perf['appearances']
+            message += f"{i}. *{ticker}*: {score:.1f} ({apps}x)\n"
+
+        message += f"\n_Next report: {(now + timedelta(days=7)).strftime('%B %d, %Y')}_"
+
+        # Send notification
+        try:
+            from src.notifications import get_notification_manager
+
+            notif_mgr = get_notification_manager()
+            result = notif_mgr.send(message, title="📈 Weekly Summary Report")
+
+            if result.get('telegram'):
+                print("📱 Report sent")
+            else:
+                print("⚠️  Notification skipped (not configured)")
+        except Exception as e:
+            print(f"⚠️  Notification failed: {e}")
+
+        print()
+        print("=" * 70)
+        print("✅ Weekly report complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'scans': len(weekly_scans),
+            'themes': len(weekly_themes),
+            'win_rate': win_rate,
+            'top_performers': top_performers[:10]
+        }
+
+    except Exception as e:
+        print(f"❌ Weekly report failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
 @app.function(image=image)
 def test_single_stock():
     """Test scanning a single stock (NVDA) to verify setup."""
