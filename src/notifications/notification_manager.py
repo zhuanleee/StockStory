@@ -237,7 +237,10 @@ class NotificationManager:
             'learning_health': '⚙️ Learning System Health',
             'data_staleness': '⚠️ Data Staleness Warning',
             'briefing': '📊 Daily Market Briefing',
-            'weekly_summary': '📈 Weekly Summary Report'
+            'weekly_summary': '📈 Weekly Summary Report',
+            'crisis_alert': '🚨 CRISIS ALERT',
+            'crisis_emergency': '🚨🚨🚨 EMERGENCY PROTOCOL',
+            'crisis_major': '⚠️ MAJOR CRISIS DETECTED'
         }
         return titles.get(alert_type, '📬 Stock Scanner Alert')
 
@@ -253,7 +256,10 @@ class NotificationManager:
             'learning_health': self._format_learning_health,
             'data_staleness': self._format_staleness_alert,
             'briefing': self._format_briefing,
-            'weekly_summary': self._format_weekly_summary
+            'weekly_summary': self._format_weekly_summary,
+            'crisis_alert': self._format_crisis_alert,
+            'crisis_emergency': self._format_crisis_alert,
+            'crisis_major': self._format_crisis_alert
         }
 
         formatter = formatters.get(alert_type, self._format_generic)
@@ -411,6 +417,72 @@ class NotificationManager:
     def _format_weekly_summary(self, data: Dict) -> str:
         """Format weekly summary report"""
         return data.get('message', 'No summary available')
+
+    def _format_crisis_alert(self, data: Dict) -> str:
+        """Format crisis alert from X Intelligence"""
+        severity = data.get('severity', 0)
+        topic = data.get('topic', 'Unknown Crisis')
+        crisis_type = data.get('crisis_type', 'unknown')
+        description = data.get('description', 'No description available')
+        verified = data.get('verified', False)
+        credibility = data.get('credibility_score', 0)
+        affected_sectors = data.get('affected_sectors', [])
+        affected_tickers = data.get('affected_tickers', [])
+        immediate_actions = data.get('immediate_actions', [])
+        protocol_type = data.get('protocol_type', 'warning')
+
+        # Severity indicator
+        if severity >= 9:
+            severity_icon = "🚨🚨🚨"
+            severity_text = "CRITICAL"
+        elif severity >= 7:
+            severity_icon = "⚠️⚠️"
+            severity_text = "MAJOR"
+        else:
+            severity_icon = "⚠️"
+            severity_text = "WARNING"
+
+        message = f"{severity_icon} *{severity_text} CRISIS*\n\n"
+        message += f"*Topic:* {topic}\n"
+        message += f"*Type:* {crisis_type}\n"
+        message += f"*Severity:* {severity}/10\n"
+        message += f"*Verified:* {'✓ Yes' if verified else '✗ No'}\n"
+        message += f"*Credibility:* {credibility:.0%}\n\n"
+
+        message += f"*Description:*\n{description}\n\n"
+
+        if affected_sectors:
+            message += f"*Affected Sectors:*\n"
+            for sector in affected_sectors[:5]:
+                message += f"  ⛔ {sector}\n"
+            message += "\n"
+
+        if affected_tickers:
+            message += f"*Affected Tickers:*\n"
+            ticker_str = ", ".join(affected_tickers[:10])
+            if len(affected_tickers) > 10:
+                ticker_str += f" (+{len(affected_tickers) - 10} more)"
+            message += f"{ticker_str}\n\n"
+
+        # Protocol-specific actions
+        if protocol_type == 'emergency':
+            message += "🛑 *EMERGENCY PROTOCOL ACTIVATED*\n"
+            message += "• ALL TRADING HALTED\n"
+            message += "• Manual intervention required to resume\n\n"
+        elif protocol_type == 'major':
+            message += "⚠️ *MAJOR CRISIS PROTOCOL ACTIVATED*\n"
+            message += "• Risk controls tightened\n"
+            message += "• Affected sectors avoided\n"
+            message += "• Cautious trading mode\n\n"
+
+        if immediate_actions:
+            message += "*Immediate Actions:*\n"
+            for action in immediate_actions[:5]:
+                message += f"  • {action}\n"
+            message += "\n"
+
+        message += f"_X Intelligence Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_"
+        return message
 
     def _format_generic(self, data: Dict) -> str:
         """Generic formatter for unknown alert types"""

@@ -43,6 +43,14 @@ from src.ai.comprehensive_agentic_brain import (
     Decision
 )
 
+# Import notification system for crisis alerts
+try:
+    from src.notifications.notification_manager import get_notification_manager, NotificationPriority
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
+    logger.warning("Notification system not available - crisis alerts will only be logged")
+
 logger = logging.getLogger(__name__)
 
 # Import X Intelligence (Component #37)
@@ -1001,6 +1009,10 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
         elif alert.severity >= 7:
             self._execute_major_crisis_protocol(alert)
 
+        # WARNING LEVEL - Send notification for awareness
+        else:
+            self._send_crisis_notification(alert, protocol_type='warning')
+
     def _execute_emergency_protocol(self, alert: 'CrisisAlert'):
         """
         CRITICAL (9-10): Emergency shutdown.
@@ -1028,6 +1040,9 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
         logger.error("Manual intervention required to resume")
         logger.error("=" * 80)
 
+        # Send CRITICAL notification via Telegram
+        self._send_crisis_notification(alert, protocol_type='emergency')
+
     def _execute_major_crisis_protocol(self, alert: 'CrisisAlert'):
         """
         MAJOR (7-8): Tighten risk controls but continue trading cautiously.
@@ -1047,6 +1062,64 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
         logger.warning("✓ Risk controls tightened")
         logger.warning("✓ Affected sectors avoided")
         logger.warning("✓ Continuing cautious trading")
+
+        # Send MAJOR notification via Telegram
+        self._send_crisis_notification(alert, protocol_type='major')
+
+    def _send_crisis_notification(self, alert: 'CrisisAlert', protocol_type: str = 'warning'):
+        """
+        Send Telegram notification for crisis alerts.
+
+        Args:
+            alert: CrisisAlert object with crisis details
+            protocol_type: One of 'emergency', 'major', or 'warning'
+        """
+        if not NOTIFICATIONS_AVAILABLE:
+            logger.debug("Notification system not available - skipping crisis notification")
+            return
+
+        try:
+            notification_manager = get_notification_manager()
+
+            # Determine alert type and priority
+            if protocol_type == 'emergency':
+                alert_type = 'crisis_emergency'
+                priority = NotificationPriority.CRITICAL
+            elif protocol_type == 'major':
+                alert_type = 'crisis_major'
+                priority = NotificationPriority.CRITICAL
+            else:
+                alert_type = 'crisis_alert'
+                priority = NotificationPriority.HIGH
+
+            # Prepare crisis data for notification
+            crisis_data = {
+                'severity': alert.severity,
+                'topic': alert.topic,
+                'crisis_type': alert.crisis_type.value if hasattr(alert.crisis_type, 'value') else str(alert.crisis_type),
+                'description': alert.description,
+                'verified': alert.verified,
+                'credibility_score': alert.credibility_score,
+                'affected_sectors': alert.affected_sectors,
+                'affected_tickers': alert.affected_tickers,
+                'immediate_actions': alert.immediate_actions,
+                'protocol_type': protocol_type
+            }
+
+            # Send notification
+            result = notification_manager.send_alert(
+                alert_type=alert_type,
+                data=crisis_data,
+                priority=priority
+            )
+
+            if result.get('telegram'):
+                logger.info(f"✓ Crisis notification sent via Telegram (severity: {alert.severity}, type: {protocol_type})")
+            else:
+                logger.warning("Failed to send crisis notification via Telegram")
+
+        except Exception as e:
+            logger.error(f"Error sending crisis notification: {e}")
 
     def _is_sector_blacklisted(self, ticker: str) -> bool:
         """Check if ticker's sector is blacklisted."""
