@@ -1304,6 +1304,236 @@ def weekly_summary_report():
         return {'success': False, 'error': str(e)}
 
 
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 22 * * 1-5"),  # Run Mon-Fri at 2:00 PM PST (22:00 UTC) - After market close
+    volumes={VOLUME_PATH: volume},
+)
+def batch_insider_transactions_update():
+    """
+    Batch Insider Transactions Update.
+
+    Fetches and caches insider transaction data for universe stocks.
+    Runs Mon-Fri at 2:00 PM PST (after market close).
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("📋 BATCH INSIDER TRANSACTIONS UPDATE")
+    print("=" * 70)
+
+    try:
+        # Get top stocks from latest scan
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        tickers = []
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            results = scan_data.get('results', [])[:100]  # Top 100 stocks
+            tickers = [r.get('ticker') for r in results if r.get('ticker')]
+
+        print(f"📊 Fetching insider data for {len(tickers)} stocks")
+
+        from src.data.sec_edgar import get_insider_transactions
+        successful = 0
+        failed = 0
+
+        for ticker in tickers[:50]:  # Limit to avoid rate limits
+            try:
+                transactions = get_insider_transactions(ticker)
+                if transactions:
+                    successful += 1
+            except Exception as e:
+                failed += 1
+                if failed <= 5:
+                    print(f"   ⚠️  {ticker}: {e}")
+
+        print(f"✅ Fetched: {successful}, Failed: {failed}")
+        print("=" * 70)
+
+        return {'success': True, 'fetched': successful, 'failed': failed}
+
+    except Exception as e:
+        print(f"❌ Batch update failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=1800,  # 30 minutes max
+    schedule=modal.Cron("30 14 * * 1-5"),  # Run Mon-Fri at 6:30 AM PST (14:30 UTC) - During daily scan
+    volumes={VOLUME_PATH: volume},
+)
+def batch_google_trends_prefetch():
+    """
+    Batch Google Trends Pre-fetch.
+
+    Pre-fetches Google Trends data for top stocks to speed up API responses.
+    Runs Mon-Fri at 6:30 AM PST (during daily scan).
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("📈 BATCH GOOGLE TRENDS PRE-FETCH")
+    print("=" * 70)
+
+    try:
+        # Get top stocks from latest scan
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        tickers = []
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            results = scan_data.get('results', [])[:50]  # Top 50 stocks
+            tickers = [r.get('ticker') for r in results if r.get('ticker')]
+
+        print(f"📊 Pre-fetching trends for {len(tickers)} stocks")
+
+        from src.intelligence.google_trends import get_trend_score
+        successful = 0
+        failed = 0
+
+        for ticker in tickers:
+            try:
+                score = get_trend_score(ticker)
+                if score is not None:
+                    successful += 1
+            except Exception as e:
+                failed += 1
+
+        print(f"✅ Fetched: {successful}, Failed: {failed}")
+        print("=" * 70)
+
+        return {'success': True, 'fetched': successful, 'failed': failed}
+
+    except Exception as e:
+        print(f"❌ Batch prefetch failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 3 1 * *"),  # Run 1st of month at 7:00 PM PST (03:00 UTC) - Monthly update
+    volumes={VOLUME_PATH: volume},
+)
+def batch_patent_data_update():
+    """
+    Batch Patent Data Update.
+
+    Monthly update of patent data for universe stocks.
+    Runs 1st of each month at 7:00 PM PST.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("📄 BATCH PATENT DATA UPDATE")
+    print("=" * 70)
+
+    try:
+        # Get universe stocks
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        tickers = []
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            results = scan_data.get('results', [])[:100]  # Top 100 stocks
+            tickers = [r.get('ticker') for r in results if r.get('ticker')]
+
+        print(f"📊 Updating patent data for {len(tickers)} stocks")
+
+        from src.data.patents import get_patent_intelligence
+        patent_intel = get_patent_intelligence()
+
+        successful = 0
+        failed = 0
+
+        for ticker in tickers[:50]:  # Limit batch size
+            try:
+                activity = patent_intel.get_company_patents(ticker)
+                if activity:
+                    successful += 1
+            except Exception as e:
+                failed += 1
+
+        print(f"✅ Updated: {successful}, Failed: {failed}")
+        print("=" * 70)
+
+        return {'success': True, 'updated': successful, 'failed': failed}
+
+    except Exception as e:
+        print(f"❌ Batch update failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 3 * * 0"),  # Run Sundays at 7:00 PM PST (03:00 UTC Monday) - Weekly update
+    volumes={VOLUME_PATH: volume},
+)
+def batch_contracts_update():
+    """
+    Batch Government Contracts Update.
+
+    Weekly update of government contract data for universe stocks.
+    Runs Sundays at 7:00 PM PST.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("📋 BATCH GOVERNMENT CONTRACTS UPDATE")
+    print("=" * 70)
+
+    try:
+        # Get universe stocks
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        tickers = []
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            results = scan_data.get('results', [])[:100]  # Top 100 stocks
+            tickers = [r.get('ticker') for r in results if r.get('ticker')]
+
+        print(f"📊 Updating contract data for {len(tickers)} stocks")
+
+        from src.data.gov_contracts import get_contract_intelligence
+        contract_intel = get_contract_intelligence()
+
+        successful = 0
+        failed = 0
+
+        for ticker in tickers[:50]:  # Limit batch size
+            try:
+                activity = contract_intel.get_company_contracts(ticker)
+                if activity:
+                    successful += 1
+            except Exception as e:
+                failed += 1
+
+        print(f"✅ Updated: {successful}, Failed: {failed}")
+        print("=" * 70)
+
+        return {'success': True, 'updated': successful, 'failed': failed}
+
+    except Exception as e:
+        print(f"❌ Batch update failed: {e}")
+        return {'success': False, 'error': str(e)}
+
+
 @app.function(image=image)
 def test_single_stock():
     """Test scanning a single stock (NVDA) to verify setup."""
