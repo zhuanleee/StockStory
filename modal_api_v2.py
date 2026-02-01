@@ -1132,20 +1132,31 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @web_app.get("/evolution/correlations", status_code=501)
+    @web_app.get("/evolution/correlations")
     def evolution_correlations():
-        return {
-            "ok": False,
-            "error": "Signal correlation analysis not implemented",
-            "message": "Correlation matrix planned for future release.",
-            "planned_features": [
-                "Signal-to-signal correlations",
-                "Theme-to-performance correlations",
-                "Lag analysis between signals",
-                "Conditional correlation matrices"
-            ],
-            "estimated_release": "Q2 2026"
-        }
+        """
+        Get theme and sector correlation analysis.
+        Returns daily correlation matrix and theme statistics.
+        """
+        try:
+            correlation_file = Path(VOLUME_PATH) / 'correlation_analysis_latest.json'
+
+            if correlation_file.exists():
+                with open(correlation_file) as f:
+                    correlation_data = json.load(f)
+
+                return {
+                    "ok": True,
+                    "data": correlation_data
+                }
+            else:
+                return {
+                    "ok": False,
+                    "error": "No correlation analysis available yet",
+                    "message": "Correlation analysis runs daily at 1:00 PM PST"
+                }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     @web_app.get("/debug/health", status_code=200)
     def debug_health():
@@ -1284,10 +1295,19 @@ Get an API key at `/api-keys/request`
         }
 
     @web_app.post("/supplychain/ai-discover")
-    def supplychain_ai_discover():
+    def supplychain_ai_discover(ticker: str = None, theme: str = None):
+        """
+        AI-powered supply chain discovery using xAI/DeepSeek.
+
+        Provide either ticker or theme parameter:
+        - ticker: Discover supply chain for specific company
+        - theme: Discover ecosystem for theme/sector
+
+        Returns discovered relationships with confidence scores.
+        """
         try:
             from src.intelligence.ecosystem_intelligence import ai_discover_supply_chain
-            result = ai_discover_supply_chain()
+            result = ai_discover_supply_chain(ticker=ticker, theme=theme)
             return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}

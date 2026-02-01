@@ -5,6 +5,7 @@ Provides theme-based supply chain mapping and analysis.
 """
 
 from typing import Dict, List, Optional
+from datetime import datetime
 from src.core.story_scoring import SUPPLY_CHAIN_MAP, THEME_NAME_TO_SUPPLY_CHAIN
 
 
@@ -105,16 +106,129 @@ def get_theme_supply_chain(theme_id: str) -> Dict:
     return result
 
 
-def ai_discover_supply_chain() -> Dict:
+def ai_discover_supply_chain(ticker: str = None, theme: str = None) -> Dict:
     """
-    AI-powered supply chain discovery.
+    AI-powered supply chain discovery using xAI/DeepSeek.
 
-    This is a placeholder for future AI-based supply chain discovery.
-    Currently returns the existing manually-defined supply chains.
+    Analyzes company relationships, filings, and news to discover
+    supply chain connections beyond manual maps.
+
+    Args:
+        ticker: Optional ticker to analyze supply chain for
+        theme: Optional theme to discover supply chain for
+
+    Returns:
+        Dict with discovered relationships and confidence scores
     """
-    return {
-        'status': 'manual_only',
-        'message': 'AI discovery not yet implemented. Using manually-defined supply chains.',
-        'available_themes': get_supply_chain_themes(),
-        'note': 'Future versions will use AI to discover new supply chain relationships'
-    }
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        from src.services.ai_service import get_ai_service
+
+        ai_service = get_ai_service()
+        if not ai_service:
+            return {
+                'status': 'unavailable',
+                'message': 'AI service not configured',
+                'available_themes': get_supply_chain_themes()
+            }
+
+        # Build analysis prompt
+        if ticker:
+            prompt = f"""Analyze the supply chain relationships for {ticker}.
+
+Identify:
+1. Key suppliers (who provides components/materials to {ticker})
+2. Key customers (who buys from {ticker})
+3. Competitors in the same space
+4. Complementary companies (benefit from {ticker}'s success)
+
+Format response as JSON:
+{{
+    "suppliers": ["TICKER1", "TICKER2", ...],
+    "customers": ["TICKER1", "TICKER2", ...],
+    "competitors": ["TICKER1", "TICKER2", ...],
+    "complementary": ["TICKER1", "TICKER2", ...],
+    "confidence": 0.0-1.0,
+    "reasoning": "brief explanation"
+}}
+
+Only include publicly traded US companies with clear relationships.
+"""
+        elif theme:
+            prompt = f"""Analyze the supply chain for the {theme} theme/sector.
+
+Identify:
+1. Market leaders
+2. Key suppliers/enablers
+3. Emerging players
+4. Infrastructure providers
+
+Format response as JSON:
+{{
+    "leaders": ["TICKER1", "TICKER2", ...],
+    "suppliers": ["TICKER1", "TICKER2", ...],
+    "emerging": ["TICKER1", "TICKER2", ...],
+    "infrastructure": ["TICKER1", "TICKER2", ...],
+    "confidence": 0.0-1.0,
+    "reasoning": "brief explanation"
+}}
+
+Only include publicly traded US companies.
+"""
+        else:
+            return {
+                'status': 'error',
+                'message': 'Must provide either ticker or theme parameter'
+            }
+
+        # Call AI service
+        logger.info(f"AI supply chain discovery for ticker={ticker}, theme={theme}")
+
+        response = ai_service.chat(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=1000
+        )
+
+        # Parse JSON response
+        import json
+        response_text = response.get('content', '{}')
+
+        # Try to extract JSON from response
+        try:
+            if '```json' in response_text:
+                json_start = response_text.index('```json') + 7
+                json_end = response_text.index('```', json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif '```' in response_text:
+                json_start = response_text.index('```') + 3
+                json_end = response_text.index('```', json_start)
+                response_text = response_text[json_start:json_end].strip()
+
+            discovered = json.loads(response_text)
+        except Exception as e:
+            logger.error(f"Failed to parse AI response: {e}")
+            return {
+                'status': 'parse_error',
+                'message': f'Failed to parse AI response: {e}',
+                'raw_response': response_text[:500]
+            }
+
+        return {
+            'status': 'success',
+            'analysis_type': 'ticker' if ticker else 'theme',
+            'ticker': ticker,
+            'theme': theme,
+            'discovered': discovered,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"AI supply chain discovery failed: {e}")
+        return {
+            'status': 'error',
+            'message': str(e),
+            'available_themes': get_supply_chain_themes()
+        }
