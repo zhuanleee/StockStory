@@ -24,6 +24,9 @@ from .paths import (
     _ensure_data_dir,
 )
 
+# Re-export registry
+from .registry import ParameterRegistry
+
 __all__ = [
     # Types
     'ParameterCategory',
@@ -39,4 +42,6 @@ __all__ = [
     'AUDIT_FILE',
     'HEALTH_FILE',
     '_ensure_data_dir',
+    # Registry
+    'ParameterRegistry',
 ]
