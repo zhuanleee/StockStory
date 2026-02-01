@@ -112,13 +112,7 @@ def scan_stock_with_ai_brain(ticker: str) -> dict:
         return {'ticker': ticker, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=3600,  # 1 hour max for full scan
-    schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6 AM PST (14:00 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def daily_scan():
+def _run_daily_scan():
     """
     Daily scan of all S&P 500 + NASDAQ stocks with AI brain.
 
@@ -343,13 +337,7 @@ def daily_scan():
     }
 
 
-@app.function(
-    image=image,
-    timeout=1800,  # 30 minutes max
-    schedule=modal.Cron("30 14 * * 1-5"),  # Run Mon-Fri at 6:30 AM PST (30 min after daily scan)
-    volumes={VOLUME_PATH: volume},
-)
-def automated_theme_discovery():
+def _run_automated_theme_discovery():
     """
     Automated Theme Discovery - Runs 4 advanced discovery methods:
     1. Supply Chain Analysis (finds suppliers of theme leaders, identifies lagging plays)
@@ -613,13 +601,7 @@ def automated_theme_discovery():
         }
 
 
-@app.function(
-    image=image,
-    timeout=600,  # 10 minutes max
-    schedule=modal.Cron("0 15 * * 1-5"),  # Run Mon-Fri at 7:00 AM PST (15:00 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def conviction_alerts():
+def _run_conviction_alerts():
     """
     Conviction Alerts - Scans daily results for high-conviction opportunities.
 
@@ -719,13 +701,7 @@ def conviction_alerts():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=1200,  # 20 minutes max
-    schedule=modal.Cron("15 15 * * 1-5"),  # Run Mon-Fri at 7:15 AM PST (15:15 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def unusual_options_alerts():
+def _run_unusual_options_alerts():
     """
     Unusual Options Activity Alerts.
 
@@ -820,13 +796,7 @@ def unusual_options_alerts():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=600,  # 10 minutes max
-    schedule=modal.Cron("45 14 * * 1-5"),  # Run Mon-Fri at 9:45 AM ET / 6:45 AM PST (14:45 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def daily_executive_briefing():
+def _run_daily_executive_briefing():
     """
     Daily Executive Briefing - Comprehensive market overview at market open.
 
@@ -929,13 +899,7 @@ def daily_executive_briefing():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=300,  # 5 minutes max
-    schedule=modal.Cron("0 16 * * 1"),  # Run Mondays at 8:00 AM PST (16:00 UTC) - Weekly health check
-    volumes={VOLUME_PATH: volume},
-)
-def parameter_learning_health_check():
+def _run_parameter_learning_health_check():
     """
     Parameter Learning Health Check - Weekly monitoring of learning system.
 
@@ -1053,13 +1017,7 @@ def parameter_learning_health_check():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=300,  # 5 minutes max
-    schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
-    volumes={VOLUME_PATH: volume},
-)
-def data_staleness_monitor():
+def _run_data_staleness_monitor():
     """
     Data Staleness Monitor - Monitors data freshness across all sources.
 
@@ -1159,13 +1117,7 @@ def data_staleness_monitor():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=900,  # 15 minutes max
-    schedule=modal.Cron("0 2 * * 1"),  # Run Mondays at 6:00 PM PST Sunday (02:00 UTC Monday) - Weekly report
-    volumes={VOLUME_PATH: volume},
-)
-def weekly_summary_report():
+def _run_weekly_summary_report():
     """
     Weekly Summary Report - Comprehensive week performance analysis.
 
@@ -1304,13 +1256,7 @@ def weekly_summary_report():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=3600,  # 1 hour max
-    schedule=modal.Cron("0 22 * * 1-5"),  # Run Mon-Fri at 2:00 PM PST (22:00 UTC) - After market close
-    volumes={VOLUME_PATH: volume},
-)
-def batch_insider_transactions_update():
+def _run_batch_insider_transactions_update():
     """
     Batch Insider Transactions Update.
 
@@ -1362,13 +1308,7 @@ def batch_insider_transactions_update():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=1800,  # 30 minutes max
-    schedule=modal.Cron("30 14 * * 1-5"),  # Run Mon-Fri at 6:30 AM PST (14:30 UTC) - During daily scan
-    volumes={VOLUME_PATH: volume},
-)
-def batch_google_trends_prefetch():
+def _run_batch_google_trends_prefetch():
     """
     Batch Google Trends Pre-fetch.
 
@@ -1418,13 +1358,7 @@ def batch_google_trends_prefetch():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=3600,  # 1 hour max
-    schedule=modal.Cron("0 3 1 * *"),  # Run 1st of month at 7:00 PM PST (03:00 UTC) - Monthly update
-    volumes={VOLUME_PATH: volume},
-)
-def batch_patent_data_update():
+def _run_batch_patent_data_update():
     """
     Batch Patent Data Update.
 
@@ -1476,13 +1410,7 @@ def batch_patent_data_update():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=3600,  # 1 hour max
-    schedule=modal.Cron("0 3 * * 0"),  # Run Sundays at 7:00 PM PST (03:00 UTC Monday) - Weekly update
-    volumes={VOLUME_PATH: volume},
-)
-def batch_contracts_update():
+def _run_batch_contracts_update():
     """
     Batch Government Contracts Update.
 
@@ -1534,13 +1462,7 @@ def batch_contracts_update():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=600,  # 10 minutes max
-    schedule=modal.Cron("30 15 * * 1-5"),  # Run Mon-Fri at 7:30 AM PST (15:30 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def sector_rotation_alerts():
+def _run_sector_rotation_alerts():
     """
     Sector Rotation Alerts - Daily sector momentum and rotation analysis.
 
@@ -1594,13 +1516,7 @@ def sector_rotation_alerts():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=600,  # 10 minutes max
-    schedule=modal.Cron("45 15 * * 1-5"),  # Run Mon-Fri at 7:45 AM PST (15:45 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def institutional_flow_alerts():
+def _run_institutional_flow_alerts():
     """
     Institutional Flow Alerts - Smart money tracking.
 
@@ -1656,13 +1572,7 @@ def institutional_flow_alerts():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=600,  # 10 minutes max
-    schedule=modal.Cron("0 16 * * 1-5"),  # Run Mon-Fri at 8:00 AM PST (16:00 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def executive_commentary_alerts():
+def _run_executive_commentary_alerts():
     """
     Executive Commentary Alerts - CEO/CFO sentiment tracking.
 
@@ -1705,13 +1615,7 @@ def executive_commentary_alerts():
         return {'success': False, 'error': str(e)}
 
 
-@app.function(
-    image=image,
-    timeout=900,  # 15 minutes max
-    schedule=modal.Cron("0 21 * * 1-5"),  # Run Mon-Fri at 1:00 PM PST (21:00 UTC)
-    volumes={VOLUME_PATH: volume},
-)
-def daily_correlation_analysis():
+def _run_daily_correlation_analysis():
     """
     Daily Correlation Analysis - Theme and sector correlation matrix.
 
@@ -1821,6 +1725,525 @@ def daily_correlation_analysis():
         traceback.print_exc()
         return {'success': False, 'error': str(e)}
 
+
+# ============================================================================
+# Individual Function Wrappers (for testing, no schedules)
+# ============================================================================
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max for full scan
+    volumes={VOLUME_PATH: volume},
+)
+def daily_scan():
+    """
+    Daily scan of all S&P 500 + NASDAQ stocks with AI brain.
+    (No schedule - for testing only. Use daily_scan_bundle for scheduled runs.)
+    """
+    return _run_daily_scan()
+
+
+@app.function(
+    image=image,
+    timeout=1800,  # 30 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def automated_theme_discovery():
+    """
+    Automated Theme Discovery - Runs 4 advanced discovery methods.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_automated_theme_discovery()
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def conviction_alerts():
+    """
+    Conviction Alerts - Scans daily results for high-conviction opportunities.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_conviction_alerts()
+
+
+@app.function(
+    image=image,
+    timeout=1200,  # 20 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def unusual_options_alerts():
+    """
+    Unusual Options Activity Alerts.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_unusual_options_alerts()
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def daily_executive_briefing():
+    """
+    Daily Executive Briefing - Comprehensive market overview.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_daily_executive_briefing()
+
+
+@app.function(
+    image=image,
+    timeout=300,  # 5 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def parameter_learning_health_check():
+    """
+    Parameter Learning Health Check - Weekly monitoring of learning system.
+    (No schedule - for testing only. Use weekly_reports for scheduled runs.)
+    """
+    return _run_parameter_learning_health_check()
+
+
+@app.function(
+    image=image,
+    timeout=300,  # 5 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def data_staleness_monitor():
+    """
+    Data Staleness Monitor - Monitors data freshness across all sources.
+    (No schedule - for testing only. Use monitoring_cycle for scheduled runs.)
+    """
+    return _run_data_staleness_monitor()
+
+
+@app.function(
+    image=image,
+    timeout=900,  # 15 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def weekly_summary_report():
+    """
+    Weekly Summary Report - Comprehensive week performance analysis.
+    (No schedule - for testing only. Use weekly_reports for scheduled runs.)
+    """
+    return _run_weekly_summary_report()
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    volumes={VOLUME_PATH: volume},
+)
+def batch_insider_transactions_update():
+    """
+    Batch Insider Transactions Update.
+    (No schedule - for testing only. Use afternoon_analysis for scheduled runs.)
+    """
+    return _run_batch_insider_transactions_update()
+
+
+@app.function(
+    image=image,
+    timeout=1800,  # 30 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def batch_google_trends_prefetch():
+    """
+    Batch Google Trends Pre-fetch.
+    (No schedule - for testing only. Use monitoring_cycle for scheduled runs.)
+    """
+    return _run_batch_google_trends_prefetch()
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    volumes={VOLUME_PATH: volume},
+)
+def batch_patent_data_update():
+    """
+    Batch Patent Data Update.
+    (No schedule - for testing only. Use weekly_reports for scheduled runs.)
+    """
+    return _run_batch_patent_data_update()
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    volumes={VOLUME_PATH: volume},
+)
+def batch_contracts_update():
+    """
+    Batch Government Contracts Update.
+    (No schedule - for testing only. Use weekly_reports for scheduled runs.)
+    """
+    return _run_batch_contracts_update()
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def sector_rotation_alerts():
+    """
+    Sector Rotation Alerts - Daily sector momentum and rotation analysis.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_sector_rotation_alerts()
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def institutional_flow_alerts():
+    """
+    Institutional Flow Alerts - Smart money tracking.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_institutional_flow_alerts()
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def executive_commentary_alerts():
+    """
+    Executive Commentary Alerts - CEO/CFO sentiment tracking.
+    (No schedule - for testing only. Use morning_alerts_bundle for scheduled runs.)
+    """
+    return _run_executive_commentary_alerts()
+
+
+@app.function(
+    image=image,
+    timeout=900,  # 15 minutes max
+    volumes={VOLUME_PATH: volume},
+)
+def daily_correlation_analysis():
+    """
+    Daily Correlation Analysis - Theme and sector correlation matrix.
+    (No schedule - for testing only. Use afternoon_analysis for scheduled runs.)
+    """
+    return _run_daily_correlation_analysis()
+
+
+# ============================================================================
+# BUNDLED SCHEDULED FUNCTIONS (5 total to stay within Modal's limit)
+# ============================================================================
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max for full scan
+    schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6 AM PST (14:00 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def daily_scan_bundle():
+    """
+    Bundle 1: Daily Scan
+    Runs Mon-Fri at 6:00 AM PST (14:00 UTC)
+
+    This is kept as a single function (already bundled).
+    """
+    print("=" * 70)
+    print("📦 BUNDLE 1: DAILY SCAN")
+    print("=" * 70)
+
+    result = _run_daily_scan()
+
+    print("=" * 70)
+    print("✅ BUNDLE 1 COMPLETE")
+    print("=" * 70)
+
+    return result
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("45 14 * * 1-5"),  # Run Mon-Fri at 6:45 AM PST (14:45 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def morning_alerts_bundle():
+    """
+    Bundle 2: Morning Alerts Bundle
+    Runs Mon-Fri at 6:45 AM PST (14:45 UTC)
+
+    Executes in sequence:
+    1. automated_theme_discovery
+    2. conviction_alerts
+    3. unusual_options_alerts
+    4. sector_rotation_alerts
+    5. institutional_flow_alerts
+    6. executive_commentary_alerts
+    7. daily_executive_briefing
+    """
+    print("=" * 70)
+    print("📦 BUNDLE 2: MORNING ALERTS")
+    print("=" * 70)
+
+    results = {}
+
+    # 1. Theme Discovery
+    print("\n[1/7] Running automated_theme_discovery...")
+    try:
+        results['theme_discovery'] = _run_automated_theme_discovery()
+    except Exception as e:
+        print(f"❌ Theme discovery failed: {e}")
+        results['theme_discovery'] = {'success': False, 'error': str(e)}
+
+    # 2. Conviction Alerts
+    print("\n[2/7] Running conviction_alerts...")
+    try:
+        results['conviction'] = _run_conviction_alerts()
+    except Exception as e:
+        print(f"❌ Conviction alerts failed: {e}")
+        results['conviction'] = {'success': False, 'error': str(e)}
+
+    # 3. Unusual Options Alerts
+    print("\n[3/7] Running unusual_options_alerts...")
+    try:
+        results['unusual_options'] = _run_unusual_options_alerts()
+    except Exception as e:
+        print(f"❌ Unusual options failed: {e}")
+        results['unusual_options'] = {'success': False, 'error': str(e)}
+
+    # 4. Sector Rotation Alerts
+    print("\n[4/7] Running sector_rotation_alerts...")
+    try:
+        results['sector_rotation'] = _run_sector_rotation_alerts()
+    except Exception as e:
+        print(f"❌ Sector rotation failed: {e}")
+        results['sector_rotation'] = {'success': False, 'error': str(e)}
+
+    # 5. Institutional Flow Alerts
+    print("\n[5/7] Running institutional_flow_alerts...")
+    try:
+        results['institutional_flow'] = _run_institutional_flow_alerts()
+    except Exception as e:
+        print(f"❌ Institutional flow failed: {e}")
+        results['institutional_flow'] = {'success': False, 'error': str(e)}
+
+    # 6. Executive Commentary Alerts
+    print("\n[6/7] Running executive_commentary_alerts...")
+    try:
+        results['executive_commentary'] = _run_executive_commentary_alerts()
+    except Exception as e:
+        print(f"❌ Executive commentary failed: {e}")
+        results['executive_commentary'] = {'success': False, 'error': str(e)}
+
+    # 7. Daily Executive Briefing
+    print("\n[7/7] Running daily_executive_briefing...")
+    try:
+        results['briefing'] = _run_daily_executive_briefing()
+    except Exception as e:
+        print(f"❌ Daily briefing failed: {e}")
+        results['briefing'] = {'success': False, 'error': str(e)}
+
+    print("=" * 70)
+    print("✅ BUNDLE 2 COMPLETE")
+    print("=" * 70)
+
+    return {
+        'bundle': 'morning_alerts',
+        'results': results,
+        'success': True
+    }
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 21 * * 1-5"),  # Run Mon-Fri at 1:00 PM PST (21:00 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def afternoon_analysis_bundle():
+    """
+    Bundle 3: Afternoon Analysis
+    Runs Mon-Fri at 1:00 PM PST (21:00 UTC)
+
+    Executes in sequence:
+    1. daily_correlation_analysis
+    2. batch_insider_transactions_update
+    """
+    print("=" * 70)
+    print("📦 BUNDLE 3: AFTERNOON ANALYSIS")
+    print("=" * 70)
+
+    results = {}
+
+    # 1. Daily Correlation Analysis
+    print("\n[1/2] Running daily_correlation_analysis...")
+    try:
+        results['correlation'] = _run_daily_correlation_analysis()
+    except Exception as e:
+        print(f"❌ Correlation analysis failed: {e}")
+        results['correlation'] = {'success': False, 'error': str(e)}
+
+    # 2. Batch Insider Transactions Update
+    print("\n[2/2] Running batch_insider_transactions_update...")
+    try:
+        results['insider_transactions'] = _run_batch_insider_transactions_update()
+    except Exception as e:
+        print(f"❌ Insider transactions failed: {e}")
+        results['insider_transactions'] = {'success': False, 'error': str(e)}
+
+    print("=" * 70)
+    print("✅ BUNDLE 3 COMPLETE")
+    print("=" * 70)
+
+    return {
+        'bundle': 'afternoon_analysis',
+        'results': results,
+        'success': True
+    }
+
+
+@app.function(
+    image=image,
+    timeout=3600,  # 1 hour max
+    schedule=modal.Cron("0 2 * * 1"),  # Run Mondays at 2:00 AM UTC (Sunday 6 PM PST)
+    volumes={VOLUME_PATH: volume},
+)
+def weekly_reports_bundle():
+    """
+    Bundle 4: Weekly Reports
+    Runs Mondays at 2:00 AM UTC (Sunday 6:00 PM PST)
+
+    Executes in sequence:
+    1. weekly_summary_report
+    2. parameter_learning_health_check
+    3. batch_contracts_update
+    4. batch_patent_data_update (conditional: only if first Monday of month)
+    """
+    print("=" * 70)
+    print("📦 BUNDLE 4: WEEKLY REPORTS")
+    print("=" * 70)
+
+    results = {}
+
+    # 1. Weekly Summary Report
+    print("\n[1/4] Running weekly_summary_report...")
+    try:
+        results['weekly_summary'] = _run_weekly_summary_report()
+    except Exception as e:
+        print(f"❌ Weekly summary failed: {e}")
+        results['weekly_summary'] = {'success': False, 'error': str(e)}
+
+    # 2. Parameter Learning Health Check
+    print("\n[2/4] Running parameter_learning_health_check...")
+    try:
+        results['health_check'] = _run_parameter_learning_health_check()
+    except Exception as e:
+        print(f"❌ Health check failed: {e}")
+        results['health_check'] = {'success': False, 'error': str(e)}
+
+    # 3. Batch Contracts Update
+    print("\n[3/4] Running batch_contracts_update...")
+    try:
+        results['contracts'] = _run_batch_contracts_update()
+    except Exception as e:
+        print(f"❌ Contracts update failed: {e}")
+        results['contracts'] = {'success': False, 'error': str(e)}
+
+    # 4. Batch Patent Data Update (only first Monday of month)
+    from datetime import datetime
+    now = datetime.now()
+    is_first_monday = now.day <= 7
+
+    if is_first_monday:
+        print("\n[4/4] Running batch_patent_data_update (first Monday of month)...")
+        try:
+            results['patents'] = _run_batch_patent_data_update()
+        except Exception as e:
+            print(f"❌ Patent update failed: {e}")
+            results['patents'] = {'success': False, 'error': str(e)}
+    else:
+        print("\n[4/4] Skipping batch_patent_data_update (not first Monday of month)")
+        results['patents'] = {'success': True, 'skipped': True}
+
+    print("=" * 70)
+    print("✅ BUNDLE 4 COMPLETE")
+    print("=" * 70)
+
+    return {
+        'bundle': 'weekly_reports',
+        'results': results,
+        'success': True
+    }
+
+
+@app.function(
+    image=image,
+    timeout=1800,  # 30 minutes max
+    schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
+    volumes={VOLUME_PATH: volume},
+)
+def monitoring_cycle_bundle():
+    """
+    Bundle 5: Monitoring Cycle
+    Runs every 6 hours
+
+    Executes in sequence:
+    1. data_staleness_monitor
+    2. batch_google_trends_prefetch (conditional: only during market hours 14-22 UTC)
+    """
+    print("=" * 70)
+    print("📦 BUNDLE 5: MONITORING CYCLE")
+    print("=" * 70)
+
+    results = {}
+
+    # 1. Data Staleness Monitor
+    print("\n[1/2] Running data_staleness_monitor...")
+    try:
+        results['staleness'] = _run_data_staleness_monitor()
+    except Exception as e:
+        print(f"❌ Staleness monitor failed: {e}")
+        results['staleness'] = {'success': False, 'error': str(e)}
+
+    # 2. Batch Google Trends Prefetch (only during market hours)
+    from datetime import datetime
+    now = datetime.now()
+    current_hour = now.hour
+    is_market_hours = 14 <= current_hour <= 22  # 6 AM - 2 PM PST in UTC
+    is_weekday = now.weekday() < 5  # Monday = 0, Friday = 4
+
+    if is_market_hours and is_weekday:
+        print("\n[2/2] Running batch_google_trends_prefetch (market hours)...")
+        try:
+            results['trends'] = _run_batch_google_trends_prefetch()
+        except Exception as e:
+            print(f"❌ Trends prefetch failed: {e}")
+            results['trends'] = {'success': False, 'error': str(e)}
+    else:
+        print("\n[2/2] Skipping batch_google_trends_prefetch (outside market hours)")
+        results['trends'] = {'success': True, 'skipped': True}
+
+    print("=" * 70)
+    print("✅ BUNDLE 5 COMPLETE")
+    print("=" * 70)
+
+    return {
+        'bundle': 'monitoring_cycle',
+        'results': results,
+        'success': True
+    }
+
+
+# ============================================================================
+# Test Functions
+# ============================================================================
 
 @app.function(image=image)
 def test_single_stock():
