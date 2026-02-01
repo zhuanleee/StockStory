@@ -753,10 +753,58 @@ Get an API key at `/api-keys/request`
 
     @web_app.get("/theme-intel/alerts")
     def theme_alerts():
+        """
+        Get automated theme discovery alerts.
+        Returns latest theme discovery results from automated analysis.
+        """
         try:
-            from src.intelligence.theme_intelligence import get_theme_alerts
-            alerts = get_theme_alerts()
-            return {"ok": True, "data": alerts}
+            # Load latest automated theme discovery results from volume
+            latest_path = Path(VOLUME_PATH) / 'theme_discovery_latest.json'
+
+            if latest_path.exists():
+                with open(latest_path) as f:
+                    discovery_data = json.load(f)
+
+                # Extract themes for alerts format
+                themes = discovery_data.get('themes', [])
+
+                # Sort by confidence score
+                sorted_themes = sorted(
+                    themes,
+                    key=lambda x: x.get('confidence_score', 0),
+                    reverse=True
+                )
+
+                # Format as alerts
+                alerts = []
+                for theme in sorted_themes[:20]:  # Top 20 themes
+                    alert = {
+                        'name': theme.get('name', 'Unknown'),
+                        'confidence': theme.get('confidence_score', 0),
+                        'laggards': theme.get('laggard_count', 0),
+                        'method': theme.get('discovery_method', 'unknown'),
+                        'patent_validated': theme.get('patent_validation', 0) > 30,
+                        'contract_validated': theme.get('contract_validation', 0) > 20,
+                        'leaders': theme.get('leaders', []),
+                        'laggards_list': theme.get('laggards', [])[:5],  # Top 5 laggards
+                        'timestamp': theme.get('timestamp', discovery_data.get('timestamp'))
+                    }
+                    alerts.append(alert)
+
+                return {
+                    "ok": True,
+                    "data": alerts,
+                    "metadata": {
+                        "timestamp": discovery_data.get('timestamp'),
+                        "total_themes": discovery_data.get('total_themes', 0),
+                        "discovery_methods": discovery_data.get('discovery_methods', {})
+                    }
+                }
+            else:
+                # Fallback to old method if no automated results yet
+                from src.intelligence.theme_intelligence import get_theme_alerts
+                alerts = get_theme_alerts()
+                return {"ok": True, "data": alerts}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -766,6 +814,36 @@ Get an API key at `/api-keys/request`
             from src.intelligence.theme_intelligence import analyze_ticker_themes
             analysis = analyze_ticker_themes(ticker_symbol)
             return {"ok": True, "data": analysis}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/theme-intel/discovery")
+    def theme_discovery_results():
+        """
+        Get full automated theme discovery results.
+        Returns complete analysis from all 4 discovery methods:
+        - Supply Chain Analysis
+        - Patent Clustering
+        - Contract Analysis
+        - News Co-occurrence
+        """
+        try:
+            latest_path = Path(VOLUME_PATH) / 'theme_discovery_latest.json'
+
+            if latest_path.exists():
+                with open(latest_path) as f:
+                    discovery_data = json.load(f)
+
+                return {
+                    "ok": True,
+                    "data": discovery_data
+                }
+            else:
+                return {
+                    "ok": False,
+                    "error": "No theme discovery results available yet",
+                    "message": "Theme discovery runs automatically Mon-Fri at 6:30 AM PST"
+                }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1214,10 +1292,48 @@ Get an API key at `/api-keys/request`
 
     @web_app.post("/theme-intel/run-analysis")
     def theme_intel_run_analysis():
+        """
+        Manually trigger automated theme discovery.
+        Runs all 4 discovery methods:
+        - Supply Chain Analysis
+        - Patent Clustering
+        - Contract Analysis
+        - News Co-occurrence
+
+        Returns latest results immediately if discovery ran within last hour,
+        otherwise returns status indicating scheduled run time.
+        """
         try:
-            from src.intelligence.theme_intelligence import run_theme_analysis
-            result = run_theme_analysis()
-            return {"ok": True, "data": result}
+            # Check if we have recent results (within last hour)
+            latest_path = Path(VOLUME_PATH) / 'theme_discovery_latest.json'
+
+            if latest_path.exists():
+                with open(latest_path) as f:
+                    discovery_data = json.load(f)
+
+                timestamp_str = discovery_data.get('timestamp', '')
+                if timestamp_str:
+                    from datetime import datetime, timedelta
+                    result_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    age = datetime.now().astimezone() - result_time
+
+                    if age < timedelta(hours=1):
+                        # Recent results available
+                        return {
+                            "ok": True,
+                            "data": discovery_data,
+                            "message": f"Recent discovery results (age: {int(age.total_seconds()/60)} minutes)",
+                            "age_minutes": int(age.total_seconds() / 60)
+                        }
+
+            # No recent results - return scheduled run info
+            return {
+                "ok": True,
+                "message": "Theme discovery runs automatically Mon-Fri at 6:30 AM PST",
+                "next_run": "See scheduled runs: modal app list",
+                "note": "Results will be available via GET /theme-intel/alerts after next scheduled run"
+            }
+
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

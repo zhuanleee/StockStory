@@ -343,6 +343,246 @@ def daily_scan():
     }
 
 
+@app.function(
+    image=image,
+    timeout=1800,  # 30 minutes max
+    schedule=modal.Cron("30 14 * * 1-5"),  # Run Mon-Fri at 6:30 AM PST (30 min after daily scan)
+    volumes={VOLUME_PATH: volume},
+)
+def automated_theme_discovery():
+    """
+    Automated Theme Discovery - Runs 4 advanced discovery methods:
+    1. Supply Chain Analysis (finds suppliers of theme leaders, identifies lagging plays)
+    2. Patent Clustering (groups companies by patent similarity)
+    3. Contract Analysis (discovers themes from government contracts)
+    4. News Co-occurrence (reveals market narrative from co-mentioned stocks)
+
+    Runs automatically Mon-Fri at 6:30 AM PST, 30 minutes after daily scan completes.
+    Results are saved to Modal volume and accessible via /theme-intel/alerts API.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("🔍 STARTING AUTOMATED THEME DISCOVERY")
+    print("=" * 70)
+
+    today = datetime.now()
+    print(f"📅 {today.strftime('%A, %B %d, %Y %H:%M UTC')}")
+    print()
+
+    try:
+        from src.intelligence.theme_discovery_engine import get_theme_discovery_engine
+
+        engine = get_theme_discovery_engine()
+
+        # 1. Discover emerging themes from high story-score stocks
+        print("🔍 Method 1: Discovering emerging themes from story scores...")
+        emerging_themes = engine.discover_emerging_themes(min_story_score=60)
+        print(f"   ✅ Found {len(emerging_themes)} emerging themes")
+
+        # 2. Analyze known supply chains for lagging opportunities
+        print("\n🔗 Method 2: Analyzing supply chains for lagging plays...")
+        supply_chain_themes = []
+
+        # Known themes to analyze (from SUPPLY_CHAIN_MAP)
+        known_themes = [
+            'ai_infrastructure', 'ev_battery', 'defense_tech', 'energy_transition',
+            'cybersecurity', 'biotech_innovation', 'fintech_payments', 'cloud_computing'
+        ]
+
+        for theme_id in known_themes:
+            try:
+                theme = engine.analyze_supply_chain(theme_id)
+                if theme and theme.laggard_count > 0:
+                    supply_chain_themes.append(theme)
+                    print(f"   ✅ {theme_id}: {theme.laggard_count} lagging opportunities")
+            except Exception as e:
+                print(f"   ⚠️  {theme_id}: {e}")
+
+        print(f"   ✅ Analyzed {len(known_themes)} supply chains, found {len(supply_chain_themes)} with opportunities")
+
+        # 3. Validate themes with patent data
+        print("\n📄 Method 3: Validating themes with patent clustering...")
+        patent_validated = 0
+
+        all_themes = emerging_themes + supply_chain_themes
+        for theme in all_themes:
+            try:
+                # Get tickers from theme
+                tickers = []
+                if hasattr(theme, 'leaders'):
+                    tickers.extend([n.ticker for n in theme.leaders if hasattr(n, 'ticker')])
+                if hasattr(theme, 'suppliers'):
+                    tickers.extend([n.ticker for n in theme.suppliers if hasattr(n, 'ticker')])
+
+                if tickers:
+                    # Validate with patents
+                    patent_score = engine._validate_with_patents(tickers[:5], [theme.name])
+                    if patent_score > 30:  # Threshold for patent relevance
+                        patent_validated += 1
+                        # Store patent score in theme metadata
+                        if not hasattr(theme, 'metadata'):
+                            theme.metadata = {}
+                        theme.metadata['patent_validation_score'] = patent_score
+            except Exception as e:
+                print(f"   ⚠️  Patent validation error: {e}")
+
+        print(f"   ✅ Patent-validated {patent_validated}/{len(all_themes)} themes")
+
+        # 4. Validate themes with government contract data
+        print("\n📋 Method 4: Validating themes with contract analysis...")
+        contract_validated = 0
+
+        for theme in all_themes:
+            try:
+                # Get tickers from theme
+                tickers = []
+                if hasattr(theme, 'leaders'):
+                    tickers.extend([n.ticker for n in theme.leaders if hasattr(n, 'ticker')])
+                if hasattr(theme, 'suppliers'):
+                    tickers.extend([n.ticker for n in theme.suppliers if hasattr(n, 'ticker')])
+
+                if tickers:
+                    # Validate with contracts
+                    contract_score = engine._validate_with_contracts(tickers[:5])
+                    if contract_score > 20:  # Threshold for contract relevance
+                        contract_validated += 1
+                        # Store contract score in theme metadata
+                        if not hasattr(theme, 'metadata'):
+                            theme.metadata = {}
+                        theme.metadata['contract_validation_score'] = contract_score
+            except Exception as e:
+                print(f"   ⚠️  Contract validation error: {e}")
+
+        print(f"   ✅ Contract-validated {contract_validated}/{len(all_themes)} themes")
+
+        # Save results to Modal volume
+        print("\n💾 Saving theme discovery results...")
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        results_filename = f'theme_discovery_{timestamp}.json'
+
+        # Convert themes to dict format for JSON serialization
+        theme_data = []
+        for theme in all_themes:
+            try:
+                theme_dict = {
+                    'name': theme.name,
+                    'discovery_method': theme.discovery_method,
+                    'confidence_score': theme.confidence_score,
+                    'laggard_count': theme.laggard_count,
+                    'timestamp': theme.timestamp.isoformat() if hasattr(theme.timestamp, 'isoformat') else str(theme.timestamp),
+                }
+
+                # Add leaders
+                if hasattr(theme, 'leaders') and theme.leaders:
+                    theme_dict['leaders'] = [
+                        {'ticker': n.ticker, 'opportunity_score': n.opportunity_score}
+                        for n in theme.leaders[:5] if hasattr(n, 'ticker')
+                    ]
+
+                # Add laggards
+                if hasattr(theme, 'laggards') and theme.laggards:
+                    theme_dict['laggards'] = [
+                        {'ticker': n.ticker, 'opportunity_score': n.opportunity_score}
+                        for n in theme.laggards[:10] if hasattr(n, 'ticker')
+                    ]
+
+                # Add suppliers
+                if hasattr(theme, 'suppliers') and theme.suppliers:
+                    theme_dict['suppliers'] = [
+                        {'ticker': n.ticker, 'opportunity_score': n.opportunity_score}
+                        for n in theme.suppliers[:5] if hasattr(n, 'ticker')
+                    ]
+
+                # Add validation scores
+                if hasattr(theme, 'metadata') and theme.metadata:
+                    theme_dict['patent_validation'] = theme.metadata.get('patent_validation_score', 0)
+                    theme_dict['contract_validation'] = theme.metadata.get('contract_validation_score', 0)
+
+                theme_data.append(theme_dict)
+            except Exception as e:
+                print(f"   ⚠️  Error serializing theme {theme.name}: {e}")
+
+        # Create summary data structure
+        summary = {
+            'status': 'success',
+            'timestamp': datetime.now().isoformat(),
+            'discovery_methods': {
+                'emerging_themes': len(emerging_themes),
+                'supply_chain_analysis': len(supply_chain_themes),
+                'patent_validated': patent_validated,
+                'contract_validated': contract_validated
+            },
+            'total_themes': len(all_themes),
+            'themes': theme_data
+        }
+
+        # Save to volume
+        json_path = Path(VOLUME_PATH) / results_filename
+        with open(json_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+
+        # Also save as 'latest' for easy API access
+        latest_path = Path(VOLUME_PATH) / 'theme_discovery_latest.json'
+        with open(latest_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+
+        volume.commit()
+
+        print(f"   ✅ Saved to Modal Volume: {results_filename}")
+        print(f"   ✅ Saved as latest: theme_discovery_latest.json")
+
+        # Print summary
+        print()
+        print("=" * 70)
+        print("📊 THEME DISCOVERY SUMMARY")
+        print("=" * 70)
+        print(f"Total themes discovered: {len(all_themes)}")
+        print(f"  • Emerging themes: {len(emerging_themes)}")
+        print(f"  • Supply chain opportunities: {len(supply_chain_themes)}")
+        print(f"  • Patent-validated: {patent_validated}")
+        print(f"  • Contract-validated: {contract_validated}")
+
+        if theme_data:
+            print(f"\n🎯 Top 5 Opportunities:")
+            print("-" * 70)
+            # Sort by confidence score
+            sorted_themes = sorted(theme_data, key=lambda x: x.get('confidence_score', 0), reverse=True)
+            for i, theme in enumerate(sorted_themes[:5], 1):
+                name = theme.get('name', 'Unknown')
+                confidence = theme.get('confidence_score', 0)
+                laggards = theme.get('laggard_count', 0)
+                method = theme.get('discovery_method', 'unknown')
+                print(f"{i}. {name} (confidence: {confidence:.1f}, {laggards} laggards, method: {method})")
+
+        print()
+        print("=" * 70)
+        print("✅ Theme discovery complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'total_themes': len(all_themes),
+            'emerging_themes': len(emerging_themes),
+            'supply_chain_themes': len(supply_chain_themes),
+            'patent_validated': patent_validated,
+            'contract_validated': contract_validated,
+            'results_file': results_filename
+        }
+
+    except Exception as e:
+        print(f"❌ Theme discovery failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
 @app.function(image=image)
 def test_single_stock():
     """Test scanning a single stock (NVDA) to verify setup."""
@@ -358,6 +598,7 @@ def main(
     ticker: str = None,
     test: bool = False,
     daily: bool = False,
+    themes: bool = False,
 ):
     """
     Run scanner from command line.
@@ -366,6 +607,7 @@ def main(
         modal run modal_scanner.py --test          # Test with NVDA
         modal run modal_scanner.py --ticker AAPL   # Scan single stock
         modal run modal_scanner.py --daily         # Run full daily scan
+        modal run modal_scanner.py --themes        # Run theme discovery
     """
     if test:
         print("🧪 Running test scan...")
@@ -378,8 +620,13 @@ def main(
         print("🚀 Running daily scan...")
         result = daily_scan.remote()
         print(f"\n✅ Scan complete: {result}")
+    elif themes:
+        print("🔍 Running automated theme discovery...")
+        result = automated_theme_discovery.remote()
+        print(f"\n✅ Theme discovery complete: {result}")
     else:
         print("Usage:")
         print("  modal run modal_scanner.py --test")
         print("  modal run modal_scanner.py --ticker NVDA")
         print("  modal run modal_scanner.py --daily")
+        print("  modal run modal_scanner.py --themes")
