@@ -562,6 +562,36 @@ def automated_theme_discovery():
         print("✅ Theme discovery complete!")
         print("=" * 70)
 
+        # Send Telegram notification with top themes
+        try:
+            from src.notifications import get_notification_manager
+
+            notif_mgr = get_notification_manager()
+
+            # Prepare notification data
+            top_themes = sorted(theme_data, key=lambda x: x.get('confidence_score', 0), reverse=True)[:5]
+
+            notif_data = {
+                'themes': [
+                    {
+                        'name': theme.get('name', 'Unknown'),
+                        'confidence': theme.get('confidence_score', 0),
+                        'laggards': theme.get('laggard_count', 0),
+                        'method': theme.get('discovery_method', 'unknown')
+                    }
+                    for theme in top_themes
+                ],
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M UTC')
+            }
+
+            result = notif_mgr.send_alert('theme_discovery', notif_data)
+            if result.get('telegram'):
+                print("📱 Telegram notification sent")
+            else:
+                print("⚠️  Telegram notification skipped (not configured)")
+        except Exception as e:
+            print(f"⚠️  Notification failed: {e}")
+
         return {
             'success': True,
             'total_themes': len(all_themes),
@@ -581,6 +611,322 @@ def automated_theme_discovery():
             'success': False,
             'error': str(e)
         }
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    schedule=modal.Cron("0 15 * * 1-5"),  # Run Mon-Fri at 7:00 AM PST (15:00 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def conviction_alerts():
+    """
+    Conviction Alerts - Scans daily results for high-conviction opportunities.
+
+    Alerts when stocks exceed conviction threshold (score > 80).
+    Runs Mon-Fri at 7:00 AM PST, 1 hour after daily scan completes.
+    Sends Telegram notification with top high-conviction stocks.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("🎯 SCANNING FOR HIGH-CONVICTION OPPORTUNITIES")
+    print("=" * 70)
+
+    try:
+        # Load latest scan results
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        if not scan_files:
+            print("⚠️  No scan results found")
+            return {'success': False, 'error': 'No scan results'}
+
+        with open(scan_files[0]) as f:
+            scan_data = json.load(f)
+
+        results = scan_data.get('results', [])
+        print(f"📊 Analyzing {len(results)} stocks from latest scan")
+
+        # Filter high-conviction stocks (score > 80)
+        high_conviction = [
+            stock for stock in results
+            if stock.get('story_score', 0) > 80
+        ]
+
+        # Sort by score
+        high_conviction.sort(key=lambda x: x.get('story_score', 0), reverse=True)
+
+        print(f"✅ Found {len(high_conviction)} high-conviction opportunities (score > 80)")
+
+        if not high_conviction:
+            print("📊 No high-conviction alerts today")
+            return {'success': True, 'count': 0}
+
+        # Print top 10
+        print(f"\n🎯 Top High-Conviction Stocks:")
+        print("-" * 70)
+        for stock in high_conviction[:10]:
+            ticker = stock.get('ticker', 'Unknown')
+            score = stock.get('story_score', 0)
+            theme = stock.get('hottest_theme', 'No theme')
+            print(f"• {ticker}: {score:.1f} - {theme}")
+
+        # Send Telegram notification
+        try:
+            from src.notifications import get_notification_manager
+
+            notif_mgr = get_notification_manager()
+
+            # Prepare notification data
+            notif_data = {
+                'stocks': [
+                    {
+                        'ticker': stock.get('ticker', 'Unknown'),
+                        'score': stock.get('story_score', 0),
+                        'theme': stock.get('hottest_theme', 'No theme'),
+                        'strength': stock.get('story_strength', 'unknown')
+                    }
+                    for stock in high_conviction[:10]
+                ]
+            }
+
+            result = notif_mgr.send_alert('conviction', notif_data)
+            if result.get('telegram'):
+                print("📱 Telegram notification sent")
+            else:
+                print("⚠️  Telegram notification skipped (not configured)")
+        except Exception as e:
+            print(f"⚠️  Notification failed: {e}")
+
+        print()
+        print("=" * 70)
+        print("✅ Conviction alerts complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'count': len(high_conviction),
+            'top_ticker': high_conviction[0].get('ticker') if high_conviction else None,
+            'top_score': high_conviction[0].get('story_score', 0) if high_conviction else 0
+        }
+
+    except Exception as e:
+        print(f"❌ Conviction alerts failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=1200,  # 20 minutes max
+    schedule=modal.Cron("15 15 * * 1-5"),  # Run Mon-Fri at 7:15 AM PST (15:15 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def unusual_options_alerts():
+    """
+    Unusual Options Activity Alerts.
+
+    Scans universe for unusual options flow and alerts on significant activity.
+    Runs Mon-Fri at 7:15 AM PST, after conviction alerts.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("🔥 SCANNING FOR UNUSUAL OPTIONS ACTIVITY")
+    print("=" * 70)
+
+    try:
+        from src.data.universe_manager import get_universe_manager
+        from src.data.options import get_unusual_activity
+
+        # Get watchlist tickers (top stocks from latest scan)
+        data_dir = Path(VOLUME_PATH)
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+
+        tickers_to_check = []
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            # Check top 50 stocks from scan
+            results = scan_data.get('results', [])[:50]
+            tickers_to_check = [r.get('ticker') for r in results if r.get('ticker')]
+        else:
+            # Fallback to common tickers
+            tickers_to_check = ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMD', 'META']
+
+        print(f"📊 Checking {len(tickers_to_check)} tickers for unusual options activity")
+
+        unusual_activities = []
+
+        for ticker in tickers_to_check[:30]:  # Limit to 30 to avoid rate limits
+            try:
+                activity = get_unusual_activity(ticker, threshold=2.0)
+                if activity and activity.get('unusual_contracts'):
+                    unusual_activities.append({
+                        'ticker': ticker,
+                        'volume': activity.get('total_volume', 0),
+                        'sentiment': activity.get('sentiment', 'neutral'),
+                        'unusual_count': len(activity.get('unusual_contracts', []))
+                    })
+            except Exception as e:
+                print(f"   ⚠️  {ticker}: {e}")
+
+        unusual_activities.sort(key=lambda x: x.get('volume', 0), reverse=True)
+
+        print(f"✅ Found {len(unusual_activities)} tickers with unusual options activity")
+
+        if unusual_activities:
+            print(f"\n🔥 Top Unusual Activity:")
+            print("-" * 70)
+            for activity in unusual_activities[:10]:
+                ticker = activity.get('ticker')
+                volume = activity.get('volume', 0)
+                sentiment = activity.get('sentiment')
+                print(f"• {ticker}: {volume:,} volume - {sentiment}")
+
+        # Send notification if activity found
+        if unusual_activities:
+            try:
+                from src.notifications import get_notification_manager
+
+                notif_mgr = get_notification_manager()
+                notif_data = {'activities': unusual_activities[:10]}
+
+                result = notif_mgr.send_alert('unusual_options', notif_data)
+                if result.get('telegram'):
+                    print("📱 Telegram notification sent")
+            except Exception as e:
+                print(f"⚠️  Notification failed: {e}")
+
+        print()
+        print("=" * 70)
+        print("✅ Unusual options scan complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'count': len(unusual_activities),
+            'activities': unusual_activities[:10]
+        }
+
+    except Exception as e:
+        print(f"❌ Unusual options scan failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.function(
+    image=image,
+    timeout=600,  # 10 minutes max
+    schedule=modal.Cron("45 14 * * 1-5"),  # Run Mon-Fri at 9:45 AM ET / 6:45 AM PST (14:45 UTC)
+    volumes={VOLUME_PATH: volume},
+)
+def daily_executive_briefing():
+    """
+    Daily Executive Briefing - Comprehensive market overview at market open.
+
+    Generates and sends briefing with:
+    - Market overview and sentiment
+    - Top themes and opportunities
+    - Key alerts (conviction, rotation, unusual activity)
+    - Executive commentary highlights
+
+    Runs Mon-Fri at 9:30 AM ET (market open).
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("📊 GENERATING DAILY EXECUTIVE BRIEFING")
+    print("=" * 70)
+
+    try:
+        # Generate briefing
+        from src.intelligence.executive_commentary import generate_executive_briefing
+
+        briefing = generate_executive_briefing()
+
+        print(f"✅ Briefing generated")
+        print(f"   Sections: {len(briefing.get('sections', []))}")
+
+        # Format briefing message
+        message = "*📊 DAILY MARKET BRIEFING*\n"
+        message += f"_{datetime.now().strftime('%A, %B %d, %Y')}_\n\n"
+
+        # Add market overview
+        if 'market_overview' in briefing:
+            overview = briefing['market_overview']
+            message += f"*Market Overview:*\n"
+            message += f"{overview.get('summary', 'No overview available')}\n\n"
+
+        # Add top themes
+        data_dir = Path(VOLUME_PATH)
+        theme_file = data_dir / 'theme_discovery_latest.json'
+        if theme_file.exists():
+            with open(theme_file) as f:
+                theme_data = json.load(f)
+            themes = theme_data.get('themes', [])[:3]
+            if themes:
+                message += f"*🔍 Top Themes:*\n"
+                for theme in themes:
+                    name = theme.get('name', 'Unknown')
+                    confidence = theme.get('confidence_score', 0)
+                    message += f"• {name} ({confidence:.0f}%)\n"
+                message += "\n"
+
+        # Add conviction alerts
+        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+        if scan_files:
+            with open(scan_files[0]) as f:
+                scan_data = json.load(f)
+            high_conviction = [
+                s for s in scan_data.get('results', [])
+                if s.get('story_score', 0) > 80
+            ][:3]
+            if high_conviction:
+                message += f"*🎯 High Conviction:*\n"
+                for stock in high_conviction:
+                    ticker = stock.get('ticker')
+                    score = stock.get('story_score', 0)
+                    message += f"• {ticker}: {score:.0f}\n"
+                message += "\n"
+
+        message += f"\n🔗 [View Dashboard](https://zhuanleee.github.io/stock_scanner_bot)"
+
+        # Send notification
+        try:
+            from src.notifications import get_notification_manager
+
+            notif_mgr = get_notification_manager()
+            result = notif_mgr.send(message, title="📊 Daily Market Briefing")
+
+            if result.get('telegram'):
+                print("📱 Telegram briefing sent")
+            else:
+                print("⚠️  Telegram notification skipped (not configured)")
+        except Exception as e:
+            print(f"⚠️  Notification failed: {e}")
+
+        print()
+        print("=" * 70)
+        print("✅ Daily briefing complete!")
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'briefing': briefing
+        }
+
+    except Exception as e:
+        print(f"❌ Daily briefing failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
 
 
 @app.function(image=image)
