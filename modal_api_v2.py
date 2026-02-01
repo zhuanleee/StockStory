@@ -801,10 +801,12 @@ Get an API key at `/api-keys/request`
                     }
                 }
             else:
-                # Fallback to old method if no automated results yet
-                from src.intelligence.theme_intelligence import get_theme_alerts
-                alerts = get_theme_alerts()
-                return {"ok": True, "data": alerts}
+                # No automated results yet - return empty
+                return {
+                    "ok": True,
+                    "data": [],
+                    "message": "No theme discovery results available yet. Runs automatically Mon-Fri at 6:30 AM PST"
+                }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
