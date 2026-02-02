@@ -21,7 +21,6 @@ from modal_scanner import image, app
 @app.function(
     image=image,
     timeout=600,  # 10 minutes
-    schedule=modal.Cron("0 14 * * *"),  # Daily at 6 AM PST (before market open)
     secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def daily_exit_signal_check():
@@ -148,7 +147,6 @@ def daily_exit_signal_check():
 @app.function(
     image=image,
     timeout=900,  # 15 minutes
-    schedule=modal.Cron("0 22 * * *"),  # Daily at 2 PM PST (afternoon momentum)
     secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def daily_meme_stock_scan():
@@ -257,7 +255,6 @@ def daily_meme_stock_scan():
 @app.function(
     image=image,
     timeout=300,  # 5 minutes
-    schedule=modal.Cron("0 4 * * 1"),  # Weekly on Monday 04:00 UTC (Sunday 8 PM PST)
     secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def weekly_sector_rotation_analysis():

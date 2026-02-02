@@ -899,6 +899,87 @@ def _run_daily_executive_briefing():
         return {'success': False, 'error': str(e)}
 
 
+def _run_exit_signal_check():
+    """
+    TIER 3: Exit Signal Detection
+
+    Monitors all holdings for exit signals before market open.
+    Checks for: red flags, sentiment shifts, and negative news.
+    Sends Telegram alerts for positions that need attention.
+    """
+    import sys
+    sys.path.insert(0, '/root')
+
+    print("=" * 70)
+    print("🛡️  TIER 3: EXIT SIGNAL DETECTION")
+    print("=" * 70)
+
+    try:
+        from src.intelligence.exit_signal_detector import get_exit_signal_detector
+        from src.notifications.notification_manager import get_notification_manager, NotificationPriority
+
+        detector = get_exit_signal_detector()
+        notif_manager = get_notification_manager()
+
+        # Get current holdings
+        holdings = ['NVDA', 'TSLA', 'AAPL', 'GOOGL', 'META']  # TODO: Get from portfolio
+
+        if not holdings:
+            print("No holdings to check")
+            return {'success': True, 'holdings': 0, 'exit_signals': 0}
+
+        print(f"Checking {len(holdings)} holdings...")
+
+        # Check for exit signals
+        exit_signals = detector.check_holdings(holdings)
+
+        if not exit_signals:
+            print("✅ All holdings clear - no exit signals")
+            return {
+                'success': True,
+                'holdings_checked': len(holdings),
+                'exit_signals': 0
+            }
+
+        # Send notifications for exit signals
+        print(f"⚠️  {len(exit_signals)} exit signal(s) detected!")
+
+        for ticker, signal in exit_signals.items():
+            severity = signal['severity']
+            print(f"\n🚨 {ticker}: {signal['signal_type']} ({severity})")
+
+            # Send Telegram alert
+            try:
+                notif_manager.send_alert(
+                    alert_type='position_alert',
+                    data={
+                        'ticker': ticker,
+                        'signal_type': signal['signal_type'],
+                        'severity': severity,
+                        'reason': signal['reason'],
+                        'action': signal['action']
+                    },
+                    priority=NotificationPriority.CRITICAL if severity == 'CRITICAL' else NotificationPriority.HIGH
+                )
+                print(f"   ✓ Alert sent")
+            except Exception as e:
+                print(f"   ✗ Alert failed: {e}")
+
+        print("=" * 70)
+
+        return {
+            'success': True,
+            'holdings_checked': len(holdings),
+            'exit_signals_detected': len(exit_signals)
+        }
+
+    except Exception as e:
+        print(f"❌ Exit signal check failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
 def _run_parameter_learning_health_check():
     """
     Parameter Learning Health Check - Weekly monitoring of learning system.
@@ -2264,15 +2345,23 @@ def morning_mega_bundle():
         results['executive_commentary'] = {'success': False, 'error': str(e)}
 
     # 8. Daily Executive Briefing
-    print("\n[8/8] Running daily_executive_briefing...")
+    print("\n[8/9] Running daily_executive_briefing...")
     try:
         results['briefing'] = _run_daily_executive_briefing()
     except Exception as e:
         print(f"❌ Daily briefing failed: {e}")
         results['briefing'] = {'success': False, 'error': str(e)}
 
+    # 9. Exit Signal Detection (TIER 3)
+    print("\n[9/9] Running exit_signal_check...")
+    try:
+        results['exit_signals'] = _run_exit_signal_check()
+    except Exception as e:
+        print(f"❌ Exit signal check failed: {e}")
+        results['exit_signals'] = {'success': False, 'error': str(e)}
+
     print("=" * 70)
-    print("✅ BUNDLE 1 COMPLETE (8/8 functions)")
+    print("✅ BUNDLE 1 COMPLETE (9/9 functions)")
     print("=" * 70)
 
     return {
