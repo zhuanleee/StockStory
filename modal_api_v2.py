@@ -1698,13 +1698,22 @@ Get an API key at `/api-keys/request`
                     from matplotlib.patches import Rectangle
                     import numpy as np
 
-                    # Fetch data
+                    # Fetch data - get 1 year to fully calculate 200 SMA, display last 6 months
                     stock = yf.Ticker(ticker)
-                    hist = stock.history(period='3mo')
+                    hist_full = stock.history(period='1y')
 
-                    if hist.empty:
+                    if hist_full.empty:
                         send_reply(f"No data available for `{ticker}`")
                         return {"ok": True}
+
+                    # Calculate all SMAs on full data
+                    hist_full['SMA10'] = hist_full['Close'].rolling(10).mean()
+                    hist_full['SMA20'] = hist_full['Close'].rolling(20).mean()
+                    hist_full['SMA50'] = hist_full['Close'].rolling(50).mean()
+                    hist_full['SMA200'] = hist_full['Close'].rolling(200).mean()
+
+                    # Get last 6 months for display (approx 126 trading days)
+                    hist = hist_full.tail(126)
 
                     # Create chart
                     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), height_ratios=[3, 1],
@@ -1750,14 +1759,24 @@ Get an API key at `/api-keys/request`
                                          facecolor=color, edgecolor=color, linewidth=0.5)
                         ax1.add_patch(rect)
 
-                    # Add SMAs
+                    # Add SMAs (pre-calculated on full data for accuracy)
                     dates_num = [mdates.date2num(d) for d in hist.index]
-                    if len(hist) >= 20:
-                        sma20 = hist['Close'].rolling(20).mean()
-                        ax1.plot(dates_num, sma20, color='#ffa500', linewidth=1.5, alpha=0.8, label='SMA20')
-                    if len(hist) >= 50:
-                        sma50 = hist['Close'].rolling(50).mean()
-                        ax1.plot(dates_num, sma50, color='#e056fd', linewidth=1.5, alpha=0.8, label='SMA50')
+
+                    # SMA10 - Yellow
+                    if hist['SMA10'].notna().any():
+                        ax1.plot(dates_num, hist['SMA10'], color='#f1c40f', linewidth=1.2, alpha=0.9, label='SMA10')
+
+                    # SMA20 - Orange
+                    if hist['SMA20'].notna().any():
+                        ax1.plot(dates_num, hist['SMA20'], color='#e67e22', linewidth=1.2, alpha=0.9, label='SMA20')
+
+                    # SMA50 - Purple
+                    if hist['SMA50'].notna().any():
+                        ax1.plot(dates_num, hist['SMA50'], color='#9b59b6', linewidth=1.5, alpha=0.9, label='SMA50')
+
+                    # SMA200 - White
+                    if hist['SMA200'].notna().any():
+                        ax1.plot(dates_num, hist['SMA200'], color='#ecf0f1', linewidth=2, alpha=0.9, label='SMA200')
 
                     ax1.set_ylabel('Price ($)', color='white', fontsize=10)
                     ax1.tick_params(colors='white')
@@ -1809,7 +1828,7 @@ Get an API key at `/api-keys/request`
                     plt.close()
 
                     # Send chart
-                    send_photo(buf.read(), f"📊 *{ticker}* - 3 Month Candlestick")
+                    send_photo(buf.read(), f"📊 *{ticker}* - 6 Month Candlestick")
 
                 except Exception as e:
                     log(f"Chart error for {ticker}: {e}")
