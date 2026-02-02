@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 04:02 - `7cd157c`
+
+**feat: Add /chatid command to get chat ID for group alerts**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:56 - `c1e725f`
 
 **fix: Always calculate market fear level even if other fetches fail**

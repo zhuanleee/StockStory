@@ -2079,7 +2079,7 @@ Get an API key at `/api-keys/request`
                 chat_type = message.get('chat', {}).get('type', 'private')
                 chat_title = message.get('chat', {}).get('title', 'Private Chat')
                 msg = f"💬 *Chat Information*\n\n"
-                msg += f"*Chat ID:* `{chat_id}`\n"
+                msg += f"*Chat ID:* `{msg_chat_id}`\n"
                 msg += f"*Type:* {chat_type}\n"
                 if chat_type != 'private':
                     msg += f"*Title:* {chat_title}\n"
