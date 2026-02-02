@@ -732,6 +732,154 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # =========================================================================
+    # THEME MANAGEMENT API (for dashboard)
+    # =========================================================================
+
+    @web_app.get("/themes/config", tags=["Themes"])
+    def get_themes_config():
+        """Get all themes from ThemeManager."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+            themes = manager.get_all_themes(include_archived=True)
+            stats = manager.get_stats()
+            return {
+                "ok": True,
+                "themes": themes,
+                "stats": stats
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/themes/add", tags=["Themes"])
+    def add_theme(request: dict):
+        """Add a new theme."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+
+            theme_id = request.get("theme_id", "").upper().replace(" ", "_")
+            name = request.get("name", theme_id.replace("_", " ").title())
+            keywords = request.get("keywords", [])
+            tickers = request.get("tickers", [])
+
+            if not theme_id:
+                return {"ok": False, "error": "theme_id is required"}
+            if not keywords:
+                return {"ok": False, "error": "keywords list is required"}
+
+            success = manager.add_theme(theme_id, name, keywords, tickers)
+            if success:
+                return {"ok": True, "message": f"Added theme: {theme_id}"}
+            else:
+                return {"ok": False, "error": f"Theme {theme_id} already exists"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/themes/update", tags=["Themes"])
+    def update_theme(request: dict):
+        """Update an existing theme."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+
+            theme_id = request.get("theme_id", "").upper()
+            updates = {}
+            if "name" in request:
+                updates["name"] = request["name"]
+            if "keywords" in request:
+                updates["keywords"] = request["keywords"]
+            if "tickers" in request:
+                updates["tickers"] = request["tickers"]
+            if "status" in request:
+                updates["status"] = request["status"]
+
+            if not theme_id:
+                return {"ok": False, "error": "theme_id is required"}
+
+            success = manager.update_theme(theme_id, **updates)
+            if success:
+                return {"ok": True, "message": f"Updated theme: {theme_id}"}
+            else:
+                return {"ok": False, "error": f"Theme {theme_id} not found"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/themes/remove", tags=["Themes"])
+    def remove_theme(request: dict):
+        """Archive a theme (soft delete)."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+
+            theme_id = request.get("theme_id", "").upper()
+            if not theme_id:
+                return {"ok": False, "error": "theme_id is required"}
+
+            success = manager.remove_theme(theme_id, archive=True)
+            if success:
+                return {"ok": True, "message": f"Archived theme: {theme_id}"}
+            else:
+                return {"ok": False, "error": f"Theme {theme_id} not found"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/themes/restore", tags=["Themes"])
+    def restore_theme(request: dict):
+        """Restore an archived theme."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+
+            theme_id = request.get("theme_id", "").upper()
+            if not theme_id:
+                return {"ok": False, "error": "theme_id is required"}
+
+            success = manager.restore_theme(theme_id)
+            if success:
+                return {"ok": True, "message": f"Restored theme: {theme_id}"}
+            else:
+                return {"ok": False, "error": f"Theme {theme_id} not found or not archived"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/themes/stats", tags=["Themes"])
+    def get_theme_stats():
+        """Get theme statistics."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            manager = get_theme_manager()
+            stats = manager.get_stats()
+            return {"ok": True, "stats": stats}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/themes/discover", tags=["Themes"])
+    def discover_themes():
+        """Run AI theme discovery."""
+        try:
+            from src.themes.theme_manager import get_theme_manager
+            from src.themes.fast_stories import fetch_all_sources_parallel
+            manager = get_theme_manager()
+
+            # Fetch recent headlines
+            tickers = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMZN', 'GOOGL', 'META', 'AMD', 'AVGO']
+            headlines = fetch_all_sources_parallel(tickers, max_workers=5)
+
+            if not headlines:
+                return {"ok": False, "error": "No headlines to analyze"}
+
+            # Run AI discovery
+            discovered = manager.discover_themes_with_ai(headlines)
+            return {
+                "ok": True,
+                "discovered": discovered,
+                "headline_count": len(headlines)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/theme-intel/radar")
     def theme_radar():
         try:

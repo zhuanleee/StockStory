@@ -1590,6 +1590,76 @@
                     <div id="ticker-theme-result" style="font-size: 0.8125rem;"></div>
                 </div>
             </div>
+
+            <!-- Theme Management -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">Settings Theme Config</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="loadThemeConfig()">Refresh</button>
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="runAIDiscovery()">AI Discover</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Add Theme Form -->
+                    <div style="background: var(--bg); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                        <div style="font-weight: 600; margin-bottom: 12px; font-size: 0.875rem;">Add New Theme</div>
+                        <div style="display: grid; grid-template-columns: 1fr 2fr 1fr auto; gap: 12px; align-items: end;">
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Theme ID</label>
+                                <input type="text" id="new-theme-id" placeholder="AI_AGENTS"
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Keywords (comma-separated)</label>
+                                <input type="text" id="new-theme-keywords" placeholder="ai agent, autonomous, agentic"
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Tickers (comma-separated)</label>
+                                <input type="text" id="new-theme-tickers" placeholder="AGNT, PLTR"
+                                    style="width: 100%; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
+                            </div>
+                            <button class="btn btn-primary" onclick="addNewTheme()">Add</button>
+                        </div>
+                    </div>
+
+                    <!-- Theme Stats -->
+                    <div id="theme-config-stats" style="display: flex; gap: 24px; margin-bottom: 16px; font-size: 0.875rem;">
+                        <span>Total: <strong id="stat-total">-</strong></span>
+                        <span style="color: var(--green);">Known: <strong id="stat-known">-</strong></span>
+                        <span style="color: var(--yellow);">Emerging: <strong id="stat-emerging">-</strong></span>
+                        <span style="color: var(--text-muted);">Archived: <strong id="stat-archived">-</strong></span>
+                    </div>
+
+                    <!-- Theme Config Table -->
+                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="data-table" id="theme-config-table">
+                            <thead style="position: sticky; top: 0; background: var(--bg-card);">
+                                <tr>
+                                    <th style="width: 150px;">Theme</th>
+                                    <th style="width: 80px;">Status</th>
+                                    <th>Keywords</th>
+                                    <th>Tickers</th>
+                                    <th style="width: 100px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="theme-config-body">
+                                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Click "Refresh" to load themes</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Discovered Themes -->
+            <div class="card" style="margin-top: 20px; display: none;" id="ai-discovery-card">
+                <div class="card-header">
+                    <div class="card-title">AI Discovered Themes</div>
+                </div>
+                <div class="card-body" id="ai-discovery-results">
+                </div>
+            </div>
         </div>
 
         <!-- SEC Intelligence Tab -->
@@ -3920,6 +3990,206 @@
                 }
             } catch (e) {
                 document.getElementById('ticker-theme-result').innerHTML = '<div style="color: var(--red);">Failed to lookup ticker</div>';
+            }
+        }
+
+        // =============================================================================
+        // THEME CONFIG MANAGEMENT FUNCTIONS
+        // =============================================================================
+
+        async function loadThemeConfig() {
+            try {
+                const res = await fetch(`${API_BASE}/themes/config`);
+                const data = await res.json();
+
+                if (data.ok) {
+                    // Update stats
+                    const stats = data.stats || {};
+                    document.getElementById('stat-total').textContent = stats.total_themes || 0;
+                    document.getElementById('stat-known').textContent = stats.known || 0;
+                    document.getElementById('stat-emerging').textContent = stats.emerging || 0;
+                    document.getElementById('stat-archived').textContent = stats.archived || 0;
+
+                    // Render theme table
+                    const tbody = document.getElementById('theme-config-body');
+                    const themes = data.themes || {};
+
+                    if (Object.keys(themes).length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No themes configured</td></tr>';
+                        return;
+                    }
+
+                    let html = '';
+                    Object.entries(themes).forEach(([id, theme]) => {
+                        const statusColor = theme.status === 'known' ? 'var(--green)' :
+                                           theme.status === 'emerging' ? 'var(--yellow)' : 'var(--text-muted)';
+                        const statusBadge = `<span style="background: ${statusColor}20; color: ${statusColor}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">${theme.status}</span>`;
+
+                        html += `<tr data-theme-id="${id}">
+                            <td style="font-weight: 600;">${theme.name || id}</td>
+                            <td>${statusBadge}</td>
+                            <td style="font-size: 0.75rem; color: var(--text-muted);">${(theme.keywords || []).slice(0, 5).join(', ')}${theme.keywords?.length > 5 ? '...' : ''}</td>
+                            <td style="font-size: 0.75rem;"><code>${(theme.tickers || []).join(', ')}</code></td>
+                            <td>
+                                <div style="display: flex; gap: 4px;">
+                                    ${theme.status === 'archived'
+                                        ? `<button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="restoreTheme('${id}')">Restore</button>`
+                                        : `<button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem; color: var(--red);" onclick="archiveTheme('${id}')">Archive</button>`
+                                    }
+                                </div>
+                            </td>
+                        </tr>`;
+                    });
+                    tbody.innerHTML = html;
+                } else {
+                    document.getElementById('theme-config-body').innerHTML =
+                        `<tr><td colspan="5" style="text-align: center; color: var(--red);">Error: ${data.error}</td></tr>`;
+                }
+            } catch (e) {
+                document.getElementById('theme-config-body').innerHTML =
+                    '<tr><td colspan="5" style="text-align: center; color: var(--red);">Failed to load theme config</td></tr>';
+            }
+        }
+
+        async function addNewTheme() {
+            const themeId = document.getElementById('new-theme-id').value.trim();
+            const keywords = document.getElementById('new-theme-keywords').value.trim();
+            const tickers = document.getElementById('new-theme-tickers').value.trim();
+
+            if (!themeId) { alert('Theme ID is required'); return; }
+            if (!keywords) { alert('Keywords are required'); return; }
+
+            try {
+                const res = await fetch(`${API_BASE}/themes/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        theme_id: themeId,
+                        keywords: keywords.split(',').map(k => k.trim().toLowerCase()),
+                        tickers: tickers ? tickers.split(',').map(t => t.trim().toUpperCase()) : []
+                    })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert('Theme added successfully!');
+                    document.getElementById('new-theme-id').value = '';
+                    document.getElementById('new-theme-keywords').value = '';
+                    document.getElementById('new-theme-tickers').value = '';
+                    loadThemeConfig();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to add theme');
+            }
+        }
+
+        async function archiveTheme(themeId) {
+            if (!confirm(`Archive theme "${themeId}"?`)) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/themes/remove`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme_id: themeId })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    loadThemeConfig();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to archive theme');
+            }
+        }
+
+        async function restoreTheme(themeId) {
+            try {
+                const res = await fetch(`${API_BASE}/themes/restore`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme_id: themeId })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    loadThemeConfig();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to restore theme');
+            }
+        }
+
+        async function runAIDiscovery() {
+            const card = document.getElementById('ai-discovery-card');
+            const results = document.getElementById('ai-discovery-results');
+
+            card.style.display = 'block';
+            results.innerHTML = '<div style="color: var(--text-muted);">Running AI discovery... this may take 30 seconds...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/themes/discover`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.ok && data.discovered && data.discovered.length > 0) {
+                    let html = '<div style="display: grid; gap: 12px;">';
+                    data.discovered.forEach(theme => {
+                        html += `<div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--yellow);">
+                            <div style="font-weight: 600; margin-bottom: 8px;">${theme.name || theme.id}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+                                <strong>Keywords:</strong> ${(theme.keywords || []).join(', ')}
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">
+                                <strong>Tickers:</strong> ${(theme.suggested_tickers || []).join(', ')}
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">
+                                <strong>Catalyst:</strong> ${theme.catalyst || 'N/A'}
+                            </div>
+                            <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;"
+                                onclick="addDiscoveredTheme('${theme.id}', '${(theme.keywords || []).join(',')}', '${(theme.suggested_tickers || []).join(',')}')">
+                                Add Theme
+                            </button>
+                        </div>`;
+                    });
+                    html += '</div>';
+                    html += `<div style="margin-top: 12px; font-size: 0.75rem; color: var(--text-muted);">Analyzed ${data.headline_count} headlines</div>`;
+                    results.innerHTML = html;
+                } else if (data.ok) {
+                    results.innerHTML = '<div style="color: var(--text-muted);">No new themes discovered. Current themes cover the news well!</div>';
+                } else {
+                    results.innerHTML = `<div style="color: var(--red);">Error: ${data.error}</div>`;
+                }
+            } catch (e) {
+                results.innerHTML = '<div style="color: var(--red);">Failed to run AI discovery</div>';
+            }
+        }
+
+        async function addDiscoveredTheme(themeId, keywords, tickers) {
+            try {
+                const res = await fetch(`${API_BASE}/themes/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        theme_id: themeId,
+                        keywords: keywords.split(',').filter(k => k),
+                        tickers: tickers.split(',').filter(t => t)
+                    })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    alert('Theme added!');
+                    loadThemeConfig();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to add theme');
             }
         }
 
