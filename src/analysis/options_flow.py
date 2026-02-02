@@ -1111,36 +1111,63 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
     try:
         client = Client(api_key=api_key)
 
-        # Get market sentiment data
+        # Get market sentiment data (fallback for VIX)
         sentiment = get_crisis_market_sentiment()
 
-        # Get real Polygon options data for SPY
+        # Get real Polygon data for SPY and QQQ (prices + options)
         polygon_spy_data = {}
         polygon_qqq_data = {}
+        polygon_spy_price = spy_price
+        polygon_spy_change = sentiment.get('spy_change', 0)
+        polygon_qqq_price = qqq_price
+        polygon_qqq_change = sentiment.get('qqq_change', 0)
+
         try:
             if HAS_POLYGON:
+                from src.data.polygon_provider import get_snapshot_sync
+
+                # Get SPY price from Polygon
+                spy_snapshot = get_snapshot_sync('SPY')
+                if spy_snapshot:
+                    polygon_spy_price = spy_snapshot.get('price', spy_price)
+                    polygon_spy_change = spy_snapshot.get('change_percent', 0)
+                    polygon_spy_data['price'] = polygon_spy_price
+                    polygon_spy_data['change_percent'] = polygon_spy_change
+                    polygon_spy_data['volume'] = spy_snapshot.get('volume', 0)
+                    polygon_spy_data['vwap'] = spy_snapshot.get('vwap', 0)
+
+                # Get QQQ price from Polygon
+                qqq_snapshot = get_snapshot_sync('QQQ')
+                if qqq_snapshot:
+                    polygon_qqq_price = qqq_snapshot.get('price', qqq_price)
+                    polygon_qqq_change = qqq_snapshot.get('change_percent', 0)
+                    polygon_qqq_data['price'] = polygon_qqq_price
+                    polygon_qqq_data['change_percent'] = polygon_qqq_change
+                    polygon_qqq_data['volume'] = qqq_snapshot.get('volume', 0)
+                    polygon_qqq_data['vwap'] = qqq_snapshot.get('vwap', 0)
+
                 # Get SPY options sentiment from Polygon
                 spy_sentiment = get_options_sentiment('SPY')
                 if spy_sentiment:
-                    polygon_spy_data = {
+                    polygon_spy_data.update({
                         'iv_rank': spy_sentiment.get('iv_rank'),
                         'iv_percentile': spy_sentiment.get('iv_percentile'),
                         'gex': spy_sentiment.get('gex', {}).get('total', 0),
                         'max_pain': spy_sentiment.get('max_pain'),
                         'put_call_ratio': spy_sentiment.get('put_call_ratio'),
                         'put_call_trend': spy_sentiment.get('put_call_trend'),
-                    }
+                    })
 
                 # Get QQQ options sentiment from Polygon
                 qqq_sentiment = get_options_sentiment('QQQ')
                 if qqq_sentiment:
-                    polygon_qqq_data = {
+                    polygon_qqq_data.update({
                         'iv_rank': qqq_sentiment.get('iv_rank'),
                         'iv_percentile': qqq_sentiment.get('iv_percentile'),
                         'gex': qqq_sentiment.get('gex', {}).get('total', 0),
                         'max_pain': qqq_sentiment.get('max_pain'),
                         'put_call_ratio': qqq_sentiment.get('put_call_ratio'),
-                    }
+                    })
         except Exception as e:
             logger.warning(f"Could not get Polygon data for Grok: {e}")
 
@@ -1161,19 +1188,23 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
 CURRENT MARKET CONDITIONS:
 - Crisis Severity: {severity}/10
 - VIX: {sentiment.get('vix', 'N/A')} (Change: {sentiment.get('vix_change', 0):+.1f}%)
-- SPY: ${spy_price:.2f} (Change: {sentiment.get('spy_change', 0):+.2f}%)
-- QQQ: ${qqq_price:.2f} (Change: {sentiment.get('qqq_change', 0):+.2f}%)
 - Market Fear Level: {sentiment.get('market_fear_level', 'unknown')}
 - Portfolio Value: ${recs.get('portfolio_value', 100000):,}
 
-POLYGON LIVE OPTIONS DATA - SPY:
+POLYGON LIVE DATA - SPY:
+- Price: ${polygon_spy_price:.2f} ({polygon_spy_change:+.2f}%)
+- Volume: {polygon_spy_data.get('volume', 0):,.0f}
+- VWAP: ${polygon_spy_data.get('vwap', 0):.2f}
 - IV Rank: {polygon_spy_data.get('iv_rank', 'N/A')}%
 - IV Percentile: {polygon_spy_data.get('iv_percentile', 'N/A')}%
 - GEX (Gamma Exposure): ${polygon_spy_data.get('gex', 0)/1e9:.2f}B
 - Max Pain: ${polygon_spy_data.get('max_pain', 'N/A')}
 - Put/Call Ratio: {polygon_spy_data.get('put_call_ratio', 'N/A')} ({polygon_spy_data.get('put_call_trend', 'N/A')})
 
-POLYGON LIVE OPTIONS DATA - QQQ:
+POLYGON LIVE DATA - QQQ:
+- Price: ${polygon_qqq_price:.2f} ({polygon_qqq_change:+.2f}%)
+- Volume: {polygon_qqq_data.get('volume', 0):,.0f}
+- VWAP: ${polygon_qqq_data.get('vwap', 0):.2f}
 - IV Rank: {polygon_qqq_data.get('iv_rank', 'N/A')}%
 - IV Percentile: {polygon_qqq_data.get('iv_percentile', 'N/A')}%
 - GEX (Gamma Exposure): ${polygon_qqq_data.get('gex', 0)/1e9:.2f}B
