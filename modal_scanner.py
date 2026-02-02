@@ -251,6 +251,11 @@ def _run_daily_scan():
     print(f"\n💾 Saving results to {csv_filename}...")
     df.to_csv(csv_filename, index=False)
 
+    # Also save to Modal Volume for API/Telegram access
+    csv_volume_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+    df.to_csv(csv_volume_path, index=False)
+    print(f"💾 Saved to Modal Volume: scan_results_latest.csv")
+
     # Save to JSON in Modal Volume for API access
     scan_data = {
         "status": "success",

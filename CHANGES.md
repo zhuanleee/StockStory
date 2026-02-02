@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:20 - `309410f`
+
+**perf: Limit GPU concurrency to 10 containers max**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:16 - `d8122a7`
 
 **fix: Correct /news command import error**
