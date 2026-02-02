@@ -298,9 +298,10 @@ def _run_daily_scan():
         import requests
 
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-        chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+        personal_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+        group_chat_id = os.environ.get('TELEGRAM_GROUP_CHAT_ID', '-1003774843100')
 
-        if bot_token and chat_id:
+        if bot_token:
             top_picks = df.head(10)
             message = f"🤖 *Daily Scan Complete!*\n\n"
             message += f"📊 Scanned: {len(successful)}/{len(tickers)} stocks\n"
@@ -313,21 +314,28 @@ def _run_daily_scan():
                 strength = row.get('story_strength', 'unknown')
                 message += f"{i+1}. `{ticker}` - {score:.1f} ({strength})\n"
 
-            message += f"\n🔗 View: https://zhuanleee.github.io/stock_scanner_bot"
+            message += f"\n🔗 View: https://zhuanleee.github.io/StockStory"
 
-            # Send notification directly (no cross-app imports)
+            # Send to both personal and group chats
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            }
+            chat_ids = [personal_chat_id, group_chat_id]
 
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
-                print("📱 Telegram notification sent")
-            else:
-                print(f"⚠️  Telegram failed: {response.status_code}")
+            for chat_id in chat_ids:
+                if not chat_id:
+                    continue
+                payload = {
+                    "chat_id": chat_id,
+                    "text": message,
+                    "parse_mode": "Markdown"
+                }
+                try:
+                    response = requests.post(url, json=payload, timeout=10)
+                    if response.status_code == 200:
+                        print(f"📱 Telegram sent to {chat_id}")
+                    else:
+                        print(f"⚠️  Telegram failed for {chat_id}: {response.status_code}")
+                except Exception as e:
+                    print(f"⚠️  Telegram error for {chat_id}: {e}")
         else:
             print("⚠️  Telegram not configured - skipping notification")
     except Exception as e:

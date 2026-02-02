@@ -2,6 +2,29 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 04:12 - `e9a6c3a`
+
+**fix: Use correct variable name in /chatid command**
+
+Files changed: 7
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+tests/check_bot_chats.py
+tests/check_group_admin.py
+tests/find_stockstory_group.py
+tests/send_chatid_to_group.py
+tests/test_group_chatid.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 04:02 - `7cd157c`
 
 **feat: Add /chatid command to get chat ID for group alerts**
