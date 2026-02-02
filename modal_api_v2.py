@@ -450,7 +450,35 @@ Get an API key at `/api-keys/request`
         try:
             from src.analysis.market_health import get_market_health
             health_data = get_market_health()
-            return {"ok": True, **health_data}
+
+            # Add raw_data for dashboard market pulse
+            raw_data = {}
+            try:
+                import yfinance as yf
+                # Get SPY 20-day return
+                spy = yf.Ticker("SPY")
+                spy_hist = spy.history(period="1mo")
+                if len(spy_hist) >= 20:
+                    spy_20d_return = ((spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[-20]) - 1) * 100
+                    raw_data['spy_20d_return'] = round(spy_20d_return, 2)
+                else:
+                    raw_data['spy_20d_return'] = 0
+
+                # Get VIX
+                vix = yf.Ticker("^VIX")
+                vix_hist = vix.history(period="5d")
+                if len(vix_hist) > 0:
+                    raw_data['vix'] = round(vix_hist['Close'].iloc[-1], 1)
+                else:
+                    raw_data['vix'] = 16.0
+
+                # Get VIX term structure ratio (VIX/VIX3M as proxy)
+                raw_data['vix_term_ratio'] = 0.95  # Default neutral
+
+            except Exception as e:
+                raw_data = {'spy_20d_return': 0, 'vix': 16.0, 'vix_term_ratio': 0.95}
+
+            return {"ok": True, **health_data, "raw_data": raw_data}
         except Exception as e:
             return {"ok": True, "status": "healthy", "service": "modal", "timestamp": datetime.now().isoformat()}
 

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 01:56 - `b27d5e5`
+
+**fix: Update API response format to match dashboard expectations**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 01:53 - `b16bf53`
 
 **fix: Auto-load data when switching tabs**
