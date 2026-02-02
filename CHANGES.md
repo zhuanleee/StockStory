@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 01:46 - `c161f59`
+
+**feat: Add theme management to dashboard**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 01:37 - `c126191`
 
 **feat: Implement hybrid dynamic theme system with AI discovery**
