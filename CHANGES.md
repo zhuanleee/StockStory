@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:27 - `0f760d1`
+
+**feat: Add Telegram menu button and inline keyboards**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+tests/setup_telegram_menu.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:20 - `6db7447`
 
 **feat: 6-month candlestick chart with 10/20/50/200 SMAs**
