@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:45 - `48fd195`
+
+**fix: Lower whale trades threshold to $50K for more data**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:43 - `27605ae`
 
 **feat: Enable Polygon.io for real-time options data**

@@ -2800,8 +2800,9 @@
             } else if (tabId === 'trades') {
                 fetchTrades();
             } else if (tabId === 'options') {
-                fetchUnusualOptions();
                 loadMarketSentiment();
+                loadWhaleTrades();
+                loadUnusualActivity();
             }
         }
 
