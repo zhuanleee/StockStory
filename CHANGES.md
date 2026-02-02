@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:30 - `8adb657`
+
+**chore: Add Telegram message reader utility**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+tests/read_telegram_messages.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:27 - `0f760d1`
 
 **feat: Add Telegram menu button and inline keyboards**
