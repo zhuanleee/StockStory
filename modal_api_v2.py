@@ -31,6 +31,7 @@ image = (
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
     .add_local_dir("static", remote_path="/root/static")
+    .add_local_dir("data", remote_path="/root/data")
 )
 
 
@@ -1699,6 +1700,117 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Theme error: {str(e)[:100]}")
                 return {"ok": True}
 
+            # ============ THEME MANAGEMENT ============
+            elif cmd == '/addtheme':
+                # /addtheme THEME_NAME keyword1,keyword2 TICK1,TICK2
+                if not args:
+                    send_reply("Usage: `/addtheme THEME_NAME keywords tickers`\n\n"
+                               "Example:\n`/addtheme AI_AGENTS ai agent,autonomous,agentic AGNT,PLTR`")
+                    return {"ok": True}
+                try:
+                    from src.themes.theme_manager import get_theme_manager
+                    parts = args.split()
+                    if len(parts) < 3:
+                        send_reply("Need: THEME_NAME keywords tickers\n"
+                                   "Example: `/addtheme AI_AGENTS ai,agent,autonomous AGNT,PLTR`")
+                        return {"ok": True}
+                    theme_id = parts[0].upper()
+                    keywords = [k.strip().lower() for k in parts[1].split(',')]
+                    tickers = [t.strip().upper() for t in parts[2].split(',')]
+                    manager = get_theme_manager()
+                    if manager.add_theme(theme_id, theme_id.replace('_', ' ').title(), keywords, tickers):
+                        send_reply(f"✅ Added theme: *{theme_id}*\n"
+                                   f"Keywords: {', '.join(keywords)}\n"
+                                   f"Tickers: {', '.join(tickers)}")
+                    else:
+                        send_reply(f"Theme *{theme_id}* already exists. Use `/removetheme` first.")
+                except Exception as e:
+                    send_reply(f"Error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/removetheme':
+                if not args:
+                    send_reply("Usage: `/removetheme THEME_NAME`\nThis archives the theme (can be restored).")
+                    return {"ok": True}
+                try:
+                    from src.themes.theme_manager import get_theme_manager
+                    theme_id = args.strip().upper().replace(' ', '_')
+                    manager = get_theme_manager()
+                    if manager.remove_theme(theme_id, archive=True):
+                        send_reply(f"🗑️ Archived theme: *{theme_id}*\nUse `/restoretheme {theme_id}` to restore.")
+                    else:
+                        send_reply(f"Theme *{theme_id}* not found.")
+                except Exception as e:
+                    send_reply(f"Error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/restoretheme':
+                if not args:
+                    send_reply("Usage: `/restoretheme THEME_NAME`")
+                    return {"ok": True}
+                try:
+                    from src.themes.theme_manager import get_theme_manager
+                    theme_id = args.strip().upper().replace(' ', '_')
+                    manager = get_theme_manager()
+                    if manager.restore_theme(theme_id):
+                        send_reply(f"✅ Restored theme: *{theme_id}*")
+                    else:
+                        send_reply(f"Theme *{theme_id}* not found or not archived.")
+                except Exception as e:
+                    send_reply(f"Error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/themestats':
+                try:
+                    from src.themes.theme_manager import get_theme_manager
+                    manager = get_theme_manager()
+                    stats = manager.get_stats()
+                    msg = "📊 *THEME STATISTICS*\n\n"
+                    msg += f"Total themes: *{stats['total_themes']}*\n"
+                    msg += f"  🟢 Known: {stats['known']}\n"
+                    msg += f"  🌱 Emerging: {stats['emerging']}\n"
+                    msg += f"  🗄️ Archived: {stats['archived']}\n\n"
+                    msg += f"Last updated: {stats['last_updated'][:16] if stats['last_updated'] else 'Never'}\n"
+                    if stats['ai_discovery_enabled']:
+                        msg += f"AI Discovery: ✅ Enabled\n"
+                        if stats['last_ai_run']:
+                            msg += f"Last AI scan: {stats['last_ai_run'][:16]}\n"
+                    else:
+                        msg += f"AI Discovery: ❌ Disabled\n"
+                    send_reply(msg)
+                except Exception as e:
+                    send_reply(f"Error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/discoverthemes':
+                send_reply("🔍 Running AI theme discovery... (this may take 30s)")
+                try:
+                    from src.themes.theme_manager import get_theme_manager
+                    from src.themes.fast_stories import fetch_all_sources_parallel
+                    manager = get_theme_manager()
+                    # Fetch recent headlines
+                    tickers = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMZN', 'GOOGL', 'META']
+                    headlines = fetch_all_sources_parallel(tickers)
+                    if not headlines:
+                        send_reply("No headlines to analyze.")
+                        return {"ok": True}
+                    # Run AI discovery
+                    discovered = manager.discover_themes_with_ai(headlines)
+                    if discovered:
+                        msg = "🌱 *AI DISCOVERED THEMES*\n\n"
+                        for t in discovered[:5]:
+                            msg += f"*{t.get('name', 'Unknown')}*\n"
+                            msg += f"  Keywords: {', '.join(t.get('keywords', [])[:3])}\n"
+                            msg += f"  Tickers: {', '.join(t.get('suggested_tickers', [])[:3])}\n"
+                            msg += f"  Catalyst: {t.get('catalyst', 'N/A')[:60]}\n\n"
+                        msg += "_Use `/addtheme` to add any of these._"
+                        send_reply(msg)
+                    else:
+                        send_reply("No new themes discovered. Current themes cover the news well!")
+                except Exception as e:
+                    send_reply(f"Discovery error: {str(e)[:100]}")
+                return {"ok": True}
+
             # ============ EARNINGS ============
             elif cmd == '/earnings':
                 try:
@@ -2107,13 +2219,41 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Error analyzing {ticker}: {str(e)[:100]}")
                 return {"ok": True}
 
+            # ============ COMMANDS LIST ============
+            elif cmd == '/commands':
+                msg = "📋 *ALL COMMANDS*\n\n"
+                msg += "*Market Overview:*\n"
+                msg += "  `/top` - Top 10 stocks by Story Score\n"
+                msg += "  `/movers` - Market movers (gainers/losers)\n"
+                msg += "  `/status` - System status\n\n"
+                msg += "*Themes:*\n"
+                msg += "  `/themes` - Hot market themes\n"
+                msg += "  `/themestats` - Theme statistics\n"
+                msg += "  `/addtheme` - Add a new theme\n"
+                msg += "  `/removetheme` - Archive a theme\n"
+                msg += "  `/restoretheme` - Restore archived theme\n"
+                msg += "  `/discoverthemes` - AI discover new themes\n\n"
+                msg += "*Stock Analysis (send ticker):*\n"
+                msg += "  `NVDA` - Full stock analysis\n"
+                msg += "  `/chart NVDA` - Price chart\n"
+                msg += "  `/news NVDA` - Recent news\n"
+                msg += "  `/insider NVDA` - Insider trades\n"
+                msg += "  `/sec NVDA` - SEC filings\n\n"
+                msg += "*Other:*\n"
+                msg += "  `/earnings` - Upcoming earnings\n"
+                msg += "  `/watchlist` - Your watchlist\n"
+                msg += "  `/watch NVDA` - Add to watchlist\n"
+                msg += "  `/help` - Quick start guide"
+                send_reply(msg)
+                return {"ok": True}
+
             # ============ UNKNOWN ============
             else:
                 log(f"❓ Unknown command/text: {text}")
                 if text.startswith('/'):
-                    send_reply(f"Unknown command: `{cmd}`\nSend `/help` for available commands.")
+                    send_reply(f"Unknown command: `{cmd}`\nSend `/commands` for all commands.")
                 else:
-                    send_reply("Send a ticker symbol (e.g., `NVDA`) or `/help` for commands.")
+                    send_reply("Send a ticker symbol (e.g., `NVDA`) or `/commands` for help.")
                 return {"ok": True}
 
         except Exception as e:

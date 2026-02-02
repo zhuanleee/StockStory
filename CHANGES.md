@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 21:37 - `247a19f`
+
+**fix: Telegram bot volume access and themes display**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+modal_scanner.py
+static/stockstory_logo.svg
+tests/send_test_message.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:43 - `9a959fa`
 
 **fix: Add volume.reload() to sync scan results**

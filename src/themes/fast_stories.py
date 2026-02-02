@@ -6,6 +6,7 @@ Optimizations:
 1. Parallel fetching - All sources fetched simultaneously
 2. Caching - Results cached for 10 minutes
 3. Background refresh - Auto-updates every 5 minutes
+4. Dynamic themes - Loaded from config file (managed by ThemeManager)
 """
 
 import json
@@ -20,6 +21,14 @@ from config import config
 from utils import get_logger
 
 logger = get_logger(__name__)
+
+# Import theme manager for dynamic themes
+try:
+    from src.themes.theme_manager import get_theme_manager
+    USE_THEME_MANAGER = True
+except ImportError:
+    USE_THEME_MANAGER = False
+    logger.warning("ThemeManager not available, using hardcoded themes")
 
 # Cache configuration
 CACHE_DIR = config.cache.directory
@@ -167,7 +176,30 @@ def fetch_all_sources_parallel(tickers, max_workers=10):
 # FAST THEME DETECTION (Keyword-based for speed)
 # =============================================================================
 
-THEME_KEYWORDS = {
+def get_theme_keywords():
+    """Get theme keywords from ThemeManager or fallback to hardcoded."""
+    if USE_THEME_MANAGER:
+        try:
+            manager = get_theme_manager()
+            return manager.get_keywords_dict()
+        except Exception as e:
+            logger.error(f"Error getting themes from manager: {e}")
+    return FALLBACK_THEME_KEYWORDS
+
+
+def get_theme_tickers():
+    """Get theme tickers from ThemeManager or fallback to hardcoded."""
+    if USE_THEME_MANAGER:
+        try:
+            manager = get_theme_manager()
+            return manager.get_tickers_dict()
+        except Exception as e:
+            logger.error(f"Error getting tickers from manager: {e}")
+    return FALLBACK_THEME_TICKERS
+
+
+# Fallback themes if ThemeManager is unavailable
+FALLBACK_THEME_KEYWORDS = {
     'AI_INFRASTRUCTURE': ['nvidia', 'nvda', 'ai chip', 'gpu', 'data center', 'artificial intelligence', 'chatgpt', 'openai', 'llm', 'inference', 'ai server'],
     'HBM_MEMORY': ['hbm', 'high bandwidth memory', 'micron', 'sk hynix', 'memory', 'dram', 'hbm3', 'hbm4'],
     'SEMICONDUCTOR': ['semiconductor', 'chip', 'foundry', 'tsmc', 'asml', 'amd', 'intel', 'fab', 'wafer'],
@@ -191,7 +223,7 @@ THEME_KEYWORDS = {
     'REAL_ESTATE': ['real estate', 'housing', 'mortgage', 'reit', 'commercial', 'homebuilder'],
 }
 
-THEME_TICKERS = {
+FALLBACK_THEME_TICKERS = {
     'AI_INFRASTRUCTURE': ['NVDA', 'AMD', 'AVGO', 'MRVL', 'TSM', 'SMCI', 'ARM', 'DELL'],
     'HBM_MEMORY': ['MU', 'WDC', 'STX', 'LRCX'],
     'SEMICONDUCTOR': ['NVDA', 'AMD', 'INTC', 'TSM', 'ASML', 'AMAT', 'LRCX', 'KLAC', 'ON', 'NXPI'],
@@ -243,17 +275,21 @@ def detect_themes_fast(headlines):
     """Fast keyword-based theme detection with momentum tracking."""
     theme_counts = defaultdict(lambda: {'count': 0, 'headlines': [], 'sentiment': []})
 
+    # Get dynamic themes from manager
+    theme_keywords = get_theme_keywords()
+    theme_tickers = get_theme_tickers()
+
     for item in headlines:
         title = item.get('title', '').lower()
         ticker = item.get('ticker', '').upper()
         sentiment = item.get('sentiment')
 
-        for theme, keywords in THEME_KEYWORDS.items():
+        for theme, keywords in theme_keywords.items():
             # Check keyword match
             keyword_match = any(kw in title for kw in keywords)
 
             # Check ticker match
-            ticker_match = ticker in THEME_TICKERS.get(theme, [])
+            ticker_match = ticker in theme_tickers.get(theme, [])
 
             if keyword_match or ticker_match:
                 theme_counts[theme]['count'] += 1
@@ -308,7 +344,7 @@ def detect_themes_fast(headlines):
                 'mention_count': data['count'],
                 'momentum': momentum,
                 'momentum_change': momentum_change,
-                'primary_plays': THEME_TICKERS.get(theme_name, [])[:5],
+                'primary_plays': theme_tickers.get(theme_name, [])[:5],
                 'sample_headlines': [h['title'][:60] for h in data['headlines'][:3]],
                 'bullish_count': bullish,
                 'bearish_count': bearish,
