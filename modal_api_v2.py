@@ -1776,8 +1776,8 @@ Get an API key at `/api-keys/request`
                 ticker = text.upper()
                 try:
                     # Get comprehensive analysis
-                    from src.scoring.story_scorer import score_stock_story
-                    result = score_stock_story(ticker)
+                    from src.scoring.story_scorer import calculate_story_score
+                    result = calculate_story_score(ticker)
 
                     if result:
                         score = result.get('story_score', 0)
@@ -1824,27 +1824,40 @@ Get an API key at `/api-keys/request`
                         tech = result.get('technical', {})
                         if tech:
                             msg += "\n*Technical:*\n"
-                            if tech.get('above_20_sma'):
+                            if tech.get('above_20'):
                                 msg += "  ✅ Above 20 SMA\n"
-                            if tech.get('above_50_sma'):
+                            if tech.get('above_50'):
                                 msg += "  ✅ Above 50 SMA\n"
                             if tech.get('in_squeeze'):
                                 msg += "  ⚡ IN SQUEEZE\n"
-                            if tech.get('breakout'):
+                            if tech.get('breakout_up'):
                                 msg += "  🚀 BREAKOUT\n"
 
-                        # Catalysts
-                        if result.get('catalysts'):
+                        # Catalysts from catalyst component
+                        catalyst_data = result.get('catalyst', {})
+                        catalysts = catalyst_data.get('catalysts', [])
+                        if catalysts:
                             msg += "\n*Catalysts:*\n"
-                            for c in result['catalysts'][:3]:
-                                msg += f"  • {c}\n"
+                            for c in catalysts[:3]:
+                                if isinstance(c, dict):
+                                    c_type = c.get('type', 'event')
+                                    c_date = c.get('date', '')
+                                    c_emoji = "📅" if c_type == 'earnings' else "💰" if c_type == 'dividend' else "📊"
+                                    msg += f"  {c_emoji} {c_type.title()}: {c_date}\n"
+                                else:
+                                    msg += f"  • {c}\n"
 
-                        # Sentiment
+                        # Sentiment (0-100 scale, 50 = neutral)
                         sentiment = result.get('sentiment', {})
                         if sentiment:
-                            sent_score = sentiment.get('score', 0)
-                            sent_emoji = "🟢" if sent_score > 0.2 else "🔴" if sent_score < -0.2 else "⚪"
-                            msg += f"\n*Sentiment:* {sent_emoji} {sent_score:+.2f}\n"
+                            sent_score = sentiment.get('score', 50)
+                            sent_label = sentiment.get('sentiment', 'neutral')
+                            sent_emoji = "🟢" if sent_score >= 60 else "🔴" if sent_score <= 40 else "⚪"
+                            msg += f"\n*Sentiment:* {sent_emoji} {sent_label.title()} ({sent_score:.0f})\n"
+
+                        # Social buzz
+                        if result.get('is_trending'):
+                            msg += "🔥 *TRENDING on social media*\n"
 
                         send_reply(msg)
                     else:
