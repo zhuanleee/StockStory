@@ -51,6 +51,10 @@ def create_fastapi_app():
     Create FastAPI app inside Modal function.
     All imports happen here (in container where packages are available).
     """
+    # Helper to reload volume - creates fresh reference each time to avoid scoping issues
+    def reload_volume():
+        modal.Volume.from_name("scan-results").reload()
+
     # Imports only available in container
     from fastapi import FastAPI, Query, Request
     from fastapi.middleware.cors import CORSMiddleware
@@ -448,6 +452,25 @@ Get an API key at `/api-keys/request`
             return {"ok": True, **health_data}
         except Exception as e:
             return {"ok": True, "status": "healthy", "service": "modal", "timestamp": datetime.now().isoformat()}
+
+    @web_app.get("/debug/volume", tags=["Admin"])
+    def debug_volume():
+        """Debug endpoint to check volume contents."""
+        import os
+        reload_volume()  # Try to sync volume
+        volume_path = VOLUME_PATH
+        files = []
+        if os.path.exists(volume_path):
+            for f in os.listdir(volume_path):
+                fpath = os.path.join(volume_path, f)
+                size = os.path.getsize(fpath) if os.path.isfile(fpath) else 0
+                files.append({"name": f, "size": size})
+        return {
+            "ok": True,
+            "volume_path": volume_path,
+            "files": files,
+            "csv_exists": os.path.exists(os.path.join(volume_path, "scan_results_latest.csv"))
+        }
 
     @web_app.get("/admin/metrics", tags=["Admin"])
     def get_metrics():
@@ -1553,14 +1576,19 @@ Get an API key at `/api-keys/request`
             # ============ STATUS ============
             elif cmd == '/status':
                 import pandas as pd
-                volume.reload()  # Sync volume
+                import os as os_mod
+                # Check volume mount - don't call reload, just check what's there
                 latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                # Debug: list files in volume
+                volume_exists = os_mod.path.exists(VOLUME_PATH)
+                volume_files = os_mod.listdir(VOLUME_PATH) if volume_exists else []
+                csv_exists = latest_path.exists()
+                logger.info(f"[TG] Volume exists: {volume_exists}, files: {volume_files}, csv_exists: {csv_exists}")
                 scan_count = 0
                 scan_time = "Unknown"
                 if latest_path.exists():
                     df = pd.read_csv(latest_path)
                     scan_count = len(df)
-                    import os as os_mod
                     mtime = os_mod.path.getmtime(latest_path)
                     from datetime import datetime
                     scan_time = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
@@ -1570,7 +1598,11 @@ Get an API key at `/api-keys/request`
                     f"API: Operational\n"
                     f"Stocks in DB: {scan_count}\n"
                     f"Last Scan: {scan_time}\n"
-                    f"Mode: Modal Serverless"
+                    f"Mode: Modal Serverless\n"
+                    f"Path: {VOLUME_PATH}\n"
+                    f"Exists: {volume_exists}\n"
+                    f"CSV: {csv_exists}\n"
+                    f"Files: {volume_files}"
                 )
                 return {"ok": True}
 
@@ -1578,8 +1610,9 @@ Get an API key at `/api-keys/request`
             elif cmd == '/top':
                 try:
                     import pandas as pd
-                    volume.reload()  # Sync volume to see latest scan results
+                    import os as os_mod
                     latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                    logger.info(f"[TG] /top checking: path={latest_path}, exists={latest_path.exists()}, volume_files={os_mod.listdir(VOLUME_PATH) if os_mod.path.exists(VOLUME_PATH) else []}")
                     if latest_path.exists():
                         df = pd.read_csv(latest_path)
                         score_col = 'composite_score' if 'composite_score' in df.columns else 'story_score'
@@ -1607,8 +1640,9 @@ Get an API key at `/api-keys/request`
             elif cmd == '/movers':
                 try:
                     import pandas as pd
-                    volume.reload()  # Sync volume
+                    import os as os_mod
                     latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                    logger.info(f"[TG] /movers checking: path={latest_path}, exists={latest_path.exists()}")
                     if latest_path.exists():
                         df = pd.read_csv(latest_path)
                         if 'change_pct' in df.columns:
@@ -1641,14 +1675,23 @@ Get an API key at `/api-keys/request`
                     if themes:
                         msg = "🔥 *HOT THEMES*\n\n"
                         for i, t in enumerate(themes[:8], 1):
-                            name = t.get('theme', t.get('name', 'Unknown'))
-                            count = t.get('count', t.get('mentions', 0))
-                            momentum = t.get('momentum', 'stable')
-                            emoji = "🔥" if momentum == 'rising' else "📈" if count >= 5 else "📊"
+                            name = t.get('name', t.get('theme', 'Unknown'))
+                            # Check all possible field names for mention count
+                            count = t.get('mention_count', t.get('count', t.get('mentions', 0)))
+                            heat = t.get('heat', 'WARM')
+                            momentum = t.get('momentum', 'STABLE')
+                            # Heat-based emoji
+                            emoji = "🔥" if heat == 'HOT' else "📈" if heat == 'WARM' else "🌱" if heat == 'EMERGING' else "📊"
                             msg += f"{emoji} *{name}*: {count} mentions"
-                            if momentum == 'rising':
-                                msg += " ↑"
+                            if momentum == 'HEATING_UP':
+                                msg += " ⬆️"
+                            elif momentum == 'COOLING_DOWN':
+                                msg += " ⬇️"
                             msg += "\n"
+                            # Show top stocks for this theme
+                            plays = t.get('primary_plays', [])
+                            if plays:
+                                msg += f"   `{'` `'.join(plays[:3])}`\n"
                         send_reply(msg)
                     else:
                         send_reply("No theme data available. Try again later.")

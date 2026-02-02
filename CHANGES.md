@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:43 - `9a959fa`
+
+**fix: Add volume.reload() to sync scan results**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:39 - `8fd18e5`
 
 **fix: Update /themes command to use correct function**

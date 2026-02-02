@@ -2560,13 +2560,13 @@ def monitoring_cycle_bundle():
 @app.function(
     image=image,
     timeout=300,  # 5 minutes max
-    schedule=modal.Cron("*/15 * * * *"),  # Run every 15 minutes
+    schedule=modal.Cron("0 * * * *"),  # Run every hour (at minute 0)
     secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def x_intelligence_crisis_monitor():
     """
     Bundle 5: X Intelligence Crisis Monitor
-    Runs every 15 minutes
+    Runs every hour
 
     Real-time monitoring of X/Twitter for market threats.
     Sends Telegram alerts when crises detected.
@@ -2581,7 +2581,7 @@ def x_intelligence_crisis_monitor():
     print("=" * 70)
     print("🚨 X INTELLIGENCE CRISIS MONITOR")
     print("=" * 70)
-    print(f"Check frequency: Every 15 minutes")
+    print(f"Check frequency: Every hour")
     print(f"Next check: In 15 minutes")
     print("=" * 70)
 

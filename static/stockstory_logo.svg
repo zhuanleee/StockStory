@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0f0f1a"/>
+    </linearGradient>
+    <linearGradient id="chart" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="url(#bg)" stroke="#2a2a4a" stroke-width="2"/>
+
+  <!-- Stock chart line (upward trend) -->
+  <polyline
+    points="30,140 50,130 70,135 90,110 110,120 130,80 150,90 170,50"
+    fill="none"
+    stroke="url(#chart)"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Arrow head -->
+  <polygon points="170,50 160,65 175,60" fill="#34d399"/>
+
+  <!-- SS text -->
+  <text x="100" y="175"
+    font-family="Arial, sans-serif"
+    font-size="28"
+    font-weight="bold"
+    fill="#e2e8f0"
+    text-anchor="middle">StockStory</text>
+</svg>
