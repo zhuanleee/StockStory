@@ -2323,7 +2323,7 @@
                 <!-- Whale Trades -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">🐋 Whale Trades (>$500K)</div>
+                        <div class="card-title">🐋 Whale Trades (>$50K)</div>
                         <button class="btn btn-ghost" onclick="loadWhaleTrades()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Refresh</button>
                     </div>
                     <div class="card-body" style="padding: 0;">
@@ -5543,7 +5543,7 @@
             container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Loading whale trades...</div>';
 
             try {
-                const res = await fetch(`${API_BASE}/options/whales?min_premium=500000`);
+                const res = await fetch(`${API_BASE}/options/whales?min_premium=50000`);
                 const data = await res.json();
 
                 if (data.ok && (data.whales || data.data) && (data.whales || data.data).length > 0) {

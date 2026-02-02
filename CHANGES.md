@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:43 - `27605ae`
+
+**feat: Enable Polygon.io for real-time options data**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+src/analysis/options_flow.py
+src/data/polygon_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:37 - `fc40f30`
 
 **fix: Fix JavaScript to handle API response field names**
