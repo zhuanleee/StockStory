@@ -82,6 +82,11 @@ def _get_xai_client():
 # ADDITIONAL DATA SOURCES - Social & Institutional
 # =============================================================================
 
+# StockTwits API status tracking (avoid repeated failed requests)
+_stocktwits_available = True
+_stocktwits_last_check = 0
+
+
 def fetch_stocktwits_sentiment(ticker: str) -> dict:
     """
     Fetch sentiment from StockTwits API.
@@ -90,10 +95,30 @@ def fetch_stocktwits_sentiment(ticker: str) -> dict:
         - sentiment: 'bullish', 'bearish', or 'neutral'
         - message_volume: number of messages
         - trending: bool if trending
+
+    Note: StockTwits API may be blocked (403). Returns neutral fallback if unavailable.
     """
+    import time
+    global _stocktwits_available, _stocktwits_last_check
+
+    # Skip if API is known to be unavailable (check every 5 minutes)
+    if not _stocktwits_available:
+        if time.time() - _stocktwits_last_check < 300:
+            return {'sentiment': 'neutral', 'message_volume': 0, 'trending': False, 'source': 'unavailable'}
+        # Reset to try again
+        _stocktwits_available = True
+
     try:
         url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
-        resp = requests.get(url, timeout=10)
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+        resp = requests.get(url, headers=headers, timeout=10)
+
+        if resp.status_code == 403:
+            # API is blocked - mark as unavailable
+            _stocktwits_available = False
+            _stocktwits_last_check = time.time()
+            logger.warning("StockTwits API returned 403 (blocked). Using fallback.")
+            return {'sentiment': 'neutral', 'message_volume': 0, 'trending': False, 'source': 'blocked'}
 
         if resp.status_code != 200:
             return {'sentiment': 'neutral', 'message_volume': 0, 'trending': False}

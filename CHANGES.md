@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 17:54 - `48a7385`
+
+**fix: Add missing except block in evolutionary_agentic_brain.py**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/ai/evolutionary_agentic_brain.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 17:53 - `9532c1a`
 
 **chore: Update CHANGES.md with latest entry**

@@ -280,12 +280,37 @@ def scrape_yahoo_news(ticker):
         return []
 
 
+# StockTwits API availability tracking
+_stocktwits_api_available = True
+_stocktwits_last_check_time = 0
+
+
 def scrape_stocktwits(ticker):
-    """Get sentiment from StockTwits (X/Twitter-like for stocks)."""
+    """
+    Get sentiment from StockTwits (X/Twitter-like for stocks).
+
+    Note: StockTwits API may return 403 (blocked). Returns empty fallback if unavailable.
+    """
+    import time
+    global _stocktwits_api_available, _stocktwits_last_check_time
+
+    # Skip if API is known to be unavailable (retry every 5 minutes)
+    if not _stocktwits_api_available:
+        if time.time() - _stocktwits_last_check_time < 300:
+            return [], None
+        _stocktwits_api_available = True  # Reset to retry
+
     try:
         url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code == 403:
+            # API is blocked - mark as unavailable
+            _stocktwits_api_available = False
+            _stocktwits_last_check_time = time.time()
+            logger.debug("StockTwits API returned 403 (blocked)")
+            return [], None
 
         if response.status_code != 200:
             return [], None

@@ -88,11 +88,36 @@ def fetch_google_news(query):
         return []
 
 
+# StockTwits API availability tracking
+_stocktwits_ok = True
+_stocktwits_checked = 0
+
+
 def fetch_stocktwits(ticker):
-    """Fetch from StockTwits."""
+    """
+    Fetch from StockTwits.
+
+    Note: StockTwits API may be blocked (403). Returns empty list if unavailable.
+    """
+    import time
+    global _stocktwits_ok, _stocktwits_checked
+
+    # Skip if API is blocked (retry every 5 minutes)
+    if not _stocktwits_ok:
+        if time.time() - _stocktwits_checked < 300:
+            return []
+        _stocktwits_ok = True
+
     try:
         url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
-        response = requests.get(url, timeout=5)
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
+
+        if response.status_code == 403:
+            _stocktwits_ok = False
+            _stocktwits_checked = time.time()
+            logger.debug("StockTwits API blocked (403)")
+            return []
 
         if response.status_code != 200:
             return []
@@ -104,7 +129,7 @@ def fetch_stocktwits(ticker):
                 'sentiment': m.get('entities', {}).get('sentiment', {}).get('basic')}
                 for m in messages]
     except Exception as e:
-        logger.error(f"Error fetching StockTwits for {ticker}: {e}")
+        logger.debug(f"Error fetching StockTwits for {ticker}: {e}")
         return []
 
 
