@@ -1360,9 +1360,9 @@ def _run_batch_google_trends_prefetch():
 
 def _run_x_intelligence_crisis_check():
     """
-    X Intelligence Crisis Monitoring.
+    X Intelligence Crisis Monitoring with REAL X Search.
 
-    Monitors X/Twitter for market threats using xAI analysis.
+    Uses xAI SDK with x_search tool to actually search X/Twitter.
     Sends Telegram alerts when crises detected.
 
     Severity levels:
@@ -1370,56 +1370,86 @@ def _run_x_intelligence_crisis_check():
     - 7-8: MAJOR - Tighten controls (avoid sectors)
     - 1-6: WARNING - Awareness (informational)
 
-    Runs every 6 hours.
+    Runs every 15 minutes.
     """
     import sys
     sys.path.insert(0, '/root')
 
     print("=" * 70)
-    print("🚨 X INTELLIGENCE CRISIS CHECK")
+    print("🚨 X INTELLIGENCE CRISIS CHECK (With Real X Search)")
     print("=" * 70)
 
     try:
-        from src.ai.xai_x_intelligence import XAIXIntelligence, CrisisType
+        from src.ai.xai_x_intelligence_v2 import get_x_intelligence_v2
         from src.notifications.notification_manager import get_notification_manager, NotificationPriority
 
-        # Initialize X Intelligence
-        x_intel = XAIXIntelligence()
+        # Initialize X Intelligence V2 (with SDK + x_search)
+        x_intel = get_x_intelligence_v2()
         notification_manager = get_notification_manager()
 
-        print("🔍 Analyzing X/Twitter for market threats...")
+        if not x_intel:
+            print("✗ X Intelligence V2 not available (missing SDK or API key)")
+            return {
+                'success': False,
+                'error': 'X Intelligence SDK not available',
+                'status': 'unavailable'
+            }
 
-        # Check for crises
-        crisis_alerts = x_intel.monitor_x_for_crises()
+        print("🔍 Searching X/Twitter in real-time for market threats...")
+        print("   Using xAI SDK with x_search tool")
 
-        if not crisis_alerts:
-            print("✅ No significant threats detected")
+        # Search X for crises (REAL X search, not prompts!)
+        crisis_topics = x_intel.search_x_for_crises()
+
+        if not crisis_topics:
+            print("✅ No significant threats detected on X")
             return {
                 'success': True,
                 'crises_detected': 0,
-                'status': 'clear'
+                'status': 'clear',
+                'method': 'real_x_search'
             }
 
-        # Process each crisis alert
-        print(f"⚠️  {len(crisis_alerts)} potential threat(s) detected")
+        # Process each crisis topic with deep analysis
+        print(f"⚠️  {len(crisis_topics)} potential threat(s) found on X")
+        print(f"   Analyzing each with X search for verification...")
 
         critical_count = 0
         major_count = 0
         warning_count = 0
 
-        for alert in crisis_alerts:
-            print(f"\n  Topic: {alert.topic}")
-            print(f"  Type: {alert.crisis_type.value}")
-            print(f"  Severity: {alert.severity}/10")
-            print(f"  Verified: {alert.verified}")
+        for topic_data in crisis_topics:
+            topic = topic_data.get('topic', 'Unknown')
+            severity = topic_data.get('severity', 5)
+
+            print(f"\n  Topic: {topic}")
+            print(f"  Initial Severity: {severity}/10")
+
+            # Deep analysis using X search
+            analysis = x_intel.analyze_crisis_topic(topic)
+
+            if not analysis:
+                print(f"  ✗ Could not analyze topic")
+                continue
+
+            severity = analysis.get('severity', 5)
+            verified = analysis.get('verified', False)
+
+            print(f"  Final Severity: {severity}/10")
+            print(f"  Verified: {verified}")
+
+            # Only alert on severity >= 7
+            if severity < 7:
+                warning_count += 1
+                continue
 
             # Determine alert type and priority
-            if alert.severity >= 9 and alert.verified:
+            if severity >= 9 and verified:
                 alert_type = 'crisis_emergency'
                 priority = NotificationPriority.CRITICAL
                 protocol_type = 'emergency'
                 critical_count += 1
-            elif alert.severity >= 7:
+            elif severity >= 7:
                 alert_type = 'crisis_major'
                 priority = NotificationPriority.CRITICAL
                 protocol_type = 'major'
@@ -1432,15 +1462,15 @@ def _run_x_intelligence_crisis_check():
 
             # Prepare crisis data for notification
             crisis_data = {
-                'severity': alert.severity,
-                'topic': alert.topic,
-                'crisis_type': alert.crisis_type.value if hasattr(alert.crisis_type, 'value') else str(alert.crisis_type),
-                'description': alert.description,
-                'verified': alert.verified,
-                'credibility_score': alert.credibility_score,
-                'affected_sectors': alert.affected_sectors,
-                'affected_tickers': alert.affected_tickers,
-                'immediate_actions': alert.immediate_actions,
+                'severity': severity,
+                'topic': topic,
+                'crisis_type': 'unknown',  # V2 doesn't classify yet
+                'description': analysis.get('raw_analysis', '')[:500],
+                'verified': verified,
+                'credibility_score': analysis.get('credibility', 0.5),
+                'affected_sectors': analysis.get('affected_sectors', []),
+                'affected_tickers': [],
+                'immediate_actions': ['Monitor situation', 'Review positions'],
                 'protocol_type': protocol_type
             }
 
