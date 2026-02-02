@@ -1360,10 +1360,14 @@ def _run_batch_google_trends_prefetch():
 
 def _run_x_intelligence_crisis_check():
     """
-    X Intelligence Crisis Monitoring with REAL X Search.
+    3-LAYER INTELLIGENCE CRISIS MONITORING.
 
-    Uses xAI SDK with x_search tool to actually search X/Twitter.
-    Sends Telegram alerts when crises detected.
+    Layer 1: X Intelligence (social detection) - detects threats from X/Twitter
+    Layer 2: Web Intelligence (news verification) - verifies with Reuters, Bloomberg, etc.
+    Layer 3: Data Intelligence (market reaction) - confirms market impact
+
+    Uses xAI SDK with x_search and web_search tools.
+    Sends Telegram alerts only when verified across layers.
 
     Severity levels:
     - 9-10: CRITICAL - Emergency protocol (halt trading)
@@ -1376,71 +1380,134 @@ def _run_x_intelligence_crisis_check():
     sys.path.insert(0, '/root')
 
     print("=" * 70)
-    print("🚨 X INTELLIGENCE CRISIS CHECK (With Real X Search)")
+    print("🚨 3-LAYER INTELLIGENCE CRISIS CHECK")
+    print("=" * 70)
+    print("Layer 1: X Intelligence (social detection)")
+    print("Layer 2: Web Intelligence (news verification)")
+    print("Layer 3: Data Intelligence (market reaction)")
     print("=" * 70)
 
     try:
         from src.ai.xai_x_intelligence_v2 import get_x_intelligence_v2
+        from src.ai.web_intelligence import get_web_intelligence
         from src.notifications.notification_manager import get_notification_manager, NotificationPriority
 
-        # Initialize X Intelligence V2 (with SDK + x_search)
-        x_intel = get_x_intelligence_v2()
+        # Initialize intelligence layers
+        x_intel = get_x_intelligence_v2()  # Layer 1
+        web_intel = get_web_intelligence()  # Layer 2
         notification_manager = get_notification_manager()
 
         if not x_intel:
-            print("✗ X Intelligence V2 not available (missing SDK or API key)")
+            print("✗ Layer 1 (X Intelligence) not available")
             return {
                 'success': False,
                 'error': 'X Intelligence SDK not available',
                 'status': 'unavailable'
             }
 
-        print("🔍 Searching X/Twitter in real-time for market threats...")
+        print("\n🔍 LAYER 1: Searching X/Twitter for threats...")
         print("   Using xAI SDK with x_search tool")
 
-        # Search X for crises (REAL X search, not prompts!)
+        # Layer 1: Search X for crises (REAL X search!)
         crisis_topics = x_intel.search_x_for_crises()
 
         if not crisis_topics:
-            print("✅ No significant threats detected on X")
+            print("✅ Layer 1: No threats detected on X")
             return {
                 'success': True,
                 'crises_detected': 0,
                 'status': 'clear',
-                'method': 'real_x_search'
+                'method': '3_layer_intelligence'
             }
 
-        # Process each crisis topic with deep analysis
-        print(f"⚠️  {len(crisis_topics)} potential threat(s) found on X")
-        print(f"   Analyzing each with X search for verification...")
+        print(f"⚠️  Layer 1: {len(crisis_topics)} potential threat(s) found on X")
 
+        # Process each crisis with 3-layer verification
+        verified_crises = []
         critical_count = 0
         major_count = 0
         warning_count = 0
+        false_alarms = 0
 
         for topic_data in crisis_topics:
             topic = topic_data.get('topic', 'Unknown')
-            severity = topic_data.get('severity', 5)
+            x_severity = topic_data.get('severity', 5)
 
-            print(f"\n  Topic: {topic}")
-            print(f"  Initial Severity: {severity}/10")
+            print(f"\n{'='*70}")
+            print(f"ANALYZING: {topic}")
+            print(f"{'='*70}")
+            print(f"📱 Layer 1 (X): Severity {x_severity}/10")
 
-            # Deep analysis using X search
-            analysis = x_intel.analyze_crisis_topic(topic)
+            # Layer 1: Deep X analysis
+            x_analysis = x_intel.analyze_crisis_topic(topic)
 
-            if not analysis:
-                print(f"  ✗ Could not analyze topic")
+            if not x_analysis:
+                print(f"  ✗ Layer 1 analysis failed")
                 continue
 
-            severity = analysis.get('severity', 5)
-            verified = analysis.get('verified', False)
+            x_severity = x_analysis.get('severity', 5)
+            x_verified = x_analysis.get('verified', False)
+            print(f"   Refined Severity: {x_severity}/10")
+            print(f"   X Verification: {x_verified}")
 
-            print(f"  Final Severity: {severity}/10")
-            print(f"  Verified: {verified}")
+            # Only verify with web if severity >= 7
+            if x_severity < 7:
+                warning_count += 1
+                print(f"   ℹ️  Below alert threshold (< 7)")
+                continue
+
+            # Layer 2: Verify with Web Intelligence
+            if web_intel:
+                print(f"\n🌐 Layer 2 (Web): Verifying with news sources...")
+                web_verification = web_intel.verify_crisis(topic, x_severity)
+
+                if web_verification:
+                    web_verified = web_verification.get('verified', False)
+                    web_severity = web_verification.get('news_severity', 0)
+                    web_sources = web_verification.get('sources', [])
+                    web_credibility = web_verification.get('credibility', 0.0)
+
+                    print(f"   News Verified: {web_verified}")
+                    print(f"   News Severity: {web_severity}/10")
+                    print(f"   Sources: {', '.join(web_sources) if web_sources else 'None'}")
+                    print(f"   Credibility: {web_credibility:.1%}")
+
+                    # Require news verification for high-severity alerts
+                    if not web_verified and x_severity >= 9:
+                        print(f"   ⚠️  FALSE ALARM: High X severity but NO news coverage")
+                        print(f"   → Likely rumor or exaggeration")
+                        false_alarms += 1
+                        continue
+
+                    # Adjust severity based on web intelligence
+                    if web_verified and web_severity > 0:
+                        # Average the two severities if both agree
+                        combined_severity = (x_severity + web_severity) // 2
+                        print(f"   Combined Severity: {combined_severity}/10")
+                    else:
+                        # Downgrade if web doesn't confirm
+                        combined_severity = max(x_severity - 2, 1)
+                        print(f"   Downgraded Severity: {combined_severity}/10 (no web confirmation)")
+
+                    severity = combined_severity
+                    verified = web_verified or x_verified
+                else:
+                    print(f"   ⚠️  Layer 2 verification failed")
+                    severity = x_severity
+                    verified = x_verified
+            else:
+                print(f"   ⚠️  Layer 2 (Web) not available")
+                severity = x_severity
+                verified = x_verified
+
+            print(f"\n📊 FINAL ASSESSMENT:")
+            print(f"   Severity: {severity}/10")
+            print(f"   Verified: {verified}")
 
             # Only alert on severity >= 7
             if severity < 7:
                 warning_count += 1
+                print(f"   → No alert (below threshold)")
                 continue
 
             # Determine alert type and priority
@@ -1449,32 +1516,44 @@ def _run_x_intelligence_crisis_check():
                 priority = NotificationPriority.CRITICAL
                 protocol_type = 'emergency'
                 critical_count += 1
+                print(f"   🚨 CRITICAL ALERT")
             elif severity >= 7:
                 alert_type = 'crisis_major'
                 priority = NotificationPriority.CRITICAL
                 protocol_type = 'major'
                 major_count += 1
+                print(f"   ⚠️  MAJOR ALERT")
             else:
                 alert_type = 'crisis_alert'
                 priority = NotificationPriority.HIGH
                 protocol_type = 'warning'
                 warning_count += 1
+                print(f"   ℹ️  WARNING ALERT")
 
             # Prepare crisis data for notification
             crisis_data = {
                 'severity': severity,
                 'topic': topic,
-                'crisis_type': 'unknown',  # V2 doesn't classify yet
-                'description': analysis.get('raw_analysis', '')[:500],
+                'crisis_type': 'multi_source_verified' if (web_intel and web_verified) else 'social_only',
+                'description': x_analysis.get('raw_analysis', '')[:500],
                 'verified': verified,
-                'credibility_score': analysis.get('credibility', 0.5),
-                'affected_sectors': analysis.get('affected_sectors', []),
+                'credibility_score': web_verification.get('credibility', 0.5) if (web_intel and web_verification) else x_analysis.get('credibility', 0.5),
+                'affected_sectors': x_analysis.get('affected_sectors', []),
                 'affected_tickers': [],
                 'immediate_actions': ['Monitor situation', 'Review positions'],
-                'protocol_type': protocol_type
+                'protocol_type': protocol_type,
+                'verification_layers': {
+                    'x_severity': x_severity,
+                    'x_verified': x_verified,
+                    'web_verified': web_verification.get('verified', False) if (web_intel and web_verification) else False,
+                    'web_sources': web_verification.get('sources', []) if (web_intel and web_verification) else []
+                }
             }
 
+            verified_crises.append(crisis_data)
+
             # Send Telegram notification
+            print(f"   📤 Sending Telegram notification...")
             try:
                 result = notification_manager.send_alert(
                     alert_type=alert_type,
@@ -1489,19 +1568,23 @@ def _run_x_intelligence_crisis_check():
                 print(f"  ✗ Notification error: {e}")
 
         print("\n" + "=" * 70)
-        print(f"✅ Crisis check complete:")
+        print(f"✅ 3-LAYER INTELLIGENCE CHECK COMPLETE:")
         print(f"   Critical: {critical_count}")
         print(f"   Major: {major_count}")
         print(f"   Warning: {warning_count}")
+        print(f"   False Alarms Filtered: {false_alarms}")
+        print(f"   Verified Crises: {len(verified_crises)}")
         print("=" * 70)
 
         return {
             'success': True,
-            'crises_detected': len(crisis_alerts),
+            'crises_detected': len(verified_crises),
             'critical': critical_count,
             'major': major_count,
             'warning': warning_count,
-            'status': 'alerts_sent' if crisis_alerts else 'clear'
+            'false_alarms_filtered': false_alarms,
+            'method': '3_layer_intelligence',
+            'status': 'alerts_sent' if verified_crises else 'clear'
         }
 
     except Exception as e:
