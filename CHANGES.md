@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:07 - `e0b1eba`
+
+**fix: Fix vol/OI ratio display in Unusual Activity**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:03 - `998a4e4`
 
 **fix: Fix put/call ratio display in Options Chain Lookup**

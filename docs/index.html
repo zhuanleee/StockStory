@@ -5559,6 +5559,7 @@
                     html += '<th style="padding: 8px; text-align: left;">Ticker</th>';
                     html += '<th style="padding: 8px; text-align: left;">Type</th>';
                     html += '<th style="padding: 8px; text-align: right;">Strike</th>';
+                    html += '<th style="padding: 8px; text-align: center;">Expiry</th>';
                     html += '<th style="padding: 8px; text-align: right;">Premium</th>';
                     html += '<th style="padding: 8px; text-align: center;">Side</th>';
                     html += '</tr></thead><tbody>';
@@ -5567,11 +5568,18 @@
                         const typeEmoji = t.type === 'C' || t.type === 'call' ? '📈' : '📉';
                         const sideColor = t.side?.toLowerCase() === 'buy' ? 'var(--green)' : 'var(--red)';
                         const premium = (t.premium || 0) / 1000;
+                        // Format expiration date as MM/DD
+                        let expiry = '--';
+                        if (t.expiration) {
+                            const d = new Date(t.expiration + 'T00:00:00');
+                            expiry = (d.getMonth()+1) + '/' + d.getDate();
+                        }
 
                         html += `<tr style="border-bottom: 1px solid var(--border);">
                             <td style="padding: 8px; font-weight: 600;">${t.ticker || '--'}</td>
                             <td style="padding: 8px;">${typeEmoji} ${(t.type || 'C').toUpperCase()}</td>
                             <td style="padding: 8px; text-align: right;">$${t.strike || '--'}</td>
+                            <td style="padding: 8px; text-align: center; color: var(--text-muted); font-size: 0.75rem;">${expiry}</td>
                             <td style="padding: 8px; text-align: right; font-weight: 600;">$${premium.toFixed(0)}K</td>
                             <td style="padding: 8px; text-align: center; color: ${sideColor}; font-weight: 600;">${(t.side || 'BUY').toUpperCase()}</td>
                         </tr>`;
@@ -5607,11 +5615,18 @@
                         const volOi = item.vol_oi_ratio || item.volume_oi_ratio || 0;
                         const premium = (item.premium || 0) / 1000;
                         const unusualBadge = volOi > 3 ? '<span style="background: var(--yellow); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-left: 8px;">HOT</span>' : '';
+                        // Format expiration date as MM/DD
+                        let expiry = '';
+                        if (item.expiration) {
+                            const d = new Date(item.expiration + 'T00:00:00');
+                            expiry = (d.getMonth()+1) + '/' + d.getDate();
+                        }
 
                         html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border);">
                             <div>
                                 <span style="font-weight: 600;">${item.ticker || '--'}</span>
                                 <span style="color: var(--text-muted); margin-left: 8px;">${typeEmoji} $${item.strike || '--'}</span>
+                                ${expiry ? `<span style="color: var(--text-muted); margin-left: 6px; font-size: 0.75rem;">(${expiry})</span>` : ''}
                                 ${unusualBadge}
                             </div>
                             <div style="text-align: right;">
@@ -5743,9 +5758,15 @@
                         notable.slice(0, 8).forEach(t => {
                             const signalEmoji = t.signal?.includes('sweep') ? '🔥' : t.signal?.includes('block') ? '🟦' : '•';
                             const premium = (t.premium || 0) / 1000;
+                            // Format expiration date as MM/DD
+                            let expiry = '';
+                            if (t.expiration) {
+                                const d = new Date(t.expiration + 'T00:00:00');
+                                expiry = (d.getMonth()+1) + '/' + d.getDate();
+                            }
 
                             html += `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border);">
-                                <span>${signalEmoji} $${t.strike || '--'} ${t.type || 'C'}</span>
+                                <span>${signalEmoji} $${t.strike || '--'} ${t.type || 'C'}${expiry ? ` <span style="color: var(--text-muted); font-size: 0.75rem;">(${expiry})</span>` : ''}</span>
                                 <span style="font-weight: 600;">$${premium.toFixed(0)}K <span style="color: var(--text-muted); font-weight: normal; font-size: 0.75rem;">${t.signal || ''}</span></span>
                             </div>`;
                         });
