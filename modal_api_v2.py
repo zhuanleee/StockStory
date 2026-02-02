@@ -1695,6 +1695,8 @@ Get an API key at `/api-keys/request`
                     matplotlib.use('Agg')
                     import matplotlib.pyplot as plt
                     import matplotlib.dates as mdates
+                    from matplotlib.patches import Rectangle
+                    import numpy as np
 
                     # Fetch data
                     stock = yf.Ticker(ticker)
@@ -1705,63 +1707,112 @@ Get an API key at `/api-keys/request`
                         return {"ok": True}
 
                     # Create chart
-                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[3, 1],
-                                                   gridspec_kw={'hspace': 0.1})
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), height_ratios=[3, 1],
+                                                   gridspec_kw={'hspace': 0.05})
                     fig.patch.set_facecolor('#1a1a2e')
 
-                    # Price chart
+                    # Candlestick chart
                     ax1.set_facecolor('#1a1a2e')
-                    ax1.plot(hist.index, hist['Close'], color='#00d4ff', linewidth=1.5)
-                    ax1.fill_between(hist.index, hist['Close'], alpha=0.3, color='#00d4ff')
+
+                    # Calculate candle width (0.6 of average spacing)
+                    width = 0.6
+                    width2 = 0.1  # Wick width
+
+                    # Colors
+                    up_color = '#00d4ff'    # Cyan for up
+                    down_color = '#ff6b6b'  # Red for down
+
+                    # Draw candlesticks
+                    for i in range(len(hist)):
+                        date_num = mdates.date2num(hist.index[i])
+                        open_price = hist['Open'].iloc[i]
+                        close_price = hist['Close'].iloc[i]
+                        high_price = hist['High'].iloc[i]
+                        low_price = hist['Low'].iloc[i]
+
+                        if close_price >= open_price:
+                            color = up_color
+                            body_bottom = open_price
+                            body_height = close_price - open_price
+                        else:
+                            color = down_color
+                            body_bottom = close_price
+                            body_height = open_price - close_price
+
+                        # Draw wick (high-low line)
+                        ax1.plot([date_num, date_num], [low_price, high_price],
+                                color=color, linewidth=1)
+
+                        # Draw body (rectangle)
+                        if body_height == 0:
+                            body_height = 0.01  # Minimum height for doji
+                        rect = Rectangle((date_num - width/2, body_bottom), width, body_height,
+                                         facecolor=color, edgecolor=color, linewidth=0.5)
+                        ax1.add_patch(rect)
 
                     # Add SMAs
+                    dates_num = [mdates.date2num(d) for d in hist.index]
                     if len(hist) >= 20:
                         sma20 = hist['Close'].rolling(20).mean()
-                        ax1.plot(hist.index, sma20, color='#ffa500', linewidth=1, alpha=0.7, label='SMA20')
+                        ax1.plot(dates_num, sma20, color='#ffa500', linewidth=1.5, alpha=0.8, label='SMA20')
                     if len(hist) >= 50:
                         sma50 = hist['Close'].rolling(50).mean()
-                        ax1.plot(hist.index, sma50, color='#ff6b6b', linewidth=1, alpha=0.7, label='SMA50')
+                        ax1.plot(dates_num, sma50, color='#e056fd', linewidth=1.5, alpha=0.8, label='SMA50')
 
-                    ax1.set_ylabel('Price ($)', color='white')
+                    ax1.set_ylabel('Price ($)', color='white', fontsize=10)
                     ax1.tick_params(colors='white')
-                    ax1.spines['bottom'].set_color('white')
-                    ax1.spines['left'].set_color('white')
+                    ax1.spines['bottom'].set_color('#333')
+                    ax1.spines['left'].set_color('#333')
                     ax1.spines['top'].set_visible(False)
                     ax1.spines['right'].set_visible(False)
-                    ax1.legend(loc='upper left', facecolor='#1a1a2e', edgecolor='none', labelcolor='white')
+                    ax1.legend(loc='upper left', facecolor='#1a1a2e', edgecolor='none',
+                              labelcolor='white', fontsize=9)
                     ax1.set_xticklabels([])
+                    ax1.grid(True, alpha=0.2, color='#444')
+                    ax1.set_xlim(dates_num[0] - 1, dates_num[-1] + 1)
 
                     current_price = hist['Close'].iloc[-1]
                     change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
-                    ax1.set_title(f'{ticker}  ${current_price:.2f}  ({change:+.1f}%)', color='white', fontsize=14, fontweight='bold')
+                    change_color = up_color if change >= 0 else down_color
+                    ax1.set_title(f'{ticker}  ${current_price:.2f}  ({change:+.1f}%)',
+                                 color='white', fontsize=14, fontweight='bold', pad=10)
 
                     # Volume chart
                     ax2.set_facecolor('#1a1a2e')
-                    colors = ['#00d4ff' if hist['Close'].iloc[i] >= hist['Open'].iloc[i] else '#ff6b6b'
+                    colors = [up_color if hist['Close'].iloc[i] >= hist['Open'].iloc[i] else down_color
                               for i in range(len(hist))]
-                    ax2.bar(hist.index, hist['Volume'], color=colors, alpha=0.7)
-                    ax2.set_ylabel('Volume', color='white')
-                    ax2.tick_params(colors='white')
-                    ax2.spines['bottom'].set_color('white')
-                    ax2.spines['left'].set_color('white')
+                    ax2.bar(dates_num, hist['Volume'], color=colors, alpha=0.7, width=width)
+                    ax2.set_ylabel('Vol', color='white', fontsize=9)
+                    ax2.tick_params(colors='white', labelsize=8)
+                    ax2.spines['bottom'].set_color('#333')
+                    ax2.spines['left'].set_color('#333')
                     ax2.spines['top'].set_visible(False)
                     ax2.spines['right'].set_visible(False)
                     ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
                     ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
-                    plt.xticks(rotation=45)
+                    ax2.grid(True, alpha=0.2, color='#444')
+                    ax2.set_xlim(dates_num[0] - 1, dates_num[-1] + 1)
+                    plt.xticks(rotation=45, ha='right')
+
+                    # Format volume axis
+                    ax2.yaxis.set_major_formatter(
+                        plt.FuncFormatter(lambda x, p: f'{x/1e6:.0f}M' if x >= 1e6 else f'{x/1e3:.0f}K')
+                    )
 
                     plt.tight_layout()
 
                     # Save to bytes
                     buf = io.BytesIO()
-                    plt.savefig(buf, format='png', dpi=100, facecolor='#1a1a2e', edgecolor='none')
+                    plt.savefig(buf, format='png', dpi=120, facecolor='#1a1a2e', edgecolor='none',
+                               bbox_inches='tight', pad_inches=0.1)
                     buf.seek(0)
                     plt.close()
 
                     # Send chart
-                    send_photo(buf.read(), f"📊 *{ticker}* - 3 Month Chart")
+                    send_photo(buf.read(), f"📊 *{ticker}* - 3 Month Candlestick")
 
                 except Exception as e:
+                    log(f"Chart error for {ticker}: {e}")
                     send_reply(f"Chart error: {str(e)[:100]}")
                 return {"ok": True}
 

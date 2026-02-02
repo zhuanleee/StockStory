@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:11 - `5cad92c`
+
+**fix: Add Markdown fallback for Telegram replies**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 18:58 - `3e328da`
 
 **feat: Add detailed logging to Telegram webhook**
