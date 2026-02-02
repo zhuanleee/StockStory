@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:03 - `998a4e4`
+
+**fix: Fix put/call ratio display in Options Chain Lookup**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:00 - `37bd848`
 
 **feat: Add real 0DTE volume from Polygon options data**

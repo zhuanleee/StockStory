@@ -5603,8 +5603,8 @@
                     let html = '<div style="padding: 8px 0;">';
 
                     items.slice(0, 12).forEach(item => {
-                        const typeEmoji = item.type === 'C' ? '📈' : '📉';
-                        const volOi = item.volume_oi_ratio || 0;
+                        const typeEmoji = item.type === 'C' || item.type === 'call' ? '📈' : '📉';
+                        const volOi = item.vol_oi_ratio || item.volume_oi_ratio || 0;
                         const premium = (item.premium || 0) / 1000;
                         const unusualBadge = volOi > 3 ? '<span style="background: var(--yellow); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-left: 8px;">HOT</span>' : '';
 
