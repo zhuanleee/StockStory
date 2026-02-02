@@ -2,6 +2,23 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:09 - `096d458`
+
+**docs: Update CHANGES.md with latest entries**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:02 - `56ac910`
 
 **fix: Add raw_data to health endpoint for dashboard market pulse**

@@ -2285,6 +2285,128 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Market Options Sentiment -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📊 Market Options Sentiment</div>
+                    <button class="btn btn-ghost" onclick="loadMarketSentiment()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-4" id="market-sentiment-grid">
+                        <div style="text-align: center; padding: 12px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY P/C RATIO</div>
+                            <div style="font-size: 1.25rem; font-weight: 700;" id="spy-pc-ratio">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL GEX</div>
+                            <div style="font-size: 1.25rem; font-weight: 700;" id="market-gex">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);" id="gex-label">Loading...</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">VIX LEVEL</div>
+                            <div style="font-size: 1.25rem; font-weight: 700;" id="vix-level">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);" id="vix-label">Loading...</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">0DTE VOLUME</div>
+                            <div style="font-size: 1.25rem; font-weight: 700;" id="zero-dte-vol">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);">Intraday</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Whale Trades & Unusual Activity -->
+            <div class="grid grid-2" style="margin-top: 20px;">
+                <!-- Whale Trades -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🐋 Whale Trades (>$500K)</div>
+                        <button class="btn btn-ghost" onclick="loadWhaleTrades()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Refresh</button>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div style="max-height: 400px; overflow-y: auto;" id="whale-trades-container">
+                            <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+                                Click Refresh to load whale trades
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Unusual Activity Feed -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚡ Unusual Activity</div>
+                        <button class="btn btn-ghost" onclick="loadUnusualActivity()" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">Refresh</button>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div style="max-height: 400px; overflow-y: auto;" id="unusual-activity-container">
+                            <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+                                Click Refresh to scan unusual activity
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Options Screener -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">🔍 Options Screener</div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Min Premium ($K)</label>
+                            <input type="number" id="screener-min-premium" value="50" min="1" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;" />
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Min IV Rank (%)</label>
+                            <input type="number" id="screener-min-iv" value="50" min="0" max="100" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;" />
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Sentiment</label>
+                            <select id="screener-sentiment" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;">
+                                <option value="">Any</option>
+                                <option value="bullish">Bullish Only</option>
+                                <option value="bearish">Bearish Only</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Tickers (comma sep)</label>
+                            <input type="text" id="screener-tickers" placeholder="NVDA,AAPL,TSLA" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;" />
+                        </div>
+                        <div style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-primary" onclick="runOptionsScreener()" style="padding: 8px 20px;">Screen</button>
+                        </div>
+                    </div>
+                    <div id="screener-results">
+                        <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">
+                            Configure filters and click Screen to find options opportunities
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Smart Money Flow Analysis -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">💰 Smart Money Flow Analysis</div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                        <input type="text" id="flow-ticker-input" placeholder="Enter ticker (e.g., NVDA)" style="flex: 1; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-size: 0.85rem;" onkeypress="if(event.key==='Enter') loadSmartMoneyFlow()" />
+                        <button class="btn btn-primary" onclick="loadSmartMoneyFlow()" style="padding: 10px 20px;">Analyze Flow</button>
+                    </div>
+                    <div id="smart-money-flow-container">
+                        <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">
+                            Enter a ticker to analyze institutional and smart money options flow
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -2679,6 +2801,7 @@
                 fetchTrades();
             } else if (tabId === 'options') {
                 fetchUnusualOptions();
+                loadMarketSentiment();
             }
         }
 
@@ -5372,6 +5495,264 @@
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
                 document.getElementById('puts-table-body').innerHTML =
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
+            }
+        }
+
+        // Market Options Sentiment loader
+        async function loadMarketSentiment() {
+            try {
+                const res = await fetch(`${API_BASE}/options/market-sentiment`);
+                const data = await res.json();
+
+                if (data.ok && data.data) {
+                    const sentiment = data.data;
+
+                    // SPY P/C Ratio
+                    const pcRatio = sentiment.spy_put_call_ratio || sentiment.put_call_ratio || 0;
+                    const pcEl = document.getElementById('spy-pc-ratio');
+                    pcEl.textContent = pcRatio.toFixed(2);
+                    pcEl.style.color = pcRatio > 1.0 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--text)';
+                    document.getElementById('spy-pc-label').textContent = pcRatio > 1.0 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
+
+                    // GEX
+                    const gex = sentiment.total_gex || sentiment.gex || 0;
+                    const gexEl = document.getElementById('market-gex');
+                    gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
+                    gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
+                    document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
+
+                    // VIX
+                    const vix = sentiment.vix || 0;
+                    const vixEl = document.getElementById('vix-level');
+                    vixEl.textContent = vix.toFixed(1);
+                    vixEl.style.color = vix > 25 ? 'var(--red)' : vix < 15 ? 'var(--green)' : 'var(--text)';
+                    document.getElementById('vix-label').textContent = vix > 25 ? 'High Fear' : vix < 15 ? 'Low Fear' : 'Normal';
+
+                    // 0DTE Volume
+                    const zeroDte = sentiment.zero_dte_volume || 0;
+                    document.getElementById('zero-dte-vol').textContent = (zeroDte / 1e6).toFixed(1) + 'M';
+                }
+            } catch (e) {
+                console.error('Failed to load market sentiment:', e);
+            }
+        }
+
+        // Whale Trades loader
+        async function loadWhaleTrades() {
+            const container = document.getElementById('whale-trades-container');
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Loading whale trades...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/options/whales?min_premium=500000`);
+                const data = await res.json();
+
+                if (data.ok && data.data && data.data.length > 0) {
+                    const trades = data.data;
+                    let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">';
+                    html += '<thead><tr style="background: var(--bg-hover); border-bottom: 1px solid var(--border);">';
+                    html += '<th style="padding: 8px; text-align: left;">Ticker</th>';
+                    html += '<th style="padding: 8px; text-align: left;">Type</th>';
+                    html += '<th style="padding: 8px; text-align: right;">Strike</th>';
+                    html += '<th style="padding: 8px; text-align: right;">Premium</th>';
+                    html += '<th style="padding: 8px; text-align: center;">Side</th>';
+                    html += '</tr></thead><tbody>';
+
+                    trades.slice(0, 15).forEach(t => {
+                        const typeEmoji = t.type === 'C' || t.type === 'call' ? '📈' : '📉';
+                        const sideColor = t.side?.toLowerCase() === 'buy' ? 'var(--green)' : 'var(--red)';
+                        const premium = (t.premium || 0) / 1000;
+
+                        html += `<tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px; font-weight: 600;">${t.ticker || '--'}</td>
+                            <td style="padding: 8px;">${typeEmoji} ${(t.type || 'C').toUpperCase()}</td>
+                            <td style="padding: 8px; text-align: right;">$${t.strike || '--'}</td>
+                            <td style="padding: 8px; text-align: right; font-weight: 600;">$${premium.toFixed(0)}K</td>
+                            <td style="padding: 8px; text-align: center; color: ${sideColor}; font-weight: 600;">${(t.side || 'BUY').toUpperCase()}</td>
+                        </tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No whale trades found</div>';
+                }
+            } catch (e) {
+                console.error('Failed to load whale trades:', e);
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--red);">Failed to load whale trades</div>';
+            }
+        }
+
+        // Unusual Activity loader
+        async function loadUnusualActivity() {
+            const container = document.getElementById('unusual-activity-container');
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Scanning unusual activity...</div>';
+
+            try {
+                const tickers = 'NVDA,AAPL,TSLA,META,AMZN,GOOGL,MSFT,AMD,SPY,QQQ';
+                const res = await fetch(`${API_BASE}/options/feed?tickers=${tickers}`);
+                const data = await res.json();
+
+                if (data.ok && data.data && data.data.length > 0) {
+                    const items = data.data;
+                    let html = '<div style="padding: 8px 0;">';
+
+                    items.slice(0, 12).forEach(item => {
+                        const typeEmoji = item.type === 'C' ? '📈' : '📉';
+                        const volOi = item.volume_oi_ratio || 0;
+                        const premium = (item.premium || 0) / 1000;
+                        const unusualBadge = volOi > 3 ? '<span style="background: var(--yellow); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-left: 8px;">HOT</span>' : '';
+
+                        html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border);">
+                            <div>
+                                <span style="font-weight: 600;">${item.ticker || '--'}</span>
+                                <span style="color: var(--text-muted); margin-left: 8px;">${typeEmoji} $${item.strike || '--'}</span>
+                                ${unusualBadge}
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 600;">$${premium.toFixed(0)}K</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">Vol/OI: ${volOi.toFixed(1)}x</div>
+                            </div>
+                        </div>`;
+                    });
+
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No unusual activity detected</div>';
+                }
+            } catch (e) {
+                console.error('Failed to load unusual activity:', e);
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--red);">Failed to scan</div>';
+            }
+        }
+
+        // Options Screener
+        async function runOptionsScreener() {
+            const container = document.getElementById('screener-results');
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Running screener...</div>';
+
+            try {
+                const minPremium = (document.getElementById('screener-min-premium').value || 50) * 1000;
+                const minIv = document.getElementById('screener-min-iv').value || 0;
+                const sentiment = document.getElementById('screener-sentiment').value;
+                const tickers = document.getElementById('screener-tickers').value.trim().toUpperCase() || 'NVDA,AAPL,TSLA,META,AMD';
+
+                let url = `${API_BASE}/options/screener?tickers=${tickers}&min_premium=${minPremium}&min_iv_rank=${minIv}`;
+                if (sentiment) url += `&sentiment=${sentiment}`;
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.ok && data.data && data.data.length > 0) {
+                    const results = data.data;
+                    let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 12px;">';
+                    html += '<thead><tr style="background: var(--bg-hover); border-bottom: 1px solid var(--border);">';
+                    html += '<th style="padding: 10px; text-align: left;">Ticker</th>';
+                    html += '<th style="padding: 10px; text-align: left;">Type</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Strike</th>';
+                    html += '<th style="padding: 10px; text-align: right;">Premium</th>';
+                    html += '<th style="padding: 10px; text-align: right;">IV Rank</th>';
+                    html += '<th style="padding: 10px; text-align: center;">Sentiment</th>';
+                    html += '</tr></thead><tbody>';
+
+                    results.slice(0, 20).forEach(r => {
+                        const typeEmoji = r.type === 'C' ? '📈' : '📉';
+                        const sentColor = r.sentiment === 'bullish' ? 'var(--green)' : r.sentiment === 'bearish' ? 'var(--red)' : 'var(--text-muted)';
+                        const premium = (r.premium || 0) / 1000;
+                        const ivRank = r.iv_rank || 0;
+
+                        html += `<tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 10px; font-weight: 600;">${r.ticker || '--'}</td>
+                            <td style="padding: 10px;">${typeEmoji} ${(r.type || 'C').toUpperCase()}</td>
+                            <td style="padding: 10px; text-align: right;">$${r.strike || '--'}</td>
+                            <td style="padding: 10px; text-align: right; font-weight: 600;">$${premium.toFixed(0)}K</td>
+                            <td style="padding: 10px; text-align: right;">${ivRank.toFixed(0)}%</td>
+                            <td style="padding: 10px; text-align: center; color: ${sentColor}; font-weight: 600; text-transform: uppercase;">${r.sentiment || 'neutral'}</td>
+                        </tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No results match your filters</div>';
+                }
+            } catch (e) {
+                console.error('Failed to run screener:', e);
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--red);">Screener failed: ' + e.message + '</div>';
+            }
+        }
+
+        // Smart Money Flow analyzer
+        async function loadSmartMoneyFlow() {
+            const ticker = document.getElementById('flow-ticker-input').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+
+            const container = document.getElementById('smart-money-flow-container');
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Analyzing flow...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/options/smart-money/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.data) {
+                    const flow = data.data;
+                    const netFlow = flow.net_flow || 0;
+                    const callFlow = flow.call_flow || 0;
+                    const putFlow = flow.put_flow || 0;
+                    const instRatio = flow.institutional_ratio || 0;
+
+                    const flowColor = netFlow > 0 ? 'var(--green)' : netFlow < 0 ? 'var(--red)' : 'var(--text-muted)';
+                    const flowLabel = netFlow > 0 ? 'NET INFLOW' : netFlow < 0 ? 'NET OUTFLOW' : 'NEUTRAL';
+
+                    let html = `
+                        <div class="grid grid-4" style="margin-bottom: 16px;">
+                            <div style="text-align: center; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">NET FLOW</div>
+                                <div style="font-size: 1.25rem; font-weight: 700; color: ${flowColor};">$${Math.abs(netFlow / 1e6).toFixed(1)}M</div>
+                                <div style="font-size: 0.65rem; color: ${flowColor};">${flowLabel}</div>
+                            </div>
+                            <div style="text-align: center; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">CALL FLOW</div>
+                                <div style="font-size: 1.25rem; font-weight: 700; color: var(--green);">$${(callFlow / 1e6).toFixed(1)}M</div>
+                            </div>
+                            <div style="text-align: center; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">PUT FLOW</div>
+                                <div style="font-size: 1.25rem; font-weight: 700; color: var(--red);">$${(putFlow / 1e6).toFixed(1)}M</div>
+                            </div>
+                            <div style="text-align: center; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">INSTITUTIONAL</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;">${(instRatio * 100).toFixed(0)}%</div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Notable trades
+                    const notable = flow.notable_trades || [];
+                    if (notable.length > 0) {
+                        html += '<div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">Notable Trades</div>';
+                        html += '<div style="max-height: 200px; overflow-y: auto;">';
+                        notable.slice(0, 8).forEach(t => {
+                            const signalEmoji = t.signal?.includes('sweep') ? '🔥' : t.signal?.includes('block') ? '🟦' : '•';
+                            const premium = (t.premium || 0) / 1000;
+
+                            html += `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border);">
+                                <span>${signalEmoji} $${t.strike || '--'} ${t.type || 'C'}</span>
+                                <span style="font-weight: 600;">$${premium.toFixed(0)}K <span style="color: var(--text-muted); font-weight: normal; font-size: 0.75rem;">${t.signal || ''}</span></span>
+                            </div>`;
+                        });
+                        html += '</div>';
+                    }
+
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No flow data for ' + ticker + '</div>';
+                }
+            } catch (e) {
+                console.error('Failed to load smart money flow:', e);
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--red);">Failed to analyze flow</div>';
             }
         }
 

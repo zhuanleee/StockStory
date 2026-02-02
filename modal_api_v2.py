@@ -1278,6 +1278,194 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
+    # ROUTES - ENHANCED OPTIONS FLOW
+    # =============================================================================
+
+    @web_app.get("/options/feed", tags=["Options"])
+    def options_unusual_feed(
+        limit: int = Query(50),
+        min_premium: float = Query(0),
+        ticker: str = Query(None),
+        sentiment: str = Query(None)
+    ):
+        """
+        Get real-time unusual options activity feed.
+
+        Args:
+            limit: Max entries (default 50)
+            min_premium: Minimum premium filter
+            ticker: Filter by specific ticker
+            sentiment: Filter by sentiment (bullish/bearish)
+        """
+        try:
+            from src.analysis.options_flow import get_unusual_feed_data
+            feed = get_unusual_feed_data(
+                limit=limit,
+                min_premium=min_premium,
+                ticker=ticker,
+                sentiment=sentiment
+            )
+            return {"ok": True, "feed": feed, "count": len(feed)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/options/feed/scan", tags=["Options"])
+    def options_scan_feed(min_premium: float = Query(50000)):
+        """
+        Scan all tracked stocks and update unusual activity feed.
+
+        Args:
+            min_premium: Minimum premium to track (default $50K)
+        """
+        try:
+            from src.analysis.options_flow import scan_unusual_activity
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": False, "error": "No scan data available"}
+
+            # Get top 50 stocks by score for scanning
+            tickers = [s['ticker'] for s in results['results'][:50]]
+            activities = scan_unusual_activity(tickers, min_premium)
+            return {
+                "ok": True,
+                "scanned": len(tickers),
+                "unusual_found": len(activities),
+                "activities": activities[:20]
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/whales", tags=["Options"])
+    def options_whale_trades(min_premium: float = Query(500000)):
+        """Get whale trades (large premium options activity)."""
+        try:
+            from src.analysis.options_flow import get_whale_trades
+            whales = get_whale_trades(min_premium)
+            return {"ok": True, "whales": whales, "count": len(whales)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/smart-money/{ticker_symbol}", tags=["Options"])
+    def options_smart_money(ticker_symbol: str):
+        """
+        Get smart money flow analysis for a ticker.
+
+        Returns institutional flow signals, sweep/block counts, sentiment.
+        """
+        try:
+            from src.analysis.options_flow import get_smart_money_flow
+            flow = get_smart_money_flow(ticker_symbol.upper())
+            return {"ok": True, "data": flow}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/sentiment/{ticker_symbol}", tags=["Options"])
+    def options_sentiment_dashboard(ticker_symbol: str):
+        """
+        Get comprehensive options sentiment dashboard.
+
+        Returns P/C ratio, IV rank, GEX, max pain, skew analysis.
+        """
+        try:
+            from src.analysis.options_flow import get_options_sentiment
+            sentiment = get_options_sentiment(ticker_symbol.upper())
+            return {"ok": True, "data": sentiment}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/screener", tags=["Options"])
+    def options_screener(
+        min_iv_rank: float = Query(None),
+        max_iv_rank: float = Query(None),
+        min_premium: float = Query(None),
+        min_volume: int = Query(None),
+        min_vol_oi_ratio: float = Query(None),
+        sentiment: str = Query(None),
+        limit: int = Query(30)
+    ):
+        """
+        Screen options across universe based on criteria.
+
+        Args:
+            min_iv_rank: Minimum IV Rank (0-100)
+            max_iv_rank: Maximum IV Rank (0-100)
+            min_premium: Minimum unusual premium
+            min_volume: Minimum total options volume
+            min_vol_oi_ratio: Minimum volume/OI ratio
+            sentiment: bullish or bearish
+            limit: Max results (default 30)
+        """
+        try:
+            from src.analysis.options_flow import screen_options
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": False, "error": "No scan data available"}
+
+            # Get tickers from scan
+            tickers = [s['ticker'] for s in results['results'][:100]]
+
+            screened = screen_options(
+                tickers,
+                min_iv_rank=min_iv_rank,
+                max_iv_rank=max_iv_rank,
+                min_premium=min_premium,
+                min_volume=min_volume,
+                min_vol_oi_ratio=min_vol_oi_ratio,
+                sentiment=sentiment,
+                limit=limit
+            )
+            return {"ok": True, "results": screened, "count": len(screened)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/market-sentiment", tags=["Options"])
+    def options_market_sentiment():
+        """
+        Get overall market options sentiment (SPY, QQQ, VIX options).
+        """
+        try:
+            from src.analysis.options_flow import get_options_sentiment
+            market_tickers = ['SPY', 'QQQ', 'IWM']
+            sentiment_data = {}
+
+            for ticker in market_tickers:
+                try:
+                    sentiment_data[ticker] = get_options_sentiment(ticker)
+                except:
+                    continue
+
+            # Calculate aggregate sentiment
+            scores = [s.get('sentiment_score', 50) for s in sentiment_data.values()]
+            avg_score = sum(scores) / len(scores) if scores else 50
+
+            pc_ratios = [s.get('put_call_ratio', 1.0) for s in sentiment_data.values()]
+            avg_pc = sum(pc_ratios) / len(pc_ratios) if pc_ratios else 1.0
+
+            # Get VIX data
+            try:
+                import yfinance as yf
+                vix = yf.Ticker('^VIX')
+                vix_price = vix.info.get('regularMarketPrice', 20)
+            except:
+                vix_price = 20
+
+            return {
+                "ok": True,
+                "data": {
+                    "spy_put_call_ratio": sentiment_data.get('SPY', {}).get('put_call_ratio', {}).get('volume', 1.0) if isinstance(sentiment_data.get('SPY', {}).get('put_call_ratio'), dict) else sentiment_data.get('SPY', {}).get('put_call_ratio', 1.0),
+                    "put_call_ratio": round(avg_pc, 2),
+                    "total_gex": sum(s.get('gex', {}).get('total', 0) if isinstance(s.get('gex'), dict) else 0 for s in sentiment_data.values()),
+                    "vix": vix_price,
+                    "zero_dte_volume": 0,  # Placeholder - would need real-time data
+                    "market_sentiment_score": round(avg_score, 1),
+                    "market_label": "Bullish" if avg_score >= 60 else ("Bearish" if avg_score <= 40 else "Neutral"),
+                    "tickers": sentiment_data
+                }
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =============================================================================
     # ROUTES - CONTRACTS
     # =============================================================================
 
@@ -2415,6 +2603,177 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Error analyzing {ticker}: {str(e)[:100]}")
                 return {"ok": True}
 
+            # ============ OPTIONS FLOW ============
+            elif cmd == '/options':
+                if not args:
+                    send_reply("Usage: `/options TICKER`\nExample: `/options NVDA`")
+                    return {"ok": True}
+                ticker = args.split()[0].upper()
+                try:
+                    from src.analysis.options_flow import get_options_sentiment
+                    sentiment = get_options_sentiment(ticker)
+                    if sentiment:
+                        msg = f"📊 *{ticker} OPTIONS SENTIMENT*\n\n"
+
+                        # Put/Call ratio
+                        pcr = sentiment.get('put_call_ratio', {})
+                        if pcr:
+                            vol_pcr = pcr.get('volume', 0)
+                            oi_pcr = pcr.get('open_interest', 0)
+                            pcr_emoji = "🐻" if vol_pcr > 1.0 else "🐂" if vol_pcr < 0.7 else "⚖️"
+                            msg += f"*Put/Call Ratio:* {pcr_emoji}\n"
+                            msg += f"  Volume: {vol_pcr:.2f}\n"
+                            msg += f"  Open Interest: {oi_pcr:.2f}\n\n"
+
+                        # IV Rank
+                        iv = sentiment.get('iv_rank', {})
+                        if iv:
+                            rank = iv.get('rank', 0)
+                            percentile = iv.get('percentile', 0)
+                            iv_emoji = "🔥" if rank > 70 else "❄️" if rank < 30 else "📊"
+                            msg += f"*IV Rank:* {iv_emoji} {rank:.0f}%\n"
+                            msg += f"*IV Percentile:* {percentile:.0f}%\n\n"
+
+                        # Max Pain
+                        if sentiment.get('max_pain'):
+                            msg += f"*Max Pain:* ${sentiment['max_pain']:.2f}\n\n"
+
+                        # GEX
+                        gex = sentiment.get('gex', {})
+                        if gex:
+                            total_gex = gex.get('total', 0)
+                            gex_emoji = "📈" if total_gex > 0 else "📉"
+                            msg += f"*GEX:* {gex_emoji} ${total_gex/1e6:.1f}M\n"
+                            if gex.get('flip_price'):
+                                msg += f"*GEX Flip:* ${gex['flip_price']:.2f}\n"
+
+                        # Overall sentiment
+                        overall = sentiment.get('overall_sentiment', 'neutral')
+                        sent_emoji = "🟢" if overall == 'bullish' else "🔴" if overall == 'bearish' else "⚪"
+                        msg += f"\n*Overall:* {sent_emoji} {overall.upper()}"
+
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No options data for `{ticker}`")
+                except Exception as e:
+                    send_reply(f"Options error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/whales':
+                try:
+                    from src.analysis.options_flow import get_whale_trades
+                    min_premium = 500000  # $500K minimum
+                    if args:
+                        try:
+                            min_premium = int(args.split()[0]) * 1000  # Accept as thousands
+                        except:
+                            pass
+
+                    whales = get_whale_trades(min_premium=min_premium)
+                    if whales:
+                        msg = f"🐋 *WHALE OPTIONS TRADES (>${min_premium/1000:.0f}K)*\n\n"
+                        for trade in whales[:8]:
+                            ticker = trade.get('ticker', 'N/A')
+                            premium = trade.get('premium', 0)
+                            side = trade.get('side', 'unknown')
+                            strike = trade.get('strike', 0)
+                            expiry = trade.get('expiry', 'N/A')
+                            opt_type = trade.get('type', 'C')
+
+                            side_emoji = "🟢" if side.lower() in ['buy', 'call'] else "🔴"
+                            type_emoji = "📈" if opt_type == 'C' else "📉"
+
+                            msg += f"{side_emoji} *{ticker}* {type_emoji} ${strike:.0f} {expiry}\n"
+                            msg += f"   ${premium/1000:.0f}K premium | {side.upper()}\n\n"
+
+                        if len(whales) > 8:
+                            msg += f"_...and {len(whales) - 8} more whale trades_"
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No whale trades found above ${min_premium/1000:.0f}K")
+                except Exception as e:
+                    send_reply(f"Whales error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/flow':
+                if not args:
+                    send_reply("Usage: `/flow TICKER`\nExample: `/flow AAPL`")
+                    return {"ok": True}
+                ticker = args.split()[0].upper()
+                try:
+                    from src.analysis.options_flow import get_smart_money_flow
+                    flow = get_smart_money_flow(ticker)
+                    if flow:
+                        msg = f"💰 *{ticker} SMART MONEY FLOW*\n\n"
+
+                        # Net flow
+                        net = flow.get('net_flow', 0)
+                        flow_emoji = "🟢" if net > 0 else "🔴" if net < 0 else "⚪"
+                        msg += f"*Net Flow:* {flow_emoji} ${abs(net)/1e6:.2f}M "
+                        msg += "INFLOW\n" if net > 0 else "OUTFLOW\n" if net < 0 else "NEUTRAL\n"
+
+                        # Breakdown
+                        call_flow = flow.get('call_flow', 0)
+                        put_flow = flow.get('put_flow', 0)
+                        msg += f"\n*Call Flow:* ${call_flow/1e6:.2f}M\n"
+                        msg += f"*Put Flow:* ${put_flow/1e6:.2f}M\n"
+
+                        # Notable trades
+                        notable = flow.get('notable_trades', [])
+                        if notable:
+                            msg += "\n*Notable Trades:*\n"
+                            for trade in notable[:5]:
+                                t_type = trade.get('signal', 'trade')
+                                premium = trade.get('premium', 0)
+                                strike = trade.get('strike', 0)
+                                t_emoji = "🔹" if 'sweep' in t_type.lower() else "🔶" if 'block' in t_type.lower() else "•"
+                                msg += f"  {t_emoji} ${strike:.0f} | ${premium/1000:.0f}K ({t_type})\n"
+
+                        # Institutional ratio
+                        inst_ratio = flow.get('institutional_ratio', 0)
+                        if inst_ratio:
+                            msg += f"\n*Institutional:* {inst_ratio:.0%} of flow"
+
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No flow data for `{ticker}`")
+                except Exception as e:
+                    send_reply(f"Flow error: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif cmd == '/unusual':
+                try:
+                    from src.analysis.options_flow import scan_unusual_activity
+                    # Get tickers from args or use defaults
+                    if args:
+                        tickers = [t.strip().upper() for t in args.split(',')]
+                    else:
+                        # Default to top tech + recent movers
+                        tickers = ['NVDA', 'AAPL', 'TSLA', 'META', 'AMZN', 'GOOGL', 'MSFT', 'AMD', 'SPY', 'QQQ']
+
+                    unusual = scan_unusual_activity(tickers, min_premium=25000)
+                    if unusual:
+                        msg = "⚡ *UNUSUAL OPTIONS ACTIVITY*\n\n"
+                        for item in unusual[:10]:
+                            ticker = item.get('ticker', 'N/A')
+                            premium = item.get('premium', 0)
+                            vol_oi = item.get('volume_oi_ratio', 0)
+                            opt_type = item.get('type', 'C')
+                            strike = item.get('strike', 0)
+
+                            type_emoji = "📈" if opt_type == 'C' else "📉"
+                            msg += f"{type_emoji} *{ticker}* ${strike:.0f}\n"
+                            msg += f"   ${premium/1000:.0f}K | Vol/OI: {vol_oi:.1f}x\n\n"
+
+                        if len(unusual) > 10:
+                            msg += f"_...and {len(unusual) - 10} more unusual trades_"
+                        send_reply(msg)
+                    else:
+                        send_reply("No unusual options activity detected")
+                except Exception as e:
+                    send_reply(f"Unusual activity error: {str(e)[:100]}")
+                return {"ok": True}
+
             # ============ COMMANDS LIST ============
             elif cmd == '/commands':
                 msg = "📋 *ALL COMMANDS*\n\n"
@@ -2435,6 +2794,11 @@ Get an API key at `/api-keys/request`
                 msg += "  `/news NVDA` - Recent news\n"
                 msg += "  `/insider NVDA` - Insider trades\n"
                 msg += "  `/sec NVDA` - SEC filings\n\n"
+                msg += "*Options Flow:*\n"
+                msg += "  `/options NVDA` - Options sentiment\n"
+                msg += "  `/flow NVDA` - Smart money flow\n"
+                msg += "  `/whales` - Large options trades\n"
+                msg += "  `/unusual` - Unusual activity scan\n\n"
                 msg += "*Other:*\n"
                 msg += "  `/earnings` - Upcoming earnings\n"
                 msg += "  `/watchlist` - Your watchlist\n"
@@ -2480,6 +2844,7 @@ Get an API key at `/api-keys/request`
             "available_commands": [
                 "/help", "/top", "/movers", "/themes", "/earnings",
                 "/news TICKER", "/insider TICKER", "/sec TICKER", "/chart TICKER",
+                "/options TICKER", "/flow TICKER", "/whales", "/unusual",
                 "/watchlist", "/watch TICKER", "/unwatch TICKER", "/status"
             ]
         }
