@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:21 - `ca17519`
+
+**fix: Add comma formatting for large dollar amounts**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:15 - `5550ead`
 
 **fix: Use month abbreviation for expiration dates (Feb 7 instead of 2/7)**

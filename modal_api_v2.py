@@ -455,14 +455,37 @@ Get an API key at `/api-keys/request`
             raw_data = {}
             try:
                 import yfinance as yf
-                # Get SPY 20-day return
+                # Get SPY price and daily change
                 spy = yf.Ticker("SPY")
                 spy_hist = spy.history(period="1mo")
-                if len(spy_hist) >= 20:
-                    spy_20d_return = ((spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[-20]) - 1) * 100
-                    raw_data['spy_20d_return'] = round(spy_20d_return, 2)
+                if len(spy_hist) >= 2:
+                    spy_price = spy_hist['Close'].iloc[-1]
+                    spy_prev = spy_hist['Close'].iloc[-2]
+                    spy_change = ((spy_price / spy_prev) - 1) * 100
+                    raw_data['spy_price'] = round(spy_price, 2)
+                    raw_data['spy_change'] = round(spy_change, 2)
+                    if len(spy_hist) >= 20:
+                        spy_20d_return = ((spy_hist['Close'].iloc[-1] / spy_hist['Close'].iloc[-20]) - 1) * 100
+                        raw_data['spy_20d_return'] = round(spy_20d_return, 2)
+                    else:
+                        raw_data['spy_20d_return'] = 0
                 else:
+                    raw_data['spy_price'] = 0
+                    raw_data['spy_change'] = 0
                     raw_data['spy_20d_return'] = 0
+
+                # Get QQQ price and daily change
+                qqq = yf.Ticker("QQQ")
+                qqq_hist = qqq.history(period="5d")
+                if len(qqq_hist) >= 2:
+                    qqq_price = qqq_hist['Close'].iloc[-1]
+                    qqq_prev = qqq_hist['Close'].iloc[-2]
+                    qqq_change = ((qqq_price / qqq_prev) - 1) * 100
+                    raw_data['qqq_price'] = round(qqq_price, 2)
+                    raw_data['qqq_change'] = round(qqq_change, 2)
+                else:
+                    raw_data['qqq_price'] = 0
+                    raw_data['qqq_change'] = 0
 
                 # Get VIX
                 vix = yf.Ticker("^VIX")
@@ -476,7 +499,7 @@ Get an API key at `/api-keys/request`
                 raw_data['vix_term_ratio'] = 0.95  # Default neutral
 
             except Exception as e:
-                raw_data = {'spy_20d_return': 0, 'vix': 16.0, 'vix_term_ratio': 0.95}
+                raw_data = {'spy_price': 0, 'spy_change': 0, 'spy_20d_return': 0, 'qqq_price': 0, 'qqq_change': 0, 'vix': 16.0, 'vix_term_ratio': 0.95}
 
             return {"ok": True, **health_data, "raw_data": raw_data}
         except Exception as e:

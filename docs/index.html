@@ -1217,11 +1217,11 @@
             <div class="market-pulse" id="market-pulse">
                 <div class="pulse-item">
                     <span class="pulse-label">SPY</span>
-                    <span class="pulse-value" id="spy-change">--</span>
+                    <span class="pulse-value"><span id="spy-price">--</span> <span id="spy-change" style="font-size: 0.7rem;">--</span></span>
                 </div>
                 <div class="pulse-item">
                     <span class="pulse-label">QQQ</span>
-                    <span class="pulse-value" id="qqq-change">--</span>
+                    <span class="pulse-value"><span id="qqq-price">--</span> <span id="qqq-change" style="font-size: 0.7rem;">--</span></span>
                 </div>
                 <div class="pulse-item">
                     <span class="pulse-label">VIX</span>
@@ -2931,13 +2931,20 @@
                     const breadth = data.breadth || {};
                     const raw = data.raw_data || {};
 
-                    // Market pulse - calculate from raw data
-                    const spy = raw.spy_20d_return || 0;
-                    const qqq = spy;  // Use SPY as proxy
-                    document.getElementById('spy-change').textContent = (spy >= 0 ? '+' : '') + spy.toFixed(2) + '%';
-                    document.getElementById('spy-change').className = 'pulse-value ' + (spy >= 0 ? 'up' : 'down');
-                    document.getElementById('qqq-change').textContent = (qqq >= 0 ? '+' : '') + qqq.toFixed(2) + '%';
-                    document.getElementById('qqq-change').className = 'pulse-value ' + (qqq >= 0 ? 'up' : 'down');
+                    // Market pulse - SPY and QQQ prices with daily change
+                    const spyPrice = raw.spy_price || 0;
+                    const spyChange = raw.spy_change || 0;
+                    const qqqPrice = raw.qqq_price || 0;
+                    const qqqChange = raw.qqq_change || 0;
+
+                    document.getElementById('spy-price').textContent = '$' + spyPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('spy-change').textContent = (spyChange >= 0 ? '+' : '') + spyChange.toFixed(2) + '%';
+                    document.getElementById('spy-change').style.color = spyChange >= 0 ? 'var(--green)' : 'var(--red)';
+
+                    document.getElementById('qqq-price').textContent = '$' + qqqPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    document.getElementById('qqq-change').textContent = (qqqChange >= 0 ? '+' : '') + qqqChange.toFixed(2) + '%';
+                    document.getElementById('qqq-change').style.color = qqqChange >= 0 ? 'var(--green)' : 'var(--red)';
+
                     document.getElementById('vix-value').textContent = (raw.vix || 0).toFixed(1);
 
                     // Fear & Greed
