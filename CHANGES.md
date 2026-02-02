@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:31 - `5b3d8ab`
+
+**fix: Use max_containers instead of deprecated concurrency_limit**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:30 - `dabc579`
 
 **fix: Save scan results CSV to Modal volume for API access**

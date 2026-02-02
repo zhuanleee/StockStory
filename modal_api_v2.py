@@ -1632,21 +1632,23 @@ Get an API key at `/api-keys/request`
             # ============ THEMES ============
             elif cmd == '/themes':
                 try:
-                    from src.themes.fast_stories import get_hottest_themes_fast
-                    themes = get_hottest_themes_fast(limit=8)
+                    from src.themes.fast_stories import run_fast_story_detection
+                    result = run_fast_story_detection(use_cache=True)
+                    themes = result.get('themes', []) if result else []
                     if themes:
                         msg = "🔥 *HOT THEMES*\n\n"
                         for i, t in enumerate(themes[:8], 1):
                             name = t.get('theme', t.get('name', 'Unknown'))
-                            heat = t.get('heat_score', t.get('score', 0))
-                            tickers = t.get('top_tickers', [])[:3]
-                            emoji = "🔥" if heat >= 80 else "📈" if heat >= 50 else "📊"
-                            msg += f"{emoji} *{name}*: {heat:.0f}\n"
-                            if tickers:
-                                msg += f"   └ {', '.join(tickers)}\n"
+                            count = t.get('count', t.get('mentions', 0))
+                            momentum = t.get('momentum', 'stable')
+                            emoji = "🔥" if momentum == 'rising' else "📈" if count >= 5 else "📊"
+                            msg += f"{emoji} *{name}*: {count} mentions"
+                            if momentum == 'rising':
+                                msg += " ↑"
+                            msg += "\n"
                         send_reply(msg)
                     else:
-                        send_reply("No theme data available.")
+                        send_reply("No theme data available. Try again later.")
                 except Exception as e:
                     send_reply(f"Theme error: {str(e)[:100]}")
                 return {"ok": True}
