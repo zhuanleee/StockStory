@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 01:52 - `5475bce`
+
+**fix: Update API_BASE to use stockstory-api endpoint**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 01:46 - `c161f59`
 
 **feat: Add theme management to dashboard**

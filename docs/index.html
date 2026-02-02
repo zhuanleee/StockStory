@@ -2667,6 +2667,19 @@
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
             document.getElementById(tabId).classList.add('active');
+
+            // Auto-load data for specific tabs
+            if (tabId === 'themeradar') {
+                fetchThemeRadar();
+                loadThemeConfig();
+            } else if (tabId === 'sec') {
+                fetchMARadar();
+                fetchDeals();
+            } else if (tabId === 'trades') {
+                fetchTrades();
+            } else if (tabId === 'options') {
+                fetchUnusualOptions();
+            }
         }
 
         // Modal
