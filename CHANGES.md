@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:41 - `03f8484`
+
+**feat: Use Polygon for SPY/QQQ prices in Grok analysis**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:40 - `c4d3337`
 
 **feat: Feed Polygon live options data to Grok for put analysis**

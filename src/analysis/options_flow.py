@@ -1111,20 +1111,29 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
     try:
         client = Client(api_key=api_key)
 
-        # Get market sentiment data (fallback for VIX)
+        # Get market sentiment data (fallback)
         sentiment = get_crisis_market_sentiment()
 
-        # Get real Polygon data for SPY and QQQ (prices + options)
+        # Get real Polygon data for SPY, QQQ, and VIX
         polygon_spy_data = {}
         polygon_qqq_data = {}
         polygon_spy_price = spy_price
         polygon_spy_change = sentiment.get('spy_change', 0)
         polygon_qqq_price = qqq_price
         polygon_qqq_change = sentiment.get('qqq_change', 0)
+        polygon_vix = sentiment.get('vix', 16)
+        polygon_vix_change = sentiment.get('vix_change', 0)
 
         try:
             if HAS_POLYGON:
-                from src.data.polygon_provider import get_snapshot_sync
+                from src.data.polygon_provider import get_snapshot_sync, get_index_snapshot_sync
+
+                # Get VIX from Polygon Indices API
+                vix_snapshot = get_index_snapshot_sync('I:VIX')
+                if vix_snapshot:
+                    polygon_vix = vix_snapshot.get('value', polygon_vix)
+                    polygon_vix_change = vix_snapshot.get('change_percent', 0)
+                    logger.info(f"VIX from Polygon: {polygon_vix} ({polygon_vix_change:+.2f}%)")
 
                 # Get SPY price from Polygon
                 spy_snapshot = get_snapshot_sync('SPY')
@@ -1183,12 +1192,24 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
         spy_puts = recs.get('spy_puts', [])
         qqq_puts = recs.get('qqq_puts', [])
 
+        # Determine fear level based on Polygon VIX
+        if polygon_vix >= 30:
+            fear_level = 'EXTREME FEAR'
+        elif polygon_vix >= 25:
+            fear_level = 'HIGH FEAR'
+        elif polygon_vix >= 20:
+            fear_level = 'ELEVATED'
+        elif polygon_vix >= 15:
+            fear_level = 'NORMAL'
+        else:
+            fear_level = 'COMPLACENT'
+
         prompt = f"""You are an expert options strategist analyzing a potential crisis situation.
 
-CURRENT MARKET CONDITIONS:
+CURRENT MARKET CONDITIONS (ALL DATA FROM POLYGON.IO):
 - Crisis Severity: {severity}/10
-- VIX: {sentiment.get('vix', 'N/A')} (Change: {sentiment.get('vix_change', 0):+.1f}%)
-- Market Fear Level: {sentiment.get('market_fear_level', 'unknown')}
+- VIX: {polygon_vix:.2f} (Change: {polygon_vix_change:+.2f}%)
+- Market Fear Level: {fear_level}
 - Portfolio Value: ${recs.get('portfolio_value', 100000):,}
 
 POLYGON LIVE DATA - SPY:

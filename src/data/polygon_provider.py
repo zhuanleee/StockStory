@@ -212,6 +212,41 @@ class PolygonProvider:
             }
         return None
 
+    async def get_index_snapshot(self, index_ticker: str = "I:VIX") -> Optional[Dict]:
+        """
+        Get current snapshot for an index (VIX, SPX, etc.) from Polygon Indices API.
+
+        Args:
+            index_ticker: Index ticker with I: prefix (e.g., 'I:VIX', 'I:SPX', 'I:NDX')
+
+        Returns:
+            Dict with index value and change data
+        """
+        # Ensure proper format
+        if not index_ticker.startswith('I:'):
+            index_ticker = f"I:{index_ticker}"
+
+        endpoint = f"/v3/snapshot/indices"
+        params = {'ticker.any_of': index_ticker}
+
+        data = await self._request(endpoint, params)
+
+        if data and 'results' in data and data['results']:
+            result = data['results'][0]
+            session = result.get('session', {})
+            return {
+                'ticker': result.get('ticker', index_ticker),
+                'name': result.get('name'),
+                'value': result.get('value') or session.get('close'),
+                'change': session.get('change'),
+                'change_percent': session.get('change_percent'),
+                'open': session.get('open'),
+                'high': session.get('high'),
+                'low': session.get('low'),
+                'previous_close': session.get('previous_close'),
+            }
+        return None
+
     async def get_ticker_details(self, ticker: str) -> Optional[Dict]:
         """Get ticker details (sector, industry, market cap, etc.)."""
         endpoint = f"/v3/reference/tickers/{ticker.upper()}"
@@ -1656,6 +1691,26 @@ def get_snapshot_sync(ticker: str) -> Optional[Dict]:
         provider = PolygonProvider()
         try:
             return await provider.get_snapshot(ticker)
+        finally:
+            await provider.close()
+
+    return _run_async(fetch())
+
+
+def get_index_snapshot_sync(index_ticker: str = "I:VIX") -> Optional[Dict]:
+    """
+    Synchronous wrapper to get index snapshot (VIX, SPX, etc.).
+
+    Args:
+        index_ticker: Index ticker (e.g., 'VIX', 'I:VIX', 'SPX')
+
+    Returns:
+        Dict with value, change, change_percent
+    """
+    async def fetch():
+        provider = PolygonProvider()
+        try:
+            return await provider.get_index_snapshot(index_ticker)
         finally:
             await provider.close()
 
