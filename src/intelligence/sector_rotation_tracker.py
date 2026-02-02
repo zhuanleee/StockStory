@@ -78,8 +78,13 @@ class SectorRotationTracker:
 
         for sector, tickers in self.SECTOR_REPS.items():
             try:
-                # Get sentiment for sector representatives
-                sentiment_data = self.x_intel.search_stock_sentiment(tickers)
+                # Get sentiment for sector representatives with quality filters
+                sentiment_data = self.x_intel.search_stock_sentiment(
+                    tickers,
+                    verified_only=True,   # Verified accounts for sector analysis
+                    min_followers=1000,   # Quality threshold
+                    min_engagement=10     # Meaningful signals
+                )
 
                 if not sentiment_data:
                     continue

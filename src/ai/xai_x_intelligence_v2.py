@@ -8,7 +8,7 @@ This version replaces the prompt-based approach with proper tool usage.
 import os
 import logging
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +38,37 @@ class XAIXIntelligenceV2:
         self.api_key = os.environ.get('XAI_API_KEY', '')
         self.available = XAI_SDK_AVAILABLE and bool(self.api_key)
 
+        # Caching layer (5-minute TTL)
+        self.cache = {}
+        self.cache_ttl = timedelta(minutes=5)
+
         if not self.available:
             logger.warning("X Intelligence V2 not available - missing SDK or API key")
             return
 
         try:
             self.client = Client(api_key=self.api_key)
-            logger.info("✓ X Intelligence V2 initialized with real X search")
+            logger.info("✓ X Intelligence V2 initialized with real X search (caching enabled)")
         except Exception as e:
             logger.error(f"Failed to initialize X Intelligence V2: {e}")
             self.available = False
+
+    def _get_cache(self, key: str) -> Optional[Dict]:
+        """Get cached data if available and not expired."""
+        if key in self.cache:
+            data, timestamp = self.cache[key]
+            if datetime.now() - timestamp < self.cache_ttl:
+                logger.debug(f"Cache HIT for {key}")
+                return data
+            else:
+                logger.debug(f"Cache EXPIRED for {key}")
+                del self.cache[key]
+        return None
+
+    def _set_cache(self, key: str, data: Dict):
+        """Store data in cache with timestamp."""
+        self.cache[key] = (data, datetime.now())
+        logger.debug(f"Cache SET for {key}")
 
     def search_x_for_crises(self) -> List[Dict]:
         """
@@ -234,13 +255,18 @@ Return structured analysis. Be accurate - this drives automated trading.
 
         return topics
 
-    def search_stock_sentiment(self, tickers: List[str], deep_analysis: bool = False) -> Dict[str, Dict]:
+    def search_stock_sentiment(self, tickers: List[str], deep_analysis: bool = False,
+                              verified_only: bool = True, min_followers: int = 1000,
+                              min_engagement: int = 10) -> Dict[str, Dict]:
         """
         Search X/Twitter for real-time stock sentiment.
 
         Args:
             tickers: List of ticker symbols to analyze (max 5)
             deep_analysis: If True, use reasoning model for deeper analysis
+            verified_only: If True, prioritize verified accounts (default: True)
+            min_followers: Minimum follower count for quality (default: 1000)
+            min_engagement: Minimum engagement (likes+retweets) threshold (default: 10)
 
         Returns:
             Dict mapping ticker -> sentiment analysis
@@ -250,6 +276,26 @@ Return structured analysis. Be accurate - this drives automated trading.
 
         # Limit to avoid excessive costs
         tickers = tickers[:5]
+        ticker_str = ", ".join([f"${t}" for t in tickers])
+
+        # Check cache for each ticker
+        cached_results = {}
+        uncached_tickers = []
+        for ticker in tickers:
+            cache_key = f"sentiment_{ticker}_{verified_only}_{min_followers}_{min_engagement}"
+            cached = self._get_cache(cache_key)
+            if cached:
+                cached_results[ticker] = cached
+            else:
+                uncached_tickers.append(ticker)
+
+        # If all tickers are cached, return immediately
+        if not uncached_tickers:
+            logger.info(f"All sentiment data served from cache for {ticker_str}")
+            return cached_results
+
+        # Only query uncached tickers
+        tickers = uncached_tickers
         ticker_str = ", ".join([f"${t}" for t in tickers])
 
         try:
@@ -264,8 +310,22 @@ Return structured analysis. Be accurate - this drives automated trading.
                 tools=[x_search()],  # Search all of X
             )
 
+            # Build quality filter instructions
+            quality_filters = []
+            if verified_only:
+                quality_filters.append(f"- ONLY analyze posts from VERIFIED accounts (blue checkmark)")
+            if min_followers > 0:
+                quality_filters.append(f"- Prioritize accounts with {min_followers}+ followers")
+            if min_engagement > 0:
+                quality_filters.append(f"- Focus on posts with {min_engagement}+ total engagement (likes + retweets)")
+
+            quality_section = "\n".join(quality_filters) if quality_filters else "- Analyze all posts"
+
             prompt = f"""
 Search X (Twitter) RIGHT NOW for recent posts (last 1-2 hours) about: {ticker_str}
+
+QUALITY FILTERS:
+{quality_section}
 
 For each ticker, analyze the ACTUAL posts you find:
 
@@ -325,11 +385,91 @@ Return JSON format:
             # Parse response
             sentiment_data = self._parse_stock_sentiment(response.content, tickers)
 
+            # Cache individual ticker results
+            for ticker, data in sentiment_data.items():
+                cache_key = f"sentiment_{ticker}_{verified_only}_{min_followers}_{min_engagement}"
+                self._set_cache(cache_key, data)
+
+            # Merge with cached results
+            sentiment_data.update(cached_results)
+
             return sentiment_data
 
         except Exception as e:
             logger.error(f"Error searching X for stock sentiment: {e}")
+            return cached_results  # Return cached data if available
+
+    def search_stock_sentiment_batch(self, tickers: List[str], batch_size: int = 50,
+                                     min_engagement: int = 100) -> Dict[str, Dict]:
+        """
+        Batch search for stock sentiment (optimized for large universe scans).
+
+        Args:
+            tickers: List of ticker symbols (can be 100+)
+            batch_size: Number of tickers per query (default: 50)
+            min_engagement: High engagement threshold for viral signals (default: 100)
+
+        Returns:
+            Dict mapping ticker -> sentiment data
+        """
+        if not self.available:
             return {}
+
+        logger.info(f"Batch sentiment search for {len(tickers)} tickers (batches of {batch_size})")
+
+        all_results = {}
+
+        # Split into batches
+        for i in range(0, len(tickers), batch_size):
+            batch = tickers[i:i+batch_size]
+            batch_str = " OR ".join([f"${t}" for t in batch])
+
+            try:
+                # Use non-reasoning for speed (batch scan)
+                from src.ai.model_selector import get_sentiment_model
+                model = get_sentiment_model(quick=True)
+
+                chat = self.client.chat.create(
+                    model=model,
+                    tools=[x_search()],
+                )
+
+                prompt = f"""
+Search X (Twitter) for posts about these tickers in the last 2 hours: {batch_str}
+
+FOCUS ON VIRAL SIGNALS:
+- Posts with {min_engagement}+ engagement (likes + retweets)
+- Unusual mention volume spikes
+- Meme keywords: "short squeeze", "moon", "diamond hands", "apes", "wsb"
+
+For each ticker that shows unusual activity, return:
+{{
+  "TICKER": {{
+    "mentions_per_hour": number,
+    "sentiment": "bullish/bearish/neutral",
+    "sentiment_score": -10 to +10,
+    "has_viral_keywords": true/false,
+    "top_post_engagement": number
+  }}
+}}
+
+ONLY include tickers with unusual activity. Skip tickers with normal/low activity.
+"""
+
+                chat.append(user(prompt))
+                response = chat.sample()
+
+                # Parse batch results
+                batch_results = self._parse_stock_sentiment(response.content, batch)
+                all_results.update(batch_results)
+
+                logger.info(f"Batch {i//batch_size + 1}: Found {len(batch_results)} active tickers")
+
+            except Exception as e:
+                logger.error(f"Error in batch {i//batch_size + 1}: {e}")
+                continue
+
+        return all_results
 
     def _parse_stock_sentiment(self, content: str, tickers: List[str]) -> Dict[str, Dict]:
         """Parse stock sentiment from X search results."""

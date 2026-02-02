@@ -72,42 +72,43 @@ class MemeStockDetector:
 
         logger.info(f"🔍 Scanning {len(tickers)} tickers for meme stock signals...")
 
-        # Batch scan in groups (avoid rate limits)
-        batch_size = 20
-        candidates = []
+        try:
+            # Use optimized batch search (50 tickers per query)
+            # No verification filter - need to catch early viral signals from all accounts
+            sentiment_data = self.x_intel.search_stock_sentiment_batch(
+                tickers=tickers,
+                batch_size=50,
+                min_engagement=100  # High engagement = viral potential
+            )
 
-        for i in range(0, len(tickers), batch_size):
-            batch = tickers[i:i+batch_size]
+            candidates = []
 
-            try:
-                sentiment_data = self.x_intel.search_stock_sentiment(batch)
+            for ticker, data in sentiment_data.items():
+                score = self._calculate_meme_score(ticker, data)
 
-                for ticker, data in sentiment_data.items():
-                    score = self._calculate_meme_score(ticker, data)
+                if score >= 6.0:  # Threshold for potential meme
+                    candidates.append({
+                        'ticker': ticker,
+                        'meme_score': score,
+                        'mentions_per_hour': data.get('mentions_per_hour', 0),
+                        'sentiment': data.get('sentiment', 'unknown'),
+                        'sentiment_score': data.get('sentiment_score', 0),
+                        'unusual_activity': data.get('unusual_activity', False),
+                        'key_topics': data.get('key_topics', []),
+                        'has_meme_keywords': self._has_meme_keywords(data),
+                        'timestamp': datetime.now().isoformat()
+                    })
 
-                    if score >= 6.0:  # Threshold for potential meme
-                        candidates.append({
-                            'ticker': ticker,
-                            'meme_score': score,
-                            'mentions_per_hour': data.get('mentions_per_hour', 0),
-                            'sentiment': data.get('sentiment', 'unknown'),
-                            'sentiment_score': data.get('sentiment_score', 0),
-                            'unusual_activity': data.get('unusual_activity', False),
-                            'key_topics': data.get('key_topics', []),
-                            'has_meme_keywords': self._has_meme_keywords(data),
-                            'timestamp': datetime.now().isoformat()
-                        })
+            # Sort by meme score
+            candidates.sort(key=lambda x: x['meme_score'], reverse=True)
 
-            except Exception as e:
-                logger.error(f"Error scanning batch {i}-{i+batch_size}: {e}")
-                continue
+            logger.info(f"Found {len(candidates)} potential meme stocks")
 
-        # Sort by meme score
-        candidates.sort(key=lambda x: x['meme_score'], reverse=True)
+            return candidates[:top_n]
 
-        logger.info(f"Found {len(candidates)} potential meme stocks")
-
-        return candidates[:top_n]
+        except Exception as e:
+            logger.error(f"Error scanning universe: {e}")
+            return []
 
     def _calculate_meme_score(self, ticker: str, sentiment_data: Dict) -> float:
         """
@@ -174,7 +175,13 @@ class MemeStockDetector:
             return None
 
         try:
-            sentiment_data = self.x_intel.search_stock_sentiment([ticker])
+            # For specific analysis, use open search to catch all signals
+            sentiment_data = self.x_intel.search_stock_sentiment(
+                [ticker],
+                verified_only=False,  # Catch all signals for meme stocks
+                min_followers=0,
+                min_engagement=0
+            )
 
             if ticker not in sentiment_data:
                 return None

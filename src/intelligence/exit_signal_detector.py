@@ -80,8 +80,14 @@ class ExitSignalDetector:
         """Check a single holding for exit signals."""
 
         try:
-            # Get current X sentiment
-            sentiment_data = self.x_intel.search_stock_sentiment([ticker])
+            # Get current X sentiment with quality filters (accuracy critical for exit decisions)
+            sentiment_data = self.x_intel.search_stock_sentiment(
+                [ticker],
+                deep_analysis=False,  # Use fast model (daily checks)
+                verified_only=True,   # Verified accounts only for accuracy
+                min_followers=5000,   # Established voices
+                min_engagement=20     # Quality signals
+            )
 
             if ticker not in sentiment_data:
                 logger.debug(f"No sentiment data for {ticker}")
