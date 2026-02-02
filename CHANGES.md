@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:54 - `64dcca3`
+
+**feat: Add GEX and Max Pain to /hedge command**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+tests/test_hedge_command.py
+tests/test_hedge_webhook.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:48 - `6aab1d5`
 
 **fix: Revert VIX to yfinance (Polygon VIX is EOD only)**

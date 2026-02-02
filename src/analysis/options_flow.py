@@ -913,39 +913,45 @@ def get_crisis_market_sentiment() -> Dict:
                 result['qqq_change'] = round(((result['qqq_price'] / qqq_prev) - 1) * 100, 2)
 
         # Get options sentiment for SPY
-        spy_sentiment = get_options_sentiment('SPY')
-        if spy_sentiment:
-            result['spy_put_call_ratio'] = spy_sentiment.get('put_call_ratio')
-            result['spy_gex'] = spy_sentiment.get('gex', {}).get('total', 0)
+        try:
+            spy_sentiment = get_options_sentiment('SPY')
+            if spy_sentiment:
+                result['spy_put_call_ratio'] = spy_sentiment.get('put_call_ratio')
+                result['spy_gex'] = spy_sentiment.get('gex', {}).get('total', 0)
+        except Exception as e:
+            logger.warning(f"Could not get SPY options sentiment: {e}")
 
         # Get options sentiment for QQQ
-        qqq_sentiment = get_options_sentiment('QQQ')
-        if qqq_sentiment:
-            result['qqq_put_call_ratio'] = qqq_sentiment.get('put_call_ratio')
-
-        # Determine market fear level
-        vix_val = result['vix'] or 16
-        if vix_val >= 30:
-            result['market_fear_level'] = 'EXTREME FEAR'
-        elif vix_val >= 25:
-            result['market_fear_level'] = 'HIGH FEAR'
-        elif vix_val >= 20:
-            result['market_fear_level'] = 'ELEVATED'
-        elif vix_val >= 15:
-            result['market_fear_level'] = 'NORMAL'
-        else:
-            result['market_fear_level'] = 'COMPLACENT'
+        try:
+            qqq_sentiment = get_options_sentiment('QQQ')
+            if qqq_sentiment:
+                result['qqq_put_call_ratio'] = qqq_sentiment.get('put_call_ratio')
+        except Exception as e:
+            logger.warning(f"Could not get QQQ options sentiment: {e}")
 
         # Get unusual put activity (potential smart money hedging)
         try:
             unusual = scan_unusual_activity(['SPY', 'QQQ', 'IWM'], min_premium=100000)
             puts_only = [u for u in unusual if u.get('type') in ['P', 'put']]
             result['unusual_put_activity'] = puts_only[:5]
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Could not get unusual activity: {e}")
 
     except Exception as e:
         logger.error(f"Error getting crisis market sentiment: {e}")
+
+    # Determine market fear level (always calculate, even if VIX fetch failed)
+    vix_val = result['vix'] or 16
+    if vix_val >= 30:
+        result['market_fear_level'] = 'EXTREME FEAR'
+    elif vix_val >= 25:
+        result['market_fear_level'] = 'HIGH FEAR'
+    elif vix_val >= 20:
+        result['market_fear_level'] = 'ELEVATED'
+    elif vix_val >= 15:
+        result['market_fear_level'] = 'NORMAL'
+    else:
+        result['market_fear_level'] = 'COMPLACENT'
 
     return result
 
