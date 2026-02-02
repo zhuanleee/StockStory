@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:32 - `892ad66`
+
+**feat: Add options sentiment and put protection to crisis alerts**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+src/analysis/options_flow.py
+src/notifications/notification_manager.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:23 - `af999a5`
 
 **feat: Add SPY and QQQ prices to health monitor**

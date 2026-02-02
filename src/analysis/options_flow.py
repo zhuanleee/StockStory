@@ -1078,7 +1078,117 @@ def get_put_protection_recommendations(crisis_severity: int = 7, portfolio_value
 
 
 def _generate_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_price: float) -> str:
-    """Generate AI analysis text for put protection."""
+    """Generate AI analysis text for put protection using Grok AI."""
+
+    # Try to use Grok AI for analysis
+    try:
+        ai_analysis = _get_grok_put_analysis(severity, recs, spy_price, qqq_price)
+        if ai_analysis:
+            return ai_analysis
+    except Exception as e:
+        logger.warning(f"Grok AI analysis failed, using fallback: {e}")
+
+    # Fallback to rule-based analysis
+    return _generate_fallback_put_analysis(severity, recs, spy_price, qqq_price)
+
+
+def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_price: float) -> Optional[str]:
+    """Use Grok 4.1 Fast Reasoning to analyze and recommend put protection."""
+    import os
+
+    try:
+        from xai_sdk import Client
+        from xai_sdk.chat import user
+    except ImportError:
+        logger.warning("xai_sdk not available for put analysis")
+        return None
+
+    api_key = os.environ.get('XAI_API_KEY', '')
+    if not api_key:
+        logger.warning("XAI_API_KEY not set")
+        return None
+
+    try:
+        client = Client(api_key=api_key)
+
+        # Get market sentiment data
+        sentiment = get_crisis_market_sentiment()
+
+        # Build context for Grok
+        spy_puts = recs.get('spy_puts', [])
+        qqq_puts = recs.get('qqq_puts', [])
+
+        prompt = f"""You are an expert options strategist analyzing a potential crisis situation.
+
+CURRENT MARKET CONDITIONS:
+- Crisis Severity: {severity}/10
+- VIX: {sentiment.get('vix', 'N/A')} (Change: {sentiment.get('vix_change', 0):+.1f}%)
+- SPY: ${spy_price:.2f} (Change: {sentiment.get('spy_change', 0):+.2f}%)
+- QQQ: ${qqq_price:.2f} (Change: {sentiment.get('qqq_change', 0):+.2f}%)
+- SPY Put/Call Ratio: {sentiment.get('spy_put_call_ratio', 'N/A')}
+- Market Fear Level: {sentiment.get('market_fear_level', 'unknown')}
+- Portfolio Value: ${recs.get('portfolio_value', 100000):,}
+
+PROPOSED PUT PROTECTION:
+"""
+        if spy_puts:
+            p = spy_puts[0]
+            prompt += f"""
+SPY PUT:
+- Strike: ${p['strike']:.0f} ({p['otm_percent']} OTM)
+- Expiration: {p['expiration']}
+- Contracts: {p['contracts']}
+- Est. Premium: ${p['est_premium']:.2f} per contract
+- Est. Total Cost: ${p['est_total_cost']:,.0f}
+"""
+
+        if qqq_puts:
+            p = qqq_puts[0]
+            prompt += f"""
+QQQ PUT:
+- Strike: ${p['strike']:.0f} ({p['otm_percent']} OTM)
+- Expiration: {p['expiration']}
+- Contracts: {p['contracts']}
+- Est. Premium: ${p['est_premium']:.2f} per contract
+- Est. Total Cost: ${p['est_total_cost']:,.0f}
+"""
+
+        prompt += f"""
+Total Hedge Cost: ${recs.get('total_cost_estimate', 0):,.0f}
+Protection Coverage: {recs.get('protection_coverage', '0%')}
+
+TASK: Provide a CONCISE put protection recommendation (max 200 words):
+
+1. ASSESSMENT: Is this hedge appropriate for the crisis level?
+2. STRIKE ADJUSTMENT: Should strikes be more aggressive (closer to ATM) or more conservative (further OTM)?
+3. TIMING: Execute immediately, wait for a bounce, or scale in?
+4. ALTERNATIVE: Any better hedge strategy given current IV levels?
+
+Format your response as actionable bullet points. Start with an emoji indicating urgency:
+🚨 = Execute immediately
+⚠️ = Elevated caution, act soon
+📊 = Standard precaution
+
+Be specific with numbers. No disclaimers needed."""
+
+        # Use reasoning model for critical financial decisions
+        chat = client.chat.create(model="grok-4-1-fast")
+        chat.append(user(prompt))
+
+        response = chat.sample()
+
+        if response and response.content:
+            logger.info("Grok AI put analysis completed successfully")
+            return response.content.strip()
+
+    except Exception as e:
+        logger.error(f"Grok put analysis error: {e}")
+
+    return None
+
+
+def _generate_fallback_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_price: float) -> str:
+    """Fallback rule-based analysis when Grok is unavailable."""
     protection_level = recs.get('protection_level', 'standard')
     total_cost = recs.get('total_cost_estimate', 0)
     coverage = recs.get('protection_coverage', '0%')
@@ -1089,7 +1199,7 @@ def _generate_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
     analysis = []
 
     if severity >= 9:
-        analysis.append("⚠️ CRITICAL: Maximum protection recommended due to severe crisis risk.")
+        analysis.append("🚨 CRITICAL: Maximum protection recommended due to severe crisis risk.")
     elif severity >= 7:
         analysis.append("⚠️ ELEVATED: Increased hedging recommended as crisis develops.")
     else:
