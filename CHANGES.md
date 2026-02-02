@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 18:28 - `a4ef6fe`
+
+**fix: Correct import errors in Modal API endpoints**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 18:11 - `95fd20d`
 
 **perf: Optimize web scraping with parallel fetching and fix broken sources**

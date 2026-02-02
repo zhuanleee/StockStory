@@ -42,7 +42,7 @@ image = (
     image=image,
     volumes={VOLUME_PATH: volume},
     secrets=[modal.Secret.from_name("Stock_Story")],
-    keep_warm=1,
+    min_containers=1,
     timeout=600
 )
 @modal.asgi_app()
@@ -1359,6 +1359,155 @@ Get an API key at `/api-keys/request`
 
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    # =============================================================================
+    # TELEGRAM WEBHOOK
+    # =============================================================================
+
+    @web_app.post("/telegram/webhook")
+    async def telegram_webhook(request: Request):
+        """
+        Telegram bot webhook endpoint for instant message handling.
+        Set webhook: https://api.telegram.org/bot<TOKEN>/setWebhook?url=<MODAL_URL>/telegram/webhook
+        """
+        import os
+        import requests as http_requests
+
+        try:
+            update = await request.json()
+            bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+            chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
+
+            if not bot_token:
+                return {"ok": False, "error": "Bot token not configured"}
+
+            message = update.get('message', {})
+            text = message.get('text', '').strip()
+            msg_chat_id = message.get('chat', {}).get('id')
+
+            if not text or not msg_chat_id:
+                return {"ok": True}  # Ignore non-text updates
+
+            def send_reply(reply_text: str):
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                http_requests.post(url, json={
+                    'chat_id': msg_chat_id,
+                    'text': reply_text,
+                    'parse_mode': 'Markdown'
+                }, timeout=10)
+
+            # Handle commands
+            if text.lower() == '/help':
+                send_reply(
+                    "*BOT COMMANDS*\n\n"
+                    "Send any ticker (e.g., `NVDA`) for analysis\n\n"
+                    "*Scan Commands:*\n"
+                    "`/top` - Show top 10 stocks\n"
+                    "`/status` - Check system status\n"
+                    "`/themes` - Show hot themes\n\n"
+                    "*Info:*\n"
+                    "`/help` - Show this help"
+                )
+                return {"ok": True}
+
+            elif text.lower() == '/status':
+                send_reply(
+                    "*System Status*\n\n"
+                    "API: Operational\n"
+                    f"Mode: Modal Serverless\n"
+                    f"Webhook: Active"
+                )
+                return {"ok": True}
+
+            elif text.lower() == '/top':
+                try:
+                    # Try to get latest scan results
+                    latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                    if latest_path.exists():
+                        import pandas as pd
+                        df = pd.read_csv(latest_path)
+                        msg = "*TOP 10 STOCKS*\n\n"
+                        score_col = 'composite_score' if 'composite_score' in df.columns else 'story_score'
+                        for i, row in df.head(10).iterrows():
+                            ticker = row.get('ticker', 'N/A')
+                            score = row.get(score_col, 0)
+                            msg += f"`{ticker:5}` | Score: {score:.0f}\n"
+                        send_reply(msg)
+                    else:
+                        send_reply("No scan results available. Run a scan first.")
+                except Exception as e:
+                    send_reply(f"Error loading results: {str(e)[:100]}")
+                return {"ok": True}
+
+            elif text.lower() == '/themes':
+                try:
+                    from src.themes.fast_stories import get_hottest_themes_fast
+                    themes = get_hottest_themes_fast(limit=5)
+                    if themes:
+                        msg = "*HOT THEMES*\n\n"
+                        for t in themes[:5]:
+                            name = t.get('theme', t.get('name', 'Unknown'))
+                            heat = t.get('heat_score', t.get('score', 0))
+                            msg += f"🔥 *{name}*: {heat:.0f}\n"
+                        send_reply(msg)
+                    else:
+                        send_reply("No theme data available.")
+                except Exception as e:
+                    send_reply(f"Theme error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # Ticker query (1-5 uppercase letters)
+            elif len(text) <= 5 and text.isalpha():
+                ticker = text.upper()
+                try:
+                    from src.scoring.story_scorer import score_stock_story
+                    result = score_stock_story(ticker)
+                    if result:
+                        msg = f"*{ticker} ANALYSIS*\n\n"
+                        msg += f"*Score:* {result.get('story_score', 0):.0f}/100\n"
+                        msg += f"*Strength:* {result.get('story_strength', 'unknown')}\n"
+                        if result.get('hottest_theme'):
+                            msg += f"*Theme:* {result['hottest_theme']}\n"
+                        if result.get('catalysts'):
+                            msg += f"\n*Catalysts:*\n"
+                            for c in result['catalysts'][:3]:
+                                msg += f"• {c}\n"
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No data found for `{ticker}`")
+                except Exception as e:
+                    send_reply(f"Error analyzing {ticker}: {str(e)[:100]}")
+                return {"ok": True}
+
+            # Unknown command
+            else:
+                send_reply("Unknown command. Send /help for available commands.")
+                return {"ok": True}
+
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/telegram/setup")
+    def telegram_setup():
+        """
+        Instructions for setting up Telegram webhook.
+        """
+        import os
+        bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+
+        return {
+            "ok": True,
+            "instructions": [
+                "1. Get your Modal API URL from the deployment",
+                "2. Set webhook using Telegram API:",
+                f"   curl 'https://api.telegram.org/bot{bot_token[:10]}...{bot_token[-5:]}/setWebhook?url=YOUR_MODAL_URL/telegram/webhook'",
+                "3. Test by sending /help to @Stocks_Story_Bot"
+            ],
+            "current_config": {
+                "bot_token_set": bool(bot_token),
+                "webhook_endpoint": "/telegram/webhook"
+            }
+        }
 
     # =============================================================================
     # CATCH-ALL FOR UNIMPLEMENTED ROUTES

@@ -2,8 +2,9 @@ name: Bot Listener
 
 on:
   schedule:
-    # Run every 1 minute during market hours (9 AM - 5 PM EST, Mon-Fri)
-    - cron: '*/1 13-22 * * 1-5'  # UTC times (13:00-22:00 UTC = 9 AM-5 PM EST)
+    # Run every 2 minutes, 6 AM - 11 PM EST, all week
+    # Extended hours to cover pre-market, after-hours, and weekends
+    - cron: '*/2 11-23,0-4 * * *'  # UTC times (6 AM - 11 PM EST = 11:00-04:00 UTC)
 
   workflow_dispatch:  # Manual trigger
 
