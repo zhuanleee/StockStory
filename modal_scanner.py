@@ -42,6 +42,7 @@ image = (
 @app.function(
     image=image,
     **compute_config,
+    concurrency_limit=10,  # Max 10 GPU containers at once
     secrets=[
         # Add your API keys as Modal secrets
         # Run: modal secret create stock-api-keys \

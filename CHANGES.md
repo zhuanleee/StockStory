@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:16 - `d8122a7`
+
+**fix: Correct /news command import error**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:07 - `49108d0`
 
 **fix: Update GitHub workflows for StockStory rename**
