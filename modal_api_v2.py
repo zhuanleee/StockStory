@@ -1285,7 +1285,7 @@ Get an API key at `/api-keys/request`
     def options_unusual_feed(
         limit: int = Query(50),
         min_premium: float = Query(0),
-        ticker: str = Query(None),
+        tickers: str = Query(None),
         sentiment: str = Query(None)
     ):
         """
@@ -1294,18 +1294,34 @@ Get an API key at `/api-keys/request`
         Args:
             limit: Max entries (default 50)
             min_premium: Minimum premium filter
-            ticker: Filter by specific ticker
+            tickers: Comma-separated tickers to scan (default: top 10)
             sentiment: Filter by sentiment (bullish/bearish)
         """
         try:
-            from src.analysis.options_flow import get_unusual_feed_data
-            feed = get_unusual_feed_data(
-                limit=limit,
-                min_premium=min_premium,
-                ticker=ticker,
-                sentiment=sentiment
-            )
-            return {"ok": True, "feed": feed, "count": len(feed)}
+            from src.analysis.options_flow import SmartMoneyTracker
+            from src.data.polygon_provider import get_unusual_options_sync
+
+            # Parse tickers
+            if tickers:
+                ticker_list = [t.strip().upper() for t in tickers.split(',')]
+            else:
+                ticker_list = ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMZN', 'GOOGL', 'MSFT', 'AMD']
+
+            all_unusual = []
+            for ticker in ticker_list[:15]:  # Max 15 tickers
+                try:
+                    result = get_unusual_options_sync(ticker, volume_threshold=2.0)
+                    if result and result.get('unusual_contracts'):
+                        for contract in result['unusual_contracts']:
+                            contract['ticker'] = ticker
+                            if min_premium <= 0 or contract.get('premium', 0) >= min_premium:
+                                all_unusual.append(contract)
+                except Exception:
+                    continue
+
+            # Sort by vol/oi ratio descending
+            all_unusual.sort(key=lambda x: x.get('vol_oi_ratio', 0), reverse=True)
+            return {"ok": True, "feed": all_unusual[:limit], "count": len(all_unusual)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1339,9 +1355,28 @@ Get an API key at `/api-keys/request`
     def options_whale_trades(min_premium: float = Query(500000)):
         """Get whale trades (large premium options activity)."""
         try:
-            from src.analysis.options_flow import get_whale_trades
-            whales = get_whale_trades(min_premium)
-            return {"ok": True, "whales": whales, "count": len(whales)}
+            from src.analysis.options_flow import SmartMoneyTracker
+
+            # Scan top tickers for whale trades
+            top_tickers = ['SPY', 'QQQ', 'NVDA', 'AAPL', 'TSLA', 'META', 'AMZN', 'GOOGL', 'MSFT', 'AMD']
+            tracker = SmartMoneyTracker()
+            all_whales = []
+
+            for ticker in top_tickers:
+                try:
+                    flow = tracker.analyze_flow(ticker)
+                    if flow and flow.get('notable_trades'):
+                        for trade in flow['notable_trades']:
+                            if trade.get('premium', 0) >= min_premium:
+                                trade['ticker'] = ticker
+                                trade['side'] = 'BUY'  # Assume buy for unusual activity
+                                all_whales.append(trade)
+                except Exception:
+                    continue
+
+            # Sort by premium descending
+            all_whales.sort(key=lambda x: x.get('premium', 0), reverse=True)
+            return {"ok": True, "whales": all_whales[:20], "count": len(all_whales)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1596,6 +1631,49 @@ Get an API key at `/api-keys/request`
                 "status": "healthy" if learning_ok else "degraded"
             }
         }
+
+    @web_app.get("/debug/polygon", tags=["Debug"])
+    def debug_polygon():
+        """Check Polygon.io API configuration and test connection."""
+        import os
+        result = {
+            "ok": True,
+            "polygon_configured": False,
+            "api_key_set": False,
+            "api_key_preview": None,
+            "test_result": None
+        }
+
+        api_key = os.environ.get('POLYGON_API_KEY', '')
+        if api_key:
+            result["api_key_set"] = True
+            result["api_key_preview"] = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+            result["polygon_configured"] = True
+
+            # Test API call
+            try:
+                from src.data.polygon_provider import get_options_flow_sync
+                test_data = get_options_flow_sync('SPY')
+                if test_data and not test_data.get('error'):
+                    result["test_result"] = {
+                        "status": "success",
+                        "put_call_ratio": test_data.get('put_call_ratio'),
+                        "sentiment": test_data.get('sentiment'),
+                        "total_call_volume": test_data.get('total_call_volume'),
+                        "total_put_volume": test_data.get('total_put_volume'),
+                    }
+                else:
+                    result["test_result"] = {
+                        "status": "error",
+                        "error": test_data.get('error') if test_data else "No data returned"
+                    }
+            except Exception as e:
+                import traceback
+                result["test_result"] = {"status": "exception", "error": str(e), "trace": traceback.format_exc()[:500]}
+        else:
+            result["test_result"] = {"status": "not_configured", "error": "POLYGON_API_KEY not set"}
+
+        return result
 
     @web_app.get("/parameters/status")
     def parameters_status():

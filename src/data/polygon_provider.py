@@ -690,6 +690,10 @@ class PolygonProvider:
         for contract in chain.get('calls', []) + chain.get('puts', []):
             volume = contract.get('volume', 0)
             oi = contract.get('open_interest', 1)  # Avoid division by zero
+            last_price = contract.get('last_price') or contract.get('bid') or 0
+
+            # Calculate premium (price * volume * 100 shares per contract)
+            premium = last_price * volume * 100 if last_price and volume else 0
 
             # High volume relative to open interest
             if volume > 0 and oi > 0:
@@ -704,6 +708,8 @@ class PolygonProvider:
                         'open_interest': oi,
                         'vol_oi_ratio': round(vol_oi_ratio, 2),
                         'implied_volatility': contract.get('implied_volatility'),
+                        'premium': premium,
+                        'last_price': last_price,
                         'signal': 'HIGH_VOL_VS_OI',
                     })
 

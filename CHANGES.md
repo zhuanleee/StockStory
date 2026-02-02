@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:37 - `fc40f30`
+
+**fix: Fix JavaScript to handle API response field names**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:32 - `ef8afb0`
 
 **feat: Enhanced options flow with dashboard UI and Telegram commands**

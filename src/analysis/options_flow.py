@@ -240,7 +240,7 @@ class SmartMoneyTracker:
 
             # Get options flow data
             flow_data = get_options_flow_sync(ticker)
-            unusual_data = get_unusual_options_sync(ticker, threshold=1.5)
+            unusual_data = get_unusual_options_sync(ticker, volume_threshold=1.5)
 
             if not flow_data or flow_data.get('error'):
                 return result
@@ -259,9 +259,9 @@ class SmartMoneyTracker:
             result['block_count'] = len(large_trades)
             result['sweep_count'] = len([c for c in unusual_contracts if c.get('vol_oi_ratio', 0) > 5])
 
-            # Calculate total premiums
-            call_premium = sum(c.get('premium', 0) for c in unusual_contracts if c.get('type') == 'call')
-            put_premium = sum(c.get('premium', 0) for c in unusual_contracts if c.get('type') == 'put')
+            # Calculate total premiums (handle both 'type' and 'contract_type' field names)
+            call_premium = sum(c.get('premium', 0) for c in unusual_contracts if (c.get('type') or c.get('contract_type')) == 'call')
+            put_premium = sum(c.get('premium', 0) for c in unusual_contracts if (c.get('type') or c.get('contract_type')) == 'put')
             result['call_premium'] = call_premium
             result['put_premium'] = put_premium
             result['total_premium'] = call_premium + put_premium
@@ -317,6 +317,26 @@ class SmartMoneyTracker:
                     'description': f'{result["institutional_ratio"]*100:.0f}% institutional flow',
                     'sentiment': 'smart_money'
                 })
+
+            # Add notable trades for UI display (top 10 by premium)
+            notable = sorted(unusual_contracts, key=lambda x: x.get('premium', 0), reverse=True)[:10]
+            result['notable_trades'] = [
+                {
+                    'strike': t.get('strike'),
+                    'type': t.get('type') or t.get('contract_type', 'unknown'),
+                    'premium': t.get('premium', 0),
+                    'volume': t.get('volume', 0),
+                    'vol_oi_ratio': t.get('vol_oi_ratio', 0),
+                    'signal': t.get('signal', ''),
+                    'expiration': t.get('expiration', ''),
+                }
+                for t in notable
+            ]
+
+            # Calculate net flow
+            result['net_flow'] = call_premium - put_premium
+            result['call_flow'] = call_premium
+            result['put_flow'] = put_premium
 
         except Exception as e:
             logger.error(f"Error analyzing smart money flow for {ticker}: {e}")
