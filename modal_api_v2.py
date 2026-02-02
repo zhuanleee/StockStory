@@ -1553,6 +1553,7 @@ Get an API key at `/api-keys/request`
             # ============ STATUS ============
             elif cmd == '/status':
                 import pandas as pd
+                volume.reload()  # Sync volume
                 latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
                 scan_count = 0
                 scan_time = "Unknown"
@@ -1577,6 +1578,7 @@ Get an API key at `/api-keys/request`
             elif cmd == '/top':
                 try:
                     import pandas as pd
+                    volume.reload()  # Sync volume to see latest scan results
                     latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
                     if latest_path.exists():
                         df = pd.read_csv(latest_path)
@@ -1605,6 +1607,7 @@ Get an API key at `/api-keys/request`
             elif cmd == '/movers':
                 try:
                     import pandas as pd
+                    volume.reload()  # Sync volume
                     latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
                     if latest_path.exists():
                         df = pd.read_csv(latest_path)

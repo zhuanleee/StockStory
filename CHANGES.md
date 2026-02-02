@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:39 - `8fd18e5`
+
+**fix: Update /themes command to use correct function**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 20:31 - `5b3d8ab`
 
 **fix: Use max_containers instead of deprecated concurrency_limit**
