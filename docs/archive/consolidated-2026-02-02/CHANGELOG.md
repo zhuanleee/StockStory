@@ -9,9 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Pending Deployment
-- Tier 3 Intelligence Jobs on Modal
+### Pending
 - Options integration dashboard components
+
+---
+
+## [3.1.0] - 2026-02-02
+
+### Changed - Deployment Migration 🚀
+**DigitalOcean → Modal + GitHub Pages**
+
+**Why Migrated:**
+- Simplified architecture (all backend on Modal)
+- Cost reduction ($5/mo → $0/mo for dashboard)
+- Better integration with existing Modal jobs
+- Free static hosting via GitHub Pages
+
+**New Stack:**
+| Component | Platform | Cost |
+|-----------|----------|------|
+| Intelligence Jobs | Modal.com | $2-3/month |
+| Crisis Monitoring | Modal.com | Included |
+| Telegram Bot | Modal.com | Included |
+| Dashboard | GitHub Pages | Free |
+
+**Live URLs:**
+- **Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+- **Telegram:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
+
+### Documentation Updated
+- Updated README.md with new deployment stack
+- Updated all guides to remove DigitalOcean references
+- Created DEPLOYMENT_STATUS.md with current production state
+- Updated TELEGRAM_SETUP_GUIDE.md for Modal deployment
 
 ---
 
@@ -104,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time data updates
 
 ### Fixed
-- Dashboard serving on DigitalOcean (forensic analysis complete)
+- Dashboard serving issues (forensic analysis complete)
 - All 38 components verified working
 - API endpoint routing
 - Static file serving
@@ -112,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Migrated from Railway to DigitalOcean App Platform
 - Reduced deployment cost ($10/mo → $5/mo)
-- Improved uptime (99.5% → 99.95% SLA)
+- *(Note: DigitalOcean deprecated in v3.1.0, now using Modal + GitHub Pages)*
 
 ---
 
@@ -174,14 +204,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added - Web Dashboard 🌐
 **Features:**
-- Live dashboard at stock-story-jy89o.ondigitalocean.app
+- Live dashboard (now at https://zhuanleee.github.io/stock_scanner_bot/)
 - Overview, Scans, Intelligence, Watchlist, Trades, Learning tabs
 - Real-time updates
 - Interactive charts with Chart.js
 
 ### Added - Infrastructure 🏗️
 - Flask API backend
-- DigitalOcean App Platform deployment
+- Modal.com serverless deployment
 - Telegram webhook integration
 - Data caching layer
 - Error handling and logging
@@ -200,19 +230,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Deployment History
 
-### Modal (Intelligence Jobs)
-- **2026-02-02**: Tier 3 jobs deployed (pending user deployment)
-- Cost: $2-3/month (optimized)
+### Current Stack (2026-02-02)
+**Modal.com + GitHub Pages**
 
-### DigitalOcean (Dashboard + API)
-- **2026-01-29**: Migrated from Railway
-- **URL**: https://stock-story-jy89o.ondigitalocean.app/
-- **Cost**: $5/month
-- **Uptime**: 99.95% SLA
+| Component | Platform | Status | Cost |
+|-----------|----------|--------|------|
+| Intelligence Jobs | Modal.com | ✅ Active | $2-3/month |
+| Telegram Bot | Modal.com | ✅ Active | Included |
+| Dashboard | GitHub Pages | ✅ Active | Free |
+
+**Live URLs:**
+- Dashboard: https://zhuanleee.github.io/stock_scanner_bot/
+- Telegram: @Stocks_Story_Bot
+
+### DigitalOcean (Deprecated)
+- **2026-01-29 to 2026-02-02**: Dashboard + API hosting
+- **Migrated to**: GitHub Pages (dashboard) + Modal (backend)
+- **Reason**: Consolidate all backend on Modal, free dashboard hosting
 
 ### Railway (Deprecated)
 - **2026-01-10 to 2026-01-29**: Initial deployment
-- **Reason for migration**: Cost ($10/mo) and reliability issues
+- **Migrated to**: DigitalOcean
+- **Reason**: Cost ($10/mo) and reliability issues
 
 ---
 
@@ -220,17 +259,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Date | Platform | Features | Monthly Cost |
 |------|----------|----------|--------------|
-| 2026-02-02 | DO + Modal | Full + Tier 3 | **$7-8** |
+| 2026-02-02 | Modal + GitHub Pages | Full + Tier 3 | **$2-3** |
+| 2026-02-02 | DO + Modal | Full + Tier 3 | $7-8 |
 | 2026-01-29 | DigitalOcean | Full system | $5 |
 | 2026-01-25 | Railway | Learning added | $10 |
 | 2026-01-20 | Railway | Core scanner | $10 |
 | 2026-01-10 | Local | Prototype | $0 |
 
-**Current Total**: $7-8/month (DigitalOcean $5 + Modal $2-3)
+**Current Total**: $2-3/month (Modal only, GitHub Pages is free)
 
 ---
 
 ## Breaking Changes
+
+### v3.1.0
+- **Deployment platform changed** from DigitalOcean to Modal + GitHub Pages
+- Dashboard now at https://zhuanleee.github.io/stock_scanner_bot/
+- All backend services consolidated on Modal
 
 ### v3.0.0
 - **Modal deployment required** for Tier 3 features
@@ -296,6 +341,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 **For detailed deployment instructions, see:**
-- [DigitalOcean Guide](docs/deployment/DIGITALOCEAN_MIGRATION_GUIDE.md)
+- [Deployment Status](docs/deployment/DEPLOYMENT_STATUS.md)
 - [Modal Deployment](docs/deployment/MODAL_DEPLOYMENT.md)
+- [Telegram Setup](docs/guides/TELEGRAM_SETUP_GUIDE.md)
 - [Quick Start Guide](README.md)

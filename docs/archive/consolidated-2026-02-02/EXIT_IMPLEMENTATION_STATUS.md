@@ -340,13 +340,10 @@ Add `/exit` and `/exitall` commands to command handler.
 
 Add "Exit Targets" tab to dashboard with exit cards.
 
-### 5. Test on DigitalOcean (10 min)
+### 5. Test on Modal (10 min)
 
 ```bash
-# Test API
-curl https://stock-story-jy89o.ondigitalocean.app/api/exit/analyze/NVDA?entry_price=850&entry_date=2026-01-15
-
-# Test Telegram
+# Test via Telegram
 /exit NVDA
 /exitall
 ```
@@ -396,13 +393,10 @@ Response:
 
 ### API Usage
 ```bash
-# Analyze single position
-curl "https://stock-story-jy89o.ondigitalocean.app/api/exit/analyze/NVDA?entry_price=850&entry_date=2026-01-15"
-
-# Monitor all positions
-curl -X POST https://stock-story-jy89o.ondigitalocean.app/api/exit/monitor \
-  -H "Content-Type: application/json" \
-  -d '{"positions": [{"ticker":"NVDA", "entry_price":850, "entry_date":"2026-01-15"}]}'
+# Use Telegram commands for exit analysis
+/exit NVDA          # Analyze single position
+/exitall            # Monitor all positions
+/targets NVDA       # View price targets
 ```
 
 ---
@@ -455,7 +449,7 @@ Track these metrics to measure system performance:
 1. Register API blueprint
 2. Add Telegram commands
 3. Add dashboard tab
-4. Deploy to DigitalOcean
+4. Deploy to Modal
 5. Test with real positions
 6. Collect feedback
 

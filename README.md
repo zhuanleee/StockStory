@@ -4,10 +4,12 @@
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![DigitalOcean](https://img.shields.io/badge/Deployed-DigitalOcean-0080FF)](https://stock-story-jy89o.ondigitalocean.app/)
+[![Modal](https://img.shields.io/badge/Deployed-Modal-6366F1)](https://modal.com)
 
-> **Live Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+> **Live Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
 > **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
+>
+> **Complete Documentation:** See [PROJECT.md](PROJECT.md) for architecture, workflows, and where we left off.
 
 ---
 
@@ -253,7 +255,7 @@ Revenue growth, margin trends, valuation, insider trading
 
 ## 🎨 Dashboard
 
-**Live Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+**Live Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
 
 ### Features
 - **Overview** - Market summary and top picks
@@ -275,41 +277,17 @@ Revenue growth, margin trends, valuation, insider trading
 
 ## 🚢 Deployment
 
-### Option 1: DigitalOcean (Dashboard + API)
+### Current Production Stack
 
-1. **Fork this repository**
+| Component | Platform | Cost |
+|-----------|----------|------|
+| **Intelligence Jobs** | Modal.com | $2-3/month |
+| **Dashboard** | GitHub Pages | Free |
+| **Telegram Bot** | Modal.com | Included |
 
-2. **Connect to DigitalOcean:**
-   - Go to https://cloud.digitalocean.com/apps
-   - Create App → GitHub → Select repo
-   - DigitalOcean auto-detects `.do/app.yaml`
+### Option 1: Modal (All Backend Services)
 
-3. **Set environment variables:**
-   ```
-   POLYGON_API_KEY
-   TELEGRAM_BOT_TOKEN
-   TELEGRAM_CHAT_ID
-   XAI_API_KEY
-   DEEPSEEK_API_KEY
-   ALPHA_VANTAGE_API_KEY
-   ```
-
-4. **Deploy:**
-   - DigitalOcean auto-deploys on push to `main`
-   - First deployment: ~3-5 minutes
-
-5. **Configure Telegram webhook:**
-   ```bash
-   curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-     -d "url=https://your-app.ondigitalocean.app/webhook"
-   ```
-
-**Cost:** $5/month (Basic XXS plan)
-**SLA:** 99.95% uptime
-
-### Option 2: Modal (Intelligence Jobs)
-
-**Required for Tier 3 features** (exit signals, meme detection, sector rotation)
+**Primary deployment platform** for all intelligence jobs and API.
 
 1. **Install Modal CLI:**
    ```bash
@@ -320,12 +298,15 @@ Revenue growth, margin trends, valuation, insider trading
 2. **Create Modal secrets:**
    ```bash
    modal secret create Stock_Story \
+     POLYGON_API_KEY=your_key \
      XAI_API_KEY=your_key \
+     DEEPSEEK_API_KEY=your_key \
+     ALPHA_VANTAGE_API_KEY=your_key \
      TELEGRAM_BOT_TOKEN=your_token \
      TELEGRAM_CHAT_ID=your_id
    ```
 
-3. **Deploy cron jobs:**
+3. **Deploy all services:**
    ```bash
    # Main crisis monitoring (hourly)
    modal deploy modal_scanner.py
@@ -340,9 +321,26 @@ Revenue growth, margin trends, valuation, insider trading
    ```
 
 **Cost:** $2-3/month (with optimizations)
-**Features:** Auto-scaling, 5-cron limit on free tier
+**Features:** Auto-scaling, serverless, cron jobs
 
-See [Modal deployment guide](docs/deployment/MODAL_DEPLOYMENT.md) for details.
+### Option 2: GitHub Pages (Dashboard)
+
+**Static dashboard** hosted on GitHub Pages (free).
+
+1. **Enable GitHub Pages:**
+   - Go to repo Settings → Pages
+   - Source: Deploy from branch
+   - Branch: `main` / `docs` folder
+
+2. **Dashboard URL:**
+   ```
+   https://zhuanleee.github.io/stock_scanner_bot/
+   ```
+
+**Cost:** Free
+**Features:** Static hosting, auto-deploy on push
+
+See [Deployment Status](docs/deployment/DEPLOYMENT_STATUS.md) for current status.
 
 ---
 
@@ -355,8 +353,7 @@ See [Modal deployment guide](docs/deployment/MODAL_DEPLOYMENT.md) for details.
 - [Telegram Setup](docs/guides/TELEGRAM_SETUP_GUIDE.md) - Bot configuration
 
 ### Deployment
-- [DigitalOcean Migration](docs/deployment/DIGITALOCEAN_MIGRATION_GUIDE.md)
-- [Resource Optimization](docs/deployment/RESOURCE_OPTIMIZATION.md)
+- [Modal Deployment](docs/deployment/MODAL_DEPLOYMENT.md)
 - [Deployment Status](docs/deployment/DEPLOYMENT_STATUS.md)
 
 ### Development
@@ -441,7 +438,8 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Flask (API)
 - Chart.js (Dashboard visualizations)
 - Telegram Bot API
-- DigitalOcean App Platform
+- Modal.com (Serverless deployment)
+- GitHub Pages (Dashboard hosting)
 
 ---
 
@@ -449,7 +447,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 **Issues:** https://github.com/zhuanleee/stock_scanner_bot/issues
 **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
-**Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+**Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
 
 ---
 
@@ -473,7 +471,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 - ✅ Automated risk management
 
 ### 2026-01-29: Dashboard Improvements
-- ✅ Fixed dashboard serving on DigitalOcean
+- ✅ Dashboard hosted on GitHub Pages
 - ✅ Added 7 intelligence visualizations
 - ✅ Forensic analysis - all features verified
 

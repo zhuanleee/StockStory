@@ -43,11 +43,11 @@ Identify high-conviction stock opportunities by prioritizing narratives and hard
 Language:        Python 3.11+
 Async Runtime:   asyncio, aiohttp
 Data Provider:   Polygon.io (primary), yfinance (fallback)
-AI Engine:       DeepSeek API
+AI Engine:       DeepSeek API, xAI Grok
 Bot Platform:    Telegram Bot API
 Web Framework:   Flask (REST API)
 CI/CD:           GitHub Actions
-Deployment:      Railway (API/Bot), GitHub Pages (Dashboard)
+Deployment:      Modal.com (Backend/Bot), GitHub Pages (Dashboard)
 ```
 
 ---
@@ -1427,7 +1427,8 @@ Uptime: 99.9%
 ### 11.1 API Endpoints (Flask)
 
 ```
-BASE URL: https://stock-story-jy89o.ondigitalocean.app
+BASE URL: https://zhuanleee.github.io/stock_scanner_bot
+(Dashboard - static. For API endpoints, use Modal functions or local server)
 or LOCAL: http://localhost:5000
 
 ┌──────────────────────────────────────────────────────────┐

@@ -790,10 +790,10 @@ POST /api/watchlist/import
    - Add auto-refresh toggle
    - Add sentiment/AI update buttons
 
-4. **Deploy to Railway:**
+4. **Deploy to Modal:**
    - Push changes to git
-   - Railway auto-deploys
-   - Watchlist available at stock-story-jy89o.ondigitalocean.app/api/watchlist/
+   - Deploy: `modal deploy modal_scanner.py`
+   - Watchlist API available via Modal deployment
 
 ---
 

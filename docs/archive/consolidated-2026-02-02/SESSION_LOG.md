@@ -4,6 +4,137 @@
 
 ---
 
+## Session 2026-02-02 (Part 2): Deployment Migration Documentation
+
+**Date:** February 2, 2026
+**Duration:** ~30 minutes
+**Participants:** User + Claude Opus 4.5
+**Goal:** Update all documentation to reflect deployment migration from DigitalOcean to Modal + GitHub Pages
+
+### Timeline
+
+#### 12:00 UTC - Session Start
+**User Request:** "this is my own repo, change the log that we do not use digital ocean now, only modal.com and we use github dashboard"
+
+**Context:** User has migrated from DigitalOcean to Modal.com (backend) + GitHub Pages (dashboard).
+
+---
+
+#### 12:05 UTC - Documentation Analysis
+**Action:** Searched for all DigitalOcean references across the repository.
+
+**Findings:** 49 files contained DigitalOcean references including:
+- README.md
+- CHANGELOG.md
+- SESSION_LOG.md
+- Various guide files in docs/
+
+---
+
+#### 12:10 UTC - Documentation Updates
+
+**Files Updated:**
+
+1. **README.md**
+   - Changed deployment badge from DigitalOcean to Modal
+   - Updated dashboard URL to GitHub Pages
+   - Updated deployment table to show Modal + GitHub Pages
+
+2. **docs/deployment/DEPLOYMENT_STATUS.md** (Created)
+   - Documents current production stack
+   - Modal.com for all backend services
+   - GitHub Pages for dashboard
+   - Telegram bot information
+
+3. **docs/guides/TELEGRAM_SETUP_GUIDE.md**
+   - Completely rewritten for Modal deployment
+   - Updated secret management instructions
+   - Changed deployment commands to Modal CLI
+
+4. **docs/FRAMEWORK_ARCHITECTURE.md**
+   - Updated technology stack line
+
+5. **docs/guides/WATCHLIST_QUICK_START.md**
+   - Replaced DigitalOcean URLs with GitHub Pages
+
+6. **docs/guides/WATCHLIST_SYSTEM.md**
+   - Changed deployment references
+
+7. **docs/guides/EXIT_IMPLEMENTATION_STATUS.md**
+   - Updated testing sections
+
+8. **.claude/PROJECT_SUPERVISION.md**
+   - Updated deployment monitoring commands
+
+---
+
+#### 12:15 UTC - Changelog Updates
+**User Request:** "do we have md to record what have we change?"
+
+**Action:** Updated CHANGELOG.md and SESSION_LOG.md to record:
+- Version 3.1.0 deployment migration entry
+- Updated deployment history section
+- Updated cost evolution table
+- Added breaking changes section
+
+---
+
+### Session Summary
+
+#### Accomplishments ✅
+
+1. **Documentation Migration Complete:**
+   - All major documentation updated for Modal + GitHub Pages
+   - DigitalOcean references replaced or marked as deprecated
+   - New deployment stack clearly documented
+
+2. **Changelog Updated:**
+   - Added v3.1.0 release notes
+   - Updated deployment history
+   - Updated cost evolution ($7-8 → $2-3/month)
+
+3. **New Files Created:**
+   - `docs/deployment/DEPLOYMENT_STATUS.md` - Current production state
+
+#### New Deployment Stack 🚀
+
+| Component | Platform | Status | Cost |
+|-----------|----------|--------|------|
+| Intelligence Jobs | Modal.com | ✅ Active | $2-3/month |
+| Telegram Bot | Modal.com | ✅ Active | Included |
+| Dashboard | GitHub Pages | ✅ Active | Free |
+
+**Live URLs:**
+- Dashboard: https://zhuanleee.github.io/stock_scanner_bot/
+- Telegram: @Stocks_Story_Bot
+
+#### Cost Savings 💰
+- Before: $7-8/month (DigitalOcean $5 + Modal $2-3)
+- After: $2-3/month (Modal only, GitHub Pages free)
+- Savings: ~$5/month (60%)
+
+### Files Modified This Session
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `README.md` | Modified | Updated deployment stack |
+| `CHANGELOG.md` | Modified | Added v3.1.0, updated history |
+| `SESSION_LOG.md` | Modified | Added this session |
+| `docs/deployment/DEPLOYMENT_STATUS.md` | Created | Current stack documentation |
+| `docs/guides/TELEGRAM_SETUP_GUIDE.md` | Modified | Modal deployment instructions |
+| `docs/FRAMEWORK_ARCHITECTURE.md` | Modified | Technology stack |
+| `docs/guides/WATCHLIST_QUICK_START.md` | Modified | Updated URLs |
+| `docs/guides/WATCHLIST_SYSTEM.md` | Modified | Deployment references |
+| `docs/guides/EXIT_IMPLEMENTATION_STATUS.md` | Modified | Testing sections |
+| `.claude/PROJECT_SUPERVISION.md` | Modified | Monitoring commands |
+
+### Session End
+
+**Time:** 12:30 UTC
+**Status:** ✅ Complete
+
+---
+
 ## Session 2026-02-02: Tier 3 Intelligence Deployment
 
 **Date:** February 2, 2026
@@ -386,16 +517,18 @@ cdc5299 - fix: Integrate Tier 3 jobs into existing bundles (stay within 5-cron l
 
 ### Deployment Status
 
-**DigitalOcean:**
-- Status: 🟢 Active (no changes this session)
-- URL: https://stock-story-jy89o.ondigitalocean.app/
+**GitHub Pages:**
+- Status: 🟢 Active
+- URL: https://zhuanleee.github.io/stock_scanner_bot/
 
 **Modal:**
-- Status: 🟢 Active (newly deployed)
+- Status: 🟢 Active
 - Functions: 26
 - Cron jobs: 5/5
 - Last deploy: 2026-02-02 08:29 UTC
 - Run IDs: 21582739007 (scanner), 21582741212 (intelligence)
+
+**DigitalOcean:** ❌ Deprecated (migrated to GitHub Pages on 2026-02-02)
 
 ---
 

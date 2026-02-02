@@ -1,27 +1,25 @@
 # Documentation
 
+## Primary Documentation
+- **[PROJECT.md](../PROJECT.md)** - Complete project documentation (start here)
+- **[README.md](../README.md)** - Quick start guide
+
 ## Guides
-User-facing guides and tutorials:
-- [Exit Strategy Guide](guides/EXIT_STRATEGY_GUIDE.md)
-- [Watchlist Quick Start](guides/WATCHLIST_QUICK_START.md)
-- [Learning System Guide](guides/LEARNING_QUICK_START.md)
-- [Telegram Setup](guides/TELEGRAM_SETUP_GUIDE.md)
+- **[GUIDES.md](GUIDES.md)** - User guides for all features
 
 ## Deployment
-Deployment and infrastructure guides:
-- [DigitalOcean Migration](deployment/DIGITALOCEAN_MIGRATION_GUIDE.md)
-- [Railway Deployment](deployment/RAILWAY_DEPLOYMENT_GUIDE.md)
-- [Resource Optimization](deployment/RESOURCE_OPTIMIZATION.md)
-
-## API & Dashboard
-API and dashboard documentation:
-- [Dashboard Forensic Report](api/DASHBOARD_FORENSIC_REPORT.md)
-- [API Integration Status](api/DASHBOARD_INTEGRATION_STATUS.md)
+- **[MODAL_DEPLOYMENT.md](deployment/MODAL_DEPLOYMENT.md)** - Modal setup
+- **[DEPLOYMENT_STATUS.md](deployment/DEPLOYMENT_STATUS.md)** - Current status
 
 ## Development
-Development and implementation docs:
-- [Implementation Summary](development/IMPLEMENTATION_SUMMARY.md)
-- [Claude Guidelines](development/CLAUDE.md)
+- **[CLAUDE.md](development/CLAUDE.md)** - Claude Code guidelines
+
+## Reference
+- **[FRAMEWORK_ARCHITECTURE.md](FRAMEWORK_ARCHITECTURE.md)** - Detailed architecture (89KB)
 
 ## Archive
-Historical documentation and old implementation notes.
+Historical documentation is in `docs/archive/`. Includes:
+- Old session logs and change history
+- Deprecated guides (DigitalOcean, etc.)
+- Implementation reports
+- Forensic analysis reports

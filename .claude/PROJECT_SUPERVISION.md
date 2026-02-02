@@ -288,15 +288,15 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 git push origin main
 
 # 4. Monitor deployment
-# Digital Ocean → Apps → stock-story → Activity
+# Modal: modal app logs modal_scanner
+# GitHub Pages: Auto-deploys on push
 ```
 
 ### Post-Deployment (MANDATORY)
 
 #### Immediate Verification (< 5 minutes)
-- [ ] App status is ACTIVE in Digital Ocean
-- [ ] Health endpoint returns 200: `curl https://stock-story-jy89o.ondigitalocean.app/health`
-- [ ] Dashboard loads: Visit https://stock-story-jy89o.ondigitalocean.app/
+- [ ] Modal apps running: `modal app list`
+- [ ] Dashboard loads: Visit https://zhuanleee.github.io/stock_scanner_bot/
 - [ ] No errors in browser console
 
 #### Functional Verification (< 15 minutes)
@@ -326,8 +326,9 @@ git push origin main
 git reset --hard <previous-good-commit-sha>
 git push -f origin main
 
-# Option 3: Deploy previous version via Digital Ocean UI
-# Apps → Deployments → Select previous deployment → Redeploy
+# Option 3: Redeploy Modal apps
+modal deploy modal_scanner.py
+modal deploy modal_intelligence_jobs.py
 ```
 
 **Rollback Criteria (Immediate rollback if ANY true):**

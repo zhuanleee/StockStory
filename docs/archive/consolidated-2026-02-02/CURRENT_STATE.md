@@ -1,7 +1,7 @@
 # 🎯 Stock Scanner Bot - Current State
 
-**Last Updated:** February 2, 2026 - 08:30 UTC
-**Version:** 3.0.0
+**Last Updated:** February 2, 2026 - 12:30 UTC
+**Version:** 3.1.0
 **Status:** 🟢 All systems operational
 
 ---
@@ -10,13 +10,13 @@
 
 ### Architecture
 ```
-Stock Scanner Bot v3.0
-├── Dashboard (DigitalOcean) - $5/month
-│   ├── Flask API (modal_api_v2.py)
-│   ├── Web Dashboard (docs/index.html)
-│   └── Telegram Webhook
+Stock Scanner Bot v3.1
+├── Dashboard (GitHub Pages) - FREE
+│   └── Web Dashboard (docs/index.html)
 │
-└── Intelligence Jobs (Modal) - $1-3/month
+└── Backend (Modal.com) - $2-3/month
+    ├── Flask API
+    ├── Telegram Bot
     ├── Crisis Monitoring (every 15 min)
     ├── Daily Scans (6 AM PST Mon-Fri)
     ├── Exit Signals (6 AM PST Mon-Fri) ← TIER 3
@@ -24,26 +24,27 @@ Stock Scanner Bot v3.0
     └── Sector Rotation (manual) ← TIER 3
 ```
 
-**Total Cost:** $6-8/month (optimized from $15/month)
+**Total Cost:** $2-3/month (optimized from $15/month)
 
 ---
 
 ## 🚀 Live Deployments
 
-### DigitalOcean (Dashboard + API)
-- **URL:** https://stock-story-jy89o.ondigitalocean.app/
+### GitHub Pages (Dashboard)
+- **URL:** https://zhuanleee.github.io/stock_scanner_bot/
 - **Status:** 🟢 Active
 - **Last Deploy:** Auto-deploy on push to main
 - **Components:**
-  - Flask API (38-component analysis)
   - Web dashboard (7 intelligence visualizations)
-  - Telegram bot webhook
+  - Static hosting (free)
 
-### Modal (Intelligence Jobs)
+### Modal.com (Backend + Bot)
 - **App:** stock-scanner
 - **Status:** 🟢 Active (5/5 cron slots used)
 - **Last Deploy:** Feb 2, 2026 08:29 UTC
 - **Components:**
+  - Flask API (38-component analysis)
+  - Telegram bot (@Stocks_Story_Bot)
   - 26 functions deployed
   - 5 cron jobs running
   - Tier 3 features integrated
@@ -327,22 +328,17 @@ stock_scanner_bot/
 
 ## 🔑 Environment Variables
 
-### DigitalOcean App Platform
+### Modal Secrets (Stock_Story)
 ```bash
 POLYGON_API_KEY=xxx          # Stock data
 TELEGRAM_BOT_TOKEN=xxx       # Bot token
-TELEGRAM_CHAT_ID=1191814045  # Your chat ID
-XAI_API_KEY=xxx             # xAI Grok
-DEEPSEEK_API_KEY=xxx        # AI analysis
-ALPHA_VANTAGE_API_KEY=xxx   # Earnings
+TELEGRAM_CHAT_ID=xxx         # Your chat ID
+XAI_API_KEY=xxx              # xAI Grok
+DEEPSEEK_API_KEY=xxx         # AI analysis
+ALPHA_VANTAGE_API_KEY=xxx    # Earnings
 ```
 
-### Modal Secrets (Stock_Story)
-```bash
-XAI_API_KEY=xxx             # xAI Grok
-TELEGRAM_BOT_TOKEN=xxx      # Bot token
-TELEGRAM_CHAT_ID=1191814045 # Your chat ID
-```
+**Note:** All secrets are stored in Modal.com under the `Stock_Story` secret.
 
 ---
 
@@ -493,13 +489,12 @@ modal run modal_intelligence_jobs.py::weekly_sector_rotation_analysis
 
 ## 🔗 Links
 
-- **Dashboard:** https://stock-story-jy89o.ondigitalocean.app/
+- **Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
 - **GitHub:** https://github.com/zhuanleee/stock_scanner_bot
 - **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
 - **Modal Dashboard:** https://modal.com/apps
-- **DigitalOcean:** https://cloud.digitalocean.com/apps
 
 ---
 
-**Last verified working:** February 2, 2026 08:30 UTC
+**Last verified working:** February 2, 2026 12:30 UTC
 **Next scheduled update:** After next feature change
