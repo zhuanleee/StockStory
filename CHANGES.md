@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 18:40 - `743626b`
+
+**fix: Fix Telegram bot webhook conflict and add instant messaging**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+.github/workflows/bot_listener.yml
+CHANGES.md
+modal_api_v2.py
+tests/fix_telegram_webhook.py
+tests/setup_telegram_webhook.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 18:28 - `a4ef6fe`
 
 **fix: Correct import errors in Modal API endpoints**

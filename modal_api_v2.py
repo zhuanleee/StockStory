@@ -1361,22 +1361,24 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
-    # TELEGRAM WEBHOOK
+    # TELEGRAM WEBHOOK - Full-Featured Bot
     # =============================================================================
+
+    # In-memory watchlist (resets on cold start - could persist to volume)
+    _telegram_watchlists = {}
 
     @web_app.post("/telegram/webhook")
     async def telegram_webhook(request: Request):
         """
-        Telegram bot webhook endpoint for instant message handling.
-        Set webhook: https://api.telegram.org/bot<TOKEN>/setWebhook?url=<MODAL_URL>/telegram/webhook
+        Full-featured Telegram bot webhook with rich analysis, charts, and more.
         """
         import os
         import requests as http_requests
+        import io
 
         try:
             update = await request.json()
             bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-            chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
 
             if not bot_token:
                 return {"ok": False, "error": "Bot token not configured"}
@@ -1384,71 +1386,149 @@ Get an API key at `/api-keys/request`
             message = update.get('message', {})
             text = message.get('text', '').strip()
             msg_chat_id = message.get('chat', {}).get('id')
+            user_id = str(message.get('from', {}).get('id', msg_chat_id))
 
             if not text or not msg_chat_id:
-                return {"ok": True}  # Ignore non-text updates
+                return {"ok": True}
 
             def send_reply(reply_text: str):
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 http_requests.post(url, json={
                     'chat_id': msg_chat_id,
                     'text': reply_text,
-                    'parse_mode': 'Markdown'
-                }, timeout=10)
+                    'parse_mode': 'Markdown',
+                    'disable_web_page_preview': True
+                }, timeout=15)
 
-            # Handle commands
-            if text.lower() == '/help':
+            def send_photo(photo_bytes: bytes, caption: str = ""):
+                url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+                files = {'photo': ('chart.png', photo_bytes, 'image/png')}
+                data = {'chat_id': msg_chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
+                http_requests.post(url, files=files, data=data, timeout=30)
+
+            # Parse command and args
+            parts = text.split(maxsplit=1)
+            cmd = parts[0].lower()
+            args = parts[1].strip().upper() if len(parts) > 1 else ""
+
+            # ============ HELP ============
+            if cmd == '/help' or cmd == '/start':
                 send_reply(
-                    "*BOT COMMANDS*\n\n"
-                    "Send any ticker (e.g., `NVDA`) for analysis\n\n"
-                    "*Scan Commands:*\n"
-                    "`/top` - Show top 10 stocks\n"
-                    "`/status` - Check system status\n"
-                    "`/themes` - Show hot themes\n\n"
-                    "*Info:*\n"
-                    "`/help` - Show this help"
+                    "📈 *STOCK SCANNER BOT*\n\n"
+                    "*Quick Analysis:*\n"
+                    "Just send a ticker: `NVDA`, `AAPL`, `TSLA`\n\n"
+                    "*Commands:*\n"
+                    "`/top` - Top 10 stocks by score\n"
+                    "`/movers` - Today's biggest movers\n"
+                    "`/themes` - Hot market themes\n"
+                    "`/earnings` - Upcoming earnings\n\n"
+                    "*Research:*\n"
+                    "`/news TICKER` - Recent news\n"
+                    "`/insider TICKER` - Insider trades\n"
+                    "`/sec TICKER` - SEC filings\n"
+                    "`/chart TICKER` - Price chart\n\n"
+                    "*Watchlist:*\n"
+                    "`/watchlist` - View your list\n"
+                    "`/watch TICKER` - Add to list\n"
+                    "`/unwatch TICKER` - Remove from list\n\n"
+                    "`/status` - System status"
                 )
                 return {"ok": True}
 
-            elif text.lower() == '/status':
+            # ============ STATUS ============
+            elif cmd == '/status':
+                import pandas as pd
+                latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                scan_count = 0
+                scan_time = "Unknown"
+                if latest_path.exists():
+                    df = pd.read_csv(latest_path)
+                    scan_count = len(df)
+                    import os as os_mod
+                    mtime = os_mod.path.getmtime(latest_path)
+                    from datetime import datetime
+                    scan_time = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
+
                 send_reply(
-                    "*System Status*\n\n"
-                    "API: Operational\n"
-                    f"Mode: Modal Serverless\n"
-                    f"Webhook: Active"
+                    "🟢 *System Status*\n\n"
+                    f"API: Operational\n"
+                    f"Stocks in DB: {scan_count}\n"
+                    f"Last Scan: {scan_time}\n"
+                    f"Mode: Modal Serverless"
                 )
                 return {"ok": True}
 
-            elif text.lower() == '/top':
+            # ============ TOP 10 ============
+            elif cmd == '/top':
                 try:
-                    # Try to get latest scan results
+                    import pandas as pd
                     latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
                     if latest_path.exists():
-                        import pandas as pd
                         df = pd.read_csv(latest_path)
-                        msg = "*TOP 10 STOCKS*\n\n"
                         score_col = 'composite_score' if 'composite_score' in df.columns else 'story_score'
+                        msg = "🏆 *TOP 10 STOCKS*\n\n"
                         for i, row in df.head(10).iterrows():
                             ticker = row.get('ticker', 'N/A')
                             score = row.get(score_col, 0)
-                            msg += f"`{ticker:5}` | Score: {score:.0f}\n"
+                            price = row.get('price', 0)
+                            rs = row.get('rs_composite', 0)
+                            strength = "🔥" if score >= 80 else "📈" if score >= 60 else "📊"
+                            msg += f"{strength} `{ticker:5}` Score: *{score:.0f}*"
+                            if price:
+                                msg += f" | ${price:.2f}"
+                            if rs:
+                                msg += f" | RS: {rs:+.1f}%"
+                            msg += "\n"
                         send_reply(msg)
                     else:
-                        send_reply("No scan results available. Run a scan first.")
+                        send_reply("❌ No scan results. Run a scan first.")
                 except Exception as e:
-                    send_reply(f"Error loading results: {str(e)[:100]}")
+                    send_reply(f"Error: {str(e)[:100]}")
                 return {"ok": True}
 
-            elif text.lower() == '/themes':
+            # ============ MOVERS ============
+            elif cmd == '/movers':
+                try:
+                    import pandas as pd
+                    latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                    if latest_path.exists():
+                        df = pd.read_csv(latest_path)
+                        if 'change_pct' in df.columns:
+                            df_sorted = df.sort_values('change_pct', ascending=False)
+                            gainers = df_sorted.head(5)
+                            losers = df_sorted.tail(5).iloc[::-1]
+
+                            msg = "📊 *TODAY'S MOVERS*\n\n"
+                            msg += "*Top Gainers:*\n"
+                            for _, row in gainers.iterrows():
+                                msg += f"🟢 `{row['ticker']:5}` +{row['change_pct']:.1f}%\n"
+                            msg += "\n*Top Losers:*\n"
+                            for _, row in losers.iterrows():
+                                msg += f"🔴 `{row['ticker']:5}` {row['change_pct']:.1f}%\n"
+                            send_reply(msg)
+                        else:
+                            send_reply("Change data not available in latest scan.")
+                    else:
+                        send_reply("❌ No scan results available.")
+                except Exception as e:
+                    send_reply(f"Error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ THEMES ============
+            elif cmd == '/themes':
                 try:
                     from src.themes.fast_stories import get_hottest_themes_fast
-                    themes = get_hottest_themes_fast(limit=5)
+                    themes = get_hottest_themes_fast(limit=8)
                     if themes:
-                        msg = "*HOT THEMES*\n\n"
-                        for t in themes[:5]:
+                        msg = "🔥 *HOT THEMES*\n\n"
+                        for i, t in enumerate(themes[:8], 1):
                             name = t.get('theme', t.get('name', 'Unknown'))
                             heat = t.get('heat_score', t.get('score', 0))
-                            msg += f"🔥 *{name}*: {heat:.0f}\n"
+                            tickers = t.get('top_tickers', [])[:3]
+                            emoji = "🔥" if heat >= 80 else "📈" if heat >= 50 else "📊"
+                            msg += f"{emoji} *{name}*: {heat:.0f}\n"
+                            if tickers:
+                                msg += f"   └ {', '.join(tickers)}\n"
                         send_reply(msg)
                     else:
                         send_reply("No theme data available.")
@@ -1456,22 +1536,316 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Theme error: {str(e)[:100]}")
                 return {"ok": True}
 
-            # Ticker query (1-5 uppercase letters)
+            # ============ EARNINGS ============
+            elif cmd == '/earnings':
+                try:
+                    from src.analysis.earnings import get_upcoming_earnings
+                    earnings = get_upcoming_earnings(days_ahead=7)
+                    if earnings:
+                        msg = "📅 *UPCOMING EARNINGS (7 days)*\n\n"
+                        for e in earnings[:10]:
+                            ticker = e.get('ticker', 'N/A')
+                            date = e.get('date', 'TBD')
+                            time = e.get('time', '')
+                            emoji = "🌅" if time == 'bmo' else "🌙" if time == 'amc' else "📅"
+                            msg += f"{emoji} `{ticker:5}` - {date}\n"
+                        if len(earnings) > 10:
+                            msg += f"\n_...and {len(earnings)-10} more_"
+                        send_reply(msg)
+                    else:
+                        send_reply("No upcoming earnings in the next 7 days.")
+                except Exception as e:
+                    send_reply(f"Earnings error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ NEWS ============
+            elif cmd == '/news':
+                if not args:
+                    send_reply("Usage: `/news TICKER`\nExample: `/news NVDA`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                try:
+                    from src.analysis.news_analyzer import get_stock_news
+                    news = get_stock_news(ticker, limit=5)
+                    if news:
+                        msg = f"📰 *{ticker} NEWS*\n\n"
+                        for n in news[:5]:
+                            title = n.get('title', 'No title')[:60]
+                            source = n.get('source', 'Unknown')
+                            sentiment = n.get('sentiment', 'neutral')
+                            emoji = "🟢" if sentiment == 'positive' else "🔴" if sentiment == 'negative' else "⚪"
+                            msg += f"{emoji} {title}...\n   _via {source}_\n\n"
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No recent news for `{ticker}`")
+                except Exception as e:
+                    send_reply(f"News error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ INSIDER ============
+            elif cmd == '/insider':
+                if not args:
+                    send_reply("Usage: `/insider TICKER`\nExample: `/insider AAPL`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                try:
+                    from src.data.sec_edgar import get_insider_transactions_sync
+                    trades = get_insider_transactions_sync(ticker, days_back=30)
+                    if trades:
+                        msg = f"👔 *{ticker} INSIDER TRADES (30d)*\n\n"
+                        for t in trades[:5]:
+                            name = t.get('name', 'Unknown')[:20]
+                            txn_type = t.get('transaction_type', 'Unknown')
+                            shares = t.get('shares', 0)
+                            date = t.get('date', 'N/A')
+                            emoji = "🟢" if 'buy' in txn_type.lower() or 'purchase' in txn_type.lower() else "🔴"
+                            msg += f"{emoji} *{name}*\n   {txn_type}: {shares:,} shares ({date})\n\n"
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No insider trades for `{ticker}` in last 30 days")
+                except Exception as e:
+                    send_reply(f"Insider error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ SEC FILINGS ============
+            elif cmd == '/sec':
+                if not args:
+                    send_reply("Usage: `/sec TICKER`\nExample: `/sec MSFT`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                try:
+                    from src.data.sec_edgar import SECEdgarClient
+                    client = SECEdgarClient()
+                    filings = client.get_company_filings(ticker, days_back=60)
+                    if filings:
+                        msg = f"📋 *{ticker} SEC FILINGS (60d)*\n\n"
+                        for f in filings[:5]:
+                            form = f.form_type if hasattr(f, 'form_type') else f.get('form_type', 'Unknown')
+                            date = f.filed_date if hasattr(f, 'filed_date') else f.get('filed_date', 'N/A')
+                            desc = f.description if hasattr(f, 'description') else f.get('description', '')
+                            desc = desc[:40] if desc else form
+                            emoji = "📄" if '10-' in form else "📊" if '8-K' in form else "📁"
+                            msg += f"{emoji} *{form}* - {date}\n   {desc}\n\n"
+                        send_reply(msg)
+                    else:
+                        send_reply(f"No SEC filings for `{ticker}` in last 60 days")
+                except Exception as e:
+                    send_reply(f"SEC error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ CHART ============
+            elif cmd == '/chart':
+                if not args:
+                    send_reply("Usage: `/chart TICKER`\nExample: `/chart AAPL`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                try:
+                    import yfinance as yf
+                    import matplotlib
+                    matplotlib.use('Agg')
+                    import matplotlib.pyplot as plt
+                    import matplotlib.dates as mdates
+
+                    # Fetch data
+                    stock = yf.Ticker(ticker)
+                    hist = stock.history(period='3mo')
+
+                    if hist.empty:
+                        send_reply(f"No data available for `{ticker}`")
+                        return {"ok": True}
+
+                    # Create chart
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[3, 1],
+                                                   gridspec_kw={'hspace': 0.1})
+                    fig.patch.set_facecolor('#1a1a2e')
+
+                    # Price chart
+                    ax1.set_facecolor('#1a1a2e')
+                    ax1.plot(hist.index, hist['Close'], color='#00d4ff', linewidth=1.5)
+                    ax1.fill_between(hist.index, hist['Close'], alpha=0.3, color='#00d4ff')
+
+                    # Add SMAs
+                    if len(hist) >= 20:
+                        sma20 = hist['Close'].rolling(20).mean()
+                        ax1.plot(hist.index, sma20, color='#ffa500', linewidth=1, alpha=0.7, label='SMA20')
+                    if len(hist) >= 50:
+                        sma50 = hist['Close'].rolling(50).mean()
+                        ax1.plot(hist.index, sma50, color='#ff6b6b', linewidth=1, alpha=0.7, label='SMA50')
+
+                    ax1.set_ylabel('Price ($)', color='white')
+                    ax1.tick_params(colors='white')
+                    ax1.spines['bottom'].set_color('white')
+                    ax1.spines['left'].set_color('white')
+                    ax1.spines['top'].set_visible(False)
+                    ax1.spines['right'].set_visible(False)
+                    ax1.legend(loc='upper left', facecolor='#1a1a2e', edgecolor='none', labelcolor='white')
+                    ax1.set_xticklabels([])
+
+                    current_price = hist['Close'].iloc[-1]
+                    change = ((hist['Close'].iloc[-1] / hist['Close'].iloc[0]) - 1) * 100
+                    ax1.set_title(f'{ticker}  ${current_price:.2f}  ({change:+.1f}%)', color='white', fontsize=14, fontweight='bold')
+
+                    # Volume chart
+                    ax2.set_facecolor('#1a1a2e')
+                    colors = ['#00d4ff' if hist['Close'].iloc[i] >= hist['Open'].iloc[i] else '#ff6b6b'
+                              for i in range(len(hist))]
+                    ax2.bar(hist.index, hist['Volume'], color=colors, alpha=0.7)
+                    ax2.set_ylabel('Volume', color='white')
+                    ax2.tick_params(colors='white')
+                    ax2.spines['bottom'].set_color('white')
+                    ax2.spines['left'].set_color('white')
+                    ax2.spines['top'].set_visible(False)
+                    ax2.spines['right'].set_visible(False)
+                    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+                    ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+                    plt.xticks(rotation=45)
+
+                    plt.tight_layout()
+
+                    # Save to bytes
+                    buf = io.BytesIO()
+                    plt.savefig(buf, format='png', dpi=100, facecolor='#1a1a2e', edgecolor='none')
+                    buf.seek(0)
+                    plt.close()
+
+                    # Send chart
+                    send_photo(buf.read(), f"📊 *{ticker}* - 3 Month Chart")
+
+                except Exception as e:
+                    send_reply(f"Chart error: {str(e)[:100]}")
+                return {"ok": True}
+
+            # ============ WATCHLIST ============
+            elif cmd == '/watchlist':
+                watchlist = _telegram_watchlists.get(user_id, [])
+                if watchlist:
+                    msg = "👁 *YOUR WATCHLIST*\n\n"
+                    try:
+                        import pandas as pd
+                        latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
+                        df = pd.read_csv(latest_path) if latest_path.exists() else pd.DataFrame()
+                        for ticker in watchlist:
+                            row = df[df['ticker'] == ticker].iloc[0] if ticker in df['ticker'].values else None
+                            if row is not None:
+                                score = row.get('composite_score', row.get('story_score', 0))
+                                price = row.get('price', 0)
+                                msg += f"`{ticker:5}` Score: {score:.0f}"
+                                if price:
+                                    msg += f" | ${price:.2f}"
+                                msg += "\n"
+                            else:
+                                msg += f"`{ticker:5}` (no data)\n"
+                    except:
+                        msg += ", ".join(watchlist)
+                    send_reply(msg)
+                else:
+                    send_reply("Your watchlist is empty.\nUse `/watch TICKER` to add stocks.")
+                return {"ok": True}
+
+            elif cmd == '/watch':
+                if not args:
+                    send_reply("Usage: `/watch TICKER`\nExample: `/watch NVDA`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                if user_id not in _telegram_watchlists:
+                    _telegram_watchlists[user_id] = []
+                if ticker not in _telegram_watchlists[user_id]:
+                    if len(_telegram_watchlists[user_id]) >= 20:
+                        send_reply("❌ Watchlist full (max 20). Remove some first.")
+                    else:
+                        _telegram_watchlists[user_id].append(ticker)
+                        send_reply(f"✅ Added `{ticker}` to watchlist ({len(_telegram_watchlists[user_id])}/20)")
+                else:
+                    send_reply(f"`{ticker}` is already in your watchlist.")
+                return {"ok": True}
+
+            elif cmd == '/unwatch':
+                if not args:
+                    send_reply("Usage: `/unwatch TICKER`\nExample: `/unwatch NVDA`")
+                    return {"ok": True}
+                ticker = args.split()[0]
+                if user_id in _telegram_watchlists and ticker in _telegram_watchlists[user_id]:
+                    _telegram_watchlists[user_id].remove(ticker)
+                    send_reply(f"✅ Removed `{ticker}` from watchlist")
+                else:
+                    send_reply(f"`{ticker}` is not in your watchlist.")
+                return {"ok": True}
+
+            # ============ TICKER ANALYSIS (rich version) ============
             elif len(text) <= 5 and text.isalpha():
                 ticker = text.upper()
                 try:
+                    # Get comprehensive analysis
                     from src.scoring.story_scorer import score_stock_story
                     result = score_stock_story(ticker)
+
                     if result:
-                        msg = f"*{ticker} ANALYSIS*\n\n"
-                        msg += f"*Score:* {result.get('story_score', 0):.0f}/100\n"
-                        msg += f"*Strength:* {result.get('story_strength', 'unknown')}\n"
+                        score = result.get('story_score', 0)
+                        strength = result.get('story_strength', 'unknown')
+
+                        # Determine emoji
+                        if score >= 80:
+                            score_emoji = "🔥"
+                        elif score >= 60:
+                            score_emoji = "📈"
+                        elif score >= 40:
+                            score_emoji = "📊"
+                        else:
+                            score_emoji = "📉"
+
+                        msg = f"{score_emoji} *{ticker} ANALYSIS*\n\n"
+                        msg += f"*Score:* {score:.0f}/100 ({strength})\n"
+
+                        # Price info
+                        try:
+                            import yfinance as yf
+                            stock = yf.Ticker(ticker)
+                            info = stock.info
+                            price = info.get('regularMarketPrice', info.get('currentPrice', 0))
+                            change = info.get('regularMarketChangePercent', 0)
+                            volume = info.get('regularMarketVolume', 0)
+                            avg_vol = info.get('averageVolume', 1)
+
+                            if price:
+                                change_emoji = "🟢" if change >= 0 else "🔴"
+                                msg += f"\n*Price:* ${price:.2f} {change_emoji} {change:+.2f}%\n"
+                            if volume and avg_vol:
+                                vol_ratio = volume / avg_vol
+                                vol_emoji = "🔊" if vol_ratio > 1.5 else "🔈"
+                                msg += f"*Volume:* {vol_emoji} {vol_ratio:.1f}x avg\n"
+                        except:
+                            pass
+
+                        # Theme
                         if result.get('hottest_theme'):
-                            msg += f"*Theme:* {result['hottest_theme']}\n"
+                            msg += f"\n*Theme:* 🎯 {result['hottest_theme']}\n"
+
+                        # Technical
+                        tech = result.get('technical', {})
+                        if tech:
+                            msg += "\n*Technical:*\n"
+                            if tech.get('above_20_sma'):
+                                msg += "  ✅ Above 20 SMA\n"
+                            if tech.get('above_50_sma'):
+                                msg += "  ✅ Above 50 SMA\n"
+                            if tech.get('in_squeeze'):
+                                msg += "  ⚡ IN SQUEEZE\n"
+                            if tech.get('breakout'):
+                                msg += "  🚀 BREAKOUT\n"
+
+                        # Catalysts
                         if result.get('catalysts'):
-                            msg += f"\n*Catalysts:*\n"
+                            msg += "\n*Catalysts:*\n"
                             for c in result['catalysts'][:3]:
-                                msg += f"• {c}\n"
+                                msg += f"  • {c}\n"
+
+                        # Sentiment
+                        sentiment = result.get('sentiment', {})
+                        if sentiment:
+                            sent_score = sentiment.get('score', 0)
+                            sent_emoji = "🟢" if sent_score > 0.2 else "🔴" if sent_score < -0.2 else "⚪"
+                            msg += f"\n*Sentiment:* {sent_emoji} {sent_score:+.2f}\n"
+
                         send_reply(msg)
                     else:
                         send_reply(f"No data found for `{ticker}`")
@@ -1479,9 +1853,12 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Error analyzing {ticker}: {str(e)[:100]}")
                 return {"ok": True}
 
-            # Unknown command
+            # ============ UNKNOWN ============
             else:
-                send_reply("Unknown command. Send /help for available commands.")
+                if text.startswith('/'):
+                    send_reply(f"Unknown command: `{cmd}`\nSend `/help` for available commands.")
+                else:
+                    send_reply("Send a ticker symbol (e.g., `NVDA`) or `/help` for commands.")
                 return {"ok": True}
 
         except Exception as e:
@@ -1489,9 +1866,7 @@ Get an API key at `/api-keys/request`
 
     @web_app.get("/telegram/setup")
     def telegram_setup():
-        """
-        Instructions for setting up Telegram webhook.
-        """
+        """Instructions for setting up Telegram webhook."""
         import os
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
@@ -1506,7 +1881,12 @@ Get an API key at `/api-keys/request`
             "current_config": {
                 "bot_token_set": bool(bot_token),
                 "webhook_endpoint": "/telegram/webhook"
-            }
+            },
+            "available_commands": [
+                "/help", "/top", "/movers", "/themes", "/earnings",
+                "/news TICKER", "/insider TICKER", "/sec TICKER", "/chart TICKER",
+                "/watchlist", "/watch TICKER", "/unwatch TICKER", "/status"
+            ]
         }
 
     # =============================================================================
