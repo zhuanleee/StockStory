@@ -1375,21 +1375,26 @@ Get an API key at `/api-keys/request`
         import os
         import requests as http_requests
         import io
-        import logging
+        import sys
 
-        # Set up logging
-        logging.basicConfig(level=logging.INFO)
-        logger = logging.getLogger("telegram_bot")
+        import logging
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
+        tg_logger = logging.getLogger("telegram_webhook")
+
+        def log(msg):
+            """Log to both print and logging for Modal."""
+            tg_logger.info(f"[TG] {msg}")
+            print(f"[TG] {msg}", file=sys.stderr, flush=True)
 
         try:
             update = await request.json()
             bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
             # Log incoming update
-            logger.info(f"📨 TELEGRAM UPDATE: {json.dumps(update, default=str)[:500]}")
+            log(f"📨 UPDATE RECEIVED: {json.dumps(update, default=str)[:500]}")
 
             if not bot_token:
-                logger.error("❌ Bot token not configured")
+                log("❌ Bot token not configured")
                 return {"ok": False, "error": "Bot token not configured"}
 
             message = update.get('message', {})
@@ -1399,16 +1404,17 @@ Get an API key at `/api-keys/request`
             username = message.get('from', {}).get('username', 'unknown')
 
             # Log message details
-            logger.info(f"📩 MESSAGE from @{username} (chat:{msg_chat_id}): '{text}'")
+            log(f"📩 MESSAGE from @{username} (chat:{msg_chat_id}): '{text}'")
 
             if not text or not msg_chat_id:
-                logger.info("⏭️ Skipping non-text update")
+                log("⏭️ Skipping non-text update")
                 return {"ok": True}
 
             def send_reply(reply_text: str):
-                logger.info(f"📤 SENDING REPLY ({len(reply_text)} chars): {reply_text[:100]}...")
+                log(f"📤 SENDING REPLY ({len(reply_text)} chars): {reply_text[:100]}...")
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 try:
+                    # Try with Markdown first
                     resp = http_requests.post(url, json={
                         'chat_id': msg_chat_id,
                         'text': reply_text,
@@ -1416,25 +1422,39 @@ Get an API key at `/api-keys/request`
                         'disable_web_page_preview': True
                     }, timeout=15)
                     if resp.status_code == 200:
-                        logger.info("✅ Reply sent successfully")
+                        log("✅ Reply sent successfully")
+                    elif resp.status_code == 400 and 'parse entities' in resp.text:
+                        # Markdown parsing failed - retry without formatting
+                        log("⚠️ Markdown parse failed, retrying without formatting...")
+                        # Remove markdown characters
+                        plain_text = reply_text.replace('*', '').replace('_', '').replace('`', '')
+                        resp2 = http_requests.post(url, json={
+                            'chat_id': msg_chat_id,
+                            'text': plain_text,
+                            'disable_web_page_preview': True
+                        }, timeout=15)
+                        if resp2.status_code == 200:
+                            log("✅ Reply sent (plain text)")
+                        else:
+                            log(f"❌ Plain reply also failed: {resp2.status_code}")
                     else:
-                        logger.error(f"❌ Reply failed: {resp.status_code} - {resp.text[:200]}")
+                        log(f"❌ Reply failed: {resp.status_code} - {resp.text[:200]}")
                 except Exception as e:
-                    logger.error(f"❌ Reply exception: {e}")
+                    log(f"❌ Reply exception: {e}")
 
             def send_photo(photo_bytes: bytes, caption: str = ""):
-                logger.info(f"📤 SENDING PHOTO ({len(photo_bytes)} bytes)")
+                log(f"📤 SENDING PHOTO ({len(photo_bytes)} bytes)")
                 url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
                 files = {'photo': ('chart.png', photo_bytes, 'image/png')}
                 data = {'chat_id': msg_chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
                 try:
                     resp = http_requests.post(url, files=files, data=data, timeout=30)
                     if resp.status_code == 200:
-                        logger.info("✅ Photo sent successfully")
+                        log("✅ Photo sent successfully")
                     else:
-                        logger.error(f"❌ Photo failed: {resp.status_code} - {resp.text[:200]}")
+                        log(f"❌ Photo failed: {resp.status_code} - {resp.text[:200]}")
                 except Exception as e:
-                    logger.error(f"❌ Photo exception: {e}")
+                    log(f"❌ Photo exception: {e}")
 
             # Parse command and args
             parts = text.split(maxsplit=1)
@@ -1804,14 +1824,14 @@ Get an API key at `/api-keys/request`
             # ============ TICKER ANALYSIS (rich version) ============
             elif len(text) <= 5 and text.isalpha():
                 ticker = text.upper()
-                logger.info(f"🔍 ANALYZING TICKER: {ticker}")
+                log(f"🔍 ANALYZING TICKER: {ticker}")
                 try:
                     # Get comprehensive analysis
-                    logger.info(f"📊 Importing calculate_story_score...")
+                    log(f"📊 Importing calculate_story_score...")
                     from src.scoring.story_scorer import calculate_story_score
-                    logger.info(f"📊 Calling calculate_story_score({ticker})...")
+                    log(f"📊 Calling calculate_story_score({ticker})...")
                     result = calculate_story_score(ticker)
-                    logger.info(f"📊 Got result: {str(result)[:200]}...")
+                    log(f"📊 Got result: score={result.get('story_score', 'N/A')}, strength={result.get('story_strength', 'N/A')}")
 
                     if result:
                         score = result.get('story_score', 0)
@@ -1893,21 +1913,22 @@ Get an API key at `/api-keys/request`
                         if result.get('is_trending'):
                             msg += "🔥 *TRENDING on social media*\n"
 
-                        logger.info(f"✅ Analysis complete for {ticker}, sending reply...")
+                        log(f"✅ Analysis complete for {ticker}, sending reply...")
                         send_reply(msg)
                     else:
-                        logger.warning(f"⚠️ No data found for {ticker}")
+                        log(f"⚠️ No data found for {ticker}")
                         send_reply(f"No data found for `{ticker}`")
                 except Exception as e:
                     import traceback
                     error_tb = traceback.format_exc()
-                    logger.error(f"❌ ERROR analyzing {ticker}: {e}\n{error_tb}")
+                    log(f"❌ ERROR analyzing {ticker}: {e}")
+                    log(f"TRACEBACK:\n{error_tb}")
                     send_reply(f"Error analyzing {ticker}: {str(e)[:100]}")
                 return {"ok": True}
 
             # ============ UNKNOWN ============
             else:
-                logger.info(f"❓ Unknown command/text: {text}")
+                log(f"❓ Unknown command/text: {text}")
                 if text.startswith('/'):
                     send_reply(f"Unknown command: `{cmd}`\nSend `/help` for available commands.")
                 else:
@@ -1917,7 +1938,8 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             import traceback
             error_tb = traceback.format_exc()
-            logger.error(f"❌ WEBHOOK ERROR: {e}\n{error_tb}")
+            log(f"❌ WEBHOOK ERROR: {e}")
+            log(f"TRACEBACK:\n{error_tb}")
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/telegram/setup")

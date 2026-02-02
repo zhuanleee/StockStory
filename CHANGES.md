@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 18:58 - `3e328da`
+
+**feat: Add detailed logging to Telegram webhook**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 18:50 - `d5b2b07`
 
 **fix: Correct import for calculate_story_score in Telegram bot**
