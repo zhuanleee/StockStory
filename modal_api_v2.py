@@ -2889,6 +2889,81 @@ Get an API key at `/api-keys/request`
                     send_reply(f"Unusual activity error: {str(e)[:100]}")
                 return {"ok": True}
 
+            elif cmd == '/hedge':
+                try:
+                    from src.analysis.options_flow import get_crisis_market_sentiment, get_put_protection_recommendations
+
+                    # Parse optional portfolio value
+                    portfolio_value = 100000  # Default $100K
+                    severity = 7  # Default elevated
+                    if args:
+                        parts = args.split()
+                        for part in parts:
+                            try:
+                                val = int(part.replace('k', '000').replace('K', '000'))
+                                portfolio_value = val
+                            except:
+                                pass
+
+                    # Get market sentiment
+                    sentiment = get_crisis_market_sentiment()
+
+                    # Get put recommendations
+                    recs = get_put_protection_recommendations(crisis_severity=severity, portfolio_value=portfolio_value)
+
+                    msg = "🛡️ *PUT PROTECTION RECOMMENDATIONS*\n\n"
+
+                    # Market Sentiment Section
+                    msg += "*📊 Live Market Sentiment*\n"
+                    vix = sentiment.get('vix')
+                    if vix:
+                        vix_change = sentiment.get('vix_change', 0)
+                        vix_emoji = "🔴" if vix >= 25 else "🟡" if vix >= 20 else "🟢"
+                        msg += f"{vix_emoji} VIX: {vix:.1f} ({'+' if vix_change >= 0 else ''}{vix_change:.1f}%)\n"
+
+                    spy_price = sentiment.get('spy_price')
+                    if spy_price:
+                        spy_change = sentiment.get('spy_change', 0)
+                        msg += f"SPY: ${spy_price:,.2f} ({'+' if spy_change >= 0 else ''}{spy_change:.2f}%)\n"
+
+                    qqq_price = sentiment.get('qqq_price')
+                    if qqq_price:
+                        qqq_change = sentiment.get('qqq_change', 0)
+                        msg += f"QQQ: ${qqq_price:,.2f} ({'+' if qqq_change >= 0 else ''}{qqq_change:.2f}%)\n"
+
+                    spy_pc = sentiment.get('spy_put_call_ratio')
+                    if spy_pc:
+                        msg += f"P/C Ratio: {spy_pc:.2f}\n"
+
+                    msg += f"Fear Level: {sentiment.get('market_fear_level', 'unknown')}\n\n"
+
+                    # AI Recommendations
+                    msg += f"*🤖 AI Protection Analysis*\n"
+                    msg += f"Portfolio: ${portfolio_value:,}\n"
+                    msg += f"Protection Level: {recs.get('protection_level', 'standard').upper()}\n\n"
+
+                    ai_analysis = recs.get('ai_analysis', '')
+                    if ai_analysis:
+                        msg += f"{ai_analysis}\n\n"
+
+                    # Unusual puts (smart money)
+                    unusual_puts = sentiment.get('unusual_put_activity', [])
+                    if unusual_puts:
+                        msg += "*🐋 Smart Money Put Activity*\n"
+                        for put in unusual_puts[:3]:
+                            ticker = put.get('ticker', '--')
+                            strike = put.get('strike', 0)
+                            premium = put.get('premium', 0) / 1000
+                            msg += f"  {ticker} ${strike:.0f}P - ${premium:.0f}K\n"
+
+                    msg += f"\n_Usage: /hedge [portfolio_value]_\n"
+                    msg += f"_Example: /hedge 250000_"
+
+                    send_reply(msg)
+                except Exception as e:
+                    send_reply(f"Hedge error: {str(e)[:100]}")
+                return {"ok": True}
+
             # ============ COMMANDS LIST ============
             elif cmd == '/commands':
                 msg = "📋 *ALL COMMANDS*\n\n"
@@ -2913,7 +2988,8 @@ Get an API key at `/api-keys/request`
                 msg += "  `/options NVDA` - Options sentiment\n"
                 msg += "  `/flow NVDA` - Smart money flow\n"
                 msg += "  `/whales` - Large options trades\n"
-                msg += "  `/unusual` - Unusual activity scan\n\n"
+                msg += "  `/unusual` - Unusual activity scan\n"
+                msg += "  `/hedge [amount]` - Put protection recs\n\n"
                 msg += "*Other:*\n"
                 msg += "  `/earnings` - Upcoming earnings\n"
                 msg += "  `/watchlist` - Your watchlist\n"

@@ -419,7 +419,7 @@ class NotificationManager:
         return data.get('message', 'No summary available')
 
     def _format_crisis_alert(self, data: Dict) -> str:
-        """Format crisis alert from X Intelligence"""
+        """Format crisis alert from X Intelligence with options sentiment and put recommendations"""
         severity = data.get('severity', 0)
         topic = data.get('topic', 'Unknown Crisis')
         crisis_type = data.get('crisis_type', 'unknown')
@@ -481,8 +481,83 @@ class NotificationManager:
                 message += f"  • {action}\n"
             message += "\n"
 
+        # Add live market options sentiment (for severity >= 7)
+        if severity >= 7:
+            message += self._format_options_sentiment_section(severity)
+
         message += f"_X Intelligence Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_"
         return message
+
+    def _format_options_sentiment_section(self, severity: int) -> str:
+        """Format live market options sentiment and put protection recommendations"""
+        section = ""
+        try:
+            from src.analysis.options_flow import get_crisis_market_sentiment, get_put_protection_recommendations
+
+            # Get live market sentiment
+            sentiment = get_crisis_market_sentiment()
+
+            section += "━━━━━━━━━━━━━━━━━━━━━━\n"
+            section += "📊 *LIVE MARKET OPTIONS SENTIMENT*\n\n"
+
+            # VIX
+            vix = sentiment.get('vix')
+            vix_change = sentiment.get('vix_change', 0)
+            if vix:
+                vix_emoji = "🔴" if vix >= 25 else "🟡" if vix >= 20 else "🟢"
+                vix_direction = "↑" if vix_change > 0 else "↓" if vix_change < 0 else "→"
+                section += f"{vix_emoji} *VIX:* {vix:.1f} ({vix_direction}{abs(vix_change):.1f}%)\n"
+
+            # SPY
+            spy_price = sentiment.get('spy_price')
+            spy_change = sentiment.get('spy_change', 0)
+            if spy_price:
+                spy_emoji = "🟢" if spy_change >= 0 else "🔴"
+                section += f"{spy_emoji} *SPY:* ${spy_price:,.2f} ({'+' if spy_change >= 0 else ''}{spy_change:.2f}%)\n"
+
+            # QQQ
+            qqq_price = sentiment.get('qqq_price')
+            qqq_change = sentiment.get('qqq_change', 0)
+            if qqq_price:
+                qqq_emoji = "🟢" if qqq_change >= 0 else "🔴"
+                section += f"{qqq_emoji} *QQQ:* ${qqq_price:,.2f} ({'+' if qqq_change >= 0 else ''}{qqq_change:.2f}%)\n"
+
+            # Put/Call Ratios
+            spy_pc = sentiment.get('spy_put_call_ratio')
+            if spy_pc:
+                pc_emoji = "🐻" if spy_pc > 1.2 else "🐂" if spy_pc < 0.8 else "⚖️"
+                section += f"{pc_emoji} *SPY P/C Ratio:* {spy_pc:.2f}\n"
+
+            # Market Fear Level
+            fear_level = sentiment.get('market_fear_level', 'unknown')
+            section += f"😱 *Fear Level:* {fear_level}\n\n"
+
+            # Get put protection recommendations
+            recs = get_put_protection_recommendations(crisis_severity=severity)
+
+            section += "━━━━━━━━━━━━━━━━━━━━━━\n"
+            section += "🛡️ *AI PUT PROTECTION RECOMMENDATIONS*\n\n"
+
+            # AI Analysis
+            ai_analysis = recs.get('ai_analysis', '')
+            if ai_analysis:
+                section += f"{ai_analysis}\n\n"
+
+            # Unusual put activity (smart money hedging)
+            unusual_puts = sentiment.get('unusual_put_activity', [])
+            if unusual_puts:
+                section += "*Smart Money Put Activity:*\n"
+                for put in unusual_puts[:3]:
+                    ticker = put.get('ticker', '--')
+                    strike = put.get('strike', 0)
+                    premium = put.get('premium', 0) / 1000
+                    section += f"  • {ticker} ${strike:.0f}P - ${premium:.0f}K\n"
+                section += "\n"
+
+        except Exception as e:
+            section += f"\n_Options data unavailable: {str(e)[:50]}_\n\n"
+
+        return section
 
     def _format_generic(self, data: Dict) -> str:
         """Generic formatter for unknown alert types"""

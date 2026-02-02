@@ -862,3 +862,255 @@ def get_whale_trades(min_premium: float = 500000) -> List[Dict]:
     """Get whale trades (>$500K premium)."""
     feed = get_unusual_feed()
     return feed.get_feed(min_premium=min_premium, limit=20)
+
+
+def get_crisis_market_sentiment() -> Dict:
+    """
+    Get comprehensive market options sentiment for crisis alerts.
+    Returns VIX, put/call ratios, GEX, and overall market fear indicators.
+    """
+    result = {
+        'timestamp': datetime.now().isoformat(),
+        'vix': None,
+        'vix_change': None,
+        'spy_price': None,
+        'spy_change': None,
+        'qqq_price': None,
+        'qqq_change': None,
+        'spy_put_call_ratio': None,
+        'qqq_put_call_ratio': None,
+        'spy_gex': None,
+        'market_fear_level': 'unknown',
+        'unusual_put_activity': [],
+    }
+
+    try:
+        if HAS_YFINANCE:
+            import yfinance as yf
+
+            # Get VIX
+            vix = yf.Ticker("^VIX")
+            vix_hist = vix.history(period="5d")
+            if len(vix_hist) >= 2:
+                result['vix'] = round(vix_hist['Close'].iloc[-1], 2)
+                vix_prev = vix_hist['Close'].iloc[-2]
+                result['vix_change'] = round(((result['vix'] / vix_prev) - 1) * 100, 2)
+
+            # Get SPY
+            spy = yf.Ticker("SPY")
+            spy_hist = spy.history(period="5d")
+            if len(spy_hist) >= 2:
+                result['spy_price'] = round(spy_hist['Close'].iloc[-1], 2)
+                spy_prev = spy_hist['Close'].iloc[-2]
+                result['spy_change'] = round(((result['spy_price'] / spy_prev) - 1) * 100, 2)
+
+            # Get QQQ
+            qqq = yf.Ticker("QQQ")
+            qqq_hist = qqq.history(period="5d")
+            if len(qqq_hist) >= 2:
+                result['qqq_price'] = round(qqq_hist['Close'].iloc[-1], 2)
+                qqq_prev = qqq_hist['Close'].iloc[-2]
+                result['qqq_change'] = round(((result['qqq_price'] / qqq_prev) - 1) * 100, 2)
+
+        # Get options sentiment for SPY
+        spy_sentiment = get_options_sentiment('SPY')
+        if spy_sentiment:
+            result['spy_put_call_ratio'] = spy_sentiment.get('put_call_ratio')
+            result['spy_gex'] = spy_sentiment.get('gex', {}).get('total', 0)
+
+        # Get options sentiment for QQQ
+        qqq_sentiment = get_options_sentiment('QQQ')
+        if qqq_sentiment:
+            result['qqq_put_call_ratio'] = qqq_sentiment.get('put_call_ratio')
+
+        # Determine market fear level
+        vix_val = result['vix'] or 16
+        if vix_val >= 30:
+            result['market_fear_level'] = 'EXTREME FEAR'
+        elif vix_val >= 25:
+            result['market_fear_level'] = 'HIGH FEAR'
+        elif vix_val >= 20:
+            result['market_fear_level'] = 'ELEVATED'
+        elif vix_val >= 15:
+            result['market_fear_level'] = 'NORMAL'
+        else:
+            result['market_fear_level'] = 'COMPLACENT'
+
+        # Get unusual put activity (potential smart money hedging)
+        try:
+            unusual = scan_unusual_activity(['SPY', 'QQQ', 'IWM'], min_premium=100000)
+            puts_only = [u for u in unusual if u.get('type') in ['P', 'put']]
+            result['unusual_put_activity'] = puts_only[:5]
+        except:
+            pass
+
+    except Exception as e:
+        logger.error(f"Error getting crisis market sentiment: {e}")
+
+    return result
+
+
+def get_put_protection_recommendations(crisis_severity: int = 7, portfolio_value: float = 100000) -> Dict:
+    """
+    AI-analyzed put protection recommendations for crisis situations.
+
+    Args:
+        crisis_severity: Crisis severity level (1-10)
+        portfolio_value: Estimated portfolio value to protect
+
+    Returns:
+        Dict with put recommendations for SPY and QQQ
+    """
+    recommendations = {
+        'timestamp': datetime.now().isoformat(),
+        'crisis_severity': crisis_severity,
+        'portfolio_value': portfolio_value,
+        'protection_level': 'standard',
+        'spy_puts': [],
+        'qqq_puts': [],
+        'total_cost_estimate': 0,
+        'protection_coverage': '0%',
+        'ai_analysis': '',
+    }
+
+    try:
+        # Determine protection level based on severity
+        if crisis_severity >= 9:
+            recommendations['protection_level'] = 'maximum'
+            otm_pct = 0.03  # 3% OTM for aggressive protection
+            exp_weeks = 4   # 4 weeks out
+            hedge_pct = 0.10  # Hedge 10% of portfolio
+        elif crisis_severity >= 7:
+            recommendations['protection_level'] = 'elevated'
+            otm_pct = 0.05  # 5% OTM
+            exp_weeks = 3   # 3 weeks out
+            hedge_pct = 0.05  # Hedge 5% of portfolio
+        else:
+            recommendations['protection_level'] = 'standard'
+            otm_pct = 0.07  # 7% OTM
+            exp_weeks = 2   # 2 weeks out
+            hedge_pct = 0.03  # Hedge 3% of portfolio
+
+        if HAS_YFINANCE:
+            import yfinance as yf
+            from datetime import date
+
+            # Calculate expiration date (next Friday after exp_weeks)
+            today = date.today()
+            days_until_friday = (4 - today.weekday()) % 7
+            if days_until_friday == 0:
+                days_until_friday = 7
+            target_exp = today + timedelta(days=days_until_friday + (exp_weeks - 1) * 7)
+            exp_str = target_exp.strftime('%Y-%m-%d')
+
+            # SPY Put Recommendation
+            spy = yf.Ticker("SPY")
+            spy_hist = spy.history(period="1d")
+            if len(spy_hist) > 0:
+                spy_price = spy_hist['Close'].iloc[-1]
+                spy_strike = round(spy_price * (1 - otm_pct), 0)  # Round to whole number
+                # Estimate put price (simplified - ~2% of strike for 3-week ATM)
+                estimated_premium = spy_strike * 0.015 * (1 + (0.1 - otm_pct) * 5)
+
+                # Calculate contracts needed
+                hedge_amount = portfolio_value * hedge_pct
+                contracts = max(1, int(hedge_amount / (spy_strike * 100)))
+                total_cost = contracts * estimated_premium * 100
+
+                recommendations['spy_puts'].append({
+                    'ticker': 'SPY',
+                    'type': 'PUT',
+                    'strike': spy_strike,
+                    'expiration': exp_str,
+                    'current_price': round(spy_price, 2),
+                    'otm_percent': f"{otm_pct * 100:.0f}%",
+                    'contracts': contracts,
+                    'est_premium': round(estimated_premium, 2),
+                    'est_total_cost': round(total_cost, 0),
+                    'protection_value': contracts * spy_strike * 100,
+                })
+
+            # QQQ Put Recommendation
+            qqq = yf.Ticker("QQQ")
+            qqq_hist = qqq.history(period="1d")
+            if len(qqq_hist) > 0:
+                qqq_price = qqq_hist['Close'].iloc[-1]
+                qqq_strike = round(qqq_price * (1 - otm_pct), 0)
+                estimated_premium = qqq_strike * 0.018 * (1 + (0.1 - otm_pct) * 5)  # QQQ slightly higher IV
+
+                contracts = max(1, int(hedge_amount / (qqq_strike * 100)))
+                total_cost = contracts * estimated_premium * 100
+
+                recommendations['qqq_puts'].append({
+                    'ticker': 'QQQ',
+                    'type': 'PUT',
+                    'strike': qqq_strike,
+                    'expiration': exp_str,
+                    'current_price': round(qqq_price, 2),
+                    'otm_percent': f"{otm_pct * 100:.0f}%",
+                    'contracts': contracts,
+                    'est_premium': round(estimated_premium, 2),
+                    'est_total_cost': round(total_cost, 0),
+                    'protection_value': contracts * qqq_strike * 100,
+                })
+
+            # Calculate totals
+            spy_cost = sum(p['est_total_cost'] for p in recommendations['spy_puts'])
+            qqq_cost = sum(p['est_total_cost'] for p in recommendations['qqq_puts'])
+            recommendations['total_cost_estimate'] = spy_cost + qqq_cost
+
+            total_protection = sum(p['protection_value'] for p in recommendations['spy_puts'] + recommendations['qqq_puts'])
+            recommendations['protection_coverage'] = f"{(total_protection / portfolio_value) * 100:.0f}%"
+
+            # Generate AI analysis summary
+            recommendations['ai_analysis'] = _generate_put_analysis(
+                crisis_severity,
+                recommendations,
+                spy_price if 'spy_price' in dir() else 0,
+                qqq_price if 'qqq_price' in dir() else 0
+            )
+
+    except Exception as e:
+        logger.error(f"Error generating put recommendations: {e}")
+        recommendations['ai_analysis'] = f"Error generating recommendations: {str(e)}"
+
+    return recommendations
+
+
+def _generate_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_price: float) -> str:
+    """Generate AI analysis text for put protection."""
+    protection_level = recs.get('protection_level', 'standard')
+    total_cost = recs.get('total_cost_estimate', 0)
+    coverage = recs.get('protection_coverage', '0%')
+
+    spy_puts = recs.get('spy_puts', [])
+    qqq_puts = recs.get('qqq_puts', [])
+
+    analysis = []
+
+    if severity >= 9:
+        analysis.append("⚠️ CRITICAL: Maximum protection recommended due to severe crisis risk.")
+    elif severity >= 7:
+        analysis.append("⚠️ ELEVATED: Increased hedging recommended as crisis develops.")
+    else:
+        analysis.append("📊 STANDARD: Precautionary hedging suggested.")
+
+    if spy_puts:
+        p = spy_puts[0]
+        analysis.append(f"\n🛡️ SPY PUT: Buy {p['contracts']}x ${p['strike']:.0f}P exp {p['expiration']}")
+        analysis.append(f"   Est. cost: ${p['est_total_cost']:,.0f} | {p['otm_percent']} OTM")
+
+    if qqq_puts:
+        p = qqq_puts[0]
+        analysis.append(f"\n🛡️ QQQ PUT: Buy {p['contracts']}x ${p['strike']:.0f}P exp {p['expiration']}")
+        analysis.append(f"   Est. cost: ${p['est_total_cost']:,.0f} | {p['otm_percent']} OTM")
+
+    analysis.append(f"\n💰 Total Est. Cost: ${total_cost:,.0f}")
+    analysis.append(f"📈 Portfolio Coverage: {coverage}")
+
+    if severity >= 8:
+        analysis.append("\n⚡ TIMING: Execute immediately at market open")
+    else:
+        analysis.append("\n⏰ TIMING: Consider entering on any relief rally")
+
+    return "\n".join(analysis)
