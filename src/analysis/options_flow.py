@@ -1093,7 +1093,7 @@ def _generate_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
 
 
 def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_price: float) -> Optional[str]:
-    """Use Grok 4.1 Fast Reasoning to analyze and recommend put protection."""
+    """Use Grok 4.1 Fast Reasoning to analyze and recommend put protection with Polygon data."""
     import os
 
     try:
@@ -1114,6 +1114,44 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
         # Get market sentiment data
         sentiment = get_crisis_market_sentiment()
 
+        # Get real Polygon options data for SPY
+        polygon_spy_data = {}
+        polygon_qqq_data = {}
+        try:
+            if HAS_POLYGON:
+                # Get SPY options sentiment from Polygon
+                spy_sentiment = get_options_sentiment('SPY')
+                if spy_sentiment:
+                    polygon_spy_data = {
+                        'iv_rank': spy_sentiment.get('iv_rank'),
+                        'iv_percentile': spy_sentiment.get('iv_percentile'),
+                        'gex': spy_sentiment.get('gex', {}).get('total', 0),
+                        'max_pain': spy_sentiment.get('max_pain'),
+                        'put_call_ratio': spy_sentiment.get('put_call_ratio'),
+                        'put_call_trend': spy_sentiment.get('put_call_trend'),
+                    }
+
+                # Get QQQ options sentiment from Polygon
+                qqq_sentiment = get_options_sentiment('QQQ')
+                if qqq_sentiment:
+                    polygon_qqq_data = {
+                        'iv_rank': qqq_sentiment.get('iv_rank'),
+                        'iv_percentile': qqq_sentiment.get('iv_percentile'),
+                        'gex': qqq_sentiment.get('gex', {}).get('total', 0),
+                        'max_pain': qqq_sentiment.get('max_pain'),
+                        'put_call_ratio': qqq_sentiment.get('put_call_ratio'),
+                    }
+        except Exception as e:
+            logger.warning(f"Could not get Polygon data for Grok: {e}")
+
+        # Get unusual put activity (smart money hedging signals)
+        unusual_puts_info = ""
+        unusual_puts = sentiment.get('unusual_put_activity', [])
+        if unusual_puts:
+            unusual_puts_info = "\nUNUSUAL PUT ACTIVITY (Smart Money):\n"
+            for put in unusual_puts[:5]:
+                unusual_puts_info += f"- {put.get('ticker')} ${put.get('strike', 0):.0f}P: ${put.get('premium', 0)/1000:.0f}K premium, Vol/OI: {put.get('vol_oi_ratio', 0):.1f}x\n"
+
         # Build context for Grok
         spy_puts = recs.get('spy_puts', [])
         qqq_puts = recs.get('qqq_puts', [])
@@ -1125,10 +1163,23 @@ CURRENT MARKET CONDITIONS:
 - VIX: {sentiment.get('vix', 'N/A')} (Change: {sentiment.get('vix_change', 0):+.1f}%)
 - SPY: ${spy_price:.2f} (Change: {sentiment.get('spy_change', 0):+.2f}%)
 - QQQ: ${qqq_price:.2f} (Change: {sentiment.get('qqq_change', 0):+.2f}%)
-- SPY Put/Call Ratio: {sentiment.get('spy_put_call_ratio', 'N/A')}
 - Market Fear Level: {sentiment.get('market_fear_level', 'unknown')}
 - Portfolio Value: ${recs.get('portfolio_value', 100000):,}
 
+POLYGON LIVE OPTIONS DATA - SPY:
+- IV Rank: {polygon_spy_data.get('iv_rank', 'N/A')}%
+- IV Percentile: {polygon_spy_data.get('iv_percentile', 'N/A')}%
+- GEX (Gamma Exposure): ${polygon_spy_data.get('gex', 0)/1e9:.2f}B
+- Max Pain: ${polygon_spy_data.get('max_pain', 'N/A')}
+- Put/Call Ratio: {polygon_spy_data.get('put_call_ratio', 'N/A')} ({polygon_spy_data.get('put_call_trend', 'N/A')})
+
+POLYGON LIVE OPTIONS DATA - QQQ:
+- IV Rank: {polygon_qqq_data.get('iv_rank', 'N/A')}%
+- IV Percentile: {polygon_qqq_data.get('iv_percentile', 'N/A')}%
+- GEX (Gamma Exposure): ${polygon_qqq_data.get('gex', 0)/1e9:.2f}B
+- Max Pain: ${polygon_qqq_data.get('max_pain', 'N/A')}
+- Put/Call Ratio: {polygon_qqq_data.get('put_call_ratio', 'N/A')}
+{unusual_puts_info}
 PROPOSED PUT PROTECTION:
 """
         if spy_puts:

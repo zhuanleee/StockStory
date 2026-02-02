@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:37 - `a90bf88`
+
+**feat: Integrate Grok 4.1 Fast Reasoning for put protection analysis**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:32 - `892ad66`
 
 **feat: Add options sentiment and put protection to crisis alerts**
