@@ -41,7 +41,7 @@ image = (
 @app.function(
     image=image,
     volumes={VOLUME_PATH: volume},
-    secrets=[modal.Secret.from_name("stock-api-keys")],
+    secrets=[modal.Secret.from_name("Stock_Story")],
     keep_warm=1,
     timeout=600
 )
