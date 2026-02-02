@@ -279,12 +279,15 @@ Exit Signal Generated?
 ## 4. Deployment
 
 ### Modal Setup (Backend)
+
+**Secret Name: `Stock_Story`** (critical - all apps use this)
+
 ```bash
 # 1. Install Modal
 pip install modal
 modal setup
 
-# 2. Create secrets
+# 2. Create secrets (name MUST be Stock_Story)
 modal secret create Stock_Story \
   POLYGON_API_KEY=xxx \
   XAI_API_KEY=xxx \
@@ -299,6 +302,7 @@ modal deploy modal_intelligence_jobs.py
 
 # 4. Verify
 modal app list
+modal secret list  # Should show Stock_Story
 ```
 
 ### GitHub Pages Setup (Dashboard)
@@ -308,6 +312,9 @@ modal app list
 4. URL: https://zhuanleee.github.io/stock_scanner_bot/
 
 ### Environment Variables
+
+**Modal Secret Name: `Stock_Story`** (always use this name)
+
 | Variable | Purpose | Required |
 |----------|---------|----------|
 | POLYGON_API_KEY | Stock data | Yes |
@@ -316,6 +323,20 @@ modal app list
 | ALPHA_VANTAGE_API_KEY | Earnings | Yes |
 | TELEGRAM_BOT_TOKEN | Bot auth | Yes |
 | TELEGRAM_CHAT_ID | Your chat | Yes |
+
+```bash
+# View current secret
+modal secret list
+
+# Update secret (use --force to overwrite)
+modal secret create Stock_Story --force \
+  POLYGON_API_KEY=xxx \
+  XAI_API_KEY=xxx \
+  DEEPSEEK_API_KEY=xxx \
+  ALPHA_VANTAGE_API_KEY=xxx \
+  TELEGRAM_BOT_TOKEN=xxx \
+  TELEGRAM_CHAT_ID=xxx
+```
 
 ---
 
