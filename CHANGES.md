@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:44 - `ef29448`
+
+**feat: Get VIX from Polygon Indices API**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/options_flow.py
+src/data/polygon_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:41 - `03f8484`
 
 **feat: Use Polygon for SPY/QQQ prices in Grok analysis**

@@ -1111,29 +1111,24 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
     try:
         client = Client(api_key=api_key)
 
-        # Get market sentiment data (fallback)
+        # Get market sentiment data (VIX from yfinance - real-time)
         sentiment = get_crisis_market_sentiment()
 
-        # Get real Polygon data for SPY, QQQ, and VIX
+        # VIX from yfinance (Polygon VIX is EOD only)
+        vix_value = sentiment.get('vix', 16)
+        vix_change = sentiment.get('vix_change', 0)
+
+        # Get real Polygon data for SPY and QQQ (prices + options)
         polygon_spy_data = {}
         polygon_qqq_data = {}
         polygon_spy_price = spy_price
         polygon_spy_change = sentiment.get('spy_change', 0)
         polygon_qqq_price = qqq_price
         polygon_qqq_change = sentiment.get('qqq_change', 0)
-        polygon_vix = sentiment.get('vix', 16)
-        polygon_vix_change = sentiment.get('vix_change', 0)
 
         try:
             if HAS_POLYGON:
-                from src.data.polygon_provider import get_snapshot_sync, get_index_snapshot_sync
-
-                # Get VIX from Polygon Indices API
-                vix_snapshot = get_index_snapshot_sync('I:VIX')
-                if vix_snapshot:
-                    polygon_vix = vix_snapshot.get('value', polygon_vix)
-                    polygon_vix_change = vix_snapshot.get('change_percent', 0)
-                    logger.info(f"VIX from Polygon: {polygon_vix} ({polygon_vix_change:+.2f}%)")
+                from src.data.polygon_provider import get_snapshot_sync
 
                 # Get SPY price from Polygon
                 spy_snapshot = get_snapshot_sync('SPY')
@@ -1192,23 +1187,23 @@ def _get_grok_put_analysis(severity: int, recs: Dict, spy_price: float, qqq_pric
         spy_puts = recs.get('spy_puts', [])
         qqq_puts = recs.get('qqq_puts', [])
 
-        # Determine fear level based on Polygon VIX
-        if polygon_vix >= 30:
+        # Determine fear level based on VIX
+        if vix_value >= 30:
             fear_level = 'EXTREME FEAR'
-        elif polygon_vix >= 25:
+        elif vix_value >= 25:
             fear_level = 'HIGH FEAR'
-        elif polygon_vix >= 20:
+        elif vix_value >= 20:
             fear_level = 'ELEVATED'
-        elif polygon_vix >= 15:
+        elif vix_value >= 15:
             fear_level = 'NORMAL'
         else:
             fear_level = 'COMPLACENT'
 
         prompt = f"""You are an expert options strategist analyzing a potential crisis situation.
 
-CURRENT MARKET CONDITIONS (ALL DATA FROM POLYGON.IO):
+CURRENT MARKET CONDITIONS:
 - Crisis Severity: {severity}/10
-- VIX: {polygon_vix:.2f} (Change: {polygon_vix_change:+.2f}%)
+- VIX: {vix_value:.2f} (Change: {vix_change:+.2f}%) [Real-time from CBOE]
 - Market Fear Level: {fear_level}
 - Portfolio Value: ${recs.get('portfolio_value', 100000):,}
 
