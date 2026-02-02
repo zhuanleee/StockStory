@@ -886,7 +886,7 @@ Get an API key at `/api-keys/request`
             # Extract theme radar from scan results
             results = load_scan_results()
             if not results or not results.get('results'):
-                return {"ok": True, "data": []}
+                return {"ok": True, "radar": []}
 
             # Aggregate theme data
             theme_data = {}
@@ -908,18 +908,38 @@ Get an API key at `/api-keys/request`
             # Calculate averages and format
             radar = []
             for theme, data in theme_data.items():
+                count = data["count"]
+                avg_score = round(data["total_score"] / count, 1) if count > 0 else 0
+
+                # Determine lifecycle based on count and score
+                if count >= 15 and avg_score >= 60:
+                    lifecycle = "peak"
+                elif count >= 10:
+                    lifecycle = "accelerating"
+                elif count >= 5:
+                    lifecycle = "emerging"
+                elif count >= 2:
+                    lifecycle = "declining"
+                else:
+                    lifecycle = "dead"
+
                 radar.append({
+                    "theme_name": theme,
                     "theme": theme,
-                    "stock_count": data["count"],
-                    "avg_score": round(data["total_score"] / data["count"], 1) if data["count"] > 0 else 0,
-                    "top_stocks": data["stocks"][:5],  # Top 5
-                    "heat": "hot" if data["count"] >= 10 else "developing"
+                    "stock_count": count,
+                    "score": avg_score,
+                    "avg_score": avg_score,
+                    "tickers": data["stocks"][:5],
+                    "top_stocks": data["stocks"][:5],
+                    "lifecycle": lifecycle,
+                    "trend": 0,  # No historical data for trend
+                    "heat": "hot" if count >= 10 else "developing"
                 })
 
             # Sort by stock count
             radar.sort(key=lambda x: -x["stock_count"])
 
-            return {"ok": True, "data": radar[:20]}  # Top 20 themes
+            return {"ok": True, "radar": radar[:20]}  # Top 20 themes
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1127,7 +1147,7 @@ Get an API key at `/api-keys/request`
         try:
             from src.data.sec_edgar import get_pending_mergers_from_sec
             radar = get_pending_mergers_from_sec()
-            return {"ok": True, "data": radar[:20] if radar else []}  # Top 20
+            return {"ok": True, "radar": radar[:20] if radar else []}  # Top 20
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

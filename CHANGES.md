@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 01:53 - `b16bf53`
+
+**fix: Auto-load data when switching tabs**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 01:52 - `5475bce`
 
 **fix: Update API_BASE to use stockstory-api endpoint**
