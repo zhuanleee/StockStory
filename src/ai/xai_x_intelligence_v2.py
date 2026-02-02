@@ -226,6 +226,158 @@ Return structured analysis. Be accurate - this drives automated trading.
 
         return topics
 
+    def search_stock_sentiment(self, tickers: List[str]) -> Dict[str, Dict]:
+        """
+        Search X/Twitter for real-time stock sentiment.
+
+        Args:
+            tickers: List of ticker symbols to analyze (max 5)
+
+        Returns:
+            Dict mapping ticker -> sentiment analysis
+        """
+        if not self.available:
+            return {}
+
+        # Limit to avoid excessive costs
+        tickers = tickers[:5]
+        ticker_str = ", ".join([f"${t}" for t in tickers])
+
+        try:
+            # Create chat with X search
+            chat = self.client.chat.create(
+                model="grok-4-1-fast",
+                tools=[x_search()],  # Search all of X
+            )
+
+            prompt = f"""
+Search X (Twitter) RIGHT NOW for recent posts (last 1-2 hours) about: {ticker_str}
+
+For each ticker, analyze the ACTUAL posts you find:
+
+1. SENTIMENT (bullish/bearish/neutral):
+   - Overall tone of posts you see
+   - Sentiment score: -10 (extreme bearish) to +10 (extreme bullish)
+
+2. VOLUME:
+   - Are mentions at normal/elevated/spiking levels?
+   - How many posts in last hour?
+
+3. KEY TOPICS:
+   - What are people discussing? (earnings, news, technicals, rumors)
+
+4. RED FLAGS (Critical):
+   - Accounting issues, fraud allegations
+   - Lawsuits, regulatory problems
+   - Negative earnings/guidance
+   - Executive departures
+   - Product failures
+
+5. CATALYSTS (Positive):
+   - Partnership announcements
+   - Earnings beats
+   - Product launches
+   - Institutional buying
+
+6. UNUSUAL ACTIVITY:
+   - Options activity mentions
+   - Insider buying/selling
+   - Short squeeze potential
+
+7. SAMPLE POSTS:
+   - Quote 2-3 actual recent posts with engagement
+
+Return JSON format:
+{{
+  "TICKER": {{
+    "sentiment": "bullish/bearish/neutral",
+    "sentiment_score": -10 to +10,
+    "volume": "normal/elevated/spiking",
+    "mentions_per_hour": number,
+    "red_flags": ["list of red flags"],
+    "catalysts": ["list of catalysts"],
+    "unusual_activity": true/false,
+    "key_topics": ["list of topics"],
+    "sample_posts": ["actual post excerpts"]
+  }}
+}}
+"""
+
+            chat.append(user(prompt))
+            response = chat.sample()
+
+            logger.info(f"Stock sentiment search completed for {ticker_str}: {len(response.content)} chars")
+
+            # Parse response
+            sentiment_data = self._parse_stock_sentiment(response.content, tickers)
+
+            return sentiment_data
+
+        except Exception as e:
+            logger.error(f"Error searching X for stock sentiment: {e}")
+            return {}
+
+    def _parse_stock_sentiment(self, content: str, tickers: List[str]) -> Dict[str, Dict]:
+        """Parse stock sentiment from X search results."""
+        import json
+        import re
+
+        sentiments = {}
+
+        try:
+            # Try to extract JSON
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(0))
+
+                # Process each ticker
+                for ticker in tickers:
+                    if ticker in data:
+                        info = data[ticker]
+                        sentiments[ticker] = {
+                            'ticker': ticker,
+                            'sentiment': info.get('sentiment', 'neutral'),
+                            'sentiment_score': info.get('sentiment_score', 0),
+                            'volume': info.get('volume', 'normal'),
+                            'mentions_per_hour': info.get('mentions_per_hour', 0),
+                            'red_flags': info.get('red_flags', []),
+                            'catalysts': info.get('catalysts', []),
+                            'unusual_activity': info.get('unusual_activity', False),
+                            'key_topics': info.get('key_topics', []),
+                            'sample_posts': info.get('sample_posts', []),
+                            'has_red_flags': len(info.get('red_flags', [])) > 0,
+                            'timestamp': datetime.now().isoformat()
+                        }
+            else:
+                # Fallback: basic parsing from text
+                for ticker in tickers:
+                    if ticker in content:
+                        sentiment = 'neutral'
+                        if any(word in content.lower() for word in ['bullish', 'buy', 'long', 'strong']):
+                            sentiment = 'bullish'
+                        elif any(word in content.lower() for word in ['bearish', 'sell', 'short', 'weak']):
+                            sentiment = 'bearish'
+
+                        sentiments[ticker] = {
+                            'ticker': ticker,
+                            'sentiment': sentiment,
+                            'sentiment_score': 0,
+                            'volume': 'unknown',
+                            'mentions_per_hour': 0,
+                            'red_flags': [],
+                            'catalysts': [],
+                            'unusual_activity': False,
+                            'key_topics': [],
+                            'sample_posts': [],
+                            'has_red_flags': False,
+                            'timestamp': datetime.now().isoformat()
+                        }
+
+        except Exception as e:
+            logger.debug(f"Could not parse stock sentiment JSON: {e}")
+
+        return sentiments
+
     def _parse_crisis_analysis(self, content: str, topic: str) -> Dict:
         """Parse detailed crisis analysis."""
         import re

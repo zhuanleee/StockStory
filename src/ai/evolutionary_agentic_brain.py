@@ -68,6 +68,14 @@ except ImportError:
     X_INTELLIGENCE_AVAILABLE = False
     logger.warning("xAI X Intelligence not available - crisis monitoring disabled")
 
+# Import X Intelligence V2 with real X search (for stock sentiment)
+try:
+    from src.ai.xai_x_intelligence_v2 import get_x_intelligence_v2
+    X_INTELLIGENCE_V2_AVAILABLE = True
+except ImportError:
+    X_INTELLIGENCE_V2_AVAILABLE = False
+    logger.warning("xAI X Intelligence V2 not available - real X search disabled")
+
 # Storage location
 PERFORMANCE_DATA_DIR = Path.home() / '.claude' / 'agentic_brain'
 PERFORMANCE_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -747,6 +755,8 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
         # Component #37: xAI X Intelligence Monitor
         self.x_intel = None
         self.x_monitor = None
+        self.x_intel_v2 = None  # V2 with real X search
+
         if X_INTELLIGENCE_AVAILABLE:
             try:
                 self.x_intel = XAIXIntelligence()
@@ -759,6 +769,13 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
                 self.x_monitor.start()
 
                 logger.info("✓ xAI X Intelligence Monitor started (Component #37)")
+
+        # Initialize V2 with real X search (for stock sentiment)
+        if X_INTELLIGENCE_V2_AVAILABLE:
+            try:
+                self.x_intel_v2 = get_x_intelligence_v2()
+                if self.x_intel_v2 and self.x_intel_v2.available:
+                    logger.info("✓ xAI X Intelligence V2 initialized (real X search)")
             except Exception as e:
                 logger.warning(f"Could not initialize X Intelligence: {e}")
 
@@ -823,7 +840,27 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
 
         # Component #37: Check X sentiment BEFORE making decision
         x_sentiment = None
-        if self.x_intel:
+        x_sentiment_data = None
+
+        # Try V2 first (real X search via SDK)
+        if self.x_intel_v2:
+            try:
+                sentiments_v2 = self.x_intel_v2.search_stock_sentiment([ticker])
+                if ticker in sentiments_v2:
+                    x_sentiment_data = sentiments_v2[ticker]
+
+                    # RED FLAG DETECTED - Block trade
+                    if x_sentiment_data.get('has_red_flags', False):
+                        logger.warning(f"🚩 X Intelligence RED FLAGS for {ticker}: {x_sentiment_data.get('red_flags', [])}")
+                        return self._create_blocked_decision(
+                            ticker=ticker,
+                            reasoning=f"🚩 X Intelligence Red Flags: {', '.join(x_sentiment_data.get('red_flags', [])[:2])}"
+                        )
+            except Exception as e:
+                logger.debug(f"X Intelligence V2 sentiment check failed: {e}")
+
+        # Fallback to V1 if V2 failed
+        if not x_sentiment_data and self.x_intel:
             try:
                 sentiments = self.x_intel.monitor_specific_stocks_on_x([ticker])
                 if ticker in sentiments:
@@ -843,8 +880,14 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
         # Call parent analysis
         decision = super().analyze_opportunity(ticker, *args, **kwargs)
 
-        # Enhance decision with X intelligence
-        if x_sentiment:
+        # Enhance decision with X intelligence (V2 or V1)
+        if x_sentiment_data:
+            # V2 data format (dict)
+            decision.x_sentiment_score = x_sentiment_data.get('sentiment_score', 0)
+            decision.x_confidence = 0.8  # V2 uses real X search - higher confidence
+            decision.x_sentiment_raw = x_sentiment_data
+        elif x_sentiment:
+            # V1 data format (StockSentiment object)
             decision.x_sentiment = x_sentiment
             decision.x_sentiment_score = x_sentiment.sentiment_score
             decision.x_confidence = x_sentiment.confidence
