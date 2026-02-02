@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:48 - `6aab1d5`
+
+**fix: Revert VIX to yfinance (Polygon VIX is EOD only)**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:44 - `ef29448`
 
 **feat: Get VIX from Polygon Indices API**

@@ -2891,7 +2891,7 @@ Get an API key at `/api-keys/request`
 
             elif cmd == '/hedge':
                 try:
-                    from src.analysis.options_flow import get_crisis_market_sentiment, get_put_protection_recommendations
+                    from src.analysis.options_flow import get_crisis_market_sentiment, get_put_protection_recommendations, get_options_sentiment
 
                     # Parse optional portfolio value
                     portfolio_value = 100000  # Default $100K
@@ -2907,6 +2907,10 @@ Get an API key at `/api-keys/request`
 
                     # Get market sentiment
                     sentiment = get_crisis_market_sentiment()
+
+                    # Get SPY options data (GEX, Max Pain) from Polygon
+                    spy_options = get_options_sentiment('SPY')
+                    qqq_options = get_options_sentiment('QQQ')
 
                     # Get put recommendations
                     recs = get_put_protection_recommendations(crisis_severity=severity, portfolio_value=portfolio_value)
@@ -2931,14 +2935,50 @@ Get an API key at `/api-keys/request`
                         qqq_change = sentiment.get('qqq_change', 0)
                         msg += f"QQQ: ${qqq_price:,.2f} ({'+' if qqq_change >= 0 else ''}{qqq_change:.2f}%)\n"
 
-                    spy_pc = sentiment.get('spy_put_call_ratio')
-                    if spy_pc:
-                        msg += f"P/C Ratio: {spy_pc:.2f}\n"
-
                     msg += f"Fear Level: {sentiment.get('market_fear_level', 'unknown')}\n\n"
 
+                    # Options Flow Data (GEX, Max Pain, P/C Ratio)
+                    msg += "*📈 Options Flow (Polygon)*\n"
+
+                    # SPY Options Data
+                    if spy_options:
+                        spy_gex = spy_options.get('gex', {})
+                        spy_gex_val = spy_gex.get('total', 0) if isinstance(spy_gex, dict) else spy_gex
+                        spy_max_pain = spy_options.get('max_pain', 0)
+                        spy_pc = spy_options.get('put_call_ratio', 0)
+                        spy_iv_rank = spy_options.get('iv_rank', 0)
+
+                        # Format GEX
+                        if abs(spy_gex_val) >= 1e9:
+                            gex_str = f"${spy_gex_val/1e9:.2f}B"
+                        else:
+                            gex_str = f"${spy_gex_val/1e6:.0f}M"
+
+                        gex_emoji = "🟢" if spy_gex_val > 0 else "🔴"
+                        msg += f"*SPY:* {gex_emoji} GEX {gex_str} | Max Pain ${spy_max_pain:,.0f}\n"
+                        msg += f"      P/C {spy_pc:.2f} | IV Rank {spy_iv_rank:.0f}%\n"
+
+                    # QQQ Options Data
+                    if qqq_options:
+                        qqq_gex = qqq_options.get('gex', {})
+                        qqq_gex_val = qqq_gex.get('total', 0) if isinstance(qqq_gex, dict) else qqq_gex
+                        qqq_max_pain = qqq_options.get('max_pain', 0)
+                        qqq_pc = qqq_options.get('put_call_ratio', 0)
+                        qqq_iv_rank = qqq_options.get('iv_rank', 0)
+
+                        if abs(qqq_gex_val) >= 1e9:
+                            gex_str = f"${qqq_gex_val/1e9:.2f}B"
+                        else:
+                            gex_str = f"${qqq_gex_val/1e6:.0f}M"
+
+                        gex_emoji = "🟢" if qqq_gex_val > 0 else "🔴"
+                        msg += f"*QQQ:* {gex_emoji} GEX {gex_str} | Max Pain ${qqq_max_pain:,.0f}\n"
+                        msg += f"      P/C {qqq_pc:.2f} | IV Rank {qqq_iv_rank:.0f}%\n"
+
+                    msg += "\n"
+
                     # AI Recommendations
-                    msg += f"*🤖 AI Protection Analysis*\n"
+                    msg += f"*🤖 Grok AI Analysis*\n"
                     msg += f"Portfolio: ${portfolio_value:,}\n"
                     msg += f"Protection Level: {recs.get('protection_level', 'standard').upper()}\n\n"
 
