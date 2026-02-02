@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 20:07 - `49108d0`
+
+**fix: Update GitHub workflows for StockStory rename**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+.github/workflows/deploy.yml
+.github/workflows/manual-deploy.yml
+.github/workflows/test-crisis-monitor.yml
+CHANGES.md
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:42 - `52e277f`
 
 **refactor: Complete StockStory rebranding**

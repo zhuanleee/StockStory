@@ -1678,18 +1678,16 @@ Get an API key at `/api-keys/request`
                 if not args:
                     send_reply("Usage: `/news TICKER`\nExample: `/news NVDA`")
                     return {"ok": True}
-                ticker = args.split()[0]
+                ticker = args.split()[0].upper()
                 try:
-                    from src.analysis.news_analyzer import get_stock_news
-                    news = get_stock_news(ticker, limit=5)
-                    if news:
+                    from src.analysis.news_analyzer import fetch_finnhub_news
+                    news = fetch_finnhub_news(ticker)
+                    if news and len(news) > 0:
                         msg = f"📰 *{ticker} NEWS*\n\n"
                         for n in news[:5]:
-                            title = n.get('title', 'No title')[:60]
+                            title = n.get('headline', n.get('title', 'No title'))[:60]
                             source = n.get('source', 'Unknown')
-                            sentiment = n.get('sentiment', 'neutral')
-                            emoji = "🟢" if sentiment == 'positive' else "🔴" if sentiment == 'negative' else "⚪"
-                            msg += f"{emoji} {title}...\n   _via {source}_\n\n"
+                            msg += f"• {title}...\n  _via {source}_\n\n"
                         send_reply(msg)
                     else:
                         send_reply(f"No recent news for `{ticker}`")
