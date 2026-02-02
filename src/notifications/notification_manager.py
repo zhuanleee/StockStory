@@ -175,7 +175,7 @@ class NotificationManager:
 
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = title or "Stock Scanner Notification"
+            msg['Subject'] = title or "StockStory Notification"
             msg['From'] = smtp_user
             msg['To'] = recipient
 
@@ -242,7 +242,7 @@ class NotificationManager:
             'crisis_emergency': '🚨🚨🚨 EMERGENCY PROTOCOL',
             'crisis_major': '⚠️ MAJOR CRISIS DETECTED'
         }
-        return titles.get(alert_type, '📬 Stock Scanner Alert')
+        return titles.get(alert_type, '📬 StockStory Alert')
 
     def _format_alert(self, alert_type: str, data: Dict) -> str:
         """Format alert message using templates"""

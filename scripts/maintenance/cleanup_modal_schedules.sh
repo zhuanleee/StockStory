@@ -52,11 +52,11 @@ echo ""
 echo ""
 echo "Step 3: Stopping old deployments..."
 echo "==========================================="
-echo "Stopping stock-scanner-ai-brain..."
+echo "Stopping old apps (stock-scanner-ai-brain, stock-scanner-api-v2)..."
 python3 -m modal app stop stock-scanner-ai-brain 2>&1 || echo "App may not exist or already stopped"
-
-echo "Stopping stock-scanner-api-v2..."
 python3 -m modal app stop stock-scanner-api-v2 2>&1 || echo "App may not exist or already stopped"
+
+echo "Note: New apps are named 'stockstory-api' and 'stockstory-scanner'"
 
 echo -e "${GREEN}✓ Apps stopped${NC}"
 
@@ -116,5 +116,5 @@ echo "To test manually:"
 echo "  python3 -m modal run modal_scanner.py::conviction_alerts"
 echo ""
 echo "To monitor logs:"
-echo "  python3 -m modal app logs stock-scanner-ai-brain --follow"
+echo "  python3 -m modal app logs stockstory-scanner --follow"
 echo ""

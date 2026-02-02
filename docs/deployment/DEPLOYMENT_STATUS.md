@@ -14,7 +14,7 @@
 | **Dashboard** | GitHub Pages | Active | Free |
 
 **Live Links:**
-- **Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+- **Dashboard:** https://zhuanleee.github.io/StockStory/
 - **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
 
 ---

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "=========================================="
-echo "Stock Scanner - Manual Scan Trigger"
+echo "StockStory - Manual Scan Trigger"
 echo "=========================================="
 echo ""
 
@@ -57,7 +57,7 @@ echo "=========================================="
 echo "Scan complete!"
 echo ""
 echo "View results at:"
-echo "https://zhuanleee.github.io/stock_scanner_bot/"
+echo "https://zhuanleee.github.io/StockStory/"
 echo ""
 echo "Don't forget to click the '↻ Refresh' button!"
 echo "=========================================="

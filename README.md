@@ -1,12 +1,12 @@
-# Stock Scanner Bot 📈
+# StockStory 📈
 
-**AI-powered stock scanner with 38-component analysis, learning system, and Telegram bot interface.**
+**AI-powered story-first stock analysis with 38-component analysis, learning system, and Telegram bot interface.**
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Modal](https://img.shields.io/badge/Deployed-Modal-6366F1)](https://modal.com)
 
-> **Live Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+> **Live Dashboard:** https://zhuanleee.github.io/StockStory/
 > **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
 >
 > **Complete Documentation:** See [PROJECT.md](PROJECT.md) for architecture, workflows, and where we left off.
@@ -15,7 +15,7 @@
 
 ## 🎯 Overview
 
-Stock Scanner Bot is a sophisticated stock analysis system that combines:
+StockStory is a sophisticated stock analysis system that combines:
 - **38 data components** across technical, sentiment, fundamental, and AI analysis
 - **10 data sources** including Polygon, Alpha Vantage, xAI, DeepSeek, Google Trends
 - **6-component learning system** that adapts to market conditions
@@ -89,8 +89,8 @@ Stock Scanner Bot is a sophisticated stock analysis system that combines:
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/zhuanleee/stock_scanner_bot.git
-cd stock_scanner_bot
+git clone https://github.com/zhuanleee/StockStory.git
+cd StockStory
 ```
 
 ### 2. Install Dependencies
@@ -191,7 +191,7 @@ Open browser: http://localhost:5000
 ## 🏗️ Architecture
 
 ```
-stock_scanner_bot/
+StockStory/
 ├── src/                    # Source code
 │   ├── api/               # Flask API endpoints
 │   ├── ai/                # AI intelligence (xAI, DeepSeek)
@@ -255,7 +255,7 @@ Revenue growth, margin trends, valuation, insider trading
 
 ## 🎨 Dashboard
 
-**Live Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+**Live Dashboard:** https://zhuanleee.github.io/StockStory/
 
 ### Features
 - **Overview** - Market summary and top picks
@@ -334,7 +334,7 @@ Revenue growth, margin trends, valuation, insider trading
 
 2. **Dashboard URL:**
    ```
-   https://zhuanleee.github.io/stock_scanner_bot/
+   https://zhuanleee.github.io/StockStory/
    ```
 
 **Cost:** Free
@@ -445,9 +445,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 📞 Support
 
-**Issues:** https://github.com/zhuanleee/stock_scanner_bot/issues
+**Issues:** https://github.com/zhuanleee/StockStory/issues
 **Telegram Bot:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
-**Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+**Dashboard:** https://zhuanleee.github.io/StockStory/
 
 ---
 

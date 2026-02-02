@@ -1,5 +1,5 @@
 """
-Custom exceptions for Stock Scanner Bot.
+Custom exceptions for StockStory.
 
 Use these instead of bare except: blocks for proper error handling.
 
@@ -13,9 +13,13 @@ Usage:
 """
 
 
-class StockScannerError(Exception):
-    """Base exception for all stock scanner errors."""
+class StockStoryError(Exception):
+    """Base exception for all StockStory errors."""
     pass
+
+
+# Backwards compatibility alias
+StockScannerError = StockStoryError
 
 
 class DataFetchError(StockScannerError):

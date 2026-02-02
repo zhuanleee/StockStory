@@ -158,7 +158,7 @@ def refresh_universe():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Stock Scanner Bot - Story-First Stock Analysis',
+        description='StockStory - Story-First Stock Analysis',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

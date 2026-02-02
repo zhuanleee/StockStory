@@ -2,6 +2,30 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:37 - `53eb300`
+
+**refactor: Rename project to StockStory**
+
+Files changed: 8
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+main.py
+modal_api_v2.py
+modal_scanner.py
+src/__init__.py
+src/api/app.py
+tests/setup_telegram_menu.py
+tests/setup_telegram_webhook.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:30 - `1c4e219`
 
 **docs: Update CHANGES.md**

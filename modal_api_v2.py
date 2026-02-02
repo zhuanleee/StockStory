@@ -518,7 +518,7 @@ Get an API key at `/api-keys/request`
                 <html>
                 <head><title>Admin Dashboard</title></head>
                 <body style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #e2e8f0;">
-                    <h1>📊 Stock Scanner API Dashboard</h1>
+                    <h1>📊 StockStory API Dashboard</h1>
                     <p>Dashboard HTML not found. View metrics at:</p>
                     <ul>
                         <li><a href="/admin/metrics" style="color: #6366f1;">API Metrics</a></li>

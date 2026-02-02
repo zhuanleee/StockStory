@@ -1,4 +1,4 @@
-# Stock Scanner Bot - Complete Project Documentation
+# StockStory - Complete Project Documentation
 
 **Version:** 3.1.0
 **Last Updated:** 2026-02-02
@@ -33,9 +33,9 @@
 ## 1. Current State
 
 ### Live URLs
-- **Dashboard:** https://zhuanleee.github.io/stock_scanner_bot/
+- **Dashboard:** https://zhuanleee.github.io/StockStory/
 - **Telegram:** [@Stocks_Story_Bot](https://t.me/Stocks_Story_Bot)
-- **GitHub:** https://github.com/zhuanleee/stock_scanner_bot
+- **GitHub:** https://github.com/zhuanleee/StockStory
 
 ### Production Stack
 | Component | Platform | Status | Cost |

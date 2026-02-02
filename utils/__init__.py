@@ -1,5 +1,5 @@
 """
-Utility modules for Stock Scanner Bot.
+Utility modules for StockStory.
 
 This package provides centralized utilities to eliminate code duplication:
 - logging_config: Structured logging setup
