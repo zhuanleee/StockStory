@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:56 - `08716de`
+
+**fix: Fix GEX calculation and display formatting**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:55 - `3938685`
 
 **fix: Increase Polygon options limit to 250 for full chain data**

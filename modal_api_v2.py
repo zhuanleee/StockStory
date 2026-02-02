@@ -1484,6 +1484,20 @@ Get an API key at `/api-keys/request`
             except:
                 vix_price = 20
 
+            # Get 0DTE volume (SPY options expiring today)
+            zero_dte_volume = 0
+            try:
+                from src.data.polygon_provider import get_options_chain_sync
+                from datetime import datetime
+                today = datetime.now().strftime('%Y-%m-%d')
+                spy_0dte = get_options_chain_sync('SPY', expiration_date=today)
+                if spy_0dte:
+                    calls = spy_0dte.get('calls', [])
+                    puts = spy_0dte.get('puts', [])
+                    zero_dte_volume = sum(c.get('volume', 0) for c in calls + puts)
+            except Exception as e:
+                log(f"Error fetching 0DTE volume: {e}")
+
             return {
                 "ok": True,
                 "data": {
@@ -1491,7 +1505,7 @@ Get an API key at `/api-keys/request`
                     "put_call_ratio": round(avg_pc, 2),
                     "total_gex": sum(s.get('gex', 0) if isinstance(s.get('gex'), (int, float)) else s.get('gex', {}).get('total', 0) for s in sentiment_data.values()),
                     "vix": vix_price,
-                    "zero_dte_volume": 0,  # Placeholder - would need real-time data
+                    "zero_dte_volume": zero_dte_volume,
                     "market_sentiment_score": round(avg_score, 1),
                     "market_label": "Bullish" if avg_score >= 60 else ("Bearish" if avg_score <= 40 else "Neutral"),
                     "tickers": sentiment_data
