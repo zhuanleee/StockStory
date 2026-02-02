@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:32 - `ef8afb0`
+
+**feat: Enhanced options flow with dashboard UI and Telegram commands**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:09 - `096d458`
 
 **docs: Update CHANGES.md with latest entries**

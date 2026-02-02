@@ -5546,8 +5546,8 @@
                 const res = await fetch(`${API_BASE}/options/whales?min_premium=500000`);
                 const data = await res.json();
 
-                if (data.ok && data.data && data.data.length > 0) {
-                    const trades = data.data;
+                if (data.ok && (data.whales || data.data) && (data.whales || data.data).length > 0) {
+                    const trades = data.whales || data.data;
                     let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">';
                     html += '<thead><tr style="background: var(--bg-hover); border-bottom: 1px solid var(--border);">';
                     html += '<th style="padding: 8px; text-align: left;">Ticker</th>';
@@ -5592,8 +5592,8 @@
                 const res = await fetch(`${API_BASE}/options/feed?tickers=${tickers}`);
                 const data = await res.json();
 
-                if (data.ok && data.data && data.data.length > 0) {
-                    const items = data.data;
+                if (data.ok && (data.feed || data.data) && (data.feed || data.data).length > 0) {
+                    const items = data.feed || data.data;
                     let html = '<div style="padding: 8px 0;">';
 
                     items.slice(0, 12).forEach(item => {
@@ -5643,8 +5643,8 @@
                 const res = await fetch(url);
                 const data = await res.json();
 
-                if (data.ok && data.data && data.data.length > 0) {
-                    const results = data.data;
+                if (data.ok && (data.results || data.data) && (data.results || data.data).length > 0) {
+                    const results = data.results || data.data;
                     let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 12px;">';
                     html += '<thead><tr style="background: var(--bg-hover); border-bottom: 1px solid var(--border);">';
                     html += '<th style="padding: 10px; text-align: left;">Ticker</th>';
