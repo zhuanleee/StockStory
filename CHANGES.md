@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 18:11 - `95fd20d`
+
+**perf: Optimize web scraping with parallel fetching and fix broken sources**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/news_analyzer.py
+src/data/alt_sources.py
+src/scoring/story_scorer.py
+src/themes/fast_stories.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 17:54 - `48a7385`
 
 **fix: Add missing except block in evolutionary_agentic_brain.py**

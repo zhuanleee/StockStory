@@ -931,7 +931,7 @@ Get an API key at `/api-keys/request`
     @web_app.get("/earnings")
     def earnings():
         try:
-            from src.data.earnings import get_upcoming_earnings
+            from src.analysis.earnings import get_upcoming_earnings
             earnings_data = get_upcoming_earnings()
             return {"ok": True, "data": earnings_data}
         except Exception as e:
@@ -971,17 +971,18 @@ Get an API key at `/api-keys/request`
     @web_app.get("/sec/filings/{ticker_symbol}")
     def sec_filings(ticker_symbol: str):
         try:
-            from src.data.sec_edgar import get_recent_filings
-            filings = get_recent_filings(ticker_symbol)
-            return {"ok": True, "data": filings}
+            from src.data.sec_edgar import SECEdgarClient
+            client = SECEdgarClient()
+            filings = client.get_company_filings(ticker_symbol.upper(), days_back=90)
+            return {"ok": True, "data": [f.to_dict() for f in filings]}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/sec/insider/{ticker_symbol}")
     def sec_insider(ticker_symbol: str):
         try:
-            from src.data.sec_edgar import get_insider_trades
-            trades = get_insider_trades(ticker_symbol)
+            from src.data.sec_edgar import get_insider_transactions_sync
+            trades = get_insider_transactions_sync(ticker_symbol.upper())
             return {"ok": True, "data": trades}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1063,8 +1064,8 @@ Get an API key at `/api-keys/request`
     @web_app.get("/contracts/themes")
     def contracts_themes():
         try:
-            from src.data.gov_contracts import get_contract_themes
-            themes = get_contract_themes()
+            from src.data.gov_contracts import get_contract_trends
+            themes = get_contract_trends()
             return {"ok": True, "data": themes}
         except Exception as e:
             return {"ok": False, "error": str(e)}
