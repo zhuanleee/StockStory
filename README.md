@@ -31,20 +31,49 @@ Stock Scanner Bot is a sophisticated stock analysis system that combines:
 - **Theme detection** - identifies emerging market themes
 - **Supply chain analysis** - maps relationships between stocks
 
-### 🧠 Intelligence System
-- **X/Twitter sentiment** via xAI Grok
-- **Google Trends** retail momentum tracking
-- **Earnings call analysis** with AI-powered transcript analysis
-- **Executive commentary** aggregation from SEC filings
-- **Government contracts** and **patent activity** tracking
-- **Institutional flow** detection
+### 🧠 3-Layer Intelligence System (NEW!)
+**Layer 1: X/Twitter Intelligence** (Social Detection)
+- Real-time X sentiment via xAI Grok with real X search
+- Crisis detection from verified news accounts
+- Meme stock viral momentum tracking
+- Dynamic quality filters (verified accounts, engagement thresholds)
 
-### 🎯 Exit Strategy (NEW!)
+**Layer 2: Web Intelligence** (News Verification)
+- Verifies X rumors with Reuters, Bloomberg, CNBC, AP, WSJ
+- Filters false alarms with authoritative sources
+- Company news and red flag detection
+
+**Layer 3: Data Intelligence** (Market Data)
+- Google Trends retail momentum tracking
+- Earnings call analysis with AI-powered transcript analysis
+- Executive commentary aggregation from SEC filings
+- Government contracts and patent activity tracking
+- Institutional flow detection
+
+### 🎯 Exit Strategy
 - **38-component exit analysis** for every position
 - **Dynamic price targets** (bull/base/bear cases)
 - **Exit urgency levels** (0-10 scale)
 - **Telegram alerts** for critical exits
 - **Automated risk management** with trailing stops
+
+### 🚨 Tier 3 Intelligence Features (NEW!)
+**Daily Exit Signal Detection** (6 AM PST)
+- Monitors all holdings for red flags and sentiment shifts
+- Web-verified concerns with multi-source confirmation
+- Automatic exit recommendations with confidence scores
+
+**Daily Meme Stock Scanning** (2 PM PST)
+- Scans 150+ tickers for viral momentum
+- Catches early meme moves before explosion
+- Short squeeze and retail coordination detection
+
+**Weekly Sector Rotation** (Sunday 8 PM PST)
+- Tracks sentiment across 10 market sectors
+- Identifies rotation signals (into/out of sectors)
+- Overweight/underweight recommendations
+
+**Cost:** $2-3/month (60% optimized with caching + quality filters)
 
 ### 🤖 Learning System
 - **Adaptive component weights** based on performance
@@ -163,8 +192,15 @@ Open browser: http://localhost:5000
 stock_scanner_bot/
 ├── src/                    # Source code
 │   ├── api/               # Flask API endpoints
+│   ├── ai/                # AI intelligence (xAI, DeepSeek)
+│   │   ├── xai_x_intelligence_v2.py   # X/Twitter intelligence
+│   │   ├── web_intelligence.py        # Web news verification
+│   │   └── model_selector.py          # Auto model selection
 │   ├── core/              # Core scanner logic
 │   ├── intelligence/      # Intelligence modules
+│   │   ├── exit_signal_detector.py    # Daily exit monitoring
+│   │   ├── meme_stock_detector.py     # Viral momentum detection
+│   │   └── sector_rotation_tracker.py # Sector analysis
 │   ├── trading/           # Exit strategy & position monitoring
 │   ├── learning/          # Learning system
 │   ├── scoring/           # Scoring engines
@@ -179,6 +215,8 @@ stock_scanner_bot/
 ├── scripts/               # Utility scripts
 │   ├── deployment/       # Setup scripts
 │   └── verification/     # Health checks
+├── modal_scanner.py       # Modal cron jobs (crisis monitoring)
+├── modal_intelligence_jobs.py  # Tier 3 jobs (exit/meme/sector)
 ├── data/                  # Data storage (gitignored)
 │   ├── cache/            # API response cache
 │   ├── learning/         # Learning system state
@@ -237,7 +275,7 @@ Revenue growth, margin trends, valuation, insider trading
 
 ## 🚢 Deployment
 
-### DigitalOcean App Platform (Recommended)
+### Option 1: DigitalOcean (Dashboard + API)
 
 1. **Fork this repository**
 
@@ -269,7 +307,42 @@ Revenue growth, margin trends, valuation, insider trading
 **Cost:** $5/month (Basic XXS plan)
 **SLA:** 99.95% uptime
 
-See [deployment guide](docs/deployment/DIGITALOCEAN_MIGRATION_GUIDE.md) for details.
+### Option 2: Modal (Intelligence Jobs)
+
+**Required for Tier 3 features** (exit signals, meme detection, sector rotation)
+
+1. **Install Modal CLI:**
+   ```bash
+   pip install modal
+   modal setup
+   ```
+
+2. **Create Modal secrets:**
+   ```bash
+   modal secret create Stock_Story \
+     XAI_API_KEY=your_key \
+     TELEGRAM_BOT_TOKEN=your_token \
+     TELEGRAM_CHAT_ID=your_id
+   ```
+
+3. **Deploy cron jobs:**
+   ```bash
+   # Main crisis monitoring (hourly)
+   modal deploy modal_scanner.py
+
+   # Tier 3 intelligence jobs (daily/weekly)
+   modal deploy modal_intelligence_jobs.py
+   ```
+
+4. **Verify deployment:**
+   ```bash
+   modal app list  # Should show 6 cron jobs
+   ```
+
+**Cost:** $2-3/month (with optimizations)
+**Features:** Auto-scaling, 5-cron limit on free tier
+
+See [Modal deployment guide](docs/deployment/MODAL_DEPLOYMENT.md) for details.
 
 ---
 
@@ -381,6 +454,17 @@ MIT License - see [LICENSE](LICENSE) file for details
 ---
 
 ## 🔄 Recent Updates
+
+### 2026-02-02: Tier 3 Intelligence System
+- ✅ **3-layer verification** (X + Web + Data intelligence)
+- ✅ **Exit signal detection** (daily morning checks before market)
+- ✅ **Meme stock scanner** (daily afternoon viral detection)
+- ✅ **Sector rotation tracker** (weekly sentiment analysis)
+- ✅ **Smart model selection** (auto-switch reasoning/non-reasoning)
+- ✅ **60% cost reduction** ($5-8/mo → $2-3/mo with optimizations)
+- ✅ **Caching layer** (5-min TTL, 80% fewer API calls)
+- ✅ **Dynamic quality filters** (no fixed influencer lists)
+- ✅ **Batch search** (50 tickers per query)
 
 ### 2026-01-29: Exit Strategy System
 - ✅ 38-component exit analysis
