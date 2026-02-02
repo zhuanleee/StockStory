@@ -449,7 +449,9 @@ class PolygonProvider:
             Dict with options chain data including calls, puts, and summary stats
         """
         endpoint = f"/v3/snapshot/options/{underlying.upper()}"
-        params = {}
+        params = {
+            'limit': 250,  # Get more contracts to include both calls and puts
+        }
 
         if expiration_date:
             params['expiration_date'] = expiration_date
