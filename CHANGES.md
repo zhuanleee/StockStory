@@ -2,6 +2,35 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:42 - `52e277f`
+
+**refactor: Complete StockStory rebranding**
+
+Files changed: 13
+
+<details>
+<summary>Show files</summary>
+
+```
+.env.example
+CHANGES.md
+PROJECT.md
+README.md
+docs/deployment/DEPLOYMENT_STATUS.md
+docs/index.html
+main.py
+modal_api_v2.py
+scripts/maintenance/cleanup_modal_schedules.sh
+scripts/run_scan.sh
+src/notifications/notification_manager.py
+utils/__init__.py
+utils/exceptions.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:37 - `53eb300`
 
 **refactor: Rename project to StockStory**

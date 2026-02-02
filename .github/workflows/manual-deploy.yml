@@ -31,8 +31,11 @@ jobs:
     - name: Stop old deployments
       run: |
         echo "Stopping old deployments to clear schedules..."
-        modal app stop stock-scanner-ai-brain || echo "App may not exist"
-        modal app stop stock-scanner-api-v2 || echo "App may not exist"
+        modal app stop stockstory-scanner || echo "App may not exist"
+        modal app stop stockstory-api || echo "App may not exist"
+        # Also stop legacy apps if they exist
+        modal app stop stock-scanner-ai-brain || echo "Legacy app not found"
+        modal app stop stock-scanner-api-v2 || echo "Legacy app not found"
         echo "Waiting 10 seconds for cleanup..."
         sleep 10
 

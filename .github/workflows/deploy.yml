@@ -49,13 +49,13 @@ jobs:
 
     - name: Deploy API to Modal
       run: |
-        echo "Deploying Stock Scanner API v2..."
+        echo "Deploying StockStory API..."
         modal deploy modal_api_v2.py
         echo "✅ API deployed successfully"
 
     - name: Deploy Scanner to Modal
       run: |
-        echo "Deploying Stock Scanner..."
+        echo "Deploying StockStory Scanner..."
         modal deploy modal_scanner.py
         echo "✅ Scanner deployed successfully"
 
@@ -66,24 +66,24 @@ jobs:
         echo "Checking deployed apps..."
         modal app list
         echo ""
-        echo "Verifying stock-scanner-api-v2..."
-        modal app list | grep -q "stock-scanner-api-v2" && echo "✅ API found" || echo "⚠️ API not found in list yet"
-        echo "Verifying stock-scanner-ai-brain..."
-        modal app list | grep -q "stock-scanner-ai-brain" && echo "✅ Scanner found" || echo "⚠️ Scanner not found in list yet"
+        echo "Verifying stockstory-api..."
+        modal app list | grep -q "stockstory-api" && echo "✅ API found" || echo "⚠️ API not found in list yet"
+        echo "Verifying stockstory-scanner..."
+        modal app list | grep -q "stockstory-scanner" && echo "✅ Scanner found" || echo "⚠️ Scanner not found in list yet"
         echo "✅ Deployment commands completed successfully"
 
     - name: Run health check
       run: |
         sleep 10  # Wait for deployment to stabilize
-        curl -f https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run/health || echo "⚠️ Health check failed"
+        curl -f https://zhuanleee--stockstory-api-create-fastapi-app.modal.run/health || echo "⚠️ Health check failed"
 
     - name: Deployment summary
       if: success()
       run: |
         echo "🚀 Deployment successful!"
-        echo "API: https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run"
-        echo "Dashboard: https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run/admin/dashboard"
-        echo "Docs: https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run/docs"
+        echo "API: https://zhuanleee--stockstory-api-create-fastapi-app.modal.run"
+        echo "Dashboard: https://zhuanleee--stockstory-api-create-fastapi-app.modal.run/admin/dashboard"
+        echo "Docs: https://zhuanleee--stockstory-api-create-fastapi-app.modal.run/docs"
 
     - name: Notify on failure
       if: failure()
