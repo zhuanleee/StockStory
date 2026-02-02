@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:55 - `3938685`
+
+**fix: Increase Polygon options limit to 250 for full chain data**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/polygon_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:49 - `56dc6f3`
 
 **fix: Call correct functions when switching to Options tab**

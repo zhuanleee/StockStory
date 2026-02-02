@@ -1489,7 +1489,7 @@ Get an API key at `/api-keys/request`
                 "data": {
                     "spy_put_call_ratio": sentiment_data.get('SPY', {}).get('put_call_ratio', {}).get('volume', 1.0) if isinstance(sentiment_data.get('SPY', {}).get('put_call_ratio'), dict) else sentiment_data.get('SPY', {}).get('put_call_ratio', 1.0),
                     "put_call_ratio": round(avg_pc, 2),
-                    "total_gex": sum(s.get('gex', {}).get('total', 0) if isinstance(s.get('gex'), dict) else 0 for s in sentiment_data.values()),
+                    "total_gex": sum(s.get('gex', 0) if isinstance(s.get('gex'), (int, float)) else s.get('gex', {}).get('total', 0) for s in sentiment_data.values()),
                     "vix": vix_price,
                     "zero_dte_volume": 0,  # Placeholder - would need real-time data
                     "market_sentiment_score": round(avg_score, 1),

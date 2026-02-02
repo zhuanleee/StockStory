@@ -5518,7 +5518,12 @@
                     // GEX
                     const gex = sentiment.total_gex || sentiment.gex || 0;
                     const gexEl = document.getElementById('market-gex');
-                    gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
+                    // Display in millions or billions based on magnitude
+                    if (Math.abs(gex) >= 1e9) {
+                        gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
+                    } else {
+                        gexEl.textContent = (gex / 1e6).toFixed(1) + 'M';
+                    }
                     gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
                     document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
 
