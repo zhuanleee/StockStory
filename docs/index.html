@@ -5579,9 +5579,9 @@
                         html += `<tr style="border-bottom: 1px solid var(--border);">
                             <td style="padding: 8px; font-weight: 600;">${t.ticker || '--'}</td>
                             <td style="padding: 8px;">${typeEmoji} ${(t.type || 'C').toUpperCase()}</td>
-                            <td style="padding: 8px; text-align: right;">$${t.strike || '--'}</td>
+                            <td style="padding: 8px; text-align: right;">$${(t.strike || 0).toLocaleString()}</td>
                             <td style="padding: 8px; text-align: center; color: var(--text-muted); font-size: 0.75rem;">${expiry}</td>
-                            <td style="padding: 8px; text-align: right; font-weight: 600;">$${premium.toFixed(0)}K</td>
+                            <td style="padding: 8px; text-align: right; font-weight: 600;">$${premium.toLocaleString(undefined, {maximumFractionDigits: 0})}K</td>
                             <td style="padding: 8px; text-align: center; color: ${sideColor}; font-weight: 600;">${(t.side || 'BUY').toUpperCase()}</td>
                         </tr>`;
                     });
@@ -5627,12 +5627,12 @@
                         html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border);">
                             <div>
                                 <span style="font-weight: 600;">${item.ticker || '--'}</span>
-                                <span style="color: var(--text-muted); margin-left: 8px;">${typeEmoji} $${item.strike || '--'}</span>
+                                <span style="color: var(--text-muted); margin-left: 8px;">${typeEmoji} $${(item.strike || 0).toLocaleString()}</span>
                                 ${expiry ? `<span style="color: var(--text-muted); margin-left: 6px; font-size: 0.75rem;">(${expiry})</span>` : ''}
                                 ${unusualBadge}
                             </div>
                             <div style="text-align: right;">
-                                <div style="font-weight: 600;">$${premium.toFixed(0)}K</div>
+                                <div style="font-weight: 600;">$${premium.toLocaleString(undefined, {maximumFractionDigits: 0})}K</div>
                                 <div style="font-size: 0.7rem; color: var(--text-muted);">Vol/OI: ${volOi.toFixed(1)}x</div>
                             </div>
                         </div>`;
@@ -5687,8 +5687,8 @@
                         html += `<tr style="border-bottom: 1px solid var(--border);">
                             <td style="padding: 10px; font-weight: 600;">${r.ticker || '--'}</td>
                             <td style="padding: 10px;">${typeEmoji} ${(r.type || 'C').toUpperCase()}</td>
-                            <td style="padding: 10px; text-align: right;">$${r.strike || '--'}</td>
-                            <td style="padding: 10px; text-align: right; font-weight: 600;">$${premium.toFixed(0)}K</td>
+                            <td style="padding: 10px; text-align: right;">$${(r.strike || 0).toLocaleString()}</td>
+                            <td style="padding: 10px; text-align: right; font-weight: 600;">$${premium.toLocaleString(undefined, {maximumFractionDigits: 0})}K</td>
                             <td style="padding: 10px; text-align: right;">${ivRank.toFixed(0)}%</td>
                             <td style="padding: 10px; text-align: center; color: ${sentColor}; font-weight: 600; text-transform: uppercase;">${r.sentiment || 'neutral'}</td>
                         </tr>`;
@@ -5769,8 +5769,8 @@
                             }
 
                             html += `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border);">
-                                <span>${signalEmoji} $${t.strike || '--'} ${t.type || 'C'}${expiry ? ` <span style="color: var(--text-muted); font-size: 0.75rem;">(${expiry})</span>` : ''}</span>
-                                <span style="font-weight: 600;">$${premium.toFixed(0)}K <span style="color: var(--text-muted); font-weight: normal; font-size: 0.75rem;">${t.signal || ''}</span></span>
+                                <span>${signalEmoji} $${(t.strike || 0).toLocaleString()} ${t.type || 'C'}${expiry ? ` <span style="color: var(--text-muted); font-size: 0.75rem;">(${expiry})</span>` : ''}</span>
+                                <span style="font-weight: 600;">$${premium.toLocaleString(undefined, {maximumFractionDigits: 0})}K <span style="color: var(--text-muted); font-weight: normal; font-size: 0.75rem;">${t.signal || ''}</span></span>
                             </div>`;
                         });
                         html += '</div>';
