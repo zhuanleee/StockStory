@@ -11,9 +11,6 @@ Instructions:
 Run: modal run get_telegram_chat_id.py
 """
 import modal
-import os
-import requests
-import time
 
 app = modal.App("get-telegram-chat-id")
 
@@ -26,6 +23,9 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install("requests")
 )
 def get_chat_id():
     """Get Telegram chat ID from recent messages."""
+    import os
+    import requests
+    import time
 
     bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
