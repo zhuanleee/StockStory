@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:00 - `37bd848`
+
+**feat: Add real 0DTE volume from Polygon options data**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 02:56 - `08716de`
 
 **fix: Fix GEX calculation and display formatting**

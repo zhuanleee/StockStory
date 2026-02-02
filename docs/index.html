@@ -5441,7 +5441,7 @@
 
                 document.getElementById('opt-sentiment').textContent = sentiment.toUpperCase();
                 document.getElementById('opt-sentiment').style.color = sentimentColor;
-                document.getElementById('opt-pc-ratio').textContent = (summary.put_call_ratio || 0).toFixed(2);
+                document.getElementById('opt-pc-ratio').textContent = (summary.put_call_volume_ratio || summary.put_call_ratio || 0).toFixed(2);
                 document.getElementById('opt-call-vol').textContent = (summary.total_call_volume || 0).toLocaleString();
                 document.getElementById('opt-put-vol').textContent = (summary.total_put_volume || 0).toLocaleString();
 
