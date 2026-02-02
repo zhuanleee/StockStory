@@ -2,18 +2,17 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
-### 2026-02-02 17:16 - `54874fb`
+### 2026-02-02 17:17 - `e1f043d`
 
-**fix: Improve post-commit hook for auto-logging**
+**chore: Update CHANGES.md with latest entry**
 
-Files changed: 2
+Files changed: 1
 
 <details>
 <summary>Show files</summary>
 
 ```
 CHANGES.md
-scripts/hooks/post-commit
 ```
 </details>
 

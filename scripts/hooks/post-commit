@@ -11,7 +11,7 @@ COMMIT_TIME=$(git log -1 --format=%cd --date=format:'%H:%M')
 COMMIT_MSG=$(git log -1 --format=%s)
 FILES_COUNT=$(git diff-tree --no-commit-id --name-only -r HEAD | wc -l | tr -d ' ')
 
-# Create entry file
+# Create entry
 TEMP_ENTRY=$(mktemp)
 echo "### ${COMMIT_DATE} ${COMMIT_TIME} - \`${COMMIT_HASH}\`" > "$TEMP_ENTRY"
 echo "" >> "$TEMP_ENTRY"
@@ -30,13 +30,21 @@ echo "" >> "$TEMP_ENTRY"
 echo "---" >> "$TEMP_ENTRY"
 echo "" >> "$TEMP_ENTRY"
 
-# Check if CHANGES.md exists and has marker
+# Check if CHANGES.md exists
 if [ -f "$CHANGES_FILE" ] && grep -q "AUTO-GENERATED BELOW" "$CHANGES_FILE"; then
-    # Split file at marker, insert entry, rejoin
-    head -n $(grep -n "AUTO-GENERATED BELOW" "$CHANGES_FILE" | cut -d: -f1) "$CHANGES_FILE" > "$CHANGES_FILE.tmp"
-    echo "" >> "$CHANGES_FILE.tmp"
-    cat "$TEMP_ENTRY" >> "$CHANGES_FILE.tmp"
-    mv "$CHANGES_FILE.tmp" "$CHANGES_FILE"
+    # Get line number of marker
+    MARKER_LINE=$(grep -n "AUTO-GENERATED BELOW" "$CHANGES_FILE" | cut -d: -f1)
+
+    # Create new file: header + marker + new entry + old entries
+    TEMP_FILE=$(mktemp)
+    head -n "$MARKER_LINE" "$CHANGES_FILE" > "$TEMP_FILE"
+    echo "" >> "$TEMP_FILE"
+    cat "$TEMP_ENTRY" >> "$TEMP_FILE"
+
+    # Append old entries (everything after marker line)
+    tail -n +$((MARKER_LINE + 1)) "$CHANGES_FILE" >> "$TEMP_FILE"
+
+    mv "$TEMP_FILE" "$CHANGES_FILE"
 else
     # Create new file
     echo "# Change Log (Auto-Updated)" > "$CHANGES_FILE"
