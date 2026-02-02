@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stock Scanner Bot
+StockStory API
 
 Features:
 - AI Intelligence (briefing, predict, coach, patterns)

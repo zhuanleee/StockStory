@@ -76,12 +76,12 @@ def setup_menu():
     # Set bot description
     desc_url = f"https://api.telegram.org/bot{bot_token}/setMyDescription"
     desc_response = requests.post(desc_url, json={
-        "description": "📈 Stock Scanner Bot - Story-first stock analysis with AI-powered insights. Send any ticker (NVDA, AAPL) for instant analysis!"
+        "description": "📈 StockStory - Story-first stock analysis with AI-powered insights. Send any ticker (NVDA, AAPL) for instant analysis!"
     })
 
     short_desc_url = f"https://api.telegram.org/bot{bot_token}/setMyShortDescription"
     requests.post(short_desc_url, json={
-        "short_description": "AI-powered stock analysis & alerts"
+        "short_description": "StockStory - AI-powered stock analysis"
     })
 
     print("✅ Bot description updated!")

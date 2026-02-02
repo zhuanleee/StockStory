@@ -6,7 +6,7 @@ import modal
 app = modal.App("setup-telegram-webhook")
 image = modal.Image.debian_slim(python_version="3.11").pip_install("requests")
 
-MODAL_API_URL = "https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run"
+MODAL_API_URL = "https://zhuanleee--stockstory-api-create-fastapi-app.modal.run"
 
 @app.function(
     image=image,

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Stock Scanner Bot - Main Entry Point
+StockStory - Main Entry Point
+
+Story-first stock analysis with AI-powered insights.
 
 Usage:
     python main.py scan          # Run full stock scan

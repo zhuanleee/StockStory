@@ -13,7 +13,7 @@ from pathlib import Path
 import json
 
 # Create Modal app
-app = modal.App("stock-scanner-ai-brain")
+app = modal.App("stockstory-scanner")
 
 # Create persistent volume for storing scan results
 volume = modal.Volume.from_name("scan-results", create_if_missing=True)

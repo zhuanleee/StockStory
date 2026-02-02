@@ -1,11 +1,12 @@
 """
-Stock Scanner Bot - Source Package
+StockStory - Source Package
 
-A story-first stock scanning system that prioritizes narrative over technicals.
+A story-first stock analysis system that prioritizes narrative over technicals.
+AI-powered insights for finding stocks with compelling stories before the crowd.
 """
 
 __version__ = "2.0.0"
-__author__ = "Stock Scanner Bot"
+__author__ = "StockStory"
 
 # Lazy imports to avoid circular dependencies
 __all__ = [

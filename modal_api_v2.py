@@ -18,7 +18,7 @@ import json
 # MODAL SETUP
 # =============================================================================
 
-app = modal.App("stock-scanner-api-v2")
+app = modal.App("stockstory-api")
 
 volume = modal.Volume.from_name("scan-results", create_if_missing=True)
 VOLUME_PATH = "/data"
@@ -60,10 +60,10 @@ def create_fastapi_app():
 
     # Create FastAPI app with comprehensive documentation
     web_app = FastAPI(
-        title="Stock Scanner API",
+        title="StockStory API",
         version="2.0.0",
         description="""
-# Stock Scanner API
+# StockStory API
 
 A comprehensive stock analysis API featuring story-first scoring, theme intelligence,
 and institutional-grade data sources.
@@ -96,12 +96,12 @@ Get an API key at `/api-keys/request`
 
 ## Support
 
-* **Documentation:** https://github.com/yourusername/stock_scanner_bot
-* **Issues:** https://github.com/yourusername/stock_scanner_bot/issues
+* **Documentation:** https://github.com/zhuanleee/StockStory
+* **Issues:** https://github.com/zhuanleee/StockStory/issues
         """,
         contact={
-            "name": "Stock Scanner API Support",
-            "email": "support@example.com",
+            "name": "StockStory Support",
+            "email": "support@stockstory.app",
         },
         license_info={
             "name": "MIT License",
@@ -173,7 +173,7 @@ Get an API key at `/api-keys/request`
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run wss://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.socket.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://zhuanleee--stockstory-api-create-fastapi-app.modal.run wss://zhuanleee--stockstory-api-create-fastapi-app.modal.run"
         return response
 
     # Global metrics for monitoring
@@ -424,7 +424,7 @@ Get an API key at `/api-keys/request`
         """
         return {
             "ok": True,
-            "service": "stock-scanner-api-v2",
+            "service": "stockstory-api",
             "version": "2.0.0",
             "documentation": "/docs",
             "dashboard": "/admin/dashboard"
@@ -1523,7 +1523,7 @@ Get an API key at `/api-keys/request`
             # ============ HELP / START ============
             if cmd == '/help' or cmd == '/start':
                 welcome_text = (
-                    "📈 *STOCK SCANNER BOT*\n\n"
+                    "📈 *STOCKSTORY*\n\n"
                     "AI-powered stock analysis with story-first scoring.\n\n"
                     "*Quick Start:*\n"
                     "Just send any ticker: `NVDA`, `AAPL`, `TSLA`\n\n"
