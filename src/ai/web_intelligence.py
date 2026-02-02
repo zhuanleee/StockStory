@@ -90,9 +90,13 @@ class WebIntelligence:
             return None
 
         try:
+            # Use reasoning model for crisis verification (accuracy critical)
+            from src.ai.model_selector import get_crisis_model
+            model = get_crisis_model()
+
             # Create chat with web search for news sites
             chat = self.client.chat.create(
-                model="grok-4-1-fast",
+                model=model,
                 tools=[
                     web_search(allowed_domains=self.NEWS_SOURCES)
                 ],

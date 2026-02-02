@@ -59,9 +59,13 @@ class XAIXIntelligenceV2:
             return []
 
         try:
+            # Use reasoning model for crisis detection (accuracy critical)
+            from src.ai.model_selector import get_crisis_model
+            model = get_crisis_model()
+
             # Create chat with X search tool
             chat = self.client.chat.create(
-                model="grok-4-1-fast",
+                model=model,
                 tools=[
                     x_search(
                         # Allow searching from major news sources
@@ -126,9 +130,13 @@ Only include topics with severity >= 7 (significant market impact expected).
             return None
 
         try:
+            # Use reasoning model for crisis analysis (accuracy critical)
+            from src.ai.model_selector import get_crisis_model
+            model = get_crisis_model()
+
             # Create chat with X search focused on this topic
             chat = self.client.chat.create(
-                model="grok-4-1-fast",
+                model=model,
                 tools=[x_search()],  # Search all of X
             )
 
@@ -226,12 +234,13 @@ Return structured analysis. Be accurate - this drives automated trading.
 
         return topics
 
-    def search_stock_sentiment(self, tickers: List[str]) -> Dict[str, Dict]:
+    def search_stock_sentiment(self, tickers: List[str], deep_analysis: bool = False) -> Dict[str, Dict]:
         """
         Search X/Twitter for real-time stock sentiment.
 
         Args:
             tickers: List of ticker symbols to analyze (max 5)
+            deep_analysis: If True, use reasoning model for deeper analysis
 
         Returns:
             Dict mapping ticker -> sentiment analysis
@@ -244,9 +253,14 @@ Return structured analysis. Be accurate - this drives automated trading.
         ticker_str = ", ".join([f"${t}" for t in tickers])
 
         try:
+            # Use non-reasoning for quick sentiment (3x faster)
+            # Use reasoning for deep analysis (more accurate)
+            from src.ai.model_selector import get_sentiment_model
+            model = get_sentiment_model(quick=not deep_analysis)
+
             # Create chat with X search
             chat = self.client.chat.create(
-                model="grok-4-1-fast",
+                model=model,
                 tools=[x_search()],  # Search all of X
             )
 
