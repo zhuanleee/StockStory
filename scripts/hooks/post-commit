@@ -1,66 +1,54 @@
 #!/bin/bash
 # Auto-update CHANGES.md on every commit
-# This hook is called after a successful commit
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CHANGES_FILE="$REPO_ROOT/CHANGES.md"
 
 # Get commit info
 COMMIT_HASH=$(git rev-parse --short HEAD)
-COMMIT_DATE=$(git log -1 --format=%ci)
+COMMIT_DATE=$(git log -1 --format=%cd --date=short)
+COMMIT_TIME=$(git log -1 --format=%cd --date=format:'%H:%M')
 COMMIT_MSG=$(git log -1 --format=%s)
-COMMIT_BODY=$(git log -1 --format=%b)
-AUTHOR=$(git log -1 --format=%an)
-FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD | head -20)
 FILES_COUNT=$(git diff-tree --no-commit-id --name-only -r HEAD | wc -l | tr -d ' ')
 
-# Format the entry
-ENTRY="### ${COMMIT_DATE:0:10} - \`${COMMIT_HASH}\`
+# Create entry file
+TEMP_ENTRY=$(mktemp)
+echo "### ${COMMIT_DATE} ${COMMIT_TIME} - \`${COMMIT_HASH}\`" > "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
+echo "**${COMMIT_MSG}**" >> "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
+echo "Files changed: ${FILES_COUNT}" >> "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
+echo "<details>" >> "$TEMP_ENTRY"
+echo "<summary>Show files</summary>" >> "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
+echo '```' >> "$TEMP_ENTRY"
+git diff-tree --no-commit-id --name-only -r HEAD | head -30 >> "$TEMP_ENTRY"
+echo '```' >> "$TEMP_ENTRY"
+echo "</details>" >> "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
+echo "---" >> "$TEMP_ENTRY"
+echo "" >> "$TEMP_ENTRY"
 
-**${COMMIT_MSG}**
-
-"
-
-# Add body if exists
-if [ -n "$COMMIT_BODY" ]; then
-    ENTRY+="${COMMIT_BODY}
-
-"
-fi
-
-# Add files changed
-ENTRY+="<details>
-<summary>Files changed (${FILES_COUNT})</summary>
-
-\`\`\`
-${FILES_CHANGED}
-\`\`\`
-</details>
-
----
-
-"
-
-# Append to CHANGES.md (after the AUTO-GENERATED marker)
-if grep -q "AUTO-GENERATED BELOW" "$CHANGES_FILE"; then
-    # Create temp file with new entry inserted after marker
-    awk -v entry="$ENTRY" '
-        /AUTO-GENERATED BELOW/ {
-            print
-            print ""
-            print entry
-            next
-        }
-        {print}
-    ' "$CHANGES_FILE" > "$CHANGES_FILE.tmp"
+# Check if CHANGES.md exists and has marker
+if [ -f "$CHANGES_FILE" ] && grep -q "AUTO-GENERATED BELOW" "$CHANGES_FILE"; then
+    # Split file at marker, insert entry, rejoin
+    head -n $(grep -n "AUTO-GENERATED BELOW" "$CHANGES_FILE" | cut -d: -f1) "$CHANGES_FILE" > "$CHANGES_FILE.tmp"
+    echo "" >> "$CHANGES_FILE.tmp"
+    cat "$TEMP_ENTRY" >> "$CHANGES_FILE.tmp"
     mv "$CHANGES_FILE.tmp" "$CHANGES_FILE"
 else
-    # If marker not found, append to end
-    echo "$ENTRY" >> "$CHANGES_FILE"
+    # Create new file
+    echo "# Change Log (Auto-Updated)" > "$CHANGES_FILE"
+    echo "" >> "$CHANGES_FILE"
+    echo "<!-- AUTO-GENERATED BELOW -->" >> "$CHANGES_FILE"
+    echo "" >> "$CHANGES_FILE"
+    cat "$TEMP_ENTRY" >> "$CHANGES_FILE"
 fi
 
-# Stage the updated CHANGES.md (will be included in next commit)
-# Note: We don't commit here to avoid infinite loop
+rm -f "$TEMP_ENTRY"
+
+# Stage updated file
 git add "$CHANGES_FILE" 2>/dev/null || true
 
 echo "📝 CHANGES.md updated with commit ${COMMIT_HASH}"
