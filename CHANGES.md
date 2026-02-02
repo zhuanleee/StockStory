@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 02:02 - `56ac910`
+
+**fix: Add raw_data to health endpoint for dashboard market pulse**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 01:56 - `b27d5e5`
 
 **fix: Update API response format to match dashboard expectations**
