@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 19:20 - `6db7447`
+
+**feat: 6-month candlestick chart with 10/20/50/200 SMAs**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-02 19:15 - `8215f97`
 
 **feat: Replace line chart with candlestick chart**

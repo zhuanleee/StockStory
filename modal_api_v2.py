@@ -1397,14 +1397,44 @@ Get an API key at `/api-keys/request`
                 log("❌ Bot token not configured")
                 return {"ok": False, "error": "Bot token not configured"}
 
-            message = update.get('message', {})
-            text = message.get('text', '').strip()
-            msg_chat_id = message.get('chat', {}).get('id')
-            user_id = str(message.get('from', {}).get('id', msg_chat_id))
-            username = message.get('from', {}).get('username', 'unknown')
+            # Handle callback queries (button clicks)
+            callback_query = update.get('callback_query')
+            if callback_query:
+                callback_id = callback_query.get('id')
+                callback_data = callback_query.get('data', '')
+                cb_chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+                cb_user = callback_query.get('from', {}).get('username', 'unknown')
 
-            # Log message details
-            log(f"📩 MESSAGE from @{username} (chat:{msg_chat_id}): '{text}'")
+                log(f"🔘 BUTTON CLICK from @{cb_user}: {callback_data}")
+
+                # Answer the callback to remove loading state
+                http_requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery",
+                    json={"callback_query_id": callback_id},
+                    timeout=5
+                )
+
+                # Map callback to command
+                if callback_data.startswith('cmd_'):
+                    cmd_text = '/' + callback_data[4:]  # cmd_top -> /top
+                elif callback_data.startswith('chart_'):
+                    ticker = callback_data[6:]  # chart_NVDA -> NVDA
+                    cmd_text = f'/chart {ticker}'
+                else:
+                    cmd_text = callback_data
+
+                # Redirect to message handler by setting text
+                text = cmd_text
+                msg_chat_id = cb_chat_id
+                user_id = str(callback_query.get('from', {}).get('id', cb_chat_id))
+                username = cb_user
+                log(f"🔄 Redirecting to command: {text}")
+            else:
+                message = update.get('message', {})
+                text = message.get('text', '').strip()
+                msg_chat_id = message.get('chat', {}).get('id')
+                user_id = str(message.get('from', {}).get('id', msg_chat_id))
+                username = message.get('from', {}).get('username', 'unknown')
 
             if not text or not msg_chat_id:
                 log("⏭️ Skipping non-text update")
@@ -1456,33 +1486,68 @@ Get an API key at `/api-keys/request`
                 except Exception as e:
                     log(f"❌ Photo exception: {e}")
 
+            def send_with_buttons(reply_text: str, buttons: list):
+                """Send message with inline keyboard buttons."""
+                log(f"📤 SENDING WITH BUTTONS: {reply_text[:50]}...")
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                try:
+                    resp = http_requests.post(url, json={
+                        'chat_id': msg_chat_id,
+                        'text': reply_text,
+                        'parse_mode': 'Markdown',
+                        'disable_web_page_preview': True,
+                        'reply_markup': {
+                            'inline_keyboard': buttons
+                        }
+                    }, timeout=15)
+                    if resp.status_code == 200:
+                        log("✅ Message with buttons sent")
+                    elif resp.status_code == 400 and 'parse entities' in resp.text:
+                        # Retry without markdown
+                        plain_text = reply_text.replace('*', '').replace('_', '').replace('`', '')
+                        http_requests.post(url, json={
+                            'chat_id': msg_chat_id,
+                            'text': plain_text,
+                            'reply_markup': {'inline_keyboard': buttons}
+                        }, timeout=15)
+                    else:
+                        log(f"❌ Buttons failed: {resp.status_code}")
+                except Exception as e:
+                    log(f"❌ Buttons exception: {e}")
+
             # Parse command and args
             parts = text.split(maxsplit=1)
             cmd = parts[0].lower()
             args = parts[1].strip().upper() if len(parts) > 1 else ""
 
-            # ============ HELP ============
+            # ============ HELP / START ============
             if cmd == '/help' or cmd == '/start':
-                send_reply(
+                welcome_text = (
                     "📈 *STOCK SCANNER BOT*\n\n"
-                    "*Quick Analysis:*\n"
-                    "Just send a ticker: `NVDA`, `AAPL`, `TSLA`\n\n"
-                    "*Commands:*\n"
-                    "`/top` - Top 10 stocks by score\n"
-                    "`/movers` - Today's biggest movers\n"
-                    "`/themes` - Hot market themes\n"
-                    "`/earnings` - Upcoming earnings\n\n"
-                    "*Research:*\n"
-                    "`/news TICKER` - Recent news\n"
-                    "`/insider TICKER` - Insider trades\n"
-                    "`/sec TICKER` - SEC filings\n"
-                    "`/chart TICKER` - Price chart\n\n"
-                    "*Watchlist:*\n"
-                    "`/watchlist` - View your list\n"
-                    "`/watch TICKER` - Add to list\n"
-                    "`/unwatch TICKER` - Remove from list\n\n"
-                    "`/status` - System status"
+                    "AI-powered stock analysis with story-first scoring.\n\n"
+                    "*Quick Start:*\n"
+                    "Just send any ticker: `NVDA`, `AAPL`, `TSLA`\n\n"
+                    "Use the buttons below or tap *Menu* for all commands."
                 )
+                # Inline keyboard buttons
+                buttons = [
+                    [
+                        {"text": "🏆 Top 10", "callback_data": "cmd_top"},
+                        {"text": "📊 Movers", "callback_data": "cmd_movers"},
+                        {"text": "🔥 Themes", "callback_data": "cmd_themes"}
+                    ],
+                    [
+                        {"text": "📅 Earnings", "callback_data": "cmd_earnings"},
+                        {"text": "👁 Watchlist", "callback_data": "cmd_watchlist"},
+                        {"text": "🟢 Status", "callback_data": "cmd_status"}
+                    ],
+                    [
+                        {"text": "📈 Chart NVDA", "callback_data": "chart_NVDA"},
+                        {"text": "📈 Chart AAPL", "callback_data": "chart_AAPL"},
+                        {"text": "📈 Chart TSLA", "callback_data": "chart_TSLA"}
+                    ]
+                ]
+                send_with_buttons(welcome_text, buttons)
                 return {"ok": True}
 
             # ============ STATUS ============
