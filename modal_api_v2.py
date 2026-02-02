@@ -2073,6 +2073,20 @@ Get an API key at `/api-keys/request`
                 send_with_buttons(welcome_text, buttons)
                 return {"ok": True}
 
+            # ============ CHAT ID ============
+            elif cmd == '/chatid':
+                # Return the chat ID - useful for getting group chat IDs
+                chat_type = message.get('chat', {}).get('type', 'private')
+                chat_title = message.get('chat', {}).get('title', 'Private Chat')
+                msg = f"💬 *Chat Information*\n\n"
+                msg += f"*Chat ID:* `{chat_id}`\n"
+                msg += f"*Type:* {chat_type}\n"
+                if chat_type != 'private':
+                    msg += f"*Title:* {chat_title}\n"
+                msg += f"\n_Use this ID to configure group alerts._"
+                send_reply(msg)
+                return {"ok": True}
+
             # ============ STATUS ============
             elif cmd == '/status':
                 import pandas as pd
@@ -3034,6 +3048,7 @@ Get an API key at `/api-keys/request`
                 msg += "  `/earnings` - Upcoming earnings\n"
                 msg += "  `/watchlist` - Your watchlist\n"
                 msg += "  `/watch NVDA` - Add to watchlist\n"
+                msg += "  `/chatid` - Get chat ID for group alerts\n"
                 msg += "  `/help` - Quick start guide"
                 send_reply(msg)
                 return {"ok": True}

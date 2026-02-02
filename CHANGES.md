@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 03:56 - `c1e725f`
+
+**fix: Always calculate market fear level even if other fetches fail**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 03:54 - `64dcca3`
 
 **feat: Add GEX and Max Pain to /hedge command**
