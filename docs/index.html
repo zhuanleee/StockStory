@@ -5568,11 +5568,12 @@
                         const typeEmoji = t.type === 'C' || t.type === 'call' ? '📈' : '📉';
                         const sideColor = t.side?.toLowerCase() === 'buy' ? 'var(--green)' : 'var(--red)';
                         const premium = (t.premium || 0) / 1000;
-                        // Format expiration date as MM/DD
+                        // Format expiration date as Mon DD
                         let expiry = '--';
                         if (t.expiration) {
                             const d = new Date(t.expiration + 'T00:00:00');
-                            expiry = (d.getMonth()+1) + '/' + d.getDate();
+                            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                            expiry = months[d.getMonth()] + ' ' + d.getDate();
                         }
 
                         html += `<tr style="border-bottom: 1px solid var(--border);">
@@ -5615,11 +5616,12 @@
                         const volOi = item.vol_oi_ratio || item.volume_oi_ratio || 0;
                         const premium = (item.premium || 0) / 1000;
                         const unusualBadge = volOi > 3 ? '<span style="background: var(--yellow); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-left: 8px;">HOT</span>' : '';
-                        // Format expiration date as MM/DD
+                        // Format expiration date as Mon DD
                         let expiry = '';
                         if (item.expiration) {
                             const d = new Date(item.expiration + 'T00:00:00');
-                            expiry = (d.getMonth()+1) + '/' + d.getDate();
+                            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                            expiry = months[d.getMonth()] + ' ' + d.getDate();
                         }
 
                         html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border);">
@@ -5758,11 +5760,12 @@
                         notable.slice(0, 8).forEach(t => {
                             const signalEmoji = t.signal?.includes('sweep') ? '🔥' : t.signal?.includes('block') ? '🟦' : '•';
                             const premium = (t.premium || 0) / 1000;
-                            // Format expiration date as MM/DD
+                            // Format expiration date as Mon DD
                             let expiry = '';
                             if (t.expiration) {
                                 const d = new Date(t.expiration + 'T00:00:00');
-                                expiry = (d.getMonth()+1) + '/' + d.getDate();
+                                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                                expiry = months[d.getMonth()] + ' ' + d.getDate();
                             }
 
                             html += `<div style="display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border);">
