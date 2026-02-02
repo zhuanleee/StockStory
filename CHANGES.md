@@ -2,6 +2,23 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-02 17:53 - `9532c1a`
+
+**chore: Update CHANGES.md with latest entry**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+```
+</details>
+
+---
+
+
 ### 2026-02-02 17:39 - `bd0d648`
 
 **fix: modal_api_v2.py use correct secret name (Stock_Story)**

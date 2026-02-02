@@ -769,6 +769,8 @@ class EvolutionaryChiefIntelligenceOfficer(ChiefIntelligenceOfficer):
                 self.x_monitor.start()
 
                 logger.info("✓ xAI X Intelligence Monitor started (Component #37)")
+            except Exception as e:
+                logger.warning(f"Could not initialize X Intelligence Monitor: {e}")
 
         # Initialize V2 with real X search (for stock sentiment)
         if X_INTELLIGENCE_V2_AVAILABLE:
