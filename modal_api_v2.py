@@ -2573,20 +2573,46 @@ Provide analysis as JSON:
             system_prompt = """You are a senior market analyst preparing the morning briefing for a trading desk.
 Be concise, actionable, and data-driven. Focus on what matters TODAY."""
 
+            # Safely extract values to avoid unhashable type errors
+            health = digest_data.get('health', {})
+            economic = digest_data.get('economic', {})
+            top_stocks = digest_data.get('top_stocks', [])
+
+            fg_score = health.get('fear_greed', {}).get('score', 'N/A') if isinstance(health.get('fear_greed'), dict) else 'N/A'
+            vix = health.get('raw_data', {}).get('vix', 'N/A') if isinstance(health.get('raw_data'), dict) else 'N/A'
+            breadth = health.get('breadth', {}).get('breadth_score', 'N/A') if isinstance(health.get('breadth'), dict) else 'N/A'
+
+            econ_label = economic.get('overall_label', 'N/A')
+            yield_curve = economic.get('yield_curve', {})
+            yield_display = yield_curve.get('display', 'N/A') if isinstance(yield_curve, dict) else str(yield_curve)
+            alerts = economic.get('alerts', [])
+            alerts_str = json.dumps(alerts) if isinstance(alerts, list) else str(alerts)
+
+            # Safely build top picks list
+            picks_list = []
+            for s in top_stocks[:5]:
+                if isinstance(s, dict):
+                    picks_list.append({
+                        'ticker': s.get('ticker', 'N/A'),
+                        'score': s.get('story_score') or s.get('final_score') or 0,
+                        'theme': s.get('hottest_theme', 'N/A')
+                    })
+            picks_json = json.dumps(picks_list, indent=2)
+
             prompt = f"""Generate a morning market digest based on this data:
 
 MARKET HEALTH:
-- Fear/Greed: {digest_data.get('health', {}).get('fear_greed', {}).get('score', 'N/A')}
-- VIX: {digest_data.get('health', {}).get('raw_data', {}).get('vix', 'N/A')}
-- Breadth: {digest_data.get('health', {}).get('breadth', {}).get('breadth_score', 'N/A')}
+- Fear/Greed: {fg_score}
+- VIX: {vix}
+- Breadth: {breadth}
 
 ECONOMIC:
-- Overall: {digest_data.get('economic', {}).get('overall_label', 'N/A')}
-- Yield Curve: {digest_data.get('economic', {}).get('yield_curve', {}).get('display', 'N/A')}
-- Alerts: {digest_data.get('economic', {}).get('alerts', [])}
+- Overall: {econ_label}
+- Yield Curve: {yield_display}
+- Alerts: {alerts_str}
 
 TOP SCANNER PICKS:
-{json.dumps([{{'ticker': s.get('ticker'), 'score': s.get('final_score'), 'theme': s.get('hottest_theme')}} for s in digest_data.get('top_stocks', [])[:5]], indent=2)}
+{picks_json}
 
 Format your response as JSON:
 {{
