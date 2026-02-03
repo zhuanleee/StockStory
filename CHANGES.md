@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:17 - `a9ce0bb`
+
+**Header refresh button now only refreshes current tab**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:15 - `7d04c87`
 
 **Optimize dashboard performance with lazy loading**

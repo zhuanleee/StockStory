@@ -4774,7 +4774,7 @@
                 const res = await fetch(`${API_BASE}/watchlist/${ticker}`, { method: 'DELETE' });
                 const data = await res.json();
                 if (data.ok) {
-                    fetchTrades(); // Refresh
+                    refreshWatchlistTable(); // Instant refresh
                 }
             } catch (e) {
                 console.error('Remove failed:', e);
@@ -5108,14 +5108,35 @@
                         btn.textContent = '✓ In Watchlist';
                         btn.onclick = () => removeFromWatchlistInScan(scanId, ticker);
                     }
-                    // Update stats
-                    const countEl = document.getElementById('wl-stat-count');
-                    if (countEl) {
-                        countEl.textContent = parseInt(countEl.textContent || '0') + 1;
-                    }
+                    // Refresh watchlist table to show new stock
+                    refreshWatchlistTable();
                 }
             } catch (e) {
                 alert('Failed to add to watchlist');
+            }
+        }
+
+        // Quick refresh just the watchlist table (not full tab)
+        async function refreshWatchlistTable() {
+            try {
+                const wlRes = await fetch(`${API_BASE}/watchlist`);
+                const wlData = await wlRes.json();
+                if (wlData.ok) {
+                    const watchlist = wlData.watchlist || [];
+                    document.getElementById('wl-stat-count').textContent = watchlist.length;
+                    renderWatchlistTable(watchlist);
+
+                    // Update avg performance
+                    const withPerf = watchlist.filter(w => w.change_pct !== null && w.change_pct !== undefined);
+                    if (withPerf.length > 0) {
+                        const avgPerf = withPerf.reduce((sum, w) => sum + w.change_pct, 0) / withPerf.length;
+                        const avgEl = document.getElementById('wl-stat-avg-perf');
+                        avgEl.textContent = `${avgPerf >= 0 ? '+' : ''}${avgPerf.toFixed(1)}%`;
+                        avgEl.style.color = avgPerf >= 0 ? 'var(--green)' : 'var(--red)';
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to refresh watchlist table:', e);
             }
         }
 
@@ -5133,11 +5154,8 @@
                         btn.textContent = '+ Add to Watchlist';
                         btn.onclick = () => addToWatchlistFromScan(scanId, ticker, 0);
                     }
-                    // Update stats
-                    const countEl = document.getElementById('wl-stat-count');
-                    if (countEl) {
-                        countEl.textContent = Math.max(0, parseInt(countEl.textContent || '0') - 1);
-                    }
+                    // Refresh watchlist table
+                    refreshWatchlistTable();
                 }
             } catch (e) {
                 alert('Failed to remove from watchlist');
