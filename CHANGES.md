@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:47 - `ad5c3bf`
+
+**Fix Analytics tab API response structures for dashboard compatibility**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:35 - `a352b96`
 
 **Fix SEC Intel tab API connections and data rendering**
