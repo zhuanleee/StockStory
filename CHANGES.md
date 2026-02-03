@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:54 - `681efb7`
+
+**Fix tooltip clipping by using JS-based tooltips appended to body**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:51 - `a113c3a`
 
 **Improve tooltip readability with better contrast and styling**

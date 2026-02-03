@@ -1694,7 +1694,7 @@ Get an API key at `/api-keys/request`
     def evolution_correlations():
         """
         Get theme and sector correlation analysis.
-        Returns daily correlation matrix and theme statistics.
+        Returns top correlation pairs for dashboard display.
         """
         try:
             correlation_file = Path(VOLUME_PATH) / 'correlation_analysis_latest.json'
@@ -1703,16 +1703,36 @@ Get an API key at `/api-keys/request`
                 with open(correlation_file) as f:
                     correlation_data = json.load(f)
 
-                # Extract correlation_matrix for JS, or use theme_stats as fallback
-                correlations = correlation_data.get('correlation_matrix', {})
-                if not correlations:
-                    # Build simplified correlations from theme_stats
-                    theme_stats = correlation_data.get('theme_stats', {})
-                    correlations = {k: v.get('mean_score', 0) / 100 for k, v in theme_stats.items() if k != 'null'}
+                # Extract correlation_matrix
+                matrix = correlation_data.get('correlation_matrix', {})
+
+                # Convert matrix to flat list of unique pairs with correlation values
+                pairs = []
+                seen = set()
+                for theme1, correlations in matrix.items():
+                    if theme1 == 'null':
+                        continue
+                    for theme2, value in correlations.items():
+                        if theme2 == 'null' or theme1 == theme2:
+                            continue
+                        # Create sorted pair key to avoid duplicates
+                        pair_key = tuple(sorted([theme1, theme2]))
+                        if pair_key not in seen:
+                            seen.add(pair_key)
+                            pairs.append({
+                                'pair': f"{theme1} ↔ {theme2}",
+                                'value': value
+                            })
+
+                # Sort by correlation value (highest first) and take top pairs
+                pairs.sort(key=lambda x: abs(x['value']), reverse=True)
+
+                # Return as flat dict for JS compatibility: {"pair_name": value}
+                flat_correlations = {p['pair']: p['value'] for p in pairs[:8]}
 
                 return {
                     "ok": True,
-                    "correlations": correlations
+                    "correlations": flat_correlations
                 }
             else:
                 return {
