@@ -98,3 +98,4 @@ README_DO_API.md
 # Cache files from background jobs
 .cache/
 .env.modal
+.env.backup

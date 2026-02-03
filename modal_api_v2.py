@@ -2265,6 +2265,497 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
+    # AI INTELLIGENCE HUB - Unified Analysis
+    # =============================================================================
+
+    @web_app.get("/ai/intelligence", tags=["AI Intelligence"])
+    def ai_intelligence():
+        """
+        Unified AI Intelligence Hub - Synthesizes ALL data sources into actionable insights.
+
+        Aggregates:
+        - Market health (Fear/Greed, Breadth, VIX)
+        - Economic indicators (FRED)
+        - Stock scanner results
+        - Theme analysis
+        - SEC intelligence
+        - Options flow
+
+        Returns AI-synthesized market narrative with:
+        - Market regime assessment
+        - Top themes with macro support
+        - Conviction picks with reasoning
+        - Risk alerts
+        - Trade ideas
+        """
+        try:
+            from src.services.ai_service import get_ai_service
+
+            # Gather all data sources
+            data_sources = {}
+
+            # 1. Market Health
+            try:
+                from src.analysis.market_health import get_market_health
+                health = get_market_health()
+                data_sources['market_health'] = {
+                    'fear_greed': health.get('fear_greed', {}),
+                    'breadth': health.get('breadth', {}),
+                    'vix': health.get('raw_data', {}).get('vix'),
+                    'spy_change': health.get('raw_data', {}).get('spy_change')
+                }
+            except Exception as e:
+                data_sources['market_health'] = {'error': str(e)}
+
+            # 2. Economic Data (FRED)
+            try:
+                from utils.data_providers import FREDProvider
+                if FREDProvider.is_configured():
+                    econ = FREDProvider.get_economic_dashboard()
+                    data_sources['economic'] = {
+                        'overall_label': econ.get('overall_label'),
+                        'yield_curve': econ.get('yield_curve', {}).get('display'),
+                        'inverted': econ.get('yield_curve', {}).get('inverted'),
+                        'cpi': econ.get('indicators', {}).get('cpi_yoy', {}).get('display'),
+                        'unemployment': econ.get('indicators', {}).get('unemployment', {}).get('display'),
+                        'fed_funds': econ.get('indicators', {}).get('fed_funds_rate', {}).get('display'),
+                        'alerts': econ.get('alerts', [])
+                    }
+            except Exception as e:
+                data_sources['economic'] = {'error': str(e)}
+
+            # 3. Scanner Results Summary
+            try:
+                results = load_scan_results()
+                if results and results.get('results'):
+                    all_results = list(results['results'])  # Ensure it's a list
+                    stocks = all_results[:20]  # Top 20
+                    themes_summary = {}
+                    for s in stocks:
+                        if not isinstance(s, dict):
+                            continue
+                        theme = s.get('hottest_theme', 'Unknown') or 'Unknown'
+                        if theme not in themes_summary:
+                            themes_summary[theme] = []
+                        catalyst = str(s.get('catalyst') or '')
+                        themes_summary[theme].append({
+                            'ticker': s.get('ticker'),
+                            'score': s.get('final_score'),
+                            'catalyst': catalyst[:100] if len(catalyst) > 100 else catalyst
+                        })
+                    data_sources['scanner'] = {
+                        'total_stocks': len(all_results),
+                        'top_themes': themes_summary,
+                        'top_5': [{'ticker': s.get('ticker'), 'score': s.get('final_score'),
+                                   'theme': s.get('hottest_theme')} for s in stocks[:5] if isinstance(s, dict)]
+                    }
+            except Exception as e:
+                import traceback
+                data_sources['scanner'] = {'error': str(e), 'trace': traceback.format_exc()[:200]}
+
+            # 4. SEC Deals
+            try:
+                from src.data.sec_edgar import get_pending_mergers_from_sec
+                deals = get_pending_mergers_from_sec()
+                data_sources['sec_deals'] = {'count': len(deals) if deals else 0, 'recent': (deals[:3] if deals else [])}
+            except Exception as e:
+                data_sources['sec_deals'] = {'error': str(e)}
+
+            # Build AI prompt - simplified for reliability
+            ai_service = get_ai_service()
+
+            # Simplify data for AI consumption
+            health = data_sources.get('market_health', {})
+            econ = data_sources.get('economic', {})
+            scanner = data_sources.get('scanner', {})
+
+            # Extract key metrics
+            fear_greed = health.get('fear_greed', {}).get('score', 50)
+            breadth = health.get('breadth', {}).get('advance_decline_ratio', 1.0)
+            top_themes = list(scanner.get('top_themes', {}).keys())[:5]
+            top_5 = scanner.get('top_5', [])
+
+            system_prompt = "You are a senior market strategist. Respond ONLY with valid JSON."
+
+            user_prompt = f"""Analyze this market data:
+
+Fear/Greed: {fear_greed}/100
+Breadth (A/D): {breadth}
+Economy: {econ.get('overall_label', 'N/A')}
+Yield Curve: {econ.get('yield_curve', 'N/A')} (Inverted: {econ.get('inverted', False)})
+CPI: {econ.get('cpi', 'N/A')}, Unemployment: {econ.get('unemployment', 'N/A')}
+Alerts: {[a.get('indicator') for a in econ.get('alerts', [])]}
+Top Themes: {top_themes}
+Top Stocks: {[s.get('ticker') for s in top_5]}
+
+Return this JSON (no other text):
+{{"regime":{{"label":"RISK-ON or RISK-OFF or ROTATION or CONSOLIDATION","confidence":70,"reasoning":"one sentence"}},"macro_theme_connection":{{"supporting_themes":["theme1"],"reasoning":"brief"}},"top_conviction_picks":[{{"ticker":"XXX","reasoning":"brief","risk":"brief"}}],"key_risks":["risk1"],"trade_ideas":[{{"idea":"trade","rationale":"why","invalidation":"exit"}}],"summary":"2 sentences"}}"""
+
+            try:
+                response = ai_service.call(user_prompt, system_prompt, max_tokens=2500,
+                                           temperature=0.4, task_type="analysis")
+            except Exception as ai_error:
+                response = None
+                data_sources['ai_error'] = str(ai_error)
+
+            # Parse AI response
+            ai_analysis = {}
+            if response:
+                try:
+                    # Extract JSON from response
+                    import re
+                    json_match = re.search(r'\{[\s\S]*\}', response)
+                    if json_match:
+                        ai_analysis = json.loads(json_match.group())
+                    else:
+                        ai_analysis = {"raw_response": response}
+                except Exception as parse_error:
+                    ai_analysis = {"raw_response": response, "parse_error": str(parse_error)}
+            else:
+                ai_analysis = {"error": "AI service returned no response", "ai_error": data_sources.get('ai_error')}
+
+            return {
+                "ok": True,
+                "timestamp": datetime.now().isoformat(),
+                "data_sources": list(data_sources.keys()),
+                "analysis": ai_analysis,
+                "raw_data": data_sources
+            }
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "trace": traceback.format_exc()[:500]}
+
+    @web_app.get("/ai/regime", tags=["AI Intelligence"])
+    def ai_regime():
+        """
+        Quick market regime assessment.
+        Returns: RISK-ON, RISK-OFF, ROTATION, or CONSOLIDATION with confidence.
+        """
+        try:
+            from src.services.ai_service import get_ai_service
+            from src.analysis.market_health import get_market_health
+
+            health = get_market_health()
+
+            # Quick data summary
+            vix = health.get('raw_data', {}).get('vix', 20)
+            fear_greed = health.get('fear_greed', {}).get('score', 50)
+            breadth = health.get('breadth', {}).get('advance_decline_ratio', 1.0)
+            spy_change = health.get('raw_data', {}).get('spy_change', 0)
+
+            ai_service = get_ai_service()
+
+            prompt = f"""Based on these market indicators, classify the current regime:
+
+VIX: {vix}
+Fear/Greed Score: {fear_greed}/100
+Advance/Decline Ratio: {breadth}
+SPY Daily Change: {spy_change}%
+
+Respond with ONLY a JSON object:
+{{"regime": "RISK-ON|RISK-OFF|ROTATION|CONSOLIDATION", "confidence": 0-100, "reasoning": "one sentence"}}"""
+
+            response = ai_service.call(prompt, max_tokens=200, temperature=0.2, task_type="quick")
+
+            try:
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    result = json.loads(json_match.group())
+                    return {"ok": True, **result}
+            except:
+                pass
+
+            return {"ok": True, "regime": "UNKNOWN", "raw": response}
+
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/ai/reasoning/{ticker}", tags=["AI Intelligence"])
+    def ai_reasoning(ticker: str):
+        """
+        Get AI reasoning for why a specific stock is interesting.
+        Combines technical, fundamental, and thematic analysis.
+        """
+        try:
+            from src.services.ai_service import get_ai_service
+
+            ticker = ticker.upper()
+            stock_data = {}
+
+            # Get stock from scanner results
+            results = load_scan_results()
+            if results and results.get('results'):
+                for s in results['results']:
+                    if s.get('ticker', '').upper() == ticker:
+                        stock_data = s
+                        break
+
+            if not stock_data:
+                return {"ok": False, "error": f"Ticker {ticker} not found in recent scan"}
+
+            ai_service = get_ai_service()
+
+            prompt = f"""Analyze why {ticker} is showing up as a top pick:
+
+Stock Data:
+- Final Score: {stock_data.get('final_score')}
+- Theme: {stock_data.get('hottest_theme')}
+- Catalyst: {stock_data.get('catalyst', 'N/A')}
+- Story: {stock_data.get('story', 'N/A')[:500]}
+- Technical Score: {stock_data.get('technical_score', 'N/A')}
+- News Score: {stock_data.get('news_score', 'N/A')}
+
+Provide analysis as JSON:
+{{
+    "thesis": "2-3 sentence investment thesis",
+    "bull_case": ["point1", "point2"],
+    "bear_case": ["risk1", "risk2"],
+    "catalyst_timeline": "near-term/medium-term/long-term",
+    "conviction_level": "HIGH/MEDIUM/LOW",
+    "suggested_action": "specific actionable suggestion"
+}}"""
+
+            response = ai_service.call(prompt, max_tokens=800, temperature=0.3, task_type="analysis")
+
+            try:
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    analysis = json.loads(json_match.group())
+                    return {"ok": True, "ticker": ticker, "analysis": analysis, "stock_data": stock_data}
+            except:
+                pass
+
+            return {"ok": True, "ticker": ticker, "raw_analysis": response, "stock_data": stock_data}
+
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/ai/digest", tags=["AI Intelligence"])
+    def ai_digest():
+        """
+        Generate AI-powered daily market digest.
+        Comprehensive morning briefing combining all data sources.
+        """
+        try:
+            from src.services.ai_service import get_ai_service
+
+            # Gather comprehensive data
+            digest_data = {}
+
+            # Market health
+            try:
+                from src.analysis.market_health import get_market_health
+                digest_data['health'] = get_market_health()
+            except:
+                digest_data['health'] = {}
+
+            # Economic
+            try:
+                from utils.data_providers import FREDProvider
+                if FREDProvider.is_configured():
+                    digest_data['economic'] = FREDProvider.get_economic_dashboard()
+            except:
+                digest_data['economic'] = {}
+
+            # Top stocks
+            try:
+                results = load_scan_results()
+                if results:
+                    digest_data['top_stocks'] = results.get('results', [])[:10]
+            except:
+                digest_data['top_stocks'] = []
+
+            ai_service = get_ai_service()
+
+            system_prompt = """You are a senior market analyst preparing the morning briefing for a trading desk.
+Be concise, actionable, and data-driven. Focus on what matters TODAY."""
+
+            prompt = f"""Generate a morning market digest based on this data:
+
+MARKET HEALTH:
+- Fear/Greed: {digest_data.get('health', {}).get('fear_greed', {}).get('score', 'N/A')}
+- VIX: {digest_data.get('health', {}).get('raw_data', {}).get('vix', 'N/A')}
+- Breadth: {digest_data.get('health', {}).get('breadth', {}).get('breadth_score', 'N/A')}
+
+ECONOMIC:
+- Overall: {digest_data.get('economic', {}).get('overall_label', 'N/A')}
+- Yield Curve: {digest_data.get('economic', {}).get('yield_curve', {}).get('display', 'N/A')}
+- Alerts: {digest_data.get('economic', {}).get('alerts', [])}
+
+TOP SCANNER PICKS:
+{json.dumps([{{'ticker': s.get('ticker'), 'score': s.get('final_score'), 'theme': s.get('hottest_theme')}} for s in digest_data.get('top_stocks', [])[:5]], indent=2)}
+
+Format your response as JSON:
+{{
+    "headline": "One compelling headline for today",
+    "market_stance": "BULLISH/BEARISH/NEUTRAL with brief reason",
+    "key_levels": {{"SPY": "support/resistance levels", "QQQ": "..."}},
+    "sector_rotation": "Which sectors to favor/avoid today",
+    "top_3_ideas": [
+        {{"ticker": "XXX", "action": "BUY/WATCH/AVOID", "reason": "brief"}}
+    ],
+    "risks_today": ["risk1", "risk2"],
+    "events_to_watch": ["event1", "event2"],
+    "one_liner": "The single most important thing to know today"
+}}"""
+
+            response = ai_service.call(prompt, system_prompt, max_tokens=1500,
+                                       temperature=0.4, task_type="analysis")
+
+            try:
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    digest = json.loads(json_match.group())
+                    return {
+                        "ok": True,
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                        "generated_at": datetime.now().isoformat(),
+                        "digest": digest
+                    }
+            except:
+                pass
+
+            return {"ok": True, "raw_digest": response}
+
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/ai/matrix", tags=["AI Intelligence"])
+    def ai_signal_matrix():
+        """
+        Smart Signal Matrix - Correlation between all data sources.
+        Shows confirmations and conflicts across signals.
+        """
+        try:
+            from src.services.ai_service import get_ai_service
+
+            # Gather signals
+            signals = {}
+
+            # Market signals
+            try:
+                from src.analysis.market_health import get_market_health
+                health = get_market_health()
+                fg = health.get('fear_greed', {}).get('score', 50)
+                signals['fear_greed'] = {
+                    'value': fg,
+                    'signal': 'BULLISH' if fg > 60 else 'BEARISH' if fg < 40 else 'NEUTRAL'
+                }
+                vix = health.get('raw_data', {}).get('vix', 20)
+                signals['vix'] = {
+                    'value': vix,
+                    'signal': 'BULLISH' if vix < 15 else 'BEARISH' if vix > 25 else 'NEUTRAL'
+                }
+                breadth = health.get('breadth', {}).get('advance_decline_ratio', 1.0)
+                signals['breadth'] = {
+                    'value': breadth,
+                    'signal': 'BULLISH' if breadth > 1.5 else 'BEARISH' if breadth < 0.7 else 'NEUTRAL'
+                }
+            except:
+                pass
+
+            # Economic signals
+            try:
+                from utils.data_providers import FREDProvider
+                if FREDProvider.is_configured():
+                    econ = FREDProvider.get_economic_dashboard()
+                    yc = econ.get('yield_curve', {})
+                    signals['yield_curve'] = {
+                        'value': yc.get('spread'),
+                        'signal': 'BEARISH' if yc.get('inverted') else 'BULLISH' if yc.get('spread', 0) > 0.5 else 'NEUTRAL'
+                    }
+                    cpi = econ.get('indicators', {}).get('cpi_yoy', {}).get('value', 2)
+                    signals['inflation'] = {
+                        'value': cpi,
+                        'signal': 'BEARISH' if cpi > 4 else 'BULLISH' if cpi < 2.5 else 'NEUTRAL'
+                    }
+            except:
+                pass
+
+            # Theme momentum
+            try:
+                results = load_scan_results()
+                if results and results.get('results'):
+                    themes = {}
+                    for s in results['results'][:50]:
+                        theme = s.get('hottest_theme', 'Unknown')
+                        if theme not in themes:
+                            themes[theme] = 0
+                        themes[theme] += 1
+                    top_theme = max(themes, key=themes.get) if themes else 'N/A'
+                    signals['theme_momentum'] = {
+                        'value': top_theme,
+                        'signal': 'ACTIVE' if themes.get(top_theme, 0) > 5 else 'WEAK'
+                    }
+            except:
+                pass
+
+            # Build correlation matrix
+            signal_list = list(signals.keys())
+            matrix = {}
+            confirmations = []
+            conflicts = []
+
+            for i, s1 in enumerate(signal_list):
+                for s2 in signal_list[i+1:]:
+                    sig1 = signals[s1].get('signal', 'NEUTRAL')
+                    sig2 = signals[s2].get('signal', 'NEUTRAL')
+
+                    if sig1 == sig2 and sig1 != 'NEUTRAL':
+                        confirmations.append({
+                            'signals': [s1, s2],
+                            'direction': sig1,
+                            'strength': 'STRONG'
+                        })
+                    elif sig1 != 'NEUTRAL' and sig2 != 'NEUTRAL' and sig1 != sig2:
+                        conflicts.append({
+                            'signals': [s1, s2],
+                            'directions': [sig1, sig2],
+                            'note': f'{s1} says {sig1} but {s2} says {sig2}'
+                        })
+
+            # AI interpretation
+            ai_service = get_ai_service()
+
+            prompt = f"""Interpret this signal matrix:
+
+SIGNALS:
+{json.dumps(signals, indent=2)}
+
+CONFIRMATIONS: {json.dumps(confirmations)}
+CONFLICTS: {json.dumps(conflicts)}
+
+Provide brief JSON interpretation:
+{{"overall_signal": "BULLISH/BEARISH/MIXED", "confidence": 0-100, "key_insight": "one sentence", "action": "what to do"}}"""
+
+            response = ai_service.call(prompt, max_tokens=300, temperature=0.2, task_type="quick")
+
+            interpretation = {}
+            try:
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    interpretation = json.loads(json_match.group())
+            except:
+                interpretation = {"raw": response}
+
+            return {
+                "ok": True,
+                "signals": signals,
+                "confirmations": confirmations,
+                "conflicts": conflicts,
+                "interpretation": interpretation,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =============================================================================
     # TELEGRAM WEBHOOK - Full-Featured Bot
     # =============================================================================
 

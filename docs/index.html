@@ -1343,6 +1343,7 @@
     <nav class="tabs">
         <div class="tabs-inner">
             <div class="tab active" data-tab="overview">Overview</div>
+            <div class="tab" data-tab="intelligence">Intelligence</div>
             <div class="tab" data-tab="scan">Scan Results</div>
             <div class="tab" data-tab="themes">Themes</div>
             <div class="tab" data-tab="themeradar">Theme Radar</div>
@@ -1522,6 +1523,120 @@
                                 💡 Manual scans disabled (Modal security). Data auto-refreshes daily.
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Intelligence Tab -->
+        <div id="intelligence" class="tab-content">
+            <!-- Market Regime Banner -->
+            <div class="card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
+                <div class="card-body" style="padding: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div style="font-size: 2.5rem;" id="regime-emoji">🎯</div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Market Regime</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="regime-label">Loading...</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);" id="regime-reasoning">Analyzing market conditions...</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 24px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">CONFIDENCE</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;" id="regime-confidence">--%</div>
+                            </div>
+                            <button class="btn btn-primary" onclick="fetchAIIntelligence()" style="padding: 8px 16px;">
+                                🧠 Refresh AI
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-2" style="margin-top: 20px;">
+                <!-- Signal Matrix -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📊 Signal Matrix <span class="info-icon" data-tooltip="Cross-signal analysis showing confirmations and conflicts between different market indicators."></span></div>
+                    </div>
+                    <div class="card-body" id="signal-matrix-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading signal matrix...</div>
+                    </div>
+                </div>
+
+                <!-- Confirmations & Conflicts -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">✅ Confirmations & ⚠️ Conflicts</div>
+                    </div>
+                    <div class="card-body" id="confirmations-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Analyzing signal alignment...</div>
+                    </div>
+                </div>
+
+                <!-- AI Synthesis -->
+                <div class="card" style="grid-column: span 2;">
+                    <div class="card-header">
+                        <div class="card-title">🧠 AI Market Synthesis <span class="info-icon" data-tooltip="AI-powered analysis combining all data sources into actionable intelligence."></span></div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIIntelligence()">Regenerate</button>
+                    </div>
+                    <div class="card-body" id="ai-synthesis-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Refresh AI" to generate market intelligence...</div>
+                    </div>
+                </div>
+
+                <!-- Conviction Picks -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎯 Top Conviction Picks</div>
+                    </div>
+                    <div class="card-body" id="conviction-picks-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading conviction picks...</div>
+                    </div>
+                </div>
+
+                <!-- Trade Ideas -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">💡 Trade Ideas</div>
+                    </div>
+                    <div class="card-body" id="trade-ideas-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading trade ideas...</div>
+                    </div>
+                </div>
+
+                <!-- Key Risks -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚠️ Key Risks to Watch</div>
+                    </div>
+                    <div class="card-body" id="key-risks-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading risk analysis...</div>
+                    </div>
+                </div>
+
+                <!-- Daily Digest -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📰 Daily Digest</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIDigest()">Generate</button>
+                    </div>
+                    <div class="card-body" id="daily-digest-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Generate" for morning briefing...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Card -->
+            <div class="card" style="margin-top: 20px; background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);">
+                <div class="card-header">
+                    <div class="card-title">📝 Market Narrative</div>
+                </div>
+                <div class="card-body">
+                    <div id="market-narrative" style="font-size: 1rem; line-height: 1.6; color: var(--text);">
+                        Loading market narrative...
                     </div>
                 </div>
             </div>
@@ -3933,6 +4048,311 @@
                 document.getElementById('briefing-container').innerHTML = '<div style="color: var(--red);">Failed to generate briefing</div>';
             }
         }
+
+        // =============================================================================
+        // AI INTELLIGENCE HUB
+        // =============================================================================
+
+        async function fetchAIIntelligence() {
+            // Show loading states
+            document.getElementById('regime-label').textContent = 'Analyzing...';
+            document.getElementById('regime-reasoning').textContent = 'AI is processing market data...';
+            document.getElementById('ai-synthesis-container').innerHTML = '<div style="color: var(--text-muted);">🧠 Generating AI intelligence... This may take 10-20 seconds.</div>';
+            document.getElementById('signal-matrix-container').innerHTML = '<div style="color: var(--text-muted);">Loading signals...</div>';
+
+            try {
+                // Fetch signal matrix first (faster)
+                const matrixRes = await fetch(`${API_BASE}/ai/matrix`);
+                const matrixData = await matrixRes.json();
+                if (matrixData.ok) {
+                    renderSignalMatrix(matrixData);
+                }
+
+                // Fetch full intelligence
+                const res = await fetch(`${API_BASE}/ai/intelligence`);
+                const data = await res.json();
+
+                if (data.ok && data.analysis) {
+                    renderAIIntelligence(data.analysis);
+                } else {
+                    document.getElementById('ai-synthesis-container').innerHTML = `<div style="color: var(--red);">Error: ${data.error || 'Failed to generate intelligence'}</div>`;
+                }
+            } catch (e) {
+                console.error('AI Intelligence error:', e);
+                document.getElementById('ai-synthesis-container').innerHTML = '<div style="color: var(--red);">Failed to connect to AI service</div>';
+            }
+        }
+
+        function renderSignalMatrix(data) {
+            const signals = data.signals || {};
+            const container = document.getElementById('signal-matrix-container');
+
+            let html = '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">';
+
+            for (const [key, signal] of Object.entries(signals)) {
+                const color = signal.signal === 'BULLISH' ? 'var(--green)' :
+                              signal.signal === 'BEARISH' ? 'var(--red)' : 'var(--text-muted)';
+                const emoji = signal.signal === 'BULLISH' ? '🟢' :
+                              signal.signal === 'BEARISH' ? '🔴' : '🟡';
+
+                html += `
+                    <div style="padding: 10px; background: var(--bg-hover); border-radius: 6px; border-left: 3px solid ${color};">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${key.replace(/_/g, ' ')}</div>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                            <span>${emoji}</span>
+                            <span style="font-weight: 600; color: ${color};">${signal.signal}</span>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">${signal.value || ''}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+
+            // Add interpretation
+            if (data.interpretation && data.interpretation.overall_signal) {
+                const interp = data.interpretation;
+                html += `
+                    <div style="margin-top: 12px; padding: 10px; background: rgba(99, 102, 241, 0.1); border-radius: 6px;">
+                        <div style="font-weight: 600; color: var(--primary);">AI Interpretation: ${interp.overall_signal}</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${interp.key_insight || ''}</div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+
+            // Render confirmations and conflicts
+            renderConfirmationsConflicts(data);
+        }
+
+        function renderConfirmationsConflicts(data) {
+            const container = document.getElementById('confirmations-container');
+            let html = '';
+
+            // Confirmations
+            if (data.confirmations && data.confirmations.length > 0) {
+                html += '<div style="margin-bottom: 12px;"><div style="font-size: 0.75rem; color: var(--green); font-weight: 600; margin-bottom: 6px;">✅ CONFIRMATIONS</div>';
+                for (const conf of data.confirmations) {
+                    html += `
+                        <div style="padding: 8px; background: rgba(34, 197, 94, 0.1); border-radius: 4px; margin-bottom: 4px; font-size: 0.8rem;">
+                            <span style="color: var(--green);">${conf.signals.join(' ↔ ')}</span>
+                            <span style="color: var(--text-muted);"> → ${conf.direction}</span>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            // Conflicts
+            if (data.conflicts && data.conflicts.length > 0) {
+                html += '<div><div style="font-size: 0.75rem; color: var(--yellow); font-weight: 600; margin-bottom: 6px;">⚠️ CONFLICTS</div>';
+                for (const conf of data.conflicts) {
+                    html += `
+                        <div style="padding: 8px; background: rgba(234, 179, 8, 0.1); border-radius: 4px; margin-bottom: 4px; font-size: 0.8rem;">
+                            <span style="color: var(--yellow);">${conf.note}</span>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            if (!html) {
+                html = '<div style="color: var(--text-muted); font-size: 0.8rem;">No strong confirmations or conflicts detected</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderAIIntelligence(analysis) {
+            // Regime
+            if (analysis.regime) {
+                const regime = analysis.regime;
+                const emoji = regime.label === 'RISK-ON' ? '🚀' :
+                              regime.label === 'RISK-OFF' ? '🛡️' :
+                              regime.label === 'ROTATION' ? '🔄' : '📊';
+                document.getElementById('regime-emoji').textContent = emoji;
+                document.getElementById('regime-label').textContent = regime.label || 'ANALYZING';
+                document.getElementById('regime-reasoning').textContent = regime.reasoning || '';
+                document.getElementById('regime-confidence').textContent = `${regime.confidence || 0}%`;
+            }
+
+            // AI Synthesis
+            let synthesisHtml = '';
+            if (analysis.macro_theme_connection) {
+                const macro = analysis.macro_theme_connection;
+                synthesisHtml += `
+                    <div style="margin-bottom: 16px;">
+                        <div style="font-size: 0.75rem; color: var(--primary); font-weight: 600; margin-bottom: 6px;">MACRO → THEME CONNECTION</div>
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 6px;">
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                                ${(macro.supporting_themes || []).map(t => `<span style="padding: 4px 8px; background: rgba(99, 102, 241, 0.2); border-radius: 4px; font-size: 0.75rem;">${t}</span>`).join('')}
+                            </div>
+                            <div style="font-size: 0.85rem; color: var(--text);">${macro.reasoning || ''}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            document.getElementById('ai-synthesis-container').innerHTML = synthesisHtml || '<div style="color: var(--text-muted);">No synthesis available</div>';
+
+            // Conviction Picks
+            if (analysis.top_conviction_picks && analysis.top_conviction_picks.length > 0) {
+                let picksHtml = '';
+                for (const pick of analysis.top_conviction_picks) {
+                    picksHtml += `
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 6px; margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-weight: 700; font-size: 1.1rem; color: var(--primary);">${pick.ticker}</span>
+                                <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchAIReasoning('${pick.ticker}')">📊 Detail</button>
+                            </div>
+                            <div style="font-size: 0.85rem; margin-top: 6px; color: var(--text);">${pick.reasoning || ''}</div>
+                            <div style="font-size: 0.75rem; margin-top: 4px; color: var(--red);">⚠️ Risk: ${pick.risk || 'N/A'}</div>
+                        </div>
+                    `;
+                }
+                document.getElementById('conviction-picks-container').innerHTML = picksHtml;
+            }
+
+            // Trade Ideas
+            if (analysis.trade_ideas && analysis.trade_ideas.length > 0) {
+                let ideasHtml = '';
+                for (const idea of analysis.trade_ideas) {
+                    ideasHtml += `
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 6px; margin-bottom: 8px;">
+                            <div style="font-weight: 600; color: var(--green);">💡 ${idea.idea}</div>
+                            <div style="font-size: 0.85rem; margin-top: 6px; color: var(--text);">${idea.rationale || ''}</div>
+                            <div style="font-size: 0.75rem; margin-top: 4px; color: var(--yellow);">❌ Invalidation: ${idea.invalidation || 'N/A'}</div>
+                        </div>
+                    `;
+                }
+                document.getElementById('trade-ideas-container').innerHTML = ideasHtml;
+            }
+
+            // Key Risks
+            if (analysis.key_risks && analysis.key_risks.length > 0) {
+                let risksHtml = '<ul style="margin: 0; padding-left: 20px;">';
+                for (const risk of analysis.key_risks) {
+                    risksHtml += `<li style="margin-bottom: 6px; color: var(--text);">${risk}</li>`;
+                }
+                risksHtml += '</ul>';
+                document.getElementById('key-risks-container').innerHTML = risksHtml;
+            }
+
+            // Market Narrative
+            if (analysis.summary) {
+                document.getElementById('market-narrative').textContent = analysis.summary;
+            }
+        }
+
+        async function fetchAIDigest() {
+            document.getElementById('daily-digest-container').innerHTML = '<div style="color: var(--text-muted);">📰 Generating daily digest...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/ai/digest`);
+                const data = await res.json();
+
+                if (data.ok && data.digest) {
+                    const d = data.digest;
+                    let html = `
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 1.1rem; font-weight: 700; color: var(--text);">${d.headline || 'Market Update'}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">${data.date || ''}</div>
+                        </div>
+                        <div style="padding: 10px; background: var(--bg-hover); border-radius: 6px; margin-bottom: 12px;">
+                            <span style="font-weight: 600;">Stance:</span> ${d.market_stance || 'N/A'}
+                        </div>
+                    `;
+
+                    if (d.top_3_ideas && d.top_3_ideas.length > 0) {
+                        html += '<div style="font-size: 0.75rem; color: var(--primary); font-weight: 600; margin-bottom: 6px;">TOP IDEAS</div>';
+                        for (const idea of d.top_3_ideas) {
+                            const actionColor = idea.action === 'BUY' ? 'var(--green)' :
+                                                idea.action === 'AVOID' ? 'var(--red)' : 'var(--yellow)';
+                            html += `
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                    <span style="font-weight: 600;">${idea.ticker}</span>
+                                    <span style="padding: 2px 6px; background: ${actionColor}20; color: ${actionColor}; border-radius: 4px; font-size: 0.7rem;">${idea.action}</span>
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">${idea.reason}</span>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    if (d.one_liner) {
+                        html += `
+                            <div style="margin-top: 12px; padding: 10px; background: rgba(99, 102, 241, 0.1); border-radius: 6px; border-left: 3px solid var(--primary);">
+                                <div style="font-size: 0.85rem; font-style: italic;">"${d.one_liner}"</div>
+                            </div>
+                        `;
+                    }
+
+                    document.getElementById('daily-digest-container').innerHTML = html;
+                }
+            } catch (e) {
+                document.getElementById('daily-digest-container').innerHTML = '<div style="color: var(--red);">Failed to generate digest</div>';
+            }
+        }
+
+        async function fetchAIReasoning(ticker) {
+            try {
+                const res = await fetch(`${API_BASE}/ai/reasoning/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.analysis) {
+                    const a = data.analysis;
+                    let html = `
+                        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 500px; z-index: 10000; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <span style="font-size: 1.5rem; font-weight: 700;">${ticker}</span>
+                                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.5rem;">&times;</button>
+                            </div>
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 0.75rem; color: var(--primary); font-weight: 600;">THESIS</div>
+                                <div style="font-size: 0.9rem; margin-top: 4px;">${a.thesis || 'N/A'}</div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                                <div>
+                                    <div style="font-size: 0.75rem; color: var(--green); font-weight: 600;">BULL CASE</div>
+                                    <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
+                                        ${(a.bull_case || []).map(b => `<li>${b}</li>`).join('')}
+                                    </ul>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.75rem; color: var(--red); font-weight: 600;">BEAR CASE</div>
+                                    <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
+                                        ${(a.bear_case || []).map(b => `<li>${b}</li>`).join('')}
+                                    </ul>
+                                </div>
+                            </div>
+                            <div style="padding: 10px; background: var(--bg-hover); border-radius: 6px;">
+                                <span style="font-weight: 600;">Conviction:</span> ${a.conviction_level || 'N/A'}
+                                <span style="margin-left: 12px; font-weight: 600;">Timeline:</span> ${a.catalyst_timeline || 'N/A'}
+                            </div>
+                            <div style="margin-top: 12px; padding: 10px; background: rgba(99, 102, 241, 0.1); border-radius: 6px;">
+                                <div style="font-size: 0.85rem;">${a.suggested_action || ''}</div>
+                            </div>
+                        </div>
+                        <div onclick="this.nextElementSibling.remove(); this.remove();" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999;"></div>
+                    `;
+                    document.body.insertAdjacentHTML('beforeend', html);
+                }
+            } catch (e) {
+                console.error('AI Reasoning error:', e);
+            }
+        }
+
+        // Auto-load Intelligence tab data when tab is clicked
+        document.addEventListener('DOMContentLoaded', () => {
+            const intelligenceTab = document.querySelector('[data-tab="intelligence"]');
+            if (intelligenceTab) {
+                intelligenceTab.addEventListener('click', () => {
+                    // Only fetch if containers are empty/loading
+                    const matrixContainer = document.getElementById('signal-matrix-container');
+                    if (matrixContainer && matrixContainer.textContent.includes('Loading')) {
+                        fetchAIIntelligence();
+                    }
+                });
+            }
+        });
 
         // Economic Dashboard (FRED)
         async function fetchEconomicDashboard() {
