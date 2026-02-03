@@ -322,6 +322,69 @@
             border-bottom-color: var(--blue);
         }
 
+        /* Main Category Tabs */
+        .main-tabs {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+
+        .main-tab {
+            padding: 14px 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .main-tab:hover {
+            color: var(--text);
+            background: var(--bg-hover);
+        }
+
+        .main-tab.active {
+            color: var(--text);
+            border-bottom-color: var(--blue);
+            background: transparent;
+        }
+
+        /* Sub-tabs */
+        .sub-tabs {
+            display: none;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+
+        .sub-tabs.active {
+            display: block;
+        }
+
+        .sub-tabs .tabs-inner {
+            gap: 0;
+        }
+
+        .sub-tab {
+            padding: 10px 18px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .sub-tab:hover {
+            color: var(--text);
+        }
+
+        .sub-tab.active {
+            color: var(--blue);
+            border-bottom-color: var(--blue);
+        }
+
         /* Main */
         .main {
             max-width: 1400px;
@@ -342,6 +405,14 @@
 
         @media (max-width: 1024px) {
             .grid-2, .grid-3, .grid-4, .grid-5, .grid-sidebar { grid-template-columns: 1fr; }
+        }
+
+        /* Mobile responsive tabs */
+        @media (max-width: 768px) {
+            .main-tabs, .sub-tabs { padding: 0 12px; }
+            .main-tab { padding: 12px 16px; font-size: 0.8rem; }
+            .sub-tab { padding: 8px 12px; font-size: 0.75rem; }
+            .tabs-inner { flex-wrap: wrap; }
         }
 
         /* Cards */
@@ -1339,26 +1410,61 @@
         </div>
     </header>
 
-    <!-- Tabs -->
-    <nav class="tabs">
+    <!-- Main Category Tabs -->
+    <nav class="main-tabs">
         <div class="tabs-inner">
-            <div class="tab active" data-tab="overview">Overview</div>
-            <div class="tab" data-tab="intelligence">Intelligence</div>
-            <div class="tab" data-tab="scan">Scan Results</div>
-            <div class="tab" data-tab="themes">Themes</div>
-            <div class="tab" data-tab="themeradar">Theme Radar</div>
-            <div class="tab" data-tab="sec">SEC Intel</div>
-            <div class="tab" data-tab="trades">Trades</div>
-            <div class="tab" data-tab="watchlist">Watchlist</div>
-            <div class="tab" data-tab="analytics">Analytics</div>
-            <div class="tab" data-tab="options">Options</div>
+            <div class="main-tab active" data-category="dashboard">Dashboard</div>
+            <div class="main-tab" data-category="research">Research</div>
+            <div class="main-tab" data-category="trading">Trading</div>
+            <div class="main-tab" data-category="analytics">Analytics</div>
+        </div>
+    </nav>
+    <!-- Research Sub-tabs -->
+    <nav class="sub-tabs" id="sub-tabs-research">
+        <div class="tabs-inner">
+            <div class="sub-tab active" data-tab="themes">Themes</div>
+            <div class="sub-tab" data-tab="sec">SEC Intel</div>
+        </div>
+    </nav>
+    <!-- Trading Sub-tabs -->
+    <nav class="sub-tabs" id="sub-tabs-trading">
+        <div class="tabs-inner">
+            <div class="sub-tab active" data-tab="scanner">Scanner</div>
+            <div class="sub-tab" data-tab="trades">Trades</div>
+            <div class="sub-tab" data-tab="watchlist">Watchlist</div>
+            <div class="sub-tab" data-tab="options">Options</div>
         </div>
     </nav>
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Overview Tab -->
-        <div id="overview" class="tab-content active">
+        <!-- Dashboard Tab (merged Overview + Intelligence) -->
+        <div id="dashboard" class="tab-content active">
+            <!-- Market Regime Banner -->
+            <div class="card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px solid rgba(99, 102, 241, 0.3); margin-bottom: 20px;">
+                <div class="card-body" style="padding: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div style="font-size: 2.5rem;" id="regime-emoji">🎯</div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Market Regime</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="regime-label">Loading...</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);" id="regime-reasoning">Analyzing market conditions...</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 24px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">CONFIDENCE</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;" id="regime-confidence">--%</div>
+                            </div>
+                            <button class="btn btn-primary" onclick="fetchAIIntelligence()" style="padding: 8px 16px;">
+                                🧠 Refresh AI
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Stats Row -->
             <div class="stats-row">
                 <div class="stat">
@@ -1379,11 +1485,45 @@
                 </div>
             </div>
 
+            <!-- Signal Matrix Row -->
+            <div class="grid grid-2" style="margin-bottom: 20px;">
+                <!-- Signal Matrix -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📊 Signal Matrix <span class="info-icon" data-tooltip="Cross-signal analysis showing confirmations and conflicts between different market indicators."></span></div>
+                    </div>
+                    <div class="card-body" id="signal-matrix-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading signal matrix...</div>
+                    </div>
+                </div>
+
+                <!-- Confirmations & Conflicts -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">✅ Confirmations & ⚠️ Conflicts</div>
+                    </div>
+                    <div class="card-body" id="confirmations-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Analyzing signal alignment...</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="grid grid-sidebar">
                 <!-- Main Column -->
                 <div>
                     <!-- Alerts -->
                     <div id="alerts-container"></div>
+
+                    <!-- AI Synthesis -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">🧠 AI Market Synthesis <span class="info-icon" data-tooltip="AI-powered analysis combining all data sources into actionable intelligence."></span></div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIIntelligence()">Regenerate</button>
+                        </div>
+                        <div class="card-body" id="ai-synthesis-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Refresh AI" to generate market intelligence...</div>
+                        </div>
+                    </div>
 
                     <!-- Top Opportunities -->
                     <div class="card" style="margin-bottom: 20px;">
@@ -1399,6 +1539,29 @@
                         </div>
                     </div>
 
+                    <!-- Conviction Picks & Trade Ideas -->
+                    <div class="grid grid-2" style="margin-bottom: 20px;">
+                        <!-- Conviction Picks -->
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">🎯 Top Conviction Picks</div>
+                            </div>
+                            <div class="card-body" id="conviction-picks-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading conviction picks...</div>
+                            </div>
+                        </div>
+
+                        <!-- Trade Ideas -->
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">💡 Trade Ideas</div>
+                            </div>
+                            <div class="card-body" id="trade-ideas-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading trade ideas...</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Hot Themes -->
                     <div class="card">
                         <div class="card-header">
@@ -1406,11 +1569,11 @@
                         </div>
                         <div class="card-body">
                             <div class="themes-row" id="theme-pills">
-                                
+
                             </div>
                             <div id="theme-stocks" style="margin-top: 20px;">
                                 <div class="theme-stocks" id="theme-stocks-grid">
-                                    
+
                                 </div>
                             </div>
                         </div>
@@ -1461,6 +1624,16 @@
                         </div>
                     </div>
 
+                    <!-- Key Risks -->
+                    <div class="card sidebar-card">
+                        <div class="card-header">
+                            <div class="card-title">⚠️ Key Risks to Watch</div>
+                        </div>
+                        <div class="card-body" id="key-risks-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading risk analysis...</div>
+                        </div>
+                    </div>
+
                     <!-- High Conviction Alerts -->
                     <div class="card sidebar-card">
                         <div class="card-header">
@@ -1469,17 +1642,6 @@
                         </div>
                         <div class="card-body" id="conviction-alerts-container">
                             <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading multi-signal alerts...</div>
-                        </div>
-                    </div>
-
-                    <!-- Supply Chain Opportunities -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">🔗 Supply Chain</div>
-                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchSupplyChain()">Refresh</button>
-                        </div>
-                        <div class="card-body" id="supplychain-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading lagging opportunities...</div>
                         </div>
                     </div>
 
@@ -1494,13 +1656,14 @@
                         </div>
                     </div>
 
-                    <!-- Upcoming Earnings -->
+                    <!-- Daily Digest -->
                     <div class="card sidebar-card">
                         <div class="card-header">
-                            <div class="card-title">📅 Earnings Soon</div>
+                            <div class="card-title">📰 Daily Digest</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchAIDigest()">Generate</button>
                         </div>
-                        <div class="card-body" id="earnings-sidebar">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
+                        <div class="card-body" id="daily-digest-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Generate" for morning briefing...</div>
                         </div>
                     </div>
 
@@ -1510,126 +1673,14 @@
                             <div class="card-title">Quick Actions</div>
                         </div>
                         <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
-                            <div style="padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px;">
-                                <div style="font-size: 0.875rem; color: var(--text-muted);">
-                                    ⏰ <strong>Automatic Daily Scan</strong><br>
-                                    Runs every day at 6 AM PST with GPU acceleration<br>
-                                    <span style="color: var(--green);">✓ Last scan: 515 stocks analyzed</span>
-                                </div>
-                            </div>
                             <button class="btn btn-primary" onclick="fetchScan()" style="width: 100%;">↻ Refresh Data</button>
                             <button class="btn btn-ghost" onclick="fetchBriefing()" style="width: 100%;">🤖 AI Briefing</button>
-                            <div style="margin-top: 8px; padding: 8px; background: var(--blue-bg); border-radius: 6px; font-size: 0.75rem; color: var(--text-muted);">
-                                💡 Manual scans disabled (Modal security). Data auto-refreshes daily.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Intelligence Tab -->
-        <div id="intelligence" class="tab-content">
-            <!-- Market Regime Banner -->
-            <div class="card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px solid rgba(99, 102, 241, 0.3);">
-                <div class="card-body" style="padding: 16px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <div style="font-size: 2.5rem;" id="regime-emoji">🎯</div>
-                            <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Market Regime</div>
-                                <div style="font-size: 1.5rem; font-weight: 700;" id="regime-label">Loading...</div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);" id="regime-reasoning">Analyzing market conditions...</div>
-                            </div>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 24px;">
-                            <div style="text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">CONFIDENCE</div>
-                                <div style="font-size: 1.25rem; font-weight: 600;" id="regime-confidence">--%</div>
-                            </div>
-                            <button class="btn btn-primary" onclick="fetchAIIntelligence()" style="padding: 8px 16px;">
-                                🧠 Refresh AI
-                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-2" style="margin-top: 20px;">
-                <!-- Signal Matrix -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">📊 Signal Matrix <span class="info-icon" data-tooltip="Cross-signal analysis showing confirmations and conflicts between different market indicators."></span></div>
-                    </div>
-                    <div class="card-body" id="signal-matrix-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading signal matrix...</div>
-                    </div>
-                </div>
-
-                <!-- Confirmations & Conflicts -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">✅ Confirmations & ⚠️ Conflicts</div>
-                    </div>
-                    <div class="card-body" id="confirmations-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Analyzing signal alignment...</div>
-                    </div>
-                </div>
-
-                <!-- AI Synthesis -->
-                <div class="card" style="grid-column: span 2;">
-                    <div class="card-header">
-                        <div class="card-title">🧠 AI Market Synthesis <span class="info-icon" data-tooltip="AI-powered analysis combining all data sources into actionable intelligence."></span></div>
-                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIIntelligence()">Regenerate</button>
-                    </div>
-                    <div class="card-body" id="ai-synthesis-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Refresh AI" to generate market intelligence...</div>
-                    </div>
-                </div>
-
-                <!-- Conviction Picks -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">🎯 Top Conviction Picks</div>
-                    </div>
-                    <div class="card-body" id="conviction-picks-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading conviction picks...</div>
-                    </div>
-                </div>
-
-                <!-- Trade Ideas -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">💡 Trade Ideas</div>
-                    </div>
-                    <div class="card-body" id="trade-ideas-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading trade ideas...</div>
-                    </div>
-                </div>
-
-                <!-- Key Risks -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">⚠️ Key Risks to Watch</div>
-                    </div>
-                    <div class="card-body" id="key-risks-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading risk analysis...</div>
-                    </div>
-                </div>
-
-                <!-- Daily Digest -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title">📰 Daily Digest</div>
-                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIDigest()">Generate</button>
-                    </div>
-                    <div class="card-body" id="daily-digest-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Generate" for morning briefing...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Summary Card -->
+            <!-- Market Narrative -->
             <div class="card" style="margin-top: 20px; background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);">
                 <div class="card-header">
                     <div class="card-title">📝 Market Narrative</div>
@@ -1642,8 +1693,8 @@
             </div>
         </div>
 
-        <!-- Scan Results Tab -->
-        <div id="scan" class="tab-content">
+        <!-- Scanner Tab (formerly Scan Results) -->
+        <div id="scanner" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <div class="card-title">📊 Scan Results</div>
@@ -1686,20 +1737,19 @@
             </div>
         </div>
 
-        <!-- Themes Tab -->
+        <!-- Themes Tab (merged Themes + Theme Radar) -->
         <div id="themes" class="tab-content">
+            <!-- Theme Pills + Cards Section -->
             <div class="themes-row" style="margin-bottom: 24px;" id="all-themes">
-                
+
             </div>
 
-            <div class="grid grid-3" id="theme-cards">
-                
-            </div>
-        </div>
+            <div class="grid grid-3" id="theme-cards" style="margin-bottom: 20px;">
 
-        <!-- Theme Radar Tab (Theme Intelligence Hub) -->
-        <div id="themeradar" class="tab-content">
-            <div class="grid grid-3">
+            </div>
+
+            <!-- Theme Radar + Alerts -->
+            <div class="grid grid-3" style="margin-bottom: 20px;">
                 <!-- Theme Radar Visual -->
                 <div class="card" style="grid-column: span 2;">
                     <div class="card-header">
@@ -1725,7 +1775,7 @@
             </div>
 
             <!-- Theme Lifecycle Summary -->
-            <div class="card" style="margin-top: 20px;">
+            <div class="card" style="margin-bottom: 20px;">
                 <div class="card-header">
                     <div class="card-title">📊 Theme Lifecycle Summary</div>
                     <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="runThemeAnalysis()">Run Full Analysis</button>
@@ -1762,7 +1812,7 @@
             </div>
 
             <!-- Theme Details Table -->
-            <div class="card" style="margin-top: 20px;">
+            <div class="card" style="margin-bottom: 20px;">
                 <div class="card-header">
                     <div class="card-title">📋 All Themes</div>
                 </div>
@@ -1787,7 +1837,7 @@
             </div>
 
             <!-- Ticker Theme Lookup -->
-            <div class="card" style="margin-top: 20px;">
+            <div class="card" style="margin-bottom: 20px;">
                 <div class="card-header">
                     <div class="card-title">🎯 Ticker Theme Boost</div>
                 </div>
@@ -1802,7 +1852,7 @@
             </div>
 
             <!-- Theme Management -->
-            <div class="card" style="margin-top: 20px;">
+            <div class="card" style="margin-bottom: 20px;">
                 <div class="card-header">
                     <div class="card-title">Settings Theme Config</div>
                     <div style="display: flex; gap: 8px;">
@@ -1863,7 +1913,7 @@
             </div>
 
             <!-- AI Discovered Themes -->
-            <div class="card" style="margin-top: 20px; display: none;" id="ai-discovery-card">
+            <div class="card" style="display: none;" id="ai-discovery-card">
                 <div class="card-header">
                     <div class="card-title">AI Discovered Themes</div>
                 </div>
@@ -3243,20 +3293,87 @@
             }
         }
 
-        // Tab switching
-        document.querySelectorAll('.tab').forEach(tab => {
+        // Category to sub-tabs mapping
+        const categorySubTabs = {
+            dashboard: null,  // No sub-tabs
+            research: ['themes', 'sec'],
+            trading: ['scanner', 'trades', 'watchlist', 'options'],
+            analytics: null  // No sub-tabs
+        };
+
+        // Current active state
+        let currentCategory = 'dashboard';
+        let currentSubTab = null;
+
+        // Main category tab switching
+        document.querySelectorAll('.main-tab').forEach(tab => {
             tab.addEventListener('click', () => {
-                const tabId = tab.dataset.tab;
-                switchTab(tabId);
+                const categoryId = tab.dataset.category;
+                switchCategory(categoryId);
             });
         });
 
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
-            document.getElementById(tabId).classList.add('active');
+        // Sub-tab switching
+        document.querySelectorAll('.sub-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabId = tab.dataset.tab;
+                switchSubTab(tabId);
+            });
+        });
 
+        function switchCategory(categoryId) {
+            // Update main tabs
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.sub-tabs').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            // Activate main category
+            const mainTab = document.querySelector(`[data-category="${categoryId}"]`);
+            if (mainTab) mainTab.classList.add('active');
+
+            currentCategory = categoryId;
+
+            // Show sub-tabs if category has them
+            const subTabs = document.getElementById(`sub-tabs-${categoryId}`);
+            if (subTabs) {
+                subTabs.classList.add('active');
+                // Activate first sub-tab
+                const firstSubTab = subTabs.querySelector('.sub-tab');
+                if (firstSubTab) {
+                    // Reset sub-tab active states for this category
+                    subTabs.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                    firstSubTab.classList.add('active');
+                    switchSubTab(firstSubTab.dataset.tab, false);
+                }
+            } else {
+                // No sub-tabs, show category content directly
+                const content = document.getElementById(categoryId);
+                if (content) content.classList.add('active');
+                currentSubTab = null;
+                loadTabData(categoryId);
+            }
+        }
+
+        function switchSubTab(tabId, updateActive = true) {
+            // Hide all tab content
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            // Update sub-tab active state if requested
+            if (updateActive) {
+                document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+                const subTab = document.querySelector(`[data-tab="${tabId}"]`);
+                if (subTab) subTab.classList.add('active');
+            }
+
+            // Show tab content
+            const content = document.getElementById(tabId);
+            if (content) content.classList.add('active');
+
+            currentSubTab = tabId;
+            loadTabData(tabId);
+        }
+
+        function loadTabData(tabId) {
             // Check cache - skip if data loaded recently
             const lastLoaded = tabLoadedAt[tabId] || 0;
             const isCached = (Date.now() - lastLoaded) < CACHE_TTL;
@@ -3268,31 +3385,58 @@
 
             console.log(`Loading data for tab: ${tabId}`);
 
-            // Lazy load data for specific tabs
-            if (tabId === 'themeradar') {
+            // Load data based on tab
+            if (tabId === 'dashboard') {
+                fetchHealth();
+                fetchScan();
+                fetchAIIntelligence();
+            } else if (tabId === 'themes') {
+                fetchThemes();
                 fetchThemeRadar();
                 loadThemeConfig();
             } else if (tabId === 'sec') {
                 fetchMARadar();
                 fetchDeals();
+            } else if (tabId === 'scanner') {
+                fetchScan();
             } else if (tabId === 'trades') {
                 fetchTrades();
             } else if (tabId === 'watchlist') {
                 refreshWatchlistTab();
+            } else if (tabId === 'options') {
+                loadMarketSentiment();
+                loadWhaleTrades();
+                loadUnusualActivity();
             } else if (tabId === 'analytics') {
                 fetchEvolution();
                 fetchParameters();
                 fetchCorrelations();
                 fetchEconomicDashboard();
-            } else if (tabId === 'themes') {
-                fetchThemes();
-            } else if (tabId === 'options') {
-                loadMarketSentiment();
-                loadWhaleTrades();
-                loadUnusualActivity();
             }
 
             tabLoadedAt[tabId] = Date.now();
+        }
+
+        // Legacy switchTab function for backwards compatibility
+        function switchTab(tabId) {
+            // Map old tab names to new navigation
+            if (tabId === 'overview' || tabId === 'intelligence') {
+                switchCategory('dashboard');
+            } else if (tabId === 'themeradar') {
+                switchCategory('research');
+                switchSubTab('themes');
+            } else if (tabId === 'scan') {
+                switchCategory('trading');
+                switchSubTab('scanner');
+            } else if (['themes', 'sec'].includes(tabId)) {
+                switchCategory('research');
+                switchSubTab(tabId);
+            } else if (['scanner', 'trades', 'watchlist', 'options'].includes(tabId)) {
+                switchCategory('trading');
+                switchSubTab(tabId);
+            } else if (tabId === 'analytics') {
+                switchCategory('analytics');
+            }
         }
 
         // Modal
@@ -4349,19 +4493,7 @@
             }
         }
 
-        // Auto-load Intelligence tab data when tab is clicked
-        document.addEventListener('DOMContentLoaded', () => {
-            const intelligenceTab = document.querySelector('[data-tab="intelligence"]');
-            if (intelligenceTab) {
-                intelligenceTab.addEventListener('click', () => {
-                    // Only fetch if containers are empty/loading
-                    const matrixContainer = document.getElementById('signal-matrix-container');
-                    if (matrixContainer && matrixContainer.textContent.includes('Loading')) {
-                        fetchAIIntelligence();
-                    }
-                });
-            }
-        });
+        // Intelligence data is now loaded as part of Dashboard tab
 
         // Economic Dashboard (FRED)
         async function fetchEconomicDashboard() {
@@ -7473,16 +7605,17 @@
         const CACHE_TTL = 60000; // 1 minute
 
         async function refreshAll() {
-            console.log('🔄 refreshAll() called - loading overview only');
+            console.log('🔄 refreshAll() called - loading dashboard data');
             document.getElementById('last-update').textContent = 'Refreshing...';
 
-            // Only load essential overview data on page load (2 calls instead of 18)
+            // Load dashboard data on page load
             await Promise.all([
                 fetchHealth(),
                 fetchScan(),
+                fetchAIIntelligence(),
             ]);
 
-            tabLoadedAt['overview'] = Date.now();
+            tabLoadedAt['dashboard'] = Date.now();
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
                 timeZone: 'Asia/Kuala_Lumpur',
@@ -7493,7 +7626,8 @@
 
         // Refresh only the current active tab
         async function refreshCurrentTab() {
-            const activeTab = document.querySelector('.tab.active')?.dataset?.tab || 'overview';
+            // Determine current active tab
+            let activeTab = currentSubTab || currentCategory || 'dashboard';
             console.log(`🔄 Refreshing current tab: ${activeTab}`);
 
             // Clear cache for this tab to force refresh
@@ -7512,17 +7646,14 @@
 
         async function loadTabDataForce(tabId) {
             switch(tabId) {
-                case 'overview':
-                    await Promise.all([fetchHealth(), fetchScan()]);
+                case 'dashboard':
+                    await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence()]);
                     break;
-                case 'scan':
+                case 'scanner':
                     await fetchScan();
                     break;
                 case 'themes':
-                    await fetchThemes();
-                    break;
-                case 'themeradar':
-                    await Promise.all([fetchThemeRadar(), fetchThemeAlerts(), loadThemeConfig()]);
+                    await Promise.all([fetchThemes(), fetchThemeRadar(), loadThemeConfig()]);
                     break;
                 case 'sec':
                     await Promise.all([fetchMARadar(), fetchDeals()]);
@@ -7534,7 +7665,7 @@
                     await refreshWatchlistTab();
                     break;
                 case 'analytics':
-                    await Promise.all([fetchEvolution(), fetchParameters(), fetchCorrelations()]);
+                    await Promise.all([fetchEvolution(), fetchParameters(), fetchCorrelations(), fetchEconomicDashboard()]);
                     break;
                 case 'options':
                     await Promise.all([loadMarketSentiment(), loadWhaleTrades(), loadUnusualActivity()]);

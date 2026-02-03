@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 19:25 - `3441efc`
+
+**Fix AI reasoning modal close button leaving overlay blocking dashboard**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 19:21 - `d73b6ff`
 
 **Fix confirmations/conflicts to only compare directional signals**
