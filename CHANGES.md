@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 00:02 - `13f9ed4`
+
+**Add social buzz to scoring formula and integrate X Intelligence**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/core/async_scanner.py
+src/core/story_scoring.py
+src/scoring/story_scorer.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 23:37 - `165411c`
 
 **Add technical filters for stock universe scanning**

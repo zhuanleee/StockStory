@@ -591,22 +591,16 @@ class AsyncStoryScorer:
         Fetch social/sentiment sources CONCURRENTLY.
 
         Sources:
-        - Reddit (r/wallstreetbets, r/stocks, r/investing, r/options)
         - SEC filings (8-K, insider activity)
         - Google Trends (retail search interest)
+        - X Intelligence via xAI Grok (real-time X search)
 
-        Note: StockTwits removed - API consistently blocked (403)
+        Note: Reddit/StockTwits removed - APIs unreliable
         """
-        # Fetch all social data concurrently
-        reddit, sec = await asyncio.gather(
-            self.fetcher.fetch_reddit_async(ticker),
-            self.fetcher.fetch_sec_async(ticker),
-            return_exceptions=True,
-        )
+        # Fetch SEC data
+        sec = await self.fetcher.fetch_sec_async(ticker)
 
         # Handle exceptions
-        if isinstance(reddit, Exception):
-            reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet', 'hot_posts': []}
         if isinstance(sec, Exception):
             sec = {'recent_filings': [], 'has_8k': False, 'insider_activity': False}
 
@@ -640,65 +634,52 @@ class AsyncStoryScorer:
                 logger.debug(f"X Intelligence fetch failed for {ticker}: {e}")
 
         # Calculate component scores
-        # Reddit score (0-30 points)
-        reddit_score = 0
-        mention_count = reddit.get('mention_count', 0)
-        if mention_count >= params.threshold_reddit_high():
-            reddit_score = 30
-        elif mention_count >= params.threshold_reddit_medium():
-            reddit_score = 20
-        elif mention_count >= 1:
-            reddit_score = 10
 
-        total_reddit_score = reddit.get('total_score', 0)
-        if total_reddit_score > params.threshold_reddit_score_high():
-            reddit_score += 10
-        elif total_reddit_score > params.threshold_reddit_score_medium():
-            reddit_score += 5
-
-        # SEC score (0-20 points)
+        # SEC score (0-25 points)
         sec_score = 0
         if sec.get('has_8k'):
-            sec_score += 15  # Material event
+            sec_score += 20  # Material event
         if sec.get('insider_activity'):
             sec_score += 5   # Insider activity
 
-        # Google Trends score (0-20 points)
+        # Google Trends score (0-25 points)
         gt_score = 0
         gt_interest = google_trends.get('score', 50)
         if google_trends.get('is_breakout'):
-            gt_score = 20  # Breakout = max
+            gt_score = 25  # Breakout = max
         elif gt_interest >= 80:
-            gt_score = 15
+            gt_score = 20
         elif gt_interest >= 60:
-            gt_score = 10
+            gt_score = 15
         elif gt_interest >= 40:
+            gt_score = 10
+        elif gt_interest >= 30:
             gt_score = 5
 
-        # X Intelligence score (0-30 points) - most valuable social signal
+        # X Intelligence score (0-50 points) - primary social signal
         x_score = 0
         x_sentiment_score = x_sentiment.get('sentiment_score', 0.5)
         x_mention_count = x_sentiment.get('mention_count', 0)
         if x_sentiment.get('trending', False):
-            x_score = 30  # Trending on X = max
+            x_score = 50  # Trending on X = max
         elif x_sentiment_score >= 0.8 and x_mention_count >= 100:
-            x_score = 25  # Very bullish with high mentions
+            x_score = 40  # Very bullish with high mentions
         elif x_sentiment_score >= 0.7 and x_mention_count >= 50:
-            x_score = 20  # Bullish with good mentions
+            x_score = 35  # Bullish with good mentions
         elif x_sentiment_score >= 0.6 and x_mention_count >= 20:
-            x_score = 15  # Somewhat bullish with some mentions
+            x_score = 25  # Somewhat bullish with some mentions
         elif x_mention_count >= 10:
-            x_score = 10  # At least being discussed
+            x_score = 15  # At least being discussed
         elif x_sentiment_score >= 0.55:
-            x_score = 5   # Slightly bullish sentiment
+            x_score = 10  # Slightly bullish sentiment
 
         # Combined buzz score (0-100)
-        raw_buzz = reddit_score + sec_score + gt_score + x_score
-        buzz_score = min(100, raw_buzz)  # Max is 30+20+20+30 = 100
+        raw_buzz = sec_score + gt_score + x_score
+        buzz_score = min(100, raw_buzz)  # Max is 25+25+50 = 100
 
         # Is it trending?
         trending = (
-            mention_count >= params.threshold_trending_reddit_mentions() or
+            x_sentiment.get('trending', False) or
             google_trends.get('is_breakout', False) or
             gt_interest >= 75 or
             sec.get('has_8k', False)
@@ -707,12 +688,10 @@ class AsyncStoryScorer:
         return {
             'buzz_score': buzz_score,
             'trending': trending,
-            'reddit': reddit,
             'sec': sec,
             'google_trends': google_trends,
             'x_sentiment': x_sentiment,
             'component_scores': {
-                'reddit': reddit_score,
                 'sec': sec_score,
                 'google_trends': gt_score,
                 'x_intelligence': x_score,
@@ -748,7 +727,7 @@ class AsyncStoryScorer:
 
         # Handle exceptions
         if isinstance(social_buzz, Exception):
-            social_buzz = {'buzz_score': 0, 'trending': False, 'reddit': {}, 'sec': {}, 'google_trends': {}, 'component_scores': {}}
+            social_buzz = {'buzz_score': 0, 'trending': False, 'sec': {}, 'google_trends': {}, 'x_sentiment': {}, 'component_scores': {}}
         if isinstance(news, Exception):
             news = []
         if isinstance(sector, Exception):
@@ -961,7 +940,6 @@ class AsyncStoryScorer:
             },
             'social_buzz_component': {
                 'score': round(story_result.social_buzz_score, 1),
-                'reddit': social_buzz.get('component_scores', {}).get('reddit', 0),
                 'sec': social_buzz.get('component_scores', {}).get('sec', 0),
                 'google_trends': social_buzz.get('component_scores', {}).get('google_trends', 0),
                 'x_intelligence': social_buzz.get('component_scores', {}).get('x_intelligence', 0),

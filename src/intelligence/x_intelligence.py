@@ -100,10 +100,56 @@ class XIntelligence:
         }
         self._save_cache()
 
-    def _call_xai(self, prompt: str) -> Optional[str]:
-        """Call xAI Grok API."""
+    def _call_xai_with_search(self, prompt: str, ticker: str = None) -> Optional[str]:
+        """
+        Call xAI Grok API with X search using the official xai_sdk.
+
+        Args:
+            prompt: The prompt to send
+            ticker: Optional ticker for focused search
+        """
         if not XAI_API_KEY:
             logger.warning("XAI_API_KEY not set - X Intelligence disabled")
+            return None
+
+        try:
+            from xai_sdk import Client
+            from xai_sdk.chat import user
+            from xai_sdk.tools import x_search
+
+            client = Client(api_key=XAI_API_KEY)
+
+            # Create chat with X search tool enabled
+            chat = client.chat.create(
+                model="grok-3-fast",  # Fast model for quick responses
+                tools=[
+                    x_search(),  # Enable X search
+                ],
+            )
+
+            # Append user message
+            chat.append(user(prompt))
+
+            # Get response (non-streaming)
+            response_text = ""
+            for chunk in chat.sample():
+                if hasattr(chunk, 'text'):
+                    response_text += chunk.text
+                elif isinstance(chunk, str):
+                    response_text += chunk
+
+            return response_text if response_text else None
+
+        except ImportError:
+            logger.warning("xai_sdk not installed - falling back to REST API")
+            return self._call_xai_rest(prompt)
+        except Exception as e:
+            logger.error(f"xAI SDK call failed: {e}")
+            return self._call_xai_rest(prompt)
+
+    def _call_xai_rest(self, prompt: str) -> Optional[str]:
+        """Fallback REST API call without X search."""
+        if not XAI_API_KEY:
             return None
 
         try:
@@ -118,14 +164,14 @@ class XIntelligence:
                 'messages': [
                     {
                         'role': 'system',
-                        'content': 'You are Grok, with real-time access to X/Twitter. Analyze posts and provide JSON responses.'
+                        'content': 'You are Grok. Analyze stock sentiment and provide JSON responses only.'
                     },
                     {
                         'role': 'user',
                         'content': prompt
                     }
                 ],
-                'model': 'grok-beta',
+                'model': 'grok-3-fast',
                 'stream': False,
                 'temperature': 0
             }
@@ -139,13 +185,13 @@ class XIntelligence:
 
             if response.status_code == 200:
                 data = response.json()
-                return data['choices'][0]['message']['content']
+                return data['choices'][0]['message'].get('content', '')
             else:
-                logger.error(f"xAI API error: {response.status_code} - {response.text}")
+                logger.error(f"xAI REST API error: {response.status_code} - {response.text}")
                 return None
 
         except Exception as e:
-            logger.error(f"xAI API call failed: {e}")
+            logger.error(f"xAI REST API call failed: {e}")
             return None
 
     def get_ticker_sentiment(self, ticker: str) -> XSentiment:
@@ -189,7 +235,7 @@ Sentiment Rules:
 - influencer_mentions: count mentions from accounts >100k followers
 - viral_posts: top 3 posts by engagement"""
 
-        response_text = self._call_xai(prompt)
+        response_text = self._call_xai_with_search(prompt, ticker)
 
         if not response_text:
             # Return neutral default
@@ -271,7 +317,7 @@ Return ONLY valid JSON (no markdown, no extra text):
 Focus on US stock tickers ($TICKER format).
 Include mention count and overall sentiment."""
 
-        response_text = self._call_xai(prompt)
+        response_text = self._call_xai_with_search(prompt)
 
         if not response_text:
             return []
