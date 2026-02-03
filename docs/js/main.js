@@ -118,7 +118,9 @@ async function refreshAll() {
         await Promise.allSettled([
             typeof fetchHealth === 'function' ? fetchHealth() : Promise.resolve(),
             typeof fetchScan === 'function' ? fetchScan() : Promise.resolve(),
+            typeof fetchAIIntelligence === 'function' ? fetchAIIntelligence() : Promise.resolve(),
             typeof fetchConvictionAlerts === 'function' ? fetchConvictionAlerts() : Promise.resolve(),
+            typeof fetchUnusualOptions === 'function' ? fetchUnusualOptions() : Promise.resolve(),
             typeof fetchSupplyChain === 'function' ? fetchSupplyChain() : Promise.resolve(),
             typeof fetchEarnings === 'function' ? fetchEarnings() : Promise.resolve(),
             typeof fetchEvolution === 'function' ? fetchEvolution() : Promise.resolve(),

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 21:15 - `20a0fd5`
+
+**Add fetchUnusualOptions to dashboard data loading**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 21:09 - `4f6654e`
 
 **Fix wrong API URL in config.js that was breaking dashboard data loading**
