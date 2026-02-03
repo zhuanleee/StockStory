@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 20:34 - `8dfd8fa`
+
+**Restructure dashboard from 10 flat tabs to 4 main categories**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 19:25 - `3441efc`
 
 **Fix AI reasoning modal close button leaving overlay blocking dashboard**

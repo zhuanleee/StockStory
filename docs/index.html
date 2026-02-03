@@ -3390,6 +3390,8 @@
                 fetchHealth();
                 fetchScan();
                 fetchAIIntelligence();
+                fetchConvictionAlerts();
+                fetchThemes();  // For Hot Themes section
             } else if (tabId === 'themes') {
                 fetchThemes();
                 fetchThemeRadar();
@@ -7613,6 +7615,8 @@
                 fetchHealth(),
                 fetchScan(),
                 fetchAIIntelligence(),
+                fetchConvictionAlerts(),
+                fetchThemes(),
             ]);
 
             tabLoadedAt['dashboard'] = Date.now();
@@ -7647,7 +7651,7 @@
         async function loadTabDataForce(tabId) {
             switch(tabId) {
                 case 'dashboard':
-                    await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence()]);
+                    await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence(), fetchConvictionAlerts(), fetchThemes()]);
                     break;
                 case 'scanner':
                     await fetchScan();
