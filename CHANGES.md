@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 22:40 - `460e46c`
+
+**Fix Google Trends rate limiting with throttling and backoff**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/intelligence/google_trends.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 22:18 - `cd43064`
 
 **Add secrets to daily_scan for manual testing**
