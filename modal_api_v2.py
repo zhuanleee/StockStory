@@ -1875,6 +1875,87 @@ Get an API key at `/api-keys/request`
 
         return result
 
+    @web_app.get("/debug/providers", tags=["Debug"])
+    def debug_providers():
+        """Check all data provider configurations and test connections."""
+        import os
+        from utils.data_providers import (
+            FinnhubProvider, TiingoProvider, AlphaVantageProvider, FREDProvider
+        )
+
+        providers = {}
+
+        # Check Polygon
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        providers['polygon'] = {
+            'configured': bool(polygon_key),
+            'key_preview': f"{polygon_key[:4]}...{polygon_key[-4:]}" if len(polygon_key) > 8 else None
+        }
+
+        # Check Finnhub
+        finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
+        providers['finnhub'] = {
+            'configured': FinnhubProvider.is_configured(),
+            'key_preview': f"{finnhub_key[:4]}...{finnhub_key[-4:]}" if len(finnhub_key) > 8 else None
+        }
+
+        # Check Tiingo
+        tiingo_key = os.environ.get('TIINGO_API_KEY', '')
+        providers['tiingo'] = {
+            'configured': TiingoProvider.is_configured(),
+            'key_preview': f"{tiingo_key[:4]}...{tiingo_key[-4:]}" if len(tiingo_key) > 8 else None
+        }
+
+        # Check Alpha Vantage
+        av_key = os.environ.get('ALPHA_VANTAGE_API_KEY', '')
+        providers['alpha_vantage'] = {
+            'configured': AlphaVantageProvider.is_configured(),
+            'key_preview': f"{av_key[:4]}...{av_key[-4:]}" if len(av_key) > 8 else None
+        }
+
+        # Check FRED
+        fred_key = os.environ.get('FRED_API_KEY', '')
+        providers['fred'] = {
+            'configured': FREDProvider.is_configured(),
+            'key_preview': f"{fred_key[:4]}...{fred_key[-4:]}" if len(fred_key) > 8 else None
+        }
+
+        # Check DeepSeek
+        deepseek_key = os.environ.get('DEEPSEEK_API_KEY', '')
+        providers['deepseek'] = {
+            'configured': bool(deepseek_key),
+            'key_preview': f"{deepseek_key[:4]}...{deepseek_key[-4:]}" if len(deepseek_key) > 8 else None
+        }
+
+        # Check xAI
+        xai_key = os.environ.get('XAI_API_KEY', '')
+        providers['xai'] = {
+            'configured': bool(xai_key),
+            'key_preview': f"{xai_key[:4]}...{xai_key[-4:]}" if len(xai_key) > 8 else None
+        }
+
+        # Check Telegram
+        telegram_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+        telegram_chat = os.environ.get('TELEGRAM_CHAT_ID', '')
+        providers['telegram'] = {
+            'configured': bool(telegram_token and telegram_chat),
+            'bot_token_set': bool(telegram_token),
+            'chat_id_set': bool(telegram_chat)
+        }
+
+        # Count configured
+        configured_count = sum(1 for p in providers.values() if p.get('configured'))
+
+        return {
+            "ok": True,
+            "providers": providers,
+            "summary": {
+                "total": len(providers),
+                "configured": configured_count,
+                "status": "healthy" if configured_count >= 5 else "partial" if configured_count >= 3 else "minimal"
+            }
+        }
+
     @web_app.get("/parameters/status")
     def parameters_status():
         try:

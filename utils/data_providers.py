@@ -809,6 +809,65 @@ class FREDProvider:
         return None
 
     @staticmethod
+    def get_yoy_change(series_id: str) -> Optional[Tuple[str, float]]:
+        """
+        Calculate year-over-year percentage change for a series.
+        Used for index values like CPI that need YoY transformation.
+        """
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Get 15 months of data to ensure we have a year-ago comparison
+        observations = FREDProvider.get_series(series_id, limit=20)
+        if len(observations) < 12:
+            return None
+
+        try:
+            # Filter out entries with invalid values (FRED uses "." for missing data)
+            valid_obs = []
+            for obs in observations:
+                val = obs.get('value', '.')
+                if val != '.' and val:
+                    try:
+                        valid_obs.append({
+                            'date': obs.get('date'),
+                            'value': float(val)
+                        })
+                    except (ValueError, TypeError):
+                        continue
+
+            if len(valid_obs) < 12:
+                return None
+
+            # Get current value (newest)
+            current = valid_obs[0]['value']
+            current_date = valid_obs[0]['date']
+
+            # Parse current date and find year-ago date
+            current_dt = datetime.strptime(current_date, '%Y-%m-%d')
+            target_dt = current_dt - relativedelta(years=1)
+            target_date_str = target_dt.strftime('%Y-%m-%d')
+
+            # Find closest match to year-ago date
+            year_ago = None
+            for obs in valid_obs:
+                obs_dt = datetime.strptime(obs['date'], '%Y-%m-%d')
+                # Look for a date within 45 days of target (to handle monthly data)
+                diff = abs((obs_dt - target_dt).days)
+                if diff <= 45:
+                    year_ago = obs['value']
+                    break
+
+            if year_ago and year_ago > 0:
+                yoy_change = ((current - year_ago) / year_ago) * 100
+                return (current_date, round(yoy_change, 2))
+
+        except Exception as e:
+            logger.error(f"Error calculating YoY change: {e}")
+            return None
+        return None
+
+    @staticmethod
     def get_economic_dashboard() -> Dict[str, Any]:
         """
         Get comprehensive economic indicators for market analysis.
@@ -836,7 +895,11 @@ class FREDProvider:
         for name in key_series:
             series_id = FREDProvider.SERIES.get(name)
             if series_id:
-                result = FREDProvider.get_latest_value(series_id)
+                # Use YoY change for CPI (it's an index, not a rate)
+                if name == 'cpi_yoy':
+                    result = FREDProvider.get_yoy_change(series_id)
+                else:
+                    result = FREDProvider.get_latest_value(series_id)
                 if result:
                     value = result[1]
                     meta = FREDProvider.SERIES_META.get(name, {})
