@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 20:51 - `4a16ded`
+
+**Fix Hot Themes on dashboard to render theme pills and stocks**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 20:46 - `c12728b`
 
 **Fix High Conviction alerts to handle API response structure**

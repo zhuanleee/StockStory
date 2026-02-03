@@ -3558,10 +3558,14 @@
 
         // Fetch functions
         async function fetchHealth() {
+            console.log('🔄 fetchHealth() called');
             try {
                 const res = await fetch(`${API_BASE}/health`);
                 const data = await res.json();
-                if (data.ok) {
+                console.log('📦 Health API response:', data);
+
+                // Check for success - API may return ok:true or status:success
+                if (data.ok || data.status === 'success' || res.ok) {
                     const fg = data.fear_greed || {};
                     const breadth = data.breadth || {};
                     const raw = data.raw_data || {};
@@ -3572,32 +3576,56 @@
                     const qqqPrice = raw.qqq_price || 0;
                     const qqqChange = raw.qqq_change || 0;
 
-                    document.getElementById('spy-price').textContent = '$' + spyPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                    document.getElementById('spy-change').textContent = (spyChange >= 0 ? '+' : '') + spyChange.toFixed(2) + '%';
-                    document.getElementById('spy-change').style.color = spyChange >= 0 ? 'var(--green)' : 'var(--red)';
+                    const spyPriceEl = document.getElementById('spy-price');
+                    const spyChangeEl = document.getElementById('spy-change');
+                    const qqqPriceEl = document.getElementById('qqq-price');
+                    const qqqChangeEl = document.getElementById('qqq-change');
+                    const vixEl = document.getElementById('vix-value');
 
-                    document.getElementById('qqq-price').textContent = '$' + qqqPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                    document.getElementById('qqq-change').textContent = (qqqChange >= 0 ? '+' : '') + qqqChange.toFixed(2) + '%';
-                    document.getElementById('qqq-change').style.color = qqqChange >= 0 ? 'var(--green)' : 'var(--red)';
-
-                    document.getElementById('vix-value').textContent = (raw.vix || 0).toFixed(1);
+                    if (spyPriceEl) spyPriceEl.textContent = '$' + spyPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    if (spyChangeEl) {
+                        spyChangeEl.textContent = (spyChange >= 0 ? '+' : '') + spyChange.toFixed(2) + '%';
+                        spyChangeEl.style.color = spyChange >= 0 ? 'var(--green)' : 'var(--red)';
+                    }
+                    if (qqqPriceEl) qqqPriceEl.textContent = '$' + qqqPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    if (qqqChangeEl) {
+                        qqqChangeEl.textContent = (qqqChange >= 0 ? '+' : '') + qqqChange.toFixed(2) + '%';
+                        qqqChangeEl.style.color = qqqChange >= 0 ? 'var(--green)' : 'var(--red)';
+                    }
+                    if (vixEl) vixEl.textContent = (raw.vix || 0).toFixed(1);
 
                     // Fear & Greed
-                    const fgScore = fg.score || data.overall_score || 50;
-                    document.getElementById('fg-value').textContent = fgScore.toFixed(0);
-                    document.getElementById('fear-greed').textContent = fgScore.toFixed(0);
+                    const fgScore = fg.score !== undefined ? fg.score : (data.overall_score || 50);
+                    const fgValueEl = document.getElementById('fg-value');
+                    const fearGreedEl = document.getElementById('fear-greed');
+                    const fgLabelEl = document.getElementById('fg-label');
+                    const gaugeNeedleEl = document.getElementById('gauge-needle');
+
+                    if (fgValueEl) fgValueEl.textContent = fgScore.toFixed(0);
+                    if (fearGreedEl) fearGreedEl.textContent = fgScore.toFixed(0);
                     const fgLabel = fg.label || (fgScore <= 25 ? 'Extreme Fear' : fgScore <= 45 ? 'Fear' : fgScore <= 55 ? 'Neutral' : fgScore <= 75 ? 'Greed' : 'Extreme Greed');
-                    document.getElementById('fg-label').textContent = fgLabel;
+                    if (fgLabelEl) fgLabelEl.textContent = fgLabel;
                     const rotation = (fgScore - 50) * 1.8; // -90 to 90 degrees
-                    document.getElementById('gauge-needle').style.setProperty('--rotation', rotation + 'deg');
+                    if (gaugeNeedleEl) gaugeNeedleEl.style.setProperty('--rotation', rotation + 'deg');
 
                     // Health metrics from breadth
-                    document.getElementById('breadth-score').textContent = (breadth.breadth_score || 0).toFixed(0) + '%';
-                    document.getElementById('adv-dec').textContent = (breadth.advance_decline_ratio || 0).toFixed(2);
-                    document.getElementById('hi-lo').textContent = `${breadth.new_highs || 0} / ${breadth.new_lows || 0}`;
-                    document.getElementById('put-call').textContent = (raw.vix_term_ratio || 0).toFixed(2);
+                    const breadthScoreEl = document.getElementById('breadth-score');
+                    const advDecEl = document.getElementById('adv-dec');
+                    const hiLoEl = document.getElementById('hi-lo');
+                    const putCallEl = document.getElementById('put-call');
+
+                    if (breadthScoreEl) breadthScoreEl.textContent = (breadth.breadth_score || 0).toFixed(0) + '%';
+                    if (advDecEl) advDecEl.textContent = (breadth.advance_decline_ratio || 0).toFixed(2);
+                    if (hiLoEl) hiLoEl.textContent = `${breadth.new_highs || 0} / ${breadth.new_lows || 0}`;
+                    if (putCallEl) putCallEl.textContent = (raw.vix_term_ratio || 0).toFixed(2);
+
+                    console.log('✅ fetchHealth completed successfully');
+                } else {
+                    console.warn('⚠️ fetchHealth: API returned non-ok status', data);
                 }
-            } catch (e) { console.warn('Health fetch failed:', e); }
+            } catch (e) {
+                console.error('❌ fetchHealth failed:', e);
+            }
         }
 
         async function fetchScan() {
@@ -3618,9 +3646,9 @@
                 const stocks = data.results || data.stocks || [];
                 console.log('📊 Stocks array length:', stocks.length);
 
-                // Fix: Check for data.status === 'success' OR stocks.length > 0
+                // Fix: Check for data.status === 'success' OR data.ok OR just having stocks
                 // API returns {status: 'success', results: [...]} not {ok: true}
-                if ((data.status === 'success' || data.ok) && stocks.length > 0) {
+                if (stocks.length > 0) {
                     console.log('✅ Rendering', stocks.length, 'stocks');
                     renderTopPicks(stocks);
                     renderScanTable(stocks);
@@ -3631,11 +3659,16 @@
                     document.getElementById('stat-developing').textContent = stocks.filter(s => s.story_strength === 'developing').length;
                     document.getElementById('stat-watchlist').textContent = stocks.filter(s => s.story_strength === 'watchlist').length;
                 } else {
-                    // Show empty state when no data
+                    // Show empty state when no data - still update stats to show 0
                     console.log('⚠️ No scan data available:', data.message || 'Scanner has not run yet');
                     console.log('   data.ok:', data.ok);
                     console.log('   data.status:', data.status);
                     console.log('   stocks.length:', stocks.length);
+                    document.getElementById('stat-scanned').textContent = '0';
+                    document.getElementById('stat-hot').textContent = '0';
+                    document.getElementById('stat-developing').textContent = '0';
+                    document.getElementById('stat-watchlist').textContent = '0';
+                    renderTopPicks([]);
                 }
             } catch (e) {
                 console.error('❌ Scan fetch failed:', e);
@@ -4225,6 +4258,7 @@
         // =============================================================================
 
         async function fetchAIIntelligence() {
+            console.log('🔄 fetchAIIntelligence() called');
             // Show loading states
             document.getElementById('regime-label').textContent = 'Analyzing...';
             document.getElementById('regime-reasoning').textContent = 'AI is processing market data...';
@@ -4235,21 +4269,30 @@
                 // Fetch signal matrix first (faster)
                 const matrixRes = await fetch(`${API_BASE}/ai/matrix`);
                 const matrixData = await matrixRes.json();
-                if (matrixData.ok) {
+                console.log('📦 Matrix API response:', matrixData);
+                if (matrixData.ok || matrixData.status === 'success' || matrixData.signals) {
                     renderSignalMatrix(matrixData);
+                } else {
+                    console.warn('⚠️ Signal matrix: unexpected response', matrixData);
                 }
 
                 // Fetch full intelligence
                 const res = await fetch(`${API_BASE}/ai/intelligence`);
                 const data = await res.json();
+                console.log('📦 Intelligence API response:', data);
 
-                if (data.ok && data.analysis) {
+                // Check for success - API may return ok:true or have analysis directly
+                if ((data.ok || data.status === 'success') && data.analysis) {
+                    renderAIIntelligence(data.analysis);
+                } else if (data.analysis) {
+                    // Some APIs return analysis without ok flag
                     renderAIIntelligence(data.analysis);
                 } else {
+                    console.warn('⚠️ AI Intelligence: unexpected response', data);
                     document.getElementById('ai-synthesis-container').innerHTML = `<div style="color: var(--red);">Error: ${data.error || 'Failed to generate intelligence'}</div>`;
                 }
             } catch (e) {
-                console.error('AI Intelligence error:', e);
+                console.error('❌ AI Intelligence error:', e);
                 document.getElementById('ai-synthesis-container').innerHTML = '<div style="color: var(--red);">Failed to connect to AI service</div>';
             }
         }
