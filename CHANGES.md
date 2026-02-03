@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 20:46 - `c12728b`
+
+**Fix High Conviction alerts to handle API response structure**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 20:41 - `03f07a2`
 
 **Fix dashboard to load High Conviction and Hot Themes data**

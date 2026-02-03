@@ -4139,32 +4139,52 @@
             const themes = window.themesData || {};
             const themeNames = Object.keys(themes);
 
-            // Render theme pills
+            // Render theme pills for Themes tab
             const allThemesContainer = document.getElementById('all-themes');
+            // Render theme pills for Dashboard Hot Themes
+            const dashboardThemePills = document.getElementById('theme-pills');
+
             if (themeNames.length === 0) {
-                allThemesContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.875rem; padding: 16px;">No themes available. Themes will appear here after a scan is completed.</div>';
-                document.getElementById('theme-cards').innerHTML = '';
+                if (allThemesContainer) {
+                    allThemesContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.875rem; padding: 16px;">No themes available. Themes will appear here after a scan is completed.</div>';
+                }
+                if (dashboardThemePills) {
+                    dashboardThemePills.innerHTML = '<div style="color: var(--text-muted); font-size: 0.875rem;">No themes available</div>';
+                }
+                const themeCards = document.getElementById('theme-cards');
+                if (themeCards) themeCards.innerHTML = '';
                 return;
             }
 
-            allThemesContainer.innerHTML = themeNames.map(name => `
+            const themePillsHtml = themeNames.map(name => `
                 <span class="theme-pill" onclick="selectTheme('${name}')">${name}</span>
             `).join('');
 
-            // Render theme cards
+            // Populate both containers
+            if (allThemesContainer) allThemesContainer.innerHTML = themePillsHtml;
+            if (dashboardThemePills) dashboardThemePills.innerHTML = themePillsHtml;
+
+            // Render theme cards for Themes tab
             const themeCardsContainer = document.getElementById('theme-cards');
-            themeCardsContainer.innerHTML = themeNames.map(name => {
-                const theme = themes[name];
-                const tickerCount = theme.tickers ? theme.tickers.length : (theme.count || 0);
-                return `
-                    <div class="card card-glass" style="cursor: pointer;" onclick="selectTheme('${name}')">
-                        <div class="card-body">
-                            <div style="font-weight: var(--font-semibold); font-size: var(--text-lg); margin-bottom: 8px; color: var(--text);">${name}</div>
-                            <div style="color: var(--text-muted); font-size: var(--text-sm);">${tickerCount} stocks</div>
+            if (themeCardsContainer) {
+                themeCardsContainer.innerHTML = themeNames.map(name => {
+                    const theme = themes[name];
+                    const tickerCount = theme.tickers ? theme.tickers.length : (theme.count || 0);
+                    return `
+                        <div class="card card-glass" style="cursor: pointer;" onclick="selectTheme('${name}')">
+                            <div class="card-body">
+                                <div style="font-weight: var(--font-semibold); font-size: var(--text-lg); margin-bottom: 8px; color: var(--text);">${name}</div>
+                                <div style="color: var(--text-muted); font-size: var(--text-sm);">${tickerCount} stocks</div>
+                            </div>
                         </div>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+            }
+
+            // Auto-select first theme to populate dashboard stocks grid
+            if (themeNames.length > 0) {
+                selectTheme(themeNames[0]);
+            }
         }
 
         function selectTheme(themeName) {
