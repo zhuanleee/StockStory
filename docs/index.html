@@ -1204,25 +1204,40 @@
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-        /* Tooltips */
-        [data-tooltip] {
-            position: relative;
+        /* Tooltip Info Icon */
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            margin-left: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 50%;
             cursor: help;
-            border-bottom: 1px dashed var(--text-muted);
-        }
-
-        [data-tooltip]::before,
-        [data-tooltip]::after {
-            position: absolute;
-            visibility: hidden;
-            opacity: 0;
-            pointer-events: none;
+            position: relative;
+            vertical-align: middle;
             transition: all 0.2s ease;
-            z-index: 1000;
         }
 
-        [data-tooltip]::before {
+        .info-icon:hover {
+            color: var(--blue);
+            border-color: var(--blue);
+            background: var(--blue-bg);
+        }
+
+        .info-icon::before {
+            content: 'i';
+            font-style: italic;
+        }
+
+        .info-icon::after {
             content: attr(data-tooltip);
+            position: absolute;
             bottom: calc(100% + 8px);
             left: 50%;
             transform: translateX(-50%);
@@ -1231,63 +1246,38 @@
             color: var(--text);
             font-size: 0.75rem;
             font-weight: 400;
+            font-style: normal;
             text-transform: none;
             letter-spacing: normal;
             line-height: 1.4;
             white-space: normal;
             width: max-content;
-            max-width: 280px;
+            max-width: 250px;
             border-radius: 8px;
             border: 1px solid var(--border);
             box-shadow: var(--shadow-lg);
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s ease;
+            z-index: 1000;
         }
 
-        [data-tooltip]::after {
-            content: '';
-            bottom: calc(100% + 2px);
-            left: 50%;
-            transform: translateX(-50%);
-            border: 6px solid transparent;
-            border-top-color: var(--border);
-        }
-
-        [data-tooltip]:hover::before,
-        [data-tooltip]:hover::after {
+        .info-icon:hover::after {
             visibility: visible;
             opacity: 1;
         }
 
-        /* Tooltip positioning variants */
-        [data-tooltip-pos="right"]::before {
-            left: calc(100% + 8px);
-            bottom: auto;
-            top: 50%;
-            transform: translateY(-50%);
+        /* Tooltip arrow */
+        .info-icon::before {
+            content: 'i';
         }
 
-        [data-tooltip-pos="right"]::after {
-            left: calc(100% + 2px);
-            bottom: auto;
-            top: 50%;
-            transform: translateY(-50%);
-            border: 6px solid transparent;
-            border-right-color: var(--border);
-        }
-
-        [data-tooltip-pos="bottom"]::before {
-            bottom: auto;
-            top: calc(100% + 8px);
-        }
-
-        [data-tooltip-pos="bottom"]::after {
-            bottom: auto;
-            top: calc(100% + 2px);
-            border: 6px solid transparent;
-            border-bottom-color: var(--border);
-        }
-
-        .tooltip-label {
-            cursor: help;
+        /* Label with tooltip wrapper */
+        .label-with-tooltip {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
         }
     </style>
 </head>
@@ -1755,7 +1745,7 @@
                 <!-- M&A Radar -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Scans SEC filings for merger & acquisition signals: 13D filings, tender offers, and ownership changes">🔍 M&A Radar</div>
+                        <div class="card-title">🔍 M&A Radar <span class="info-icon" data-tooltip="SEC filings: 13D, tender offers, ownership changes"></span></div>
                         <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchMARadar()">Refresh</button>
                     </div>
                     <div class="card-body" id="ma-radar-container">
@@ -1766,7 +1756,7 @@
                 <!-- Active Deals -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Current M&A deals in progress. Track deal spreads for merger arbitrage opportunities">🤝 Active Deals</div>
+                        <div class="card-title">🤝 Active Deals <span class="info-icon" data-tooltip="Current M&A deals and merger arb opportunities"></span></div>
                         <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchDeals()">Refresh</button>
                     </div>
                     <div class="card-body" id="deals-container">
@@ -1777,7 +1767,7 @@
                 <!-- Quick Lookup -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Quick lookup for SEC filings, M&A status, and insider transactions">📋 SEC Lookup</div>
+                        <div class="card-title">📋 SEC Lookup <span class="info-icon" data-tooltip="Quick search for filings, M&A status, insider trades"></span></div>
                     </div>
                     <div class="card-body">
                         <div style="margin-bottom: 12px;">
@@ -1797,7 +1787,7 @@
             <!-- Deal Tracker Table -->
             <div class="card" style="margin-top: 20px;">
                 <div class="card-header">
-                    <div class="card-title" data-tooltip="Track your M&A positions and merger arbitrage opportunities">📊 Deal Tracker</div>
+                    <div class="card-title">📊 Deal Tracker <span class="info-icon" data-tooltip="Track M&A positions and merger arb opportunities"></span></div>
                     <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddDealModal()">+ Add Deal</button>
                 </div>
                 <div class="card-body no-padding">
@@ -1805,12 +1795,12 @@
                         <table class="data-table" id="deals-table">
                             <thead>
                                 <tr>
-                                    <th data-tooltip="Company being acquired">Target</th>
-                                    <th data-tooltip="Company making the acquisition">Acquirer</th>
-                                    <th data-tooltip="Announced deal price per share">Deal $</th>
-                                    <th data-tooltip="Current market price of target">Current</th>
-                                    <th data-tooltip="Difference between deal price and current price. Higher spread = more risk/reward">Spread</th>
-                                    <th data-tooltip="Deal status: Pending, Approved, or Blocked">Status</th>
+                                    <th>Target <span class="info-icon" data-tooltip="Company being acquired"></span></th>
+                                    <th>Acquirer <span class="info-icon" data-tooltip="Company making the acquisition"></span></th>
+                                    <th>Deal $ <span class="info-icon" data-tooltip="Announced deal price/share"></span></th>
+                                    <th>Current <span class="info-icon" data-tooltip="Current market price"></span></th>
+                                    <th>Spread <span class="info-icon" data-tooltip="Gap between deal & current price"></span></th>
+                                    <th>Status <span class="info-icon" data-tooltip="Pending, Approved, or Blocked"></span></th>
                                 </tr>
                             </thead>
                             <tbody id="deals-table-body">
@@ -1833,7 +1823,7 @@
 
             <!-- Government Contracts Section -->
             <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
-                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);" data-tooltip="Federal contract awards from USAspending.gov. Defense, tech, and infrastructure spending data">🏛️ Government Contracts</h3>
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🏛️ Government Contracts <span class="info-icon" data-tooltip="Federal contract data from USAspending.gov"></span></h3>
                 <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
                     Track federal spending on defense, tech, and infrastructure. Government contracts often signal sector momentum.
                 </p>
@@ -1841,7 +1831,7 @@
                     <!-- Contract Themes -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title" data-tooltip="Government spending by sector. Shows which industries are receiving federal investment">📊 Theme Spending</div>
+                            <div class="card-title">📊 Theme Spending <span class="info-icon" data-tooltip="Gov spending by sector"></span></div>
                             <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchContractThemes()">Refresh</button>
                         </div>
                         <div class="card-body" id="contract-themes-container">
@@ -1852,7 +1842,7 @@
                     <!-- Recent Contracts -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title" data-tooltip="Latest federal contract awards. New contracts can signal revenue catalysts">📋 Recent Awards</div>
+                            <div class="card-title">📋 Recent Awards <span class="info-icon" data-tooltip="Latest federal contract awards"></span></div>
                             <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchRecentContracts()">Refresh</button>
                         </div>
                         <div class="card-body" id="recent-contracts-container">
@@ -1863,7 +1853,7 @@
                     <!-- Company Lookup -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title" data-tooltip="Search government contract history for any company by ticker">🔍 Company Lookup</div>
+                            <div class="card-title">🔍 Company Lookup <span class="info-icon" data-tooltip="Search contract history by ticker"></span></div>
                         </div>
                         <div class="card-body">
                             <div style="margin-bottom: 12px;">
@@ -1879,7 +1869,7 @@
 
             <!-- Patent Intelligence Section -->
             <div style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
-                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);" data-tooltip="USPTO patent data. Patents are leading indicators filed 6-12 months before product launches">🔬 Patent Intelligence</h3>
+                <h3 style="font-size: 1rem; margin-bottom: 16px; color: var(--text);">🔬 Patent Intelligence <span class="info-icon" data-tooltip="USPTO data: patents filed 6-12mo before launches"></span></h3>
                 <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
                     Patents are filed 6-12 months before product launches. Track R&D activity as a leading indicator.
                 </p>
@@ -1887,7 +1877,7 @@
                     <!-- Patent Themes -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title" data-tooltip="Patent filings by technology category. Spikes indicate heavy R&D investment in a sector">🏷️ Theme Activity</div>
+                            <div class="card-title">🏷️ Theme Activity <span class="info-icon" data-tooltip="Patent filings by tech category"></span></div>
                             <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchPatentThemes()">Refresh</button>
                         </div>
                         <div class="card-body" id="patent-themes-container">
@@ -1898,7 +1888,7 @@
                     <!-- Patent Lookup -->
                     <div class="card">
                         <div class="card-header">
-                            <div class="card-title" data-tooltip="Search patent history for a company. Shows R&D focus areas and innovation activity">🔍 Company Patents</div>
+                            <div class="card-title">🔍 Company Patents <span class="info-icon" data-tooltip="Search R&D focus and innovation activity"></span></div>
                         </div>
                         <div class="card-body">
                             <div style="margin-bottom: 12px;">
@@ -2163,23 +2153,23 @@
                 <!-- Evolution Engine -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Self-improving algorithm that learns from past scan results to improve future predictions">🧬 Evolution Engine</div>
+                        <div class="card-title">🧬 Evolution Engine <span class="info-icon" data-tooltip="Self-improving algorithm that learns from past results"></span></div>
                     </div>
                     <div class="card-body">
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Number of complete learning iterations. Each cycle refines the model based on actual stock performance">Learning Cycles</span>
+                            <span class="sidebar-label">Learning Cycles <span class="info-icon" data-tooltip="Training iterations completed"></span></span>
                             <span class="sidebar-value" id="evo-cycles">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Percentage of predictions that were correct. Higher = better signal quality">Overall Accuracy</span>
+                            <span class="sidebar-label">Overall Accuracy <span class="info-icon" data-tooltip="% of predictions that were correct"></span></span>
                             <span class="sidebar-value" id="evo-accuracy">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="How well confidence scores match actual outcomes. 80% confidence should be right 80% of the time">Calibration Score</span>
+                            <span class="sidebar-label">Calibration Score <span class="info-icon" data-tooltip="How well confidence matches actual outcomes"></span></span>
                             <span class="sidebar-value" id="evo-calibration">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="When the system last updated its weights based on new market data">Last Evolution</span>
+                            <span class="sidebar-label">Last Evolution <span class="info-icon" data-tooltip="When weights were last updated"></span></span>
                             <span class="sidebar-value" id="evo-last">--</span>
                         </div>
                     </div>
@@ -2188,7 +2178,7 @@
                 <!-- Adaptive Weights -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Dynamic factor importance. Weights adjust based on what's working in current market conditions">⚖️ Adaptive Weights</div>
+                        <div class="card-title">⚖️ Adaptive Weights <span class="info-icon" data-tooltip="Dynamic factor importance based on market conditions"></span></div>
                     </div>
                     <div class="card-body" id="weights-container">
                         <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
@@ -2198,7 +2188,7 @@
                 <!-- Technical Signals -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Real-time technical analysis including RSI, MACD, moving averages, and volume patterns">📈 Technical Signals</div>
+                        <div class="card-title">📈 Technical Signals <span class="info-icon" data-tooltip="RSI, MACD, moving averages, and volume analysis"></span></div>
                     </div>
                     <div class="card-body">
                         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -2222,23 +2212,23 @@
                 <!-- Parameter Learning -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="Tracks the scanner's model training progress and parameter optimization status">⚙️ Parameter Learning</div>
+                        <div class="card-title">⚙️ Parameter Learning <span class="info-icon" data-tooltip="Model training progress and optimization status"></span></div>
                     </div>
                     <div class="card-body">
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Total number of adjustable parameters in the scoring model">Total Parameters</span>
+                            <span class="sidebar-label">Total Parameters <span class="info-icon" data-tooltip="Adjustable params in scoring model"></span></span>
                             <span class="sidebar-value" id="param-total">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Parameters that have been optimized with sufficient training data">Parameters Learned</span>
+                            <span class="sidebar-label">Parameters Learned <span class="info-icon" data-tooltip="Params optimized with training data"></span></span>
                             <span class="sidebar-value" id="param-learned">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Percentage of parameters optimized. 100% = fully trained model">Learning Progress</span>
+                            <span class="sidebar-label">Learning Progress <span class="info-icon" data-tooltip="% of parameters optimized"></span></span>
                             <span class="sidebar-value" id="param-progress">--</span>
                         </div>
                         <div class="sidebar-item">
-                            <span class="sidebar-label" data-tooltip="Average statistical confidence in learned parameter values. Higher = more reliable predictions">Avg Confidence</span>
+                            <span class="sidebar-label">Avg Confidence <span class="info-icon" data-tooltip="Statistical confidence in learned values"></span></span>
                             <span class="sidebar-value" id="param-confidence">--</span>
                         </div>
                     </div>
@@ -2247,7 +2237,7 @@
                 <!-- Correlations -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title" data-tooltip="How different factors move together. High correlation = redundant signals, negative correlation = diversifying factors">🔗 Correlations</div>
+                        <div class="card-title">🔗 Correlations <span class="info-icon" data-tooltip="How factors move together. High = redundant, Negative = diversifying"></span></div>
                     </div>
                     <div class="card-body" id="correlations-container">
                         <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
@@ -2294,25 +2284,25 @@
             <div class="grid grid-4" id="options-summary" style="display: none; margin-bottom: 20px;">
                 <div class="card">
                     <div class="card-body" style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Market sentiment derived from options flow. Bullish = more call buying, Bearish = more put buying">SENTIMENT</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">SENTIMENT <span class="info-icon" data-tooltip="Market sentiment derived from options flow. Bullish = more call buying, Bearish = more put buying"></span></div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="opt-sentiment">--</div>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-body" style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Put volume divided by Call volume. Below 0.7 = bullish, Above 1.0 = bearish. Extreme readings can signal reversals">PUT/CALL RATIO</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">PUT/CALL RATIO <span class="info-icon" data-tooltip="Put volume ÷ Call volume. Below 0.7 = bullish, Above 1.0 = bearish"></span></div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="opt-pc-ratio">--</div>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-body" style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Total number of call option contracts traded. High volume indicates strong interest in upside">TOTAL CALL VOLUME</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL CALL VOLUME <span class="info-icon" data-tooltip="Total call contracts traded. High volume = strong bullish interest"></span></div>
                         <div style="font-size: 1.5rem; font-weight: 700; color: var(--green);" id="opt-call-vol">--</div>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-body" style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Total number of put option contracts traded. High volume indicates hedging or bearish bets">TOTAL PUT VOLUME</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL PUT VOLUME <span class="info-icon" data-tooltip="Total put contracts traded. High volume = hedging or bearish bets"></span></div>
                         <div style="font-size: 1.5rem; font-weight: 700; color: var(--red);" id="opt-put-vol">--</div>
                     </div>
                 </div>
@@ -2330,13 +2320,13 @@
                             <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
                                 <thead style="position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border);">
                                     <tr>
-                                        <th style="padding: 8px; text-align: left;" data-tooltip="The price at which the option can be exercised">Strike</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Highest price a buyer is willing to pay">Bid</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Lowest price a seller is willing to accept">Ask</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Number of contracts traded today">Vol</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Open Interest: Total outstanding contracts. High OI = more liquidity">OI</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Implied Volatility: Market's expected price movement. Higher IV = more expensive options">IV</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Rate of change in option price per $1 move in stock. 0.5 delta = $0.50 gain per $1 stock move">Delta</th>
+                                        <th style="padding: 8px; text-align: left;">Strike <span class="info-icon" data-tooltip="Price at which the option can be exercised"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Bid <span class="info-icon" data-tooltip="Highest price a buyer will pay"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Ask <span class="info-icon" data-tooltip="Lowest price a seller will accept"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Vol <span class="info-icon" data-tooltip="Contracts traded today"></span></th>
+                                        <th style="padding: 8px; text-align: right;">OI <span class="info-icon" data-tooltip="Open Interest: Total outstanding contracts"></span></th>
+                                        <th style="padding: 8px; text-align: right;">IV <span class="info-icon" data-tooltip="Implied Volatility: Expected price movement"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Delta <span class="info-icon" data-tooltip="Option price change per $1 stock move"></span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="calls-table-body">
@@ -2361,13 +2351,13 @@
                             <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
                                 <thead style="position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border);">
                                     <tr>
-                                        <th style="padding: 8px; text-align: left;" data-tooltip="The price at which the option can be exercised">Strike</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Highest price a buyer is willing to pay">Bid</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Lowest price a seller is willing to accept">Ask</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Number of contracts traded today">Vol</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Open Interest: Total outstanding contracts. High OI = more liquidity">OI</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Implied Volatility: Market's expected price movement. Higher IV = more expensive options">IV</th>
-                                        <th style="padding: 8px; text-align: right;" data-tooltip="Rate of change in option price per $1 move in stock. Puts have negative delta">Delta</th>
+                                        <th style="padding: 8px; text-align: left;">Strike <span class="info-icon" data-tooltip="Price at which the option can be exercised"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Bid <span class="info-icon" data-tooltip="Highest price a buyer will pay"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Ask <span class="info-icon" data-tooltip="Lowest price a seller will accept"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Vol <span class="info-icon" data-tooltip="Contracts traded today"></span></th>
+                                        <th style="padding: 8px; text-align: right;">OI <span class="info-icon" data-tooltip="Open Interest: Total outstanding contracts"></span></th>
+                                        <th style="padding: 8px; text-align: right;">IV <span class="info-icon" data-tooltip="Implied Volatility: Expected price movement"></span></th>
+                                        <th style="padding: 8px; text-align: right;">Delta <span class="info-icon" data-tooltip="Option price change per $1 stock move (negative for puts)"></span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="puts-table-body">
@@ -2392,22 +2382,22 @@
                 <div class="card-body">
                     <div class="grid grid-4" id="market-sentiment-grid">
                         <div style="text-align: center; padding: 12px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="SPY Put/Call Ratio: Key market sentiment indicator. Below 0.7 = bullish, Above 1.0 = bearish">SPY P/C RATIO</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY P/C RATIO <span class="info-icon" data-tooltip="Below 0.7 = bullish, Above 1.0 = bearish"></span></div>
                             <div style="font-size: 1.25rem; font-weight: 700;" id="spy-pc-ratio">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
                         </div>
                         <div style="text-align: center; padding: 12px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Gamma Exposure: Measures dealer hedging pressure. Positive GEX = dampened moves, Negative GEX = amplified moves">TOTAL GEX</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL GEX <span class="info-icon" data-tooltip="Gamma Exposure: +GEX = dampened moves, -GEX = amplified moves"></span></div>
                             <div style="font-size: 1.25rem; font-weight: 700;" id="market-gex">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);" id="gex-label">Loading...</div>
                         </div>
                         <div style="text-align: center; padding: 12px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="CBOE Volatility Index: Fear gauge. Below 15 = complacent, 15-20 = normal, 20-30 = elevated fear, Above 30 = panic">VIX LEVEL</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">VIX LEVEL <span class="info-icon" data-tooltip="Fear gauge: <15 calm, 15-20 normal, 20-30 fear, >30 panic"></span></div>
                             <div style="font-size: 1.25rem; font-weight: 700;" id="vix-level">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);" id="vix-label">Loading...</div>
                         </div>
                         <div style="text-align: center; padding: 12px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;" data-tooltip="Zero Days to Expiration options volume. High 0DTE activity can cause increased intraday volatility">0DTE VOLUME</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">0DTE VOLUME <span class="info-icon" data-tooltip="Zero Days to Expiration options. High 0DTE = intraday volatility"></span></div>
                             <div style="font-size: 1.25rem; font-weight: 700;" id="zero-dte-vol">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);">Intraday</div>
                         </div>
@@ -2456,15 +2446,15 @@
                 <div class="card-body">
                     <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
                         <div style="flex: 1; min-width: 150px;">
-                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-tooltip="Minimum dollar value of the trade. Higher premium = bigger bets from institutional players">Min Premium ($K)</label>
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Min Premium ($K) <span class="info-icon" data-tooltip="Higher premium = bigger institutional bets"></span></label>
                             <input type="number" id="screener-min-premium" value="50" min="1" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;" />
                         </div>
                         <div style="flex: 1; min-width: 150px;">
-                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-tooltip="IV Rank compares current IV to its 52-week range. Above 50% = elevated volatility, good for selling options">Min IV Rank (%)</label>
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Min IV Rank (%) <span class="info-icon" data-tooltip="IV vs 52-week range. >50% = elevated volatility"></span></label>
                             <input type="number" id="screener-min-iv" value="50" min="0" max="100" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;" />
                         </div>
                         <div style="flex: 1; min-width: 150px;">
-                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;" data-tooltip="Filter by market bias. Bullish = call buying, Bearish = put buying">Sentiment</label>
+                            <label style="font-size: 0.7rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Sentiment <span class="info-icon" data-tooltip="Bullish = call buying, Bearish = put buying"></span></label>
                             <select id="screener-sentiment" style="width: 100%; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.8rem;">
                                 <option value="">Any</option>
                                 <option value="bullish">Bullish Only</option>
