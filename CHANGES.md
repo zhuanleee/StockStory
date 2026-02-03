@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:35 - `a352b96`
+
+**Fix SEC Intel tab API connections and data rendering**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:28 - `1020070`
 
 **Fix nested response structure in contracts/patents themes endpoints**
