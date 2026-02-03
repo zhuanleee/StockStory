@@ -2700,23 +2700,32 @@ Format your response as JSON:
             confirmations = []
             conflicts = []
 
+            # Only directional signals can confirm or conflict
+            directional_signals = {'BULLISH', 'BEARISH'}
+
             for i, s1 in enumerate(signal_list):
                 for s2 in signal_list[i+1:]:
                     sig1 = signals[s1].get('signal', 'NEUTRAL')
                     sig2 = signals[s2].get('signal', 'NEUTRAL')
 
-                    if sig1 == sig2 and sig1 != 'NEUTRAL':
-                        confirmations.append({
-                            'signals': [s1, s2],
-                            'direction': sig1,
-                            'strength': 'STRONG'
-                        })
-                    elif sig1 != 'NEUTRAL' and sig2 != 'NEUTRAL' and sig1 != sig2:
-                        conflicts.append({
-                            'signals': [s1, s2],
-                            'directions': [sig1, sig2],
-                            'note': f'{s1} says {sig1} but {s2} says {sig2}'
-                        })
+                    # Only compare directional signals
+                    sig1_directional = sig1 in directional_signals
+                    sig2_directional = sig2 in directional_signals
+
+                    if sig1_directional and sig2_directional:
+                        if sig1 == sig2:
+                            confirmations.append({
+                                'signals': [s1, s2],
+                                'direction': sig1,
+                                'strength': 'STRONG'
+                            })
+                        else:
+                            # True conflict: BULLISH vs BEARISH
+                            conflicts.append({
+                                'signals': [s1, s2],
+                                'directions': [sig1, sig2],
+                                'note': f'{s1} is {sig1} but {s2} is {sig2} - conflicting signals'
+                            })
 
             # AI interpretation
             ai_service = get_ai_service()

@@ -2,6 +2,63 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 19:15 - `a06e717`
+
+**Add AI Intelligence Hub with unified market analysis**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+.gitignore
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
+### 2026-02-03 18:38 - `3d85e9c`
+
+**Add debug providers endpoint and fix CPI YoY calculation**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+modal_api_v2.py
+utils/data_providers.py
+```
+</details>
+
+---
+
+
+### 2026-02-03 18:15 - `2e15383`
+
+**Add FRED Economic Dashboard with comprehensive indicators**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+utils/data_providers.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 18:06 - `63cdaeb`
 
 **Fix themes tab API and JS for proper data rendering**
