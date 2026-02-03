@@ -1763,6 +1763,7 @@ Get an API key at `/api-keys/request`
             from src.data.watchlist_manager import get_watchlist_manager
             wm = get_watchlist_manager(VOLUME_PATH)
             item = wm.add_to_watchlist(ticker.upper(), notes=notes)
+            volume.commit()  # Persist to Modal volume
             return {"ok": True, "item": item.to_dict()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1774,6 +1775,7 @@ Get an API key at `/api-keys/request`
             from src.data.watchlist_manager import get_watchlist_manager
             wm = get_watchlist_manager(VOLUME_PATH)
             success = wm.remove_from_watchlist(ticker.upper())
+            volume.commit()  # Persist to Modal volume
             return {"ok": success}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1827,6 +1829,7 @@ Get an API key at `/api-keys/request`
             record = wm.star_scan(scan_id, add_to_watchlist=add_to_watchlist)
             if not record:
                 return {"ok": False, "error": "Scan not found"}
+            volume.commit()  # Persist to Modal volume
             return {"ok": True, "scan": record.to_dict()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1840,6 +1843,7 @@ Get an API key at `/api-keys/request`
             record = wm.unstar_scan(scan_id)
             if not record:
                 return {"ok": False, "error": "Scan not found"}
+            volume.commit()  # Persist to Modal volume
             return {"ok": True, "scan": record.to_dict()}
         except Exception as e:
             return {"ok": False, "error": str(e)}

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:04 - `671bc5d`
+
+**Add expandable scan rows with individual stock add/remove**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 15:55 - `7444765`
 
 **Add dedicated Watchlist tab to dashboard**
