@@ -1236,43 +1236,59 @@
             font-style: italic;
         }
 
+        /* CSS tooltip disabled - using JS tooltip instead */
         .info-icon::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 10px 14px;
-            background: #1a1a2e;
-            color: #e0e0e0;
-            font-size: 0.8rem;
-            font-weight: 400;
-            font-style: normal;
-            text-transform: none;
-            letter-spacing: normal;
-            line-height: 1.5;
-            white-space: normal;
-            width: max-content;
-            max-width: 280px;
-            border-radius: 8px;
-            border: 1px solid rgba(99, 102, 241, 0.4);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
-            visibility: hidden;
-            opacity: 0;
-            pointer-events: none;
-            transition: all 0.2s ease;
-            z-index: 9999;
+            display: none;
         }
 
-        .info-icon:hover::after {
-            visibility: visible;
-            opacity: 1;
-            bottom: calc(100% + 10px);
-        }
-
-        /* Tooltip arrow */
         .info-icon::before {
             content: 'i';
+        }
+
+        /* JS-powered tooltip appended to body */
+        .tooltip-popup {
+            position: fixed;
+            padding: 10px 14px;
+            background: #252538;
+            color: #e8e8e8;
+            font-size: 0.8rem;
+            font-weight: 400;
+            line-height: 1.5;
+            white-space: normal;
+            max-width: 300px;
+            border-radius: 8px;
+            border: 1px solid rgba(99, 102, 241, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            z-index: 99999;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .tooltip-popup.visible {
+            opacity: 1;
+        }
+
+        .tooltip-popup::before {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 6px solid rgba(99, 102, 241, 0.5);
+        }
+
+        .tooltip-popup::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid #252538;
         }
 
         /* Label with tooltip wrapper */
@@ -6874,8 +6890,52 @@
             tabLoadedAt[tabId] = Date.now();
         }
 
+        // Tooltip system - escapes overflow:hidden containers
+        function initTooltips() {
+            let tooltipEl = document.createElement('div');
+            tooltipEl.className = 'tooltip-popup';
+            document.body.appendChild(tooltipEl);
+
+            document.addEventListener('mouseover', (e) => {
+                const icon = e.target.closest('.info-icon[data-tooltip]');
+                if (!icon) return;
+
+                const text = icon.getAttribute('data-tooltip');
+                if (!text) return;
+
+                tooltipEl.textContent = text;
+                tooltipEl.classList.add('visible');
+
+                const rect = icon.getBoundingClientRect();
+                const tooltipRect = tooltipEl.getBoundingClientRect();
+
+                let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+                let top = rect.top - tooltipRect.height - 10;
+
+                // Keep within viewport
+                if (left < 10) left = 10;
+                if (left + tooltipRect.width > window.innerWidth - 10) {
+                    left = window.innerWidth - tooltipRect.width - 10;
+                }
+                if (top < 10) {
+                    top = rect.bottom + 10; // Show below if no room above
+                }
+
+                tooltipEl.style.left = left + 'px';
+                tooltipEl.style.top = top + 'px';
+            });
+
+            document.addEventListener('mouseout', (e) => {
+                const icon = e.target.closest('.info-icon[data-tooltip]');
+                if (icon) {
+                    tooltipEl.classList.remove('visible');
+                }
+            });
+        }
+
         // Init
         document.addEventListener('DOMContentLoaded', () => {
+            initTooltips();
             refreshAll();
 
             // Auto-refresh unusual options every 5 minutes

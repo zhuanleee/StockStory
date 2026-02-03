@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:51 - `a113c3a`
+
+**Improve tooltip readability with better contrast and styling**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:47 - `ad5c3bf`
 
 **Fix Analytics tab API response structures for dashboard compatibility**
