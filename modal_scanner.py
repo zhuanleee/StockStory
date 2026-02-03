@@ -2099,6 +2099,7 @@ def _run_daily_correlation_analysis():
     image=image,
     timeout=3600,  # 1 hour max for full scan
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def daily_scan():
     """
