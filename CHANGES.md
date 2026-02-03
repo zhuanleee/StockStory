@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:27 - `2d4113b`
+
+**Watchlist updates now reflect instantly**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:17 - `a9ce0bb`
 
 **Header refresh button now only refreshes current tab**
