@@ -3812,25 +3812,30 @@
                 const res = await fetch(`${API_BASE}/conviction/alerts?min_score=60`);
                 const data = await res.json();
 
-                if (data.ok && data.alerts && data.alerts.length > 0) {
-                    const recEmoji = {
-                        'STRONG BUY': '🟢🟢',
-                        'BUY': '🟢',
-                        'WATCH': '🟡',
-                        'HOLD': '⚪',
-                        'AVOID': '🔴'
+                // Handle both data.alerts and data.data response structures
+                const alerts = data.alerts || data.data || [];
+
+                if (data.ok && alerts.length > 0) {
+                    const strengthEmoji = {
+                        'hot': '🔥',
+                        'developing': '🟡',
+                        'watchlist': '⚪'
                     };
 
                     let html = '';
-                    data.alerts.slice(0, 5).forEach(a => {
-                        const emoji = recEmoji[a.recommendation] || '⚪';
+                    alerts.slice(0, 5).forEach(a => {
+                        const score = a.conviction_score || a.score || 0;
+                        const emoji = strengthEmoji[a.strength] || '⚪';
+                        const label = a.recommendation || a.strength || 'N/A';
+                        const detail = a.bullish_signals ? `${a.bullish_signals} bullish` : (a.theme || '');
+
                         html += `<div class="sidebar-item" style="cursor: pointer; padding: 8px 0; border-bottom: 1px solid var(--border);" onclick="showConvictionDetail('${a.ticker}')">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="font-weight: 600;">${a.ticker}</span>
-                                <span style="font-size: 0.875rem;">${emoji} ${a.conviction_score.toFixed(0)}</span>
+                                <span style="font-size: 0.875rem;">${emoji} ${score.toFixed(0)}</span>
                             </div>
                             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">
-                                ${a.bullish_signals} bullish • ${a.recommendation}
+                                ${detail} ${detail ? '•' : ''} ${label}
                             </div>
                         </div>`;
                     });

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 20:41 - `03f07a2`
+
+**Fix dashboard to load High Conviction and Hot Themes data**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 20:34 - `8dfd8fa`
 
 **Restructure dashboard from 10 flat tabs to 4 main categories**
