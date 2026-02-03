@@ -7,7 +7,7 @@ Technical analysis is secondary confirmation only.
 
 Story Score Components:
 - Theme Heat (25%): Is stock part of a hot/emerging theme?
-- Catalyst Score (20%): Upcoming earnings, FDA, product launches?
+- Catalyst Score (20%): Upcoming earnings, product launches, M&A?
 - News Momentum (15%): Is news volume accelerating?
 - Sentiment (15%): Bullish/bearish tone of coverage
 - Technical Confirmation (25%): RS, trend, volume combined
@@ -755,24 +755,6 @@ THEMES = {
         'stage': 'middle',
     },
 
-    # Healthcare
-    'glp1_obesity': {
-        'name': 'GLP-1 / Obesity',
-        'drivers': ['LLY', 'NVO'],
-        'beneficiaries': ['VKTX', 'AMGN', 'GPCR'],
-        'picks_shovels': ['TMO', 'WST', 'CRL'],
-        'keywords': ['glp-1', 'obesity', 'weight loss', 'ozempic', 'wegovy', 'mounjaro', 'zepbound'],
-        'stage': 'middle',
-    },
-    'biotech_catalysts': {
-        'name': 'Biotech Catalysts',
-        'drivers': [],  # Dynamic based on FDA calendar
-        'beneficiaries': [],
-        'picks_shovels': ['ICLR', 'MEDP', 'CRL'],
-        'keywords': ['fda', 'approval', 'pdufa', 'phase 3', 'clinical trial'],
-        'stage': 'ongoing',
-    },
-
     # Crypto / Digital Assets
     'crypto_cycle': {
         'name': 'Crypto Cycle',
@@ -847,7 +829,6 @@ THEMES = {
 # Catalyst types and their typical impact
 CATALYST_TYPES = {
     'earnings': {'impact': 'high', 'window_days': 14, 'keywords': ['earnings', 'q1', 'q2', 'q3', 'q4', 'results', 'guidance']},
-    'fda': {'impact': 'very_high', 'window_days': 30, 'keywords': ['fda', 'approval', 'pdufa', 'nda', 'bla']},
     'product_launch': {'impact': 'high', 'window_days': 30, 'keywords': ['launch', 'unveil', 'announce', 'release', 'new product']},
     'conference': {'impact': 'medium', 'window_days': 7, 'keywords': ['conference', 'investor day', 'analyst day', 'presentation']},
     'merger': {'impact': 'very_high', 'window_days': 90, 'keywords': ['merger', 'acquisition', 'deal', 'buyout', 'takeover']},

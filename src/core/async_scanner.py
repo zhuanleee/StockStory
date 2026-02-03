@@ -289,14 +289,22 @@ class AsyncDataFetcher:
             't': 'week',
             'limit': 10
         }
-        headers = {'User-Agent': 'StockScanner/2.0 (async)'}
+        # Reddit requires a descriptive User-Agent - format: platform:app_id:version (by /u/username)
+        headers = {'User-Agent': 'python:StockScannerBot:v2.0 (by /u/stock_scanner_research)'}
 
-        data = await self.client.get(url, params=params, headers=headers, timeout=10)
+        data = await self.client.get(url, params=params, headers=headers, timeout=15)
 
         if data is None:
+            logger.debug(f"Reddit fetch returned None for {ticker} in r/{subreddit}")
+            return []
+
+        # Check for Reddit error response
+        if 'error' in data:
+            logger.warning(f"Reddit API error for {ticker} in r/{subreddit}: {data.get('error')}")
             return []
 
         posts = data.get('data', {}).get('children', [])
+        logger.debug(f"Reddit: Found {len(posts)} posts for {ticker} in r/{subreddit}")
         mentions = []
 
         for post in posts:
@@ -580,75 +588,135 @@ class AsyncStoryScorer:
 
     async def get_social_buzz_score_async(self, ticker: str) -> Dict:
         """
-        Fetch all social sources CONCURRENTLY.
+        Fetch social/sentiment sources CONCURRENTLY.
 
-        This is a major speedup: 3 sequential API calls -> 1 concurrent batch.
+        Sources:
+        - Reddit (r/wallstreetbets, r/stocks, r/investing, r/options)
+        - SEC filings (8-K, insider activity)
+        - Google Trends (retail search interest)
+
+        Note: StockTwits removed - API consistently blocked (403)
         """
         # Fetch all social data concurrently
-        stocktwits, reddit, sec = await asyncio.gather(
-            self.fetcher.fetch_stocktwits_async(ticker),
+        reddit, sec = await asyncio.gather(
             self.fetcher.fetch_reddit_async(ticker),
             self.fetcher.fetch_sec_async(ticker),
             return_exceptions=True,
         )
 
         # Handle exceptions
-        if isinstance(stocktwits, Exception):
-            stocktwits = {'sentiment': 'neutral', 'message_volume': 0, 'trending': False}
         if isinstance(reddit, Exception):
             reddit = {'mention_count': 0, 'total_score': 0, 'sentiment': 'quiet', 'hot_posts': []}
         if isinstance(sec, Exception):
             sec = {'recent_filings': [], 'has_8k': False, 'insider_activity': False}
 
-        # Calculate component scores using learned thresholds
-        st_score = 0
-        if stocktwits.get('message_volume', 0) > params.threshold_stocktwits_high():
-            st_score = params.score_stocktwits_high()
-        elif stocktwits.get('message_volume', 0) > params.threshold_stocktwits_medium():
-            st_score = params.score_stocktwits_medium()
-        elif stocktwits.get('message_volume', 0) > params.threshold_stocktwits_low():
-            st_score = params.score_stocktwits_low()
+        # Fetch Google Trends (sync call wrapped)
+        google_trends = {'score': 50, 'status': 'unknown', 'is_breakout': False}
+        try:
+            from src.intelligence.google_trends import get_trend_data
+            gt_data = get_trend_data(ticker)
+            google_trends = {
+                'score': gt_data.get('search_interest', 50),
+                'status': gt_data.get('trend_direction', 'stable'),
+                'is_breakout': gt_data.get('is_breakout', False),
+            }
+        except Exception as e:
+            logger.debug(f"Google Trends fetch failed for {ticker}: {e}")
 
-        if stocktwits.get('sentiment') == 'bullish':
-            st_score += params.score_stocktwits_bullish_boost()
+        # Fetch X Intelligence (if XAI_API_KEY is available)
+        x_sentiment = {'sentiment': 'neutral', 'sentiment_score': 0.5, 'mention_count': 0, 'trending': False}
+        if os.environ.get('XAI_API_KEY'):
+            try:
+                from src.intelligence.x_intelligence import get_x_sentiment
+                x_data = get_x_sentiment(ticker)
+                x_sentiment = {
+                    'sentiment': x_data.get('sentiment', 'neutral'),
+                    'sentiment_score': x_data.get('sentiment_score', 0.5),
+                    'mention_count': x_data.get('mention_count', 0),
+                    'trending': x_data.get('trending', False),
+                }
+                logger.debug(f"X Intelligence for {ticker}: {x_sentiment['sentiment']} ({x_sentiment['sentiment_score']:.2f})")
+            except Exception as e:
+                logger.debug(f"X Intelligence fetch failed for {ticker}: {e}")
 
+        # Calculate component scores
+        # Reddit score (0-30 points)
         reddit_score = 0
         mention_count = reddit.get('mention_count', 0)
         if mention_count >= params.threshold_reddit_high():
-            reddit_score = params.score_stocktwits_high()
+            reddit_score = 30
         elif mention_count >= params.threshold_reddit_medium():
-            reddit_score = params.score_stocktwits_medium()
+            reddit_score = 20
         elif mention_count >= 1:
-            reddit_score = params.score_stocktwits_low()
+            reddit_score = 10
 
         total_reddit_score = reddit.get('total_score', 0)
         if total_reddit_score > params.threshold_reddit_score_high():
-            reddit_score += params.score_stocktwits_bullish_boost()
+            reddit_score += 10
         elif total_reddit_score > params.threshold_reddit_score_medium():
-            reddit_score += params.score_stocktwits_low()
+            reddit_score += 5
 
+        # SEC score (0-20 points)
         sec_score = 0
         if sec.get('has_8k'):
-            sec_score += params.score_sec_8k()
+            sec_score += 15  # Material event
         if sec.get('insider_activity'):
-            sec_score += params.score_sec_insider()
+            sec_score += 5   # Insider activity
 
-        # Combined buzz score
-        buzz_score = min(100, st_score + reddit_score + sec_score)
+        # Google Trends score (0-20 points)
+        gt_score = 0
+        gt_interest = google_trends.get('score', 50)
+        if google_trends.get('is_breakout'):
+            gt_score = 20  # Breakout = max
+        elif gt_interest >= 80:
+            gt_score = 15
+        elif gt_interest >= 60:
+            gt_score = 10
+        elif gt_interest >= 40:
+            gt_score = 5
+
+        # X Intelligence score (0-30 points) - most valuable social signal
+        x_score = 0
+        x_sentiment_score = x_sentiment.get('sentiment_score', 0.5)
+        x_mention_count = x_sentiment.get('mention_count', 0)
+        if x_sentiment.get('trending', False):
+            x_score = 30  # Trending on X = max
+        elif x_sentiment_score >= 0.8 and x_mention_count >= 100:
+            x_score = 25  # Very bullish with high mentions
+        elif x_sentiment_score >= 0.7 and x_mention_count >= 50:
+            x_score = 20  # Bullish with good mentions
+        elif x_sentiment_score >= 0.6 and x_mention_count >= 20:
+            x_score = 15  # Somewhat bullish with some mentions
+        elif x_mention_count >= 10:
+            x_score = 10  # At least being discussed
+        elif x_sentiment_score >= 0.55:
+            x_score = 5   # Slightly bullish sentiment
+
+        # Combined buzz score (0-100)
+        raw_buzz = reddit_score + sec_score + gt_score + x_score
+        buzz_score = min(100, raw_buzz)  # Max is 30+20+20+30 = 100
 
         # Is it trending?
         trending = (
-            stocktwits.get('trending', False) or
             mention_count >= params.threshold_trending_reddit_mentions() or
+            google_trends.get('is_breakout', False) or
+            gt_interest >= 75 or
             sec.get('has_8k', False)
         )
 
         return {
             'buzz_score': buzz_score,
             'trending': trending,
-            'stocktwits': stocktwits,
             'reddit': reddit,
             'sec': sec,
+            'google_trends': google_trends,
+            'x_sentiment': x_sentiment,
+            'component_scores': {
+                'reddit': reddit_score,
+                'sec': sec_score,
+                'google_trends': gt_score,
+                'x_intelligence': x_score,
+            }
         }
 
     async def calculate_story_score_async(
@@ -680,7 +748,7 @@ class AsyncStoryScorer:
 
         # Handle exceptions
         if isinstance(social_buzz, Exception):
-            social_buzz = {'buzz_score': 0, 'trending': False, 'stocktwits': {}, 'reddit': {}, 'sec': {}}
+            social_buzz = {'buzz_score': 0, 'trending': False, 'reddit': {}, 'sec': {}, 'google_trends': {}, 'component_scores': {}}
         if isinstance(news, Exception):
             news = []
         if isinstance(sector, Exception):
@@ -695,6 +763,31 @@ class AsyncStoryScorer:
             logger.debug(f"Theme registry not available: {e}")
         except Exception as e:
             logger.debug(f"Failed to get theme data for {ticker}: {e}")
+
+        # Fetch price data from Polygon if not provided
+        if price_data is None:
+            try:
+                polygon_key = os.environ.get('POLYGON_API_KEY', '')
+                if polygon_key:
+                    from src.data.polygon_provider import get_aggregates_sync
+                    price_data = get_aggregates_sync(ticker, days=250)
+                    if price_data is not None and not price_data.empty:
+                        # Validate data has actual values
+                        close_col = 'Close' if 'Close' in price_data.columns else 'close'
+                        if close_col in price_data.columns:
+                            last_close = float(price_data[close_col].iloc[-1])
+                            if last_close > 0:
+                                logger.debug(f"Fetched {len(price_data)} days of price data for {ticker}, last close: ${last_close:.2f}")
+                            else:
+                                logger.warning(f"Price data for {ticker} has zero values, data may be stale")
+                        else:
+                            logger.warning(f"Price data for {ticker} missing close column. Columns: {list(price_data.columns)}")
+                    else:
+                        logger.debug(f"No price data returned from Polygon for {ticker}")
+                else:
+                    logger.debug(f"POLYGON_API_KEY not set, cannot fetch price data for {ticker}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch price data for {ticker}: {type(e).__name__}: {e}")
 
         # Calculate technical data from price data
         price = 0
@@ -783,6 +876,15 @@ class AsyncStoryScorer:
         # Get SEC data from social buzz
         sec_data = social_buzz.get('sec', {})
 
+        # Format social buzz for scoring
+        social_buzz_for_scoring = {
+            'score': social_buzz.get('buzz_score', 0),
+            'is_breakout': social_buzz.get('trending', False),
+            'status': 'hot' if social_buzz.get('buzz_score', 0) >= 70 else (
+                'bullish' if social_buzz.get('buzz_score', 0) >= 50 else 'neutral'
+            ),
+        }
+
         # Calculate story-first score
         story_result = calculate_story_score(
             ticker=ticker,
@@ -790,6 +892,7 @@ class AsyncStoryScorer:
             sec_data=sec_data,
             theme_data=theme_data,
             price_data=price_dict,
+            social_buzz=social_buzz_for_scoring,
         )
 
         # Determine sentiment label from news
@@ -855,6 +958,13 @@ class AsyncStoryScorer:
                 'trend': round(story_result.trend_score, 1),
                 'volume': round(story_result.volume_score, 1),
                 'buyability': round(story_result.buyability_score, 1),
+            },
+            'social_buzz_component': {
+                'score': round(story_result.social_buzz_score, 1),
+                'reddit': social_buzz.get('component_scores', {}).get('reddit', 0),
+                'sec': social_buzz.get('component_scores', {}).get('sec', 0),
+                'google_trends': social_buzz.get('component_scores', {}).get('google_trends', 0),
+                'x_intelligence': social_buzz.get('component_scores', {}).get('x_intelligence', 0),
             },
             'news_momentum': {'score': len(news) * 3, 'count': len(news)},
             'sentiment': {'score': 0, 'label': sentiment_label},

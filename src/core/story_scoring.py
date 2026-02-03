@@ -53,7 +53,6 @@ ROLE_MULTIPLIERS = {
 class CatalystType(Enum):
     """Catalyst types ranked by impact"""
     # Tier 1: Major catalysts (80-100 score)
-    FDA_APPROVAL = "fda_approval"
     MAJOR_CONTRACT = "major_contract"
     ACQUISITION_TARGET = "acquisition_target"
     ACTIVIST_INVOLVEMENT = "activist"
@@ -80,9 +79,9 @@ class CatalystType(Enum):
 # Theme tier definitions with keywords
 THEME_TIERS = {
     ThemeTier.MEGA: {
-        'themes': ['AI', 'Artificial Intelligence', 'GLP-1', 'Ozempic', 'Weight Loss Drug'],
+        'themes': ['AI', 'Artificial Intelligence', 'Data Center', 'Nvidia'],
         'keywords': ['artificial intelligence', 'machine learning', 'llm', 'chatgpt', 'nvidia',
-                    'glp-1', 'ozempic', 'wegovy', 'mounjaro', 'weight loss drug', 'obesity drug'],
+                    'data center', 'gpu', 'ai chip', 'ai infrastructure'],
         'score': 100,
     },
     ThemeTier.STRONG: {
@@ -140,14 +139,6 @@ SUPPLY_CHAIN_MAP = {
         'beneficiaries': ['F', 'GM', 'STLA'],  # Legacy auto
         'infrastructure': ['EOSE', 'STEM', 'NOVA'],  # Energy storage
     },
-    'biotech_glp1': {
-        'leaders': ['LLY', 'NVO'],
-        'suppliers': ['TMO', 'DHR', 'A'],  # Lab equipment
-        'equipment': ['ISRG', 'BSX', 'MDT'],  # Medical devices
-        'materials': ['CTLT', 'WST'],  # Drug delivery
-        'beneficiaries': ['HUM', 'CI', 'UNH'],  # Insurance
-        'infrastructure': ['CVS', 'WBA', 'ABC'],  # Distribution
-    },
     'cybersecurity': {
         'leaders': ['CRWD', 'PANW', 'ZS'],
         'suppliers': ['FTNT', 'S', 'TENB'],  # Security vendors
@@ -173,9 +164,6 @@ THEME_NAME_TO_SUPPLY_CHAIN = {
     'ev': 'ev_battery',
     'electric vehicle': 'ev_battery',
     'battery': 'ev_battery',
-    'glp-1': 'biotech_glp1',
-    'ozempic': 'biotech_glp1',
-    'weight loss': 'biotech_glp1',
     'cybersecurity': 'cybersecurity',
     'cyber': 'cybersecurity',
 }
@@ -183,11 +171,10 @@ THEME_NAME_TO_SUPPLY_CHAIN = {
 
 # Catalyst scores by type
 CATALYST_SCORES = {
-    CatalystType.FDA_APPROVAL: 100,
-    CatalystType.MAJOR_CONTRACT: 95,
-    CatalystType.ACQUISITION_TARGET: 90,
-    CatalystType.ACTIVIST_INVOLVEMENT: 85,
-    CatalystType.EARNINGS_BEAT_RAISE: 80,
+    CatalystType.MAJOR_CONTRACT: 100,
+    CatalystType.ACQUISITION_TARGET: 95,
+    CatalystType.ACTIVIST_INVOLVEMENT: 90,
+    CatalystType.EARNINGS_BEAT_RAISE: 85,
     CatalystType.ANALYST_UPGRADE: 70,
     CatalystType.INSIDER_BUYING: 65,
     CatalystType.NEW_PRODUCT: 60,
@@ -203,7 +190,6 @@ CATALYST_SCORES = {
 
 # Keywords for catalyst detection
 CATALYST_KEYWORDS = {
-    CatalystType.FDA_APPROVAL: ['fda approval', 'fda clears', 'fda grants', 'drug approval'],
     CatalystType.MAJOR_CONTRACT: ['wins contract', 'awarded contract', 'billion contract', 'major deal', 'government contract'],
     CatalystType.ACQUISITION_TARGET: ['acquisition target', 'takeover', 'buyout', 'merger talks', 'approached by'],
     CatalystType.ACTIVIST_INVOLVEMENT: ['activist investor', 'takes stake', 'pushes for', 'board seat'],
@@ -230,6 +216,7 @@ class StoryScore:
     # Component scores (0-100 each)
     story_quality_score: float
     catalyst_score: float
+    social_buzz_score: float
     confirmation_score: float
 
     # Story Quality breakdown
@@ -261,6 +248,7 @@ class StoryScore:
             'story_strength': self.story_strength,
             'story_quality_score': round(self.story_quality_score, 1),
             'catalyst_score': round(self.catalyst_score, 1),
+            'social_buzz_score': round(self.social_buzz_score, 1),
             'confirmation_score': round(self.confirmation_score, 1),
             'theme_strength': round(self.theme_strength, 1),
             'theme_freshness': round(self.theme_freshness, 1),
@@ -279,14 +267,16 @@ class StoryScorer:
     Story-First Scoring Engine
 
     Weights:
-    - Story Quality: 50%
-    - Catalyst Strength: 35%
-    - Confirmation: 15%
+    - Story Quality: 45%
+    - Catalyst Strength: 30%
+    - Social Buzz: 15% (Reddit, SEC, Google Trends)
+    - Confirmation: 10%
     """
 
-    STORY_QUALITY_WEIGHT = 0.50
-    CATALYST_WEIGHT = 0.35
-    CONFIRMATION_WEIGHT = 0.15
+    STORY_QUALITY_WEIGHT = 0.45
+    CATALYST_WEIGHT = 0.30
+    SOCIAL_BUZZ_WEIGHT = 0.15
+    CONFIRMATION_WEIGHT = 0.10
 
     def __init__(self):
         self.theme_cache = {}
@@ -736,6 +726,7 @@ class StoryScorer:
         sec_data: Dict,
         theme_data: List[Dict],
         price_data: Dict,
+        social_buzz: Optional[Dict] = None,
     ) -> StoryScore:
         """
         Calculate complete story-first score.
@@ -746,6 +737,7 @@ class StoryScorer:
             sec_data: SEC filing data
             theme_data: Theme membership from registry
             price_data: Dict with technical data (above_20, above_50, etc.)
+            social_buzz: Dict with social buzz data (score, status, is_breakout)
 
         Returns:
             StoryScore with complete breakdown
@@ -817,12 +809,32 @@ class StoryScorer:
             )
 
         # =====================================================
+        # SOCIAL BUZZ (15%)
+        # =====================================================
+
+        social_buzz_score = 0
+        if social_buzz:
+            # Base score from social buzz data (0-100)
+            base_social = social_buzz.get('score', 0)
+            # Breakout bonus - viral activity
+            if social_buzz.get('is_breakout', False):
+                base_social = min(100, base_social + 20)
+            # Status modifiers
+            status = social_buzz.get('status', 'unknown')
+            if status in ['hot', 'bullish', 'surging']:
+                base_social = min(100, base_social + 10)
+            elif status in ['bearish', 'declining']:
+                base_social = max(0, base_social - 10)
+            social_buzz_score = base_social
+
+        # =====================================================
         # FINAL SCORE
         # =====================================================
 
         total_score = (
             story_quality_score * self.STORY_QUALITY_WEIGHT +
             catalyst_score * self.CATALYST_WEIGHT +
+            social_buzz_score * self.SOCIAL_BUZZ_WEIGHT +
             confirmation_score * self.CONFIRMATION_WEIGHT
         )
 
@@ -846,6 +858,7 @@ class StoryScorer:
             story_strength=story_strength,
             story_quality_score=story_quality_score,
             catalyst_score=catalyst_score,
+            social_buzz_score=social_buzz_score,
             confirmation_score=confirmation_score,
             theme_strength=theme_strength,
             theme_freshness=theme_freshness,
@@ -883,8 +896,9 @@ def calculate_story_score(
     sec_data: Dict,
     theme_data: List[Dict],
     price_data: Dict,
+    social_buzz: Optional[Dict] = None,
 ) -> StoryScore:
     """Convenience function to calculate story score"""
     return get_story_scorer().calculate_story_score(
-        ticker, news, sec_data, theme_data, price_data
+        ticker, news, sec_data, theme_data, price_data, social_buzz
     )

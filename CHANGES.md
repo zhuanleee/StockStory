@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 23:37 - `165411c`
+
+**Add technical filters for stock universe scanning**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+modal_scanner.py
+src/data/universe_manager.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 23:16 - `e1d0638`
 
 **Fix JSON serialization with robust NaN/numpy type handling**
