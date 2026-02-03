@@ -2,6 +2,34 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 15:48 - `c72a163`
+
+**Add unified watchlist and scan management system**
+
+Files changed: 12
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+assets/stockstory_icon.png
+assets/stockstory_icon.svg
+assets/stockstory_logo.png
+assets/stockstory_logo.svg
+assets/stockstory_minimal.png
+assets/stockstory_minimal.svg
+docs/index.html
+modal_api_v2.py
+modal_scanner.py
+src/data/__init__.py
+src/data/watchlist_manager.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 04:17 - `49f5b09`
 
 **feat: Add group chat support for all notifications**

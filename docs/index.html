@@ -1254,6 +1254,7 @@
             <div class="tab" data-tab="themeradar">Theme Radar</div>
             <div class="tab" data-tab="sec">SEC Intel</div>
             <div class="tab" data-tab="trades">Trades</div>
+            <div class="tab" data-tab="watchlist">Watchlist</div>
             <div class="tab" data-tab="analytics">Analytics</div>
             <div class="tab" data-tab="options">Options</div>
         </div>
@@ -2413,6 +2414,137 @@
                     <div id="smart-money-flow-container">
                         <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">
                             Enter a ticker to analyze institutional and smart money options flow
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Watchlist Tab -->
+        <div id="watchlist" class="tab-content">
+            <div style="display: grid; grid-template-columns: 1fr 350px; gap: 20px;">
+                <!-- Main Content -->
+                <div>
+                    <!-- Stats Row -->
+                    <div class="stats-row" style="margin-bottom: 20px;">
+                        <div class="stat">
+                            <div class="stat-label">Watchlist Stocks</div>
+                            <div class="stat-value blue" id="wl-stat-count">0</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Starred Scans</div>
+                            <div class="stat-value yellow" id="wl-stat-starred">0</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Total Scans</div>
+                            <div class="stat-value" id="wl-stat-total-scans">0</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Avg Performance</div>
+                            <div class="stat-value green" id="wl-stat-avg-perf">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Add to Watchlist -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">➕ Add to Watchlist</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="display: flex; gap: 12px;">
+                                <input type="text" id="wl-add-ticker" placeholder="Ticker (e.g., NVDA)" style="width: 120px; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-size: 0.85rem; text-transform: uppercase;" />
+                                <input type="text" id="wl-add-notes" placeholder="Notes (optional)" style="flex: 1; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-size: 0.85rem;" />
+                                <button class="btn btn-primary" onclick="addToWatchlistFromDashboard()" style="padding: 10px 24px;">Add</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Watchlist Table -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <div class="card-title">📋 My Watchlist</div>
+                            <button class="btn btn-ghost" onclick="refreshWatchlistTab()" style="padding: 6px 12px; font-size: 0.75rem;">↻ Refresh</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="wl-table-container">
+                                <div style="text-align: center; color: var(--text-muted); padding: 40px;">Loading watchlist...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scans Browser -->
+                    <div class="card">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <div class="card-title">📊 Scan History</div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-ghost wl-scan-filter active" data-filter="recent" onclick="filterScans('recent')" style="padding: 4px 12px; font-size: 0.7rem;">Recent</button>
+                                <button class="btn btn-ghost wl-scan-filter" data-filter="starred" onclick="filterScans('starred')" style="padding: 4px 12px; font-size: 0.7rem;">⭐ Starred</button>
+                                <button class="btn btn-ghost wl-scan-filter" data-filter="archived" onclick="filterScans('archived')" style="padding: 4px 12px; font-size: 0.7rem;">📁 Archived</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="wl-scans-container">
+                                <div style="text-align: center; color: var(--text-muted); padding: 40px;">Loading scans...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <div>
+                    <!-- Stock History Lookup -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">🔍 Stock History</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                                <input type="text" id="wl-history-ticker" placeholder="NVDA" style="flex: 1; background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-size: 0.85rem; text-transform: uppercase;" onkeypress="if(event.key==='Enter') loadStockHistory()" />
+                                <button class="btn btn-primary" onclick="loadStockHistory()" style="padding: 10px 16px;">Search</button>
+                            </div>
+                            <div id="wl-history-container">
+                                <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">Enter a ticker to see its scan history</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Starred Scans Quick View -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">⭐ Starred Scans</div>
+                        </div>
+                        <div class="card-body" id="wl-starred-quick">
+                            <div style="color: var(--text-muted); font-size: 0.8rem;">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="card" style="margin-bottom: 20px;">
+                        <div class="card-header">
+                            <div class="card-title">⚡ Quick Actions</div>
+                        </div>
+                        <div class="card-body">
+                            <div style="display: grid; gap: 8px;">
+                                <button class="btn btn-primary" onclick="starLatestScan()" style="padding: 10px;">⭐ Star Latest Scan</button>
+                                <button class="btn btn-ghost" onclick="cleanupOldScans()" style="padding: 10px;">🧹 Cleanup Old Scans</button>
+                                <button class="btn btn-ghost" onclick="exportWatchlist()" style="padding: 10px;">📥 Export Watchlist</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Telegram Commands Help -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">📱 Telegram Commands</div>
+                        </div>
+                        <div class="card-body" style="font-size: 0.75rem; color: var(--text-muted);">
+                            <div style="margin-bottom: 8px;"><code>/watchlist</code> - View watchlist</div>
+                            <div style="margin-bottom: 8px;"><code>/watch NVDA</code> - Add stock</div>
+                            <div style="margin-bottom: 8px;"><code>/unwatch NVDA</code> - Remove stock</div>
+                            <div style="margin-bottom: 8px;"><code>/star</code> - Star latest scan</div>
+                            <div style="margin-bottom: 8px;"><code>/starred</code> - View starred</div>
+                            <div style="margin-bottom: 8px;"><code>/history NVDA</code> - Stock history</div>
+                            <div><code>/scans</code> - Recent scans</div>
                         </div>
                     </div>
                 </div>
@@ -4639,6 +4771,415 @@
                 }
             }, 100);
         }
+
+        // ============ WATCHLIST TAB FUNCTIONS ============
+        let wlCurrentFilter = 'recent';
+
+        async function refreshWatchlistTab() {
+            try {
+                // Fetch watchlist
+                const wlRes = await fetch(`${API_BASE}/watchlist`);
+                const wlData = await wlRes.json();
+
+                if (wlData.ok) {
+                    const watchlist = wlData.watchlist || [];
+                    document.getElementById('wl-stat-count').textContent = watchlist.length;
+                    renderWatchlistTable(watchlist);
+
+                    // Calculate avg performance
+                    const withPerf = watchlist.filter(w => w.change_pct !== null && w.change_pct !== undefined);
+                    if (withPerf.length > 0) {
+                        const avgPerf = withPerf.reduce((sum, w) => sum + w.change_pct, 0) / withPerf.length;
+                        const avgEl = document.getElementById('wl-stat-avg-perf');
+                        avgEl.textContent = `${avgPerf >= 0 ? '+' : ''}${avgPerf.toFixed(1)}%`;
+                        avgEl.style.color = avgPerf >= 0 ? 'var(--green)' : 'var(--red)';
+                    }
+                }
+
+                // Fetch scans
+                const scansRes = await fetch(`${API_BASE}/scans`);
+                const scansData = await scansRes.json();
+                if (scansData.ok) {
+                    document.getElementById('wl-stat-total-scans').textContent = scansData.count || 0;
+                }
+
+                // Fetch starred scans
+                const starredRes = await fetch(`${API_BASE}/scans?starred_only=true`);
+                const starredData = await starredRes.json();
+                if (starredData.ok) {
+                    const starred = starredData.scans || [];
+                    document.getElementById('wl-stat-starred').textContent = starred.length;
+                    renderWlStarredQuick(starred);
+                }
+
+                // Load scans based on filter
+                filterScans(wlCurrentFilter);
+
+            } catch (e) {
+                console.error('Watchlist tab refresh failed:', e);
+            }
+        }
+
+        function renderWatchlistTable(watchlist) {
+            const container = document.getElementById('wl-table-container');
+            if (!watchlist || watchlist.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">Watchlist empty. Add stocks using the form above or /watch in Telegram.</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem;">
+                            <th style="text-align: left; padding: 10px 8px;">Ticker</th>
+                            <th style="text-align: left; padding: 10px 8px;">Entry</th>
+                            <th style="text-align: left; padding: 10px 8px;">Current</th>
+                            <th style="text-align: right; padding: 10px 8px;">P&L</th>
+                            <th style="text-align: left; padding: 10px 8px;">Source</th>
+                            <th style="text-align: left; padding: 10px 8px;">Notes</th>
+                            <th style="text-align: center; padding: 10px 8px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${watchlist.map(item => {
+                            const changePct = item.change_pct;
+                            const hasChange = changePct !== null && changePct !== undefined;
+                            const pnlColor = hasChange ? (changePct >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)';
+                            const entryPrice = item.entry_price;
+                            const currentPrice = item.current_price;
+                            const sourceScan = item.source_scan;
+                            const addedDate = item.added_date ? new Date(item.added_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+
+                            return `<tr style="border-bottom: 1px solid var(--border-subtle);">
+                                <td style="padding: 12px 8px;">
+                                    <div style="font-weight: 600; font-size: 1rem;">${item.ticker}</div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">${addedDate}</div>
+                                </td>
+                                <td style="padding: 12px 8px; color: var(--text-secondary);">
+                                    ${entryPrice ? '$' + entryPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--'}
+                                </td>
+                                <td style="padding: 12px 8px; font-weight: 500;">
+                                    ${currentPrice ? '$' + currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--'}
+                                </td>
+                                <td style="padding: 12px 8px; text-align: right; font-weight: 600; color: ${pnlColor};">
+                                    ${hasChange ? (changePct >= 0 ? '+' : '') + changePct.toFixed(1) + '%' : '--'}
+                                </td>
+                                <td style="padding: 12px 8px; font-size: 0.75rem; color: var(--text-muted);">
+                                    ${sourceScan ? '#' + sourceScan.id : '--'}
+                                </td>
+                                <td style="padding: 12px 8px; font-size: 0.75rem; color: var(--text-muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${item.notes || ''}">
+                                    ${item.notes || '--'}
+                                </td>
+                                <td style="padding: 12px 8px; text-align: center;">
+                                    <button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.7rem; margin-right: 4px;" onclick="loadStockHistoryFor('${item.ticker}')">📜</button>
+                                    <button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.7rem;" onclick="removeFromWatchlist('${item.ticker}')">✕</button>
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function renderWlStarredQuick(scans) {
+            const container = document.getElementById('wl-starred-quick');
+            if (!scans || scans.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">No starred scans yet.</div>';
+                return;
+            }
+
+            container.innerHTML = scans.slice(0, 5).map(scan => {
+                const date = scan.date ? new Date(scan.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+                const topPicks = scan.top_picks ? scan.top_picks.slice(0, 3).join(', ') : '';
+                return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); cursor: pointer;" onclick="viewScanDetail(${scan.scan_id})">
+                    <div>
+                        <span style="color: var(--yellow);">⭐</span>
+                        <span style="font-weight: 600; margin-left: 4px;">#${scan.scan_id}</span>
+                        <span style="color: var(--text-muted); font-size: 0.7rem; margin-left: 6px;">${date}</span>
+                    </div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">${topPicks}</div>
+                </div>`;
+            }).join('');
+        }
+
+        async function filterScans(filter) {
+            wlCurrentFilter = filter;
+            // Update filter button styles
+            document.querySelectorAll('.wl-scan-filter').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+                btn.style.background = btn.dataset.filter === filter ? 'var(--blue)' : '';
+                btn.style.color = btn.dataset.filter === filter ? 'white' : '';
+            });
+
+            const container = document.getElementById('wl-scans-container');
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Loading...</div>';
+
+            try {
+                let url = `${API_BASE}/scans`;
+                if (filter === 'starred') url += '?starred_only=true';
+                else if (filter === 'archived') url += '?archived=true';
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.ok) {
+                    renderScansTable(data.scans || []);
+                }
+            } catch (e) {
+                container.innerHTML = '<div style="color: var(--red); padding: 20px;">Failed to load scans</div>';
+            }
+        }
+
+        function renderScansTable(scans) {
+            const container = document.getElementById('wl-scans-container');
+            if (!scans || scans.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">No scans found.</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem;">
+                            <th style="text-align: left; padding: 10px 8px;">ID</th>
+                            <th style="text-align: left; padding: 10px 8px;">Date</th>
+                            <th style="text-align: left; padding: 10px 8px;">Top Picks</th>
+                            <th style="text-align: left; padding: 10px 8px;">Themes</th>
+                            <th style="text-align: center; padding: 10px 8px;">Stocks</th>
+                            <th style="text-align: center; padding: 10px 8px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${scans.map(scan => {
+                            const date = scan.date ? new Date(scan.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+                            const topPicks = scan.top_picks ? scan.top_picks.slice(0, 4).join(', ') : '';
+                            const themes = scan.themes ? scan.themes.slice(0, 2).join(', ') : '';
+                            const starred = scan.starred;
+                            const archived = scan.archived;
+
+                            return `<tr style="border-bottom: 1px solid var(--border-subtle);">
+                                <td style="padding: 12px 8px;">
+                                    <span style="font-weight: 600;">#${scan.scan_id}</span>
+                                    ${starred ? '<span style="color: var(--yellow); margin-left: 4px;">⭐</span>' : ''}
+                                    ${archived ? '<span style="color: var(--text-muted); margin-left: 4px;">📁</span>' : ''}
+                                </td>
+                                <td style="padding: 12px 8px; color: var(--text-secondary); font-size: 0.8rem;">${date}</td>
+                                <td style="padding: 12px 8px; font-size: 0.8rem;">${topPicks}</td>
+                                <td style="padding: 12px 8px; font-size: 0.75rem; color: var(--text-muted);">${themes}</td>
+                                <td style="padding: 12px 8px; text-align: center; color: var(--text-muted);">${scan.total_stocks || 0}</td>
+                                <td style="padding: 12px 8px; text-align: center;">
+                                    ${!starred ? `<button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.7rem;" onclick="starScan(${scan.scan_id})">⭐</button>` : `<button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.7rem;" onclick="unstarScan(${scan.scan_id})">★</button>`}
+                                    <button class="btn btn-ghost" style="padding: 4px 8px; font-size: 0.7rem; margin-left: 4px;" onclick="viewScanDetail(${scan.scan_id})">👁</button>
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function loadStockHistory() {
+            const ticker = document.getElementById('wl-history-ticker').value.trim().toUpperCase();
+            if (!ticker) return;
+            loadStockHistoryFor(ticker);
+        }
+
+        async function loadStockHistoryFor(ticker) {
+            const container = document.getElementById('wl-history-container');
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted);">Loading...</div>';
+            document.getElementById('wl-history-ticker').value = ticker;
+
+            try {
+                const res = await fetch(`${API_BASE}/history/${ticker}`);
+                const data = await res.json();
+
+                if (data.ok && data.history && data.history.length > 0) {
+                    container.innerHTML = `
+                        <div style="font-weight: 600; margin-bottom: 12px;">${ticker} appeared in ${data.count} scans</div>
+                        ${data.history.slice(0, 8).map(h => {
+                            const date = h.date ? new Date(h.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+                            const score = h.stock_data?.story_score || h.stock_data?.composite_score || 0;
+                            const price = h.stock_data?.price;
+                            return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
+                                <div>
+                                    ${h.starred ? '<span style="color: var(--yellow);">⭐</span>' : ''}
+                                    <span style="font-weight: 500;">#${h.scan_id}</span>
+                                    <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;">${date}</span>
+                                </div>
+                                <div style="font-size: 0.8rem;">
+                                    ${score ? `<span style="color: var(--blue);">Score: ${score.toFixed(0)}</span>` : ''}
+                                    ${price ? `<span style="color: var(--text-muted); margin-left: 8px;">$${price.toFixed(2)}</span>` : ''}
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    `;
+                } else {
+                    container.innerHTML = `<div style="color: var(--text-muted); text-align: center;">${ticker} not found in any scans</div>`;
+                }
+            } catch (e) {
+                container.innerHTML = '<div style="color: var(--red);">Failed to load history</div>';
+            }
+        }
+
+        async function addToWatchlistFromDashboard() {
+            const ticker = document.getElementById('wl-add-ticker').value.trim().toUpperCase();
+            const notes = document.getElementById('wl-add-notes').value.trim();
+            if (!ticker) return alert('Enter a ticker symbol');
+
+            try {
+                const res = await fetch(`${API_BASE}/watchlist/add?ticker=${ticker}&notes=${encodeURIComponent(notes)}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    document.getElementById('wl-add-ticker').value = '';
+                    document.getElementById('wl-add-notes').value = '';
+                    refreshWatchlistTab();
+                } else {
+                    alert('Failed to add: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to add to watchlist');
+            }
+        }
+
+        async function starScan(scanId) {
+            try {
+                const res = await fetch(`${API_BASE}/scans/${scanId}/star`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    refreshWatchlistTab();
+                }
+            } catch (e) {
+                alert('Failed to star scan');
+            }
+        }
+
+        async function unstarScan(scanId) {
+            try {
+                const res = await fetch(`${API_BASE}/scans/${scanId}/unstar`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    refreshWatchlistTab();
+                }
+            } catch (e) {
+                alert('Failed to unstar scan');
+            }
+        }
+
+        async function starLatestScan() {
+            try {
+                const scansRes = await fetch(`${API_BASE}/scans?limit=1`);
+                const scansData = await scansRes.json();
+                if (scansData.ok && scansData.scans && scansData.scans.length > 0) {
+                    const latestId = scansData.scans[0].scan_id;
+                    await starScan(latestId);
+                } else {
+                    alert('No scans available to star');
+                }
+            } catch (e) {
+                alert('Failed to star latest scan');
+            }
+        }
+
+        async function cleanupOldScans() {
+            if (!confirm('Archive all unstarred scans older than 7 days?')) return;
+            try {
+                // This would call a cleanup endpoint - for now just refresh
+                alert('Use /cleanup command in Telegram to archive old scans');
+            } catch (e) {
+                alert('Cleanup failed');
+            }
+        }
+
+        function exportWatchlist() {
+            // Export watchlist as CSV
+            const table = document.querySelector('#wl-table-container table');
+            if (!table) return alert('No watchlist data to export');
+
+            let csv = 'Ticker,Entry,Current,P&L,Source,Notes\\n';
+            table.querySelectorAll('tbody tr').forEach(row => {
+                const cells = row.querySelectorAll('td');
+                const ticker = cells[0]?.textContent?.trim().split('\\n')[0] || '';
+                const entry = cells[1]?.textContent?.trim() || '';
+                const current = cells[2]?.textContent?.trim() || '';
+                const pnl = cells[3]?.textContent?.trim() || '';
+                const source = cells[4]?.textContent?.trim() || '';
+                const notes = cells[5]?.textContent?.trim() || '';
+                csv += `${ticker},${entry},${current},${pnl},${source},"${notes}"\\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'watchlist_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.click();
+        }
+
+        function viewScanDetail(scanId) {
+            // Show scan detail in modal
+            showModal('Scan #' + scanId, '<div style="text-align: center; padding: 20px;">Loading scan details...</div>');
+            fetch(`${API_BASE}/scans/${scanId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.ok) {
+                        const scan = data.scan;
+                        const results = data.data?.results || [];
+                        const date = scan.date ? new Date(scan.date).toLocaleString() : '';
+
+                        let html = `
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 0.9rem; color: var(--text-muted);">${date}</div>
+                                <div style="margin-top: 8px;">
+                                    ${scan.starred ? '<span style="background: var(--yellow-bg); color: var(--yellow); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">⭐ Starred</span>' : ''}
+                                    ${scan.archived ? '<span style="background: var(--bg-hover); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 8px;">📁 Archived</span>' : ''}
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">Top Picks</div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                    ${(scan.top_picks || []).map(t => `<span style="background: var(--blue-bg); color: var(--blue); padding: 4px 10px; border-radius: 4px; font-size: 0.8rem;">${t}</span>`).join('')}
+                                </div>
+                            </div>
+                            ${scan.themes && scan.themes.length > 0 ? `
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">Themes</div>
+                                <div style="color: var(--text-secondary); font-size: 0.85rem;">${scan.themes.join(', ')}</div>
+                            </div>` : ''}
+                            <div>
+                                <div style="font-weight: 600; margin-bottom: 8px;">Results (${results.length} stocks)</div>
+                                <div style="max-height: 300px; overflow-y: auto;">
+                                    ${results.slice(0, 20).map((r, i) => `
+                                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
+                                            <div>
+                                                <span style="color: var(--text-muted); font-size: 0.75rem;">${i + 1}.</span>
+                                                <span style="font-weight: 600; margin-left: 4px;">${r.ticker}</span>
+                                            </div>
+                                            <div style="font-size: 0.85rem;">
+                                                <span style="color: var(--blue);">Score: ${(r.story_score || r.composite_score || 0).toFixed(0)}</span>
+                                                ${r.price ? `<span style="color: var(--text-muted); margin-left: 12px;">$${r.price.toFixed(2)}</span>` : ''}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                        document.getElementById('modal-body').innerHTML = html;
+                    }
+                })
+                .catch(e => {
+                    document.getElementById('modal-body').innerHTML = '<div style="color: var(--red);">Failed to load scan details</div>';
+                });
+        }
+
+        // Load watchlist tab when switched to
+        document.addEventListener('DOMContentLoaded', () => {
+            const watchlistTab = document.querySelector('[data-tab="watchlist"]');
+            if (watchlistTab) {
+                watchlistTab.addEventListener('click', () => {
+                    setTimeout(refreshWatchlistTab, 100);
+                });
+            }
+        });
 
         function renderTradeAlerts(highRiskTrades) {
             const container = document.getElementById('trade-alerts-container');
