@@ -3770,7 +3770,7 @@
             const themeCardsContainer = document.getElementById('theme-cards');
             themeCardsContainer.innerHTML = themeNames.map(name => {
                 const theme = themes[name];
-                const tickerCount = theme.tickers ? theme.tickers.length : 0;
+                const tickerCount = theme.tickers ? theme.tickers.length : (theme.count || 0);
                 return `
                     <div class="card card-glass" style="cursor: pointer;" onclick="selectTheme('${name}')">
                         <div class="card-body">

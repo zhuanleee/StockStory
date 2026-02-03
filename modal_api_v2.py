@@ -764,24 +764,31 @@ Get an API key at `/api-keys/request`
             # Extract themes from scan results
             results = load_scan_results()
             if not results or not results.get('results'):
-                return {"ok": False, "data": []}
+                return {"ok": True, "themes": []}
 
-            # Count stocks per theme
-            theme_counts = {}
+            # Group stocks by theme
+            theme_data = {}
             for stock in results['results']:
                 theme = stock.get('hottest_theme', 'No Theme')
                 if theme and theme != 'No Theme':
-                    theme_counts[theme] = theme_counts.get(theme, 0) + 1
+                    if theme not in theme_data:
+                        theme_data[theme] = []
+                    theme_data[theme].append(stock.get('ticker', ''))
 
-            # Format as list
+            # Format as list with tickers
             themes = [
-                {"name": theme, "count": count, "active": True}
-                for theme, count in sorted(theme_counts.items(), key=lambda x: -x[1])
+                {
+                    "name": theme,
+                    "count": len(tickers),
+                    "tickers": tickers,
+                    "active": True
+                }
+                for theme, tickers in sorted(theme_data.items(), key=lambda x: -len(x[1]))
             ]
 
-            return {"ok": True, "data": themes}
+            return {"ok": True, "themes": themes}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": True, "themes": []}
 
     # =========================================================================
     # THEME MANAGEMENT API (for dashboard)

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 18:03 - `c59dd49`
+
+**Fix correlations endpoint to return flat pair format for dashboard**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:54 - `681efb7`
 
 **Fix tooltip clipping by using JS-based tooltips appended to body**
