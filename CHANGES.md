@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:46 - `1f90a23`
+
+**Change tooltips from underlined text to info icons**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:40 - `1e7431d`
 
 **Add tooltips to Options, Analytics, and SEC Intel tabs**

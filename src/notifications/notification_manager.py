@@ -121,13 +121,14 @@ class NotificationManager:
         return channels
 
     def _send_telegram(self, message: str, title: Optional[str], parse_mode: str) -> bool:
-        """Send Telegram notification to personal chat and group"""
+        """Send Telegram notification to personal chat and group topic"""
         try:
             import requests
 
             bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
             personal_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
             group_chat_id = os.environ.get('TELEGRAM_GROUP_CHAT_ID', '-1003774843100')
+            group_topic_id = int(os.environ.get('TELEGRAM_GROUP_TOPIC_ID', '46'))  # Bot Alerts topic
 
             # Format message with title
             full_message = message
@@ -141,30 +142,45 @@ class NotificationManager:
 
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
-            # Send to all configured chat IDs
-            chat_ids = [personal_chat_id, group_chat_id]
+            # Send to personal chat and group topic
             success = False
 
-            for chat_id in chat_ids:
-                if not chat_id:
-                    continue
-
+            # Send to personal chat (no topic)
+            if personal_chat_id:
                 payload = {
-                    "chat_id": chat_id,
+                    "chat_id": personal_chat_id,
                     "text": full_message,
                     "parse_mode": parse_mode,
                     "disable_web_page_preview": True
                 }
-
                 try:
                     response = requests.post(url, json=payload, timeout=10)
                     if response.status_code == 200:
-                        logger.info(f"Telegram notification sent to {chat_id}")
+                        logger.info(f"Telegram notification sent to personal chat")
                         success = True
                     else:
-                        logger.error(f"Telegram notification failed for {chat_id}: {response.status_code}")
+                        logger.error(f"Telegram notification failed for personal chat: {response.status_code}")
                 except Exception as e:
-                    logger.error(f"Telegram send error for {chat_id}: {e}")
+                    logger.error(f"Telegram send error for personal chat: {e}")
+
+            # Send to group topic
+            if group_chat_id:
+                payload = {
+                    "chat_id": group_chat_id,
+                    "text": full_message,
+                    "parse_mode": parse_mode,
+                    "disable_web_page_preview": True,
+                    "message_thread_id": group_topic_id  # Send to specific topic/tab
+                }
+                try:
+                    response = requests.post(url, json=payload, timeout=10)
+                    if response.status_code == 200:
+                        logger.info(f"Telegram notification sent to group topic {group_topic_id}")
+                        success = True
+                    else:
+                        logger.error(f"Telegram notification failed for group topic: {response.status_code} - {response.text}")
+                except Exception as e:
+                    logger.error(f"Telegram send error for group topic: {e}")
 
             return success
 

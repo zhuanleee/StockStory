@@ -319,6 +319,7 @@ def _run_daily_scan():
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         personal_chat_id = os.environ.get('TELEGRAM_CHAT_ID')
         group_chat_id = os.environ.get('TELEGRAM_GROUP_CHAT_ID', '-1003774843100')
+        group_topic_id = int(os.environ.get('TELEGRAM_GROUP_TOPIC_ID', '46'))  # Bot Alerts topic
 
         if bot_token:
             top_picks = df.head(10)
@@ -335,26 +336,40 @@ def _run_daily_scan():
 
             message += f"\n🔗 View: https://zhuanleee.github.io/StockStory"
 
-            # Send to both personal and group chats
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            chat_ids = [personal_chat_id, group_chat_id]
 
-            for chat_id in chat_ids:
-                if not chat_id:
-                    continue
+            # Send to personal chat
+            if personal_chat_id:
                 payload = {
-                    "chat_id": chat_id,
+                    "chat_id": personal_chat_id,
                     "text": message,
                     "parse_mode": "Markdown"
                 }
                 try:
                     response = requests.post(url, json=payload, timeout=10)
                     if response.status_code == 200:
-                        print(f"📱 Telegram sent to {chat_id}")
+                        print(f"📱 Telegram sent to personal chat")
                     else:
-                        print(f"⚠️  Telegram failed for {chat_id}: {response.status_code}")
+                        print(f"⚠️  Telegram failed for personal chat: {response.status_code}")
                 except Exception as e:
-                    print(f"⚠️  Telegram error for {chat_id}: {e}")
+                    print(f"⚠️  Telegram error for personal chat: {e}")
+
+            # Send to group topic
+            if group_chat_id:
+                payload = {
+                    "chat_id": group_chat_id,
+                    "text": message,
+                    "parse_mode": "Markdown",
+                    "message_thread_id": group_topic_id  # Send to specific topic/tab
+                }
+                try:
+                    response = requests.post(url, json=payload, timeout=10)
+                    if response.status_code == 200:
+                        print(f"📱 Telegram sent to group topic {group_topic_id}")
+                    else:
+                        print(f"⚠️  Telegram failed for group topic: {response.status_code}")
+                except Exception as e:
+                    print(f"⚠️  Telegram error for group topic: {e}")
         else:
             print("⚠️  Telegram not configured - skipping notification")
     except Exception as e:
