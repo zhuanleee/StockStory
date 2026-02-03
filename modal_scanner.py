@@ -2312,6 +2312,7 @@ def daily_correlation_analysis():
     timeout=3600,  # 1 hour max
     schedule=modal.Cron("0 14 * * 1-5"),  # Run Mon-Fri at 6:00 AM PST (14:00 UTC)
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def morning_mega_bundle():
     """
@@ -2424,6 +2425,7 @@ def morning_mega_bundle():
     timeout=3600,  # 1 hour max
     schedule=modal.Cron("0 21 * * 1-5"),  # Run Mon-Fri at 1:00 PM PST (21:00 UTC)
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def afternoon_analysis_bundle():
     """
@@ -2472,6 +2474,7 @@ def afternoon_analysis_bundle():
     timeout=3600,  # 1 hour max
     schedule=modal.Cron("0 2 * * 1"),  # Run Mondays at 2:00 AM UTC (Sunday 6 PM PST)
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def weekly_reports_bundle():
     """
@@ -2546,6 +2549,7 @@ def weekly_reports_bundle():
     timeout=1800,  # 30 minutes max
     schedule=modal.Cron("0 */6 * * *"),  # Run every 6 hours
     volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def monitoring_cycle_bundle():
     """
