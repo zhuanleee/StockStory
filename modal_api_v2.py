@@ -406,14 +406,21 @@ Get an API key at `/api-keys/request`
 
     # Helper to load scan results
     def load_scan_results():
+        try:
+            # Reload volume to get latest data
+            reload_volume()
+        except Exception:
+            pass  # Continue even if reload fails
+
         data_dir = Path(VOLUME_PATH)
         scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
         if scan_files:
             try:
                 with open(scan_files[0]) as f:
                     return json.load(f)
-            except:
-                pass
+            except Exception as e:
+                print(f"Error loading scan file {scan_files[0]}: {e}")
+                return None
         return None
 
     # =============================================================================
@@ -720,10 +727,13 @@ Get an API key at `/api-keys/request`
 
     @web_app.get("/scan", tags=["Scanning"])
     def scan():
-        results = load_scan_results()
-        if not results:
-            return {"ok": False, "status": "no_data", "message": "No scan results available", "results": []}
-        return results
+        try:
+            results = load_scan_results()
+            if not results:
+                return {"ok": False, "status": "no_data", "message": "No scan results available", "results": []}
+            return results
+        except Exception as e:
+            return {"ok": False, "status": "error", "message": str(e), "results": []}
 
     @web_app.post("/scan/trigger")
     def scan_trigger(mode: str = Query("quick")):

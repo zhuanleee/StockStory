@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 23:16 - `e1d0638`
+
+**Fix JSON serialization with robust NaN/numpy type handling**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 22:56 - `e19ab66`
 
 **Fix NaN values in JSON serialization for scan results**

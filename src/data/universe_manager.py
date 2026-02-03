@@ -522,7 +522,7 @@ class UniverseManager:
             return []
 
     def get_scan_universe(self, force_refresh: bool = False, use_polygon_full: bool = True,
-                          min_market_cap: float = 300_000_000) -> List[str]:
+                          min_market_cap: float = 300_000_000, apply_technical_filter: bool = True) -> List[str]:
         """
         Get the full scan universe for scanning.
 
@@ -533,6 +533,7 @@ class UniverseManager:
             force_refresh: Force refresh from source
             use_polygon_full: Use full Polygon universe vs indices only
             min_market_cap: Minimum market cap filter (default $300M)
+            apply_technical_filter: Apply SMA and volume filters (default True)
 
         Returns:
             List of ticker symbols
@@ -543,6 +544,8 @@ class UniverseManager:
                 polygon_tickers = self._fetch_polygon_full_universe(min_market_cap=min_market_cap)
                 if polygon_tickers and len(polygon_tickers) >= 100:
                     logger.info(f"Scan universe (Polygon): {len(polygon_tickers)} tickers (min mcap: ${min_market_cap/1e6:.0f}M)")
+                    if apply_technical_filter:
+                        return self._filter_by_technical_criteria(polygon_tickers)
                     return polygon_tickers
             except Exception as e:
                 logger.warning(f"Polygon full universe failed, falling back to indices: {e}")
@@ -555,7 +558,117 @@ class UniverseManager:
         combined = list(set(sp500 + nasdaq100))
         logger.info(f"Scan universe (indices): {len(combined)} tickers (SP500: {len(sp500)}, NASDAQ100: {len(nasdaq100)})")
 
+        if apply_technical_filter:
+            return self._filter_by_technical_criteria(combined)
         return combined
+
+    def _filter_by_technical_criteria(self, tickers: List[str], force_refresh: bool = False) -> List[str]:
+        """
+        Filter stocks by technical criteria:
+        - SMA(50) > SMA(150)
+        - SMA(50) > SMA(200)
+        - SMA(150) > SMA(200)
+        - Dollar Volume (Price * Vol 1M) > 900M USD
+        - Avg Volume 10D > 500K
+        - Avg Volume 30D > 500K
+        - Avg Volume 60D > 500K
+        - Avg Volume 90D > 500K
+
+        Args:
+            tickers: List of ticker symbols to filter
+            force_refresh: Force refresh even if cache is valid
+
+        Returns:
+            Filtered list of tickers meeting all criteria
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import yfinance as yf
+
+        # Check cache (valid for 24 hours)
+        cache_key = 'technical_filtered'
+        if not force_refresh and self._is_cache_valid(cache_key, 24):
+            cached = self.cache.get(cache_key, [])
+            if cached:
+                logger.info(f"Using cached technical filter results: {len(cached)} tickers")
+                return cached
+
+        logger.info(f"Applying technical filters to {len(tickers)} tickers...")
+
+        filtered = []
+
+        def check_technical_criteria(ticker: str) -> tuple:
+            """Check if ticker meets all technical criteria."""
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period="1y")
+
+                if hist.empty or len(hist) < 200:
+                    return ticker, False, "Insufficient data"
+
+                close = hist['Close']
+                volume = hist['Volume']
+
+                # Calculate SMAs
+                sma_50 = close.rolling(window=50).mean().iloc[-1]
+                sma_150 = close.rolling(window=150).mean().iloc[-1]
+                sma_200 = close.rolling(window=200).mean().iloc[-1]
+
+                # SMA criteria
+                if not (sma_50 > sma_150 > sma_200):
+                    return ticker, False, "SMA criteria not met"
+
+                # Current price for dollar volume
+                current_price = close.iloc[-1]
+
+                # Calculate average volumes
+                avg_vol_10d = volume.tail(10).mean()
+                avg_vol_30d = volume.tail(30).mean()
+                avg_vol_60d = volume.tail(60).mean()
+                avg_vol_90d = volume.tail(90).mean()
+
+                # Volume criteria (> 500K)
+                min_volume = 500_000
+                if avg_vol_10d < min_volume or avg_vol_30d < min_volume or \
+                   avg_vol_60d < min_volume or avg_vol_90d < min_volume:
+                    return ticker, False, "Volume criteria not met"
+
+                # Dollar volume (Price * Monthly Volume > 900M)
+                # Monthly volume = avg daily volume * ~21 trading days
+                monthly_volume = avg_vol_30d * 21
+                dollar_volume = current_price * monthly_volume
+
+                if dollar_volume < 900_000_000:  # 900M USD
+                    return ticker, False, "Dollar volume criteria not met"
+
+                return ticker, True, "Passed all criteria"
+
+            except Exception as e:
+                return ticker, False, f"Error: {str(e)}"
+
+        # Process in parallel with limited workers to avoid rate limiting
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(check_technical_criteria, t): t for t in tickers}
+
+            for future in as_completed(futures):
+                try:
+                    ticker, passed, reason = future.result()
+                    if passed:
+                        filtered.append(ticker)
+                    else:
+                        logger.debug(f"{ticker}: {reason}")
+                except Exception as e:
+                    logger.debug(f"Error checking {futures[future]}: {e}")
+
+        logger.info(f"Technical filter: {len(filtered)}/{len(tickers)} passed "
+                   f"(SMA 50>150>200, Vol>500K, DolVol>900M)")
+
+        # Cache the results
+        sorted_filtered = sorted(filtered)
+        self.cache[cache_key] = sorted_filtered
+        self.last_fetch[cache_key] = datetime.now()
+        self._save_cache()
+
+        return sorted_filtered
 
     def _fetch_polygon_full_universe(self, min_market_cap: float = 300_000_000) -> List[str]:
         """

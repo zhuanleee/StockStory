@@ -184,12 +184,13 @@ def _run_daily_scan():
     print(f"📅 Market is OPEN - {today.strftime('%A, %B %d, %Y')}")
     print()
 
-    # Get stock universe
+    # Get stock universe with technical filters
+    # Filters: Market Cap > 300M, SMA(50)>SMA(150)>SMA(200), Vol>500K, DolVol>900M
     try:
         from src.data.universe_manager import get_universe_manager
         um = get_universe_manager()
-        tickers = um.get_scan_universe(use_polygon_full=False, min_market_cap=300_000_000)
-        print(f"📊 Universe: {len(tickers)} stocks (S&P500 + NASDAQ 300M+)")
+        tickers = um.get_scan_universe(use_polygon_full=False, min_market_cap=300_000_000, apply_technical_filter=True)
+        print(f"📊 Universe: {len(tickers)} stocks (S&P500+NASDAQ, filtered by SMA/Volume)")
     except Exception as e:
         print(f"⚠️  Using fallback ticker list: {e}")
         # Fallback to quick scan list
@@ -2673,6 +2674,116 @@ def x_intelligence_crisis_monitor():
 # ============================================================================
 # Test Functions
 # ============================================================================
+
+@app.function(
+    image=image,
+    timeout=600,
+    volumes={VOLUME_PATH: volume},
+    secrets=[modal.Secret.from_name("Stock_Story")],
+)
+def test_50_stocks():
+    """Test scan with 50 stocks to verify JSON serialization and sorting."""
+    import pandas as pd
+    import sys
+    import time
+    sys.path.insert(0, '/root')
+
+    print("🧪 Testing scan with 50 stocks...")
+
+    # Get 50 test tickers
+    tickers = ['NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AMD', 'INTC', 'AVGO',
+               'ORCL', 'CRM', 'ADBE', 'NFLX', 'PYPL', 'UBER', 'SQ', 'SHOP', 'SNOW', 'PLTR',
+               'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'V', 'MA', 'AXP', 'BLK',
+               'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL',
+               'JNJ', 'PFE', 'UNH', 'MRK', 'ABBV', 'LLY', 'TMO', 'ABT', 'BMY', 'GILD']
+
+    start_time = time.time()
+    print(f"📊 Scanning {len(tickers)} stocks...")
+
+    # Scan in parallel
+    results = list(scan_stock_with_ai_brain.map(tickers))
+
+    successful = [r for r in results if r]
+    failed = [t for t, r in zip(tickers, results) if not r]
+
+    duration = time.time() - start_time
+    print(f"\n✅ Scanned {len(successful)}/{len(tickers)} stocks in {duration:.1f}s")
+
+    if not successful:
+        print("❌ No successful results!")
+        return
+
+    # Create sorted DataFrame
+    df = pd.DataFrame(successful)
+    if 'story_score' in df.columns:
+        df = df.sort_values('story_score', ascending=False)
+
+    # Clean data for JSON
+    def clean_for_json(obj):
+        if isinstance(obj, dict):
+            return {k: clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_for_json(v) for v in obj]
+        elif isinstance(obj, float):
+            if pd.isna(obj) or obj != obj:
+                return None
+            return obj
+        elif hasattr(obj, 'item'):
+            return obj.item()
+        elif pd.isna(obj):
+            return None
+        return obj
+
+    results_clean = clean_for_json(df.to_dict('records'))
+
+    # Save to volume
+    scan_data = {
+        "status": "success",
+        "timestamp": datetime.now().isoformat(),
+        "total": len(tickers),
+        "successful": len(successful),
+        "failed": len(failed),
+        "duration_seconds": duration,
+        "results": results_clean
+    }
+
+    json_path = Path(VOLUME_PATH) / 'scan_test_50.json'
+    with open(json_path, 'w') as f:
+        json.dump(scan_data, f, indent=2, default=str)
+
+    # Also save as latest for API to pick up
+    latest_path = Path(VOLUME_PATH) / f'scan_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+    with open(latest_path, 'w') as f:
+        json.dump(scan_data, f, indent=2, default=str)
+
+    volume.commit()
+    print(f"💾 Saved to: {latest_path.name}")
+
+    # Print top 10
+    print(f"\n📈 Top 10 by Score:")
+    for i, row in df.head(10).iterrows():
+        print(f"  {row.get('ticker', '?'):6s} - {row.get('story_score', 0):.1f}")
+
+    # Send Telegram
+    import os
+    import requests
+    bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+    if bot_token and chat_id:
+        msg = "🧪 *Test Scan Complete (50 stocks)*\n\n📈 *Top 10:*\n"
+        for i, row in df.head(10).iterrows():
+            msg += f"`{row.get('ticker', '?')}` - {row.get('story_score', 0):.1f}\n"
+
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"},
+            timeout=10
+        )
+        print("📱 Telegram sent!")
+
+    return scan_data
+
 
 @app.function(image=image)
 def test_single_stock():
