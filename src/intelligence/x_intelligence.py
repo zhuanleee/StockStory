@@ -104,6 +104,8 @@ class XIntelligence:
         """
         Call xAI Grok API with X search using the official xai_sdk.
 
+        Uses the same pattern as xai_x_intelligence_v2.py which works.
+
         Args:
             prompt: The prompt to send
             ticker: Optional ticker for focused search
@@ -119,79 +121,39 @@ class XIntelligence:
 
             client = Client(api_key=XAI_API_KEY)
 
+            # Use non-reasoning model for quick sentiment (faster)
+            # Same pattern as xai_x_intelligence_v2.py
+            try:
+                from src.ai.model_selector import get_sentiment_model
+                model = get_sentiment_model(quick=True)
+            except ImportError:
+                model = "grok-4-1-fast-non-reasoning"
+
             # Create chat with X search tool enabled
             chat = client.chat.create(
-                model="grok-3-fast",  # Fast model for quick responses
-                tools=[
-                    x_search(),  # Enable X search
-                ],
+                model=model,
+                tools=[x_search()],  # Enable X search for all of X
             )
 
             # Append user message
             chat.append(user(prompt))
 
-            # Get response (non-streaming)
-            response_text = ""
-            for chunk in chat.sample():
-                if hasattr(chunk, 'text'):
-                    response_text += chunk.text
-                elif isinstance(chunk, str):
-                    response_text += chunk
+            # Get response using sample() - same as working xai_x_intelligence_v2.py
+            response = chat.sample()
 
-            return response_text if response_text else None
+            # Extract content from response
+            if hasattr(response, 'content'):
+                return response.content
+            elif isinstance(response, str):
+                return response
+            else:
+                return str(response)
 
-        except ImportError:
-            logger.warning("xai_sdk not installed - falling back to REST API")
-            return self._call_xai_rest(prompt)
+        except ImportError as e:
+            logger.warning(f"xai_sdk not installed: {e}")
+            return None
         except Exception as e:
             logger.error(f"xAI SDK call failed: {e}")
-            return self._call_xai_rest(prompt)
-
-    def _call_xai_rest(self, prompt: str) -> Optional[str]:
-        """Fallback REST API call without X search."""
-        if not XAI_API_KEY:
-            return None
-
-        try:
-            import requests
-
-            headers = {
-                'Authorization': f'Bearer {XAI_API_KEY}',
-                'Content-Type': 'application/json'
-            }
-
-            payload = {
-                'messages': [
-                    {
-                        'role': 'system',
-                        'content': 'You are Grok. Analyze stock sentiment and provide JSON responses only.'
-                    },
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ],
-                'model': 'grok-3-fast',
-                'stream': False,
-                'temperature': 0
-            }
-
-            response = requests.post(
-                f"{XAI_BASE_URL}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                return data['choices'][0]['message'].get('content', '')
-            else:
-                logger.error(f"xAI REST API error: {response.status_code} - {response.text}")
-                return None
-
-        except Exception as e:
-            logger.error(f"xAI REST API call failed: {e}")
             return None
 
     def get_ticker_sentiment(self, ticker: str) -> XSentiment:

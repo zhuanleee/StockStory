@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 00:07 - `8f3fc8f`
+
+**Remove Reddit, update X Intelligence to use xai_sdk with x_search**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/core/async_scanner.py
+src/intelligence/x_intelligence.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 00:02 - `13f9ed4`
 
 **Add social buzz to scoring formula and integrate X Intelligence**
