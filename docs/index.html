@@ -1667,6 +1667,17 @@
                         </div>
                     </div>
 
+                    <!-- AI Command Center -->
+                    <div class="card sidebar-card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(139, 92, 246, 0.3);">
+                        <div class="card-header">
+                            <div class="card-title">🧠 AI Command Center</div>
+                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchAgenticStatus()">Refresh</button>
+                        </div>
+                        <div class="card-body" id="agentic-status-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading AI brain status...</div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -4552,6 +4563,345 @@
             } catch (e) {
                 console.error('AI Reasoning error:', e);
             }
+        }
+
+        // =============================================================================
+        // AGENTIC BRAIN - Hierarchical AI Intelligence System
+        // =============================================================================
+
+        async function fetchAgenticStatus() {
+            console.log('🧠 fetchAgenticStatus() called');
+            const container = document.getElementById('agentic-status-container');
+            if (!container) return;
+
+            container.innerHTML = '<div style="color: var(--text-muted);">🧠 Loading AI brain status...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/ai/agentic/status`);
+                const data = await res.json();
+                console.log('📦 Agentic status response:', data);
+
+                if (data.ok) {
+                    renderAgenticStatus(data);
+                } else {
+                    container.innerHTML = `<div style="color: var(--red);">Error: ${data.error || 'Failed to load'}</div>`;
+                }
+            } catch (e) {
+                console.error('Agentic status error:', e);
+                container.innerHTML = '<div style="color: var(--red);">Failed to connect to AI brain</div>';
+            }
+        }
+
+        function renderAgenticStatus(data) {
+            const container = document.getElementById('agentic-status-container');
+            if (!container) return;
+
+            const stance = data.market_stance || {};
+            const health = data.market_health || {};
+            const directors = data.directors || {};
+
+            let html = `
+                <!-- Market Stance -->
+                <div style="text-align: center; padding: 12px; background: var(--bg-hover); border-radius: 8px; margin-bottom: 12px;">
+                    <div style="font-size: 2rem;">${stance.emoji || '⚖️'}</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: ${stance.stance === 'OFFENSIVE' ? 'var(--green)' : stance.stance === 'DEFENSIVE' ? 'var(--red)' : 'var(--yellow)'};">${stance.stance || 'NEUTRAL'}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${stance.description || ''}</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">Confidence: ${stance.confidence || 0}%</div>
+                </div>
+
+                <!-- Directors Grid -->
+                <div style="font-size: 0.7rem; color: var(--primary); font-weight: 600; margin-bottom: 6px;">5 DIRECTORS (35 SPECIALISTS)</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+            `;
+
+            const directorOrder = ['theme_intelligence', 'trading_intelligence', 'learning_adaptation', 'realtime_intelligence', 'validation_feedback'];
+            const directorLabels = {
+                'theme_intelligence': 'Theme',
+                'trading_intelligence': 'Trading',
+                'learning_adaptation': 'Learning',
+                'realtime_intelligence': 'Realtime',
+                'validation_feedback': 'Validation'
+            };
+
+            for (const key of directorOrder) {
+                const d = directors[key] || {};
+                html += `
+                    <div style="padding: 6px; background: var(--bg-hover); border-radius: 4px; font-size: 0.75rem;">
+                        <span>${d.emoji || '📊'}</span>
+                        <span style="font-weight: 600;">${directorLabels[key]}</span>
+                        <span style="color: var(--text-muted);">(${d.specialists || 0})</span>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+
+            // Emerging Themes
+            if (data.emerging_themes && data.emerging_themes.length > 0) {
+                html += `<div style="font-size: 0.7rem; color: var(--green); font-weight: 600; margin-bottom: 4px;">🔥 HOT THEMES</div>`;
+                html += `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">`;
+                for (const t of data.emerging_themes.slice(0, 3)) {
+                    html += `<span style="padding: 2px 6px; background: rgba(34, 197, 94, 0.2); border-radius: 4px; font-size: 0.7rem;">${t.name}</span>`;
+                }
+                html += `</div>`;
+            }
+
+            // Fading Themes
+            if (data.fading_themes && data.fading_themes.length > 0) {
+                html += `<div style="font-size: 0.7rem; color: var(--red); font-weight: 600; margin-bottom: 4px;">📉 FADING</div>`;
+                html += `<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">`;
+                for (const t of data.fading_themes.slice(0, 3)) {
+                    html += `<span style="padding: 2px 6px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 0.7rem;">${t.name}</span>`;
+                }
+                html += `</div>`;
+            }
+
+            // Alerts
+            if (data.alerts && data.alerts.length > 0) {
+                html += `<div style="font-size: 0.7rem; color: var(--yellow); font-weight: 600; margin-bottom: 4px;">⚠️ ALERTS</div>`;
+                for (const alert of data.alerts.slice(0, 2)) {
+                    const msg = alert.message || alert;
+                    html += `<div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px;">• ${typeof msg === 'string' ? msg.substring(0, 50) : 'Alert'}...</div>`;
+                }
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function fetchAgenticPicks() {
+            console.log('🧠 fetchAgenticPicks() called');
+            try {
+                const res = await fetch(`${API_BASE}/ai/agentic/picks`);
+                const data = await res.json();
+                console.log('📦 Agentic picks response:', data);
+
+                if (data.ok && data.picks) {
+                    renderAgenticPicks(data.picks);
+                }
+            } catch (e) {
+                console.error('Agentic picks error:', e);
+            }
+        }
+
+        function renderAgenticPicks(picks) {
+            const container = document.getElementById('conviction-picks-container');
+            if (!container || !picks || picks.length === 0) return;
+
+            let html = '';
+            for (const pick of picks) {
+                const scores = pick.director_scores || {};
+                const avgScore = ((scores.theme || 0) + (scores.trading || 0) + (scores.learning || 0) + (scores.realtime || 0) + (scores.validation || 0)) / 5;
+
+                const decisionColor = pick.decision === 'strong_buy' || pick.decision === 'buy' ? 'var(--green)' :
+                                      pick.decision === 'sell' || pick.decision === 'strong_sell' ? 'var(--red)' : 'var(--yellow)';
+
+                html += `
+                    <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px; margin-bottom: 10px; cursor: pointer;" onclick="showAgenticDeepDive('${pick.ticker}')">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <div>
+                                <span style="font-weight: 700; font-size: 1.1rem; color: var(--primary);">${pick.ticker}</span>
+                                ${pick.theme ? `<span style="margin-left: 8px; padding: 2px 6px; background: rgba(99, 102, 241, 0.2); border-radius: 4px; font-size: 0.7rem;">${pick.theme}</span>` : ''}
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 600; color: ${decisionColor}; text-transform: uppercase; font-size: 0.8rem;">${(pick.decision || 'hold').replace('_', ' ')}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">${pick.confidence || 0}% conf</div>
+                            </div>
+                        </div>
+
+                        <!-- Director Scores Bar -->
+                        <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                            <div style="flex: 1; height: 4px; background: rgba(139, 92, 246, ${(scores.theme || 0) / 10}); border-radius: 2px;" title="Theme: ${scores.theme || 0}"></div>
+                            <div style="flex: 1; height: 4px; background: rgba(59, 130, 246, ${(scores.trading || 0) / 10}); border-radius: 2px;" title="Trading: ${scores.trading || 0}"></div>
+                            <div style="flex: 1; height: 4px; background: rgba(16, 185, 129, ${(scores.learning || 0) / 10}); border-radius: 2px;" title="Learning: ${scores.learning || 0}"></div>
+                            <div style="flex: 1; height: 4px; background: rgba(245, 158, 11, ${(scores.realtime || 0) / 10}); border-radius: 2px;" title="Realtime: ${scores.realtime || 0}"></div>
+                            <div style="flex: 1; height: 4px; background: rgba(34, 197, 94, ${(scores.validation || 0) / 10}); border-radius: 2px;" title="Validation: ${scores.validation || 0}"></div>
+                        </div>
+
+                        <!-- Trade Plan -->
+                        ${pick.trade_plan && pick.trade_plan.entry ? `
+                        <div style="display: flex; gap: 12px; font-size: 0.75rem; color: var(--text-muted);">
+                            <span>Entry: $${pick.trade_plan.entry?.toFixed(2) || 'N/A'}</span>
+                            <span style="color: var(--red);">Stop: $${pick.trade_plan.stop?.toFixed(2) || 'N/A'}</span>
+                            ${pick.trade_plan.targets && pick.trade_plan.targets[0] ? `<span style="color: var(--green);">Target: $${pick.trade_plan.targets[0]?.toFixed(2)}</span>` : ''}
+                        </div>
+                        ` : ''}
+
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;">${pick.reasoning || ''}</div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function closeAgenticModal() {
+            const modal = document.getElementById('agentic-deep-dive-modal');
+            if (modal) modal.remove();
+        }
+
+        async function showAgenticDeepDive(ticker) {
+            console.log('🧠 showAgenticDeepDive() called for', ticker);
+
+            // Show loading modal
+            let loadingHtml = `
+                <div id="agentic-deep-dive-modal">
+                    <div onclick="closeAgenticModal()" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999;"></div>
+                    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 16px; padding: 24px; max-width: 600px; width: 95%; max-height: 85vh; overflow-y: auto; z-index: 10000; box-shadow: 0 25px 80px rgba(139, 92, 246, 0.3);">
+                        <div style="text-align: center; padding: 40px;">
+                            <div style="font-size: 2rem; margin-bottom: 12px;">🧠</div>
+                            <div style="font-size: 1.2rem; font-weight: 600;">${ticker}</div>
+                            <div style="color: var(--text-muted); margin-top: 8px;">Analyzing with 35 AI specialists...</div>
+                            <div style="margin-top: 16px; display: flex; justify-content: center; gap: 4px;">
+                                <div style="width: 8px; height: 8px; background: var(--primary); border-radius: 50%; animation: pulse 1s infinite;"></div>
+                                <div style="width: 8px; height: 8px; background: var(--primary); border-radius: 50%; animation: pulse 1s infinite 0.2s;"></div>
+                                <div style="width: 8px; height: 8px; background: var(--primary); border-radius: 50%; animation: pulse 1s infinite 0.4s;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            closeAgenticModal();
+            document.body.insertAdjacentHTML('beforeend', loadingHtml);
+
+            try {
+                const res = await fetch(`${API_BASE}/ai/agentic/${ticker}`);
+                const data = await res.json();
+                console.log('📦 Agentic deep dive response:', data);
+
+                if (data.ok) {
+                    renderAgenticDeepDive(data);
+                } else {
+                    closeAgenticModal();
+                    alert(`Analysis failed: ${data.error || 'Unknown error'}`);
+                }
+            } catch (e) {
+                console.error('Agentic deep dive error:', e);
+                closeAgenticModal();
+                alert('Failed to analyze stock');
+            }
+        }
+
+        function renderAgenticDeepDive(data) {
+            const decision = data.decision || {};
+            const trade = data.trade_plan || {};
+            const scores = data.director_scores || {};
+            const analysis = data.analysis || {};
+            const scan = data.scan_data || {};
+
+            const decisionColor = decision.action === 'strong_buy' || decision.action === 'buy' ? 'var(--green)' :
+                                  decision.action === 'sell' || decision.action === 'strong_sell' ? 'var(--red)' : 'var(--yellow)';
+
+            let html = `
+                <div id="agentic-deep-dive-modal">
+                    <div onclick="closeAgenticModal()" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999;"></div>
+                    <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 16px; padding: 24px; max-width: 600px; width: 95%; max-height: 85vh; overflow-y: auto; z-index: 10000; box-shadow: 0 25px 80px rgba(139, 92, 246, 0.3);">
+
+                        <!-- Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <span style="font-size: 1.75rem; font-weight: 700;">${data.ticker}</span>
+                                    <span style="padding: 4px 10px; background: ${decisionColor}20; color: ${decisionColor}; border-radius: 6px; font-weight: 600; text-transform: uppercase;">${(decision.action || 'hold').replace('_', ' ')}</span>
+                                </div>
+                                <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">${data.company || ''}</div>
+                                <div style="color: var(--text-muted); font-size: 0.75rem;">${data.sector || ''} • ${data.industry || ''}</div>
+                            </div>
+                            <button onclick="closeAgenticModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.5rem; padding: 0;">&times;</button>
+                        </div>
+
+                        <!-- Decision Summary -->
+                        <div style="padding: 16px; background: linear-gradient(135deg, var(--bg-hover) 0%, ${decisionColor}10 100%); border-radius: 12px; margin-bottom: 20px; border-left: 4px solid ${decisionColor};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <div>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Confidence</div>
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: ${decisionColor};">${decision.confidence?.toFixed(0) || 0}%</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Position Size</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;">${decision.position_size || 'None'}</div>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.9rem; color: var(--text);">${decision.reasoning || 'No reasoning provided'}</div>
+                        </div>
+
+                        <!-- Director Scores -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="font-size: 0.8rem; color: var(--primary); font-weight: 600; margin-bottom: 10px;">🧠 DIRECTOR ASSESSMENTS</div>
+                            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+                                <div style="text-align: center; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
+                                    <div style="font-size: 1.25rem; font-weight: 700; color: #8b5cf6;">${scores.theme || 0}</div>
+                                    <div style="font-size: 0.65rem; color: var(--text-muted);">Theme</div>
+                                </div>
+                                <div style="text-align: center; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
+                                    <div style="font-size: 1.25rem; font-weight: 700; color: #3b82f6;">${scores.trading || 0}</div>
+                                    <div style="font-size: 0.65rem; color: var(--text-muted);">Trading</div>
+                                </div>
+                                <div style="text-align: center; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
+                                    <div style="font-size: 1.25rem; font-weight: 700; color: #10b981;">${scores.learning || 0}</div>
+                                    <div style="font-size: 0.65rem; color: var(--text-muted);">Learning</div>
+                                </div>
+                                <div style="text-align: center; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
+                                    <div style="font-size: 1.25rem; font-weight: 700; color: #f59e0b;">${scores.realtime || 0}</div>
+                                    <div style="font-size: 0.65rem; color: var(--text-muted);">Realtime</div>
+                                </div>
+                                <div style="text-align: center; padding: 10px; background: var(--bg-hover); border-radius: 8px;">
+                                    <div style="font-size: 1.25rem; font-weight: 700; color: #22c55e;">${scores.validation || 0}</div>
+                                    <div style="font-size: 0.65rem; color: var(--text-muted);">Validation</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trade Plan -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="font-size: 0.8rem; color: var(--primary); font-weight: 600; margin-bottom: 10px;">📊 TRADE PLAN</div>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                                <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Entry</div>
+                                    <div style="font-size: 1rem; font-weight: 600;">$${trade.entry_price?.toFixed(2) || 'N/A'}</div>
+                                </div>
+                                <div style="padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.65rem; color: var(--red); text-transform: uppercase;">Stop Loss</div>
+                                    <div style="font-size: 1rem; font-weight: 600; color: var(--red);">$${trade.stop_loss?.toFixed(2) || 'N/A'}</div>
+                                </div>
+                                <div style="padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.65rem; color: var(--green); text-transform: uppercase;">Target 1</div>
+                                    <div style="font-size: 1rem; font-weight: 600; color: var(--green);">$${trade.targets && trade.targets[0] ? trade.targets[0].toFixed(2) : 'N/A'}</div>
+                                </div>
+                                <div style="padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.65rem; color: var(--green); text-transform: uppercase;">R:R</div>
+                                    <div style="font-size: 1rem; font-weight: 600; color: var(--green);">${trade.risk_reward?.toFixed(1) || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Strengths & Risks -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                            <div>
+                                <div style="font-size: 0.8rem; color: var(--green); font-weight: 600; margin-bottom: 8px;">💪 KEY STRENGTHS</div>
+                                <ul style="margin: 0; padding-left: 16px; font-size: 0.8rem; color: var(--text);">
+                                    ${(analysis.key_strengths || ['None identified']).map(s => `<li style="margin-bottom: 4px;">${s}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.8rem; color: var(--red); font-weight: 600; margin-bottom: 8px;">⚠️ RISKS</div>
+                                <ul style="margin: 0; padding-left: 16px; font-size: 0.8rem; color: var(--text);">
+                                    ${(analysis.risks || ['None identified']).map(r => `<li style="margin-bottom: 4px;">${r}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Context -->
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px; font-size: 0.8rem;">
+                            <div style="color: var(--text-muted); margin-bottom: 4px;"><strong>Market Context:</strong> ${analysis.market_context || 'N/A'}</div>
+                            <div style="color: var(--text-muted);"><strong>Sector Context:</strong> ${analysis.sector_context || 'N/A'}</div>
+                        </div>
+
+                    </div>
+                </div>
+            `;
+
+            closeAgenticModal();
+            document.body.insertAdjacentHTML('beforeend', html);
         }
 
         // Intelligence data is now loaded as part of Dashboard tab
@@ -7690,6 +8040,8 @@
             Promise.all([
                 fetchAIIntelligence(),
                 fetchUnusualOptions(),
+                fetchAgenticStatus(),
+                fetchAgenticPicks(),
             ]).catch(e => console.warn('Background AI fetch error:', e));
         }
 
@@ -7716,7 +8068,7 @@
         async function loadTabDataForce(tabId) {
             switch(tabId) {
                 case 'dashboard':
-                    await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence(), fetchConvictionAlerts(), fetchThemes(), fetchUnusualOptions()]);
+                    await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence(), fetchConvictionAlerts(), fetchThemes(), fetchUnusualOptions(), fetchAgenticStatus(), fetchAgenticPicks()]);
                     break;
                 case 'scanner':
                     await fetchScan();

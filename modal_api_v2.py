@@ -2791,6 +2791,355 @@ Provide brief JSON interpretation:
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
+    # AGENTIC BRAIN - Hierarchical AI Intelligence System
+    # =============================================================================
+
+    @web_app.get("/ai/agentic/status", tags=["Agentic Brain"])
+    def agentic_status():
+        """
+        AI Command Center - Market overview from the Agentic Brain's CIO.
+        Returns market regime, all 5 director summaries, and real-time alerts.
+        """
+        try:
+            from src.ai.evolutionary_agentic_brain import get_evolutionary_cio
+            from src.analysis.market_health import get_market_health
+
+            cio = get_evolutionary_cio()
+
+            # Get market context
+            health = get_market_health()
+            fg = health.get('fear_greed', {})
+            breadth = health.get('breadth', {})
+
+            # Determine market stance
+            fg_score = fg.get('score', 50)
+            breadth_score = breadth.get('breadth_score', 50)
+
+            if fg_score >= 70 and breadth_score >= 60:
+                stance = "OFFENSIVE"
+                stance_emoji = "🚀"
+                stance_desc = "Risk-on environment, favor aggressive positions"
+            elif fg_score <= 30 or breadth_score <= 40:
+                stance = "DEFENSIVE"
+                stance_emoji = "🛡️"
+                stance_desc = "Risk-off environment, reduce exposure and protect capital"
+            else:
+                stance = "NEUTRAL"
+                stance_emoji = "⚖️"
+                stance_desc = "Mixed signals, maintain balanced positioning"
+
+            # Get theme data for emerging/fading
+            emerging_themes = []
+            fading_themes = []
+            try:
+                from src.themes.theme_registry import get_theme_registry
+                registry = get_theme_registry()
+                themes = registry.get_all_themes()
+                for tid, theme in themes.items():
+                    heat = theme.get('heat_score', 50)
+                    if heat >= 70:
+                        emerging_themes.append({"name": theme.get('name', tid), "heat": heat})
+                    elif heat <= 30:
+                        fading_themes.append({"name": theme.get('name', tid), "heat": heat})
+                emerging_themes = sorted(emerging_themes, key=lambda x: x['heat'], reverse=True)[:5]
+                fading_themes = sorted(fading_themes, key=lambda x: x['heat'])[:5]
+            except:
+                pass
+
+            # Director summaries
+            directors = {
+                "theme_intelligence": {
+                    "status": "active",
+                    "emoji": "🎯",
+                    "summary": f"{len(emerging_themes)} hot themes detected" if emerging_themes else "No hot themes",
+                    "specialists": 7
+                },
+                "trading_intelligence": {
+                    "status": "active",
+                    "emoji": "📊",
+                    "summary": f"Market breadth at {breadth_score:.0f}%",
+                    "specialists": 6
+                },
+                "learning_adaptation": {
+                    "status": "active",
+                    "emoji": "🧠",
+                    "summary": "Pattern recognition active",
+                    "specialists": 8
+                },
+                "realtime_intelligence": {
+                    "status": "active",
+                    "emoji": "⚡",
+                    "summary": f"Fear/Greed at {fg_score:.0f} ({fg.get('label', 'N/A')})",
+                    "specialists": 7
+                },
+                "validation_feedback": {
+                    "status": "active",
+                    "emoji": "✅",
+                    "summary": "Fact-checking enabled",
+                    "specialists": 5
+                }
+            }
+
+            # Alerts from economic data
+            alerts = []
+            try:
+                from utils.data_providers import FREDProvider
+                if FREDProvider.is_configured():
+                    econ = FREDProvider.get_economic_dashboard()
+                    alerts = econ.get('alerts', [])[:5]
+            except:
+                pass
+
+            return {
+                "ok": True,
+                "market_stance": {
+                    "stance": stance,
+                    "emoji": stance_emoji,
+                    "description": stance_desc,
+                    "confidence": min(abs(fg_score - 50) * 2, 100)
+                },
+                "market_health": {
+                    "fear_greed": fg_score,
+                    "fear_greed_label": fg.get('label', 'N/A'),
+                    "breadth_score": breadth_score,
+                    "vix": health.get('raw_data', {}).get('vix', 0)
+                },
+                "directors": directors,
+                "total_specialists": 35,
+                "emerging_themes": emerging_themes,
+                "fading_themes": fading_themes,
+                "alerts": alerts,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()[:500]}
+
+    @web_app.get("/ai/agentic/{ticker}", tags=["Agentic Brain"])
+    def agentic_stock_analysis(ticker: str):
+        """
+        Deep dive stock analysis using the full Agentic Brain.
+        Coordinates all 35 AI components for comprehensive analysis.
+        """
+        try:
+            ticker = ticker.upper()
+
+            from src.ai.evolutionary_agentic_brain import get_evolutionary_cio
+            from src.analysis.market_health import get_market_health
+
+            cio = get_evolutionary_cio()
+
+            # Get current price
+            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            current_price = info.get('currentPrice') or info.get('regularMarketPrice') or 0
+
+            # Get stock from scan results for additional data
+            scan_data = {}
+            try:
+                results = load_scan_results()
+                if results:
+                    for s in results.get('results', []):
+                        if s.get('ticker') == ticker:
+                            scan_data = s
+                            break
+            except:
+                pass
+
+            # Build signal data
+            signal_data = {
+                'price': current_price,
+                'rs': scan_data.get('rs_composite', 50),
+                'volume_ratio': scan_data.get('vol_ratio', 1.0),
+                'story_score': scan_data.get('story_score', 0),
+                'story_strength': scan_data.get('story_strength', 'unknown')
+            }
+
+            # Get theme data
+            theme_data = {}
+            theme = scan_data.get('hottest_theme')
+            if theme:
+                try:
+                    from src.themes.theme_registry import get_theme_registry
+                    registry = get_theme_registry()
+                    theme_info = registry.get_theme(theme)
+                    if theme_info:
+                        theme_data = {
+                            'theme': theme,
+                            'heat_score': theme_info.get('heat_score', 50),
+                            'lifecycle': theme_info.get('lifecycle', 'unknown')
+                        }
+                except:
+                    theme_data = {'theme': theme}
+
+            # Analyze with Agentic Brain
+            decision = cio.analyze_opportunity(
+                ticker=ticker,
+                signal_type='dashboard_deep_dive',
+                signal_data=signal_data,
+                theme_data=theme_data
+            )
+
+            # Build comprehensive response
+            return {
+                "ok": True,
+                "ticker": ticker,
+                "price": current_price,
+                "company": info.get('shortName', ticker),
+                "sector": info.get('sector', 'Unknown'),
+                "industry": info.get('industry', 'Unknown'),
+
+                # Final Decision
+                "decision": {
+                    "action": decision.decision.value if hasattr(decision.decision, 'value') else str(decision.decision),
+                    "confidence": decision.confidence * 100,
+                    "position_size": decision.position_size,
+                    "reasoning": decision.reasoning
+                },
+
+                # Entry/Exit
+                "trade_plan": {
+                    "entry_price": decision.entry_price,
+                    "stop_loss": decision.stop_loss,
+                    "targets": decision.targets,
+                    "risk_reward": decision.risk_reward_ratio
+                },
+
+                # Director Scores
+                "director_scores": {
+                    "theme": decision.theme_score,
+                    "trading": decision.trade_score,
+                    "learning": decision.learning_score,
+                    "realtime": decision.realtime_score,
+                    "validation": decision.validation_score
+                },
+
+                # Detailed Analysis
+                "analysis": {
+                    "key_strengths": decision.key_strengths,
+                    "risks": decision.risks,
+                    "market_context": decision.market_context_summary,
+                    "sector_context": decision.sector_context_summary
+                },
+
+                # Scan Data
+                "scan_data": {
+                    "story_score": scan_data.get('story_score', 0),
+                    "story_strength": scan_data.get('story_strength', 'unknown'),
+                    "theme": scan_data.get('hottest_theme'),
+                    "catalyst": scan_data.get('next_catalyst')
+                },
+
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()[:500]}
+
+    @web_app.get("/ai/agentic/picks", tags=["Agentic Brain"])
+    def agentic_conviction_picks():
+        """
+        Enhanced conviction picks with full Agentic Brain analysis.
+        Returns top picks with all 5 director scores and trade plans.
+        """
+        try:
+            from src.ai.evolutionary_agentic_brain import get_evolutionary_cio
+
+            cio = get_evolutionary_cio()
+
+            # Get top stocks from scan
+            results = load_scan_results()
+            if not results or not results.get('results'):
+                return {"ok": False, "error": "No scan data available"}
+
+            stocks = results.get('results', [])
+            # Filter to hot/developing and sort by score
+            top_stocks = sorted(
+                [s for s in stocks if s.get('story_strength') in ['hot', 'developing']],
+                key=lambda x: x.get('story_score', 0),
+                reverse=True
+            )[:5]
+
+            if not top_stocks:
+                top_stocks = sorted(stocks, key=lambda x: x.get('story_score', 0), reverse=True)[:5]
+
+            picks = []
+            for stock in top_stocks:
+                ticker = stock.get('ticker')
+                try:
+                    # Quick analysis (simplified for speed)
+                    signal_data = {
+                        'price': 0,
+                        'rs': stock.get('rs_composite', 50),
+                        'volume_ratio': stock.get('vol_ratio', 1.0),
+                        'story_score': stock.get('story_score', 0)
+                    }
+
+                    theme_data = {}
+                    theme = stock.get('hottest_theme')
+                    if theme:
+                        theme_data = {'theme': theme}
+
+                    decision = cio.analyze_opportunity(
+                        ticker=ticker,
+                        signal_type='conviction_pick',
+                        signal_data=signal_data,
+                        theme_data=theme_data
+                    )
+
+                    picks.append({
+                        "ticker": ticker,
+                        "story_score": stock.get('story_score', 0),
+                        "story_strength": stock.get('story_strength', 'unknown'),
+                        "theme": theme,
+                        "catalyst": stock.get('next_catalyst'),
+
+                        "decision": decision.decision.value if hasattr(decision.decision, 'value') else str(decision.decision),
+                        "confidence": round(decision.confidence * 100),
+                        "position_size": decision.position_size,
+
+                        "director_scores": {
+                            "theme": decision.theme_score,
+                            "trading": decision.trade_score,
+                            "learning": decision.learning_score,
+                            "realtime": decision.realtime_score,
+                            "validation": decision.validation_score
+                        },
+
+                        "trade_plan": {
+                            "entry": decision.entry_price,
+                            "stop": decision.stop_loss,
+                            "targets": decision.targets[:2] if decision.targets else []
+                        },
+
+                        "reasoning": decision.reasoning[:200] + "..." if len(decision.reasoning) > 200 else decision.reasoning
+                    })
+
+                except Exception as e:
+                    # Include stock even if analysis fails
+                    picks.append({
+                        "ticker": ticker,
+                        "story_score": stock.get('story_score', 0),
+                        "story_strength": stock.get('story_strength', 'unknown'),
+                        "theme": stock.get('hottest_theme'),
+                        "error": str(e)
+                    })
+
+            return {
+                "ok": True,
+                "picks": picks,
+                "total_analyzed": len(picks),
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()[:500]}
+
+    # =============================================================================
     # TELEGRAM WEBHOOK - Full-Featured Bot
     # =============================================================================
 

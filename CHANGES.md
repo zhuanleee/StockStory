@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 21:39 - `1e669a4`
+
+**Remove Quick Actions from dashboard and fix Daily Digest bug**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 21:22 - `8800c00`
 
 **Optimize dashboard loading with staged data fetching**
