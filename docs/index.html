@@ -4292,6 +4292,11 @@
             }
         }
 
+        function closeAIReasoningModal() {
+            const modal = document.getElementById('ai-reasoning-modal');
+            if (modal) modal.remove();
+        }
+
         async function fetchAIReasoning(ticker) {
             try {
                 const res = await fetch(`${API_BASE}/ai/reasoning/${ticker}`);
@@ -4300,39 +4305,43 @@
                 if (data.ok && data.analysis) {
                     const a = data.analysis;
                     let html = `
-                        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 500px; z-index: 10000; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                <span style="font-size: 1.5rem; font-weight: 700;">${ticker}</span>
-                                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.5rem;">&times;</button>
-                            </div>
-                            <div style="margin-bottom: 12px;">
-                                <div style="font-size: 0.75rem; color: var(--primary); font-weight: 600;">THESIS</div>
-                                <div style="font-size: 0.9rem; margin-top: 4px;">${a.thesis || 'N/A'}</div>
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                                <div>
-                                    <div style="font-size: 0.75rem; color: var(--green); font-weight: 600;">BULL CASE</div>
-                                    <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
-                                        ${(a.bull_case || []).map(b => `<li>${b}</li>`).join('')}
-                                    </ul>
+                        <div id="ai-reasoning-modal">
+                            <div onclick="closeAIReasoningModal()" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999;"></div>
+                            <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; z-index: 10000; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <span style="font-size: 1.5rem; font-weight: 700;">${ticker}</span>
+                                    <button onclick="closeAIReasoningModal()" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.5rem;">&times;</button>
                                 </div>
-                                <div>
-                                    <div style="font-size: 0.75rem; color: var(--red); font-weight: 600;">BEAR CASE</div>
-                                    <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
-                                        ${(a.bear_case || []).map(b => `<li>${b}</li>`).join('')}
-                                    </ul>
+                                <div style="margin-bottom: 12px;">
+                                    <div style="font-size: 0.75rem; color: var(--primary); font-weight: 600;">THESIS</div>
+                                    <div style="font-size: 0.9rem; margin-top: 4px;">${a.thesis || 'N/A'}</div>
                                 </div>
-                            </div>
-                            <div style="padding: 10px; background: var(--bg-hover); border-radius: 6px;">
-                                <span style="font-weight: 600;">Conviction:</span> ${a.conviction_level || 'N/A'}
-                                <span style="margin-left: 12px; font-weight: 600;">Timeline:</span> ${a.catalyst_timeline || 'N/A'}
-                            </div>
-                            <div style="margin-top: 12px; padding: 10px; background: rgba(99, 102, 241, 0.1); border-radius: 6px;">
-                                <div style="font-size: 0.85rem;">${a.suggested_action || ''}</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--green); font-weight: 600;">BULL CASE</div>
+                                        <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
+                                            ${(a.bull_case || []).map(b => `<li>${b}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.75rem; color: var(--red); font-weight: 600;">BEAR CASE</div>
+                                        <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.8rem;">
+                                            ${(a.bear_case || []).map(b => `<li>${b}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div style="padding: 10px; background: var(--bg-hover); border-radius: 6px;">
+                                    <span style="font-weight: 600;">Conviction:</span> ${a.conviction_level || 'N/A'}
+                                    <span style="margin-left: 12px; font-weight: 600;">Timeline:</span> ${a.catalyst_timeline || 'N/A'}
+                                </div>
+                                <div style="margin-top: 12px; padding: 10px; background: rgba(99, 102, 241, 0.1); border-radius: 6px;">
+                                    <div style="font-size: 0.85rem;">${a.suggested_action || ''}</div>
+                                </div>
                             </div>
                         </div>
-                        <div onclick="this.nextElementSibling.remove(); this.remove();" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999;"></div>
                     `;
+                    // Remove existing modal if any
+                    closeAIReasoningModal();
                     document.body.insertAdjacentHTML('beforeend', html);
                 }
             } catch (e) {

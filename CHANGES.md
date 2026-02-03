@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 19:21 - `d73b6ff`
+
+**Fix confirmations/conflicts to only compare directional signals**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 19:15 - `a06e717`
 
 **Add AI Intelligence Hub with unified market analysis**
