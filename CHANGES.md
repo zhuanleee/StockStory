@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 22:18 - `cd43064`
+
+**Add secrets to daily_scan for manual testing**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 22:11 - `6074c09`
 
 **Fix: Add secrets to all scheduled bundle functions**
