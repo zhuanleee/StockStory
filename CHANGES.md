@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 22:56 - `e19ab66`
+
+**Fix NaN values in JSON serialization for scan results**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 22:42 - `84c8b65`
 
 **Fix: Dashboard and Telegram now show same sorted results**

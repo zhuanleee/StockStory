@@ -258,8 +258,24 @@ def _run_daily_scan():
 
     # Save to JSON in Modal Volume for API access
     # Use sorted DataFrame records so API returns same order as Telegram
-    # Replace NaN with None for JSON serialization
-    df_clean = df.where(pd.notnull(df), None)
+    # Clean data for JSON serialization (handle NaN, numpy types, etc.)
+    def clean_for_json(obj):
+        """Recursively clean object for JSON serialization."""
+        if isinstance(obj, dict):
+            return {k: clean_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_for_json(v) for v in obj]
+        elif isinstance(obj, float):
+            if pd.isna(obj) or obj != obj:  # NaN check
+                return None
+            return obj
+        elif hasattr(obj, 'item'):  # numpy types
+            return obj.item()
+        elif pd.isna(obj):
+            return None
+        return obj
+
+    results_clean = clean_for_json(df.to_dict('records'))
     scan_data = {
         "status": "success",
         "timestamp": datetime.now().isoformat(),
@@ -267,12 +283,12 @@ def _run_daily_scan():
         "successful": len(successful),
         "failed": len(failed),
         "duration_seconds": duration,
-        "results": df_clean.to_dict('records')  # Sorted by story_score descending
+        "results": results_clean  # Sorted by story_score descending
     }
 
     json_path = Path(VOLUME_PATH) / json_filename
     with open(json_path, 'w') as f:
-        json.dump(scan_data, f, indent=2)
+        json.dump(scan_data, f, indent=2, default=str)  # default=str as fallback
 
     volume.commit()  # Persist to volume
     print(f"💾 Saved to Modal Volume: {json_filename}")
