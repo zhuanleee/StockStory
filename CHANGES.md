@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 21:04 - `a0701d0`
+
+**Fix dashboard data loading with improved error handling and logging**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 20:51 - `4a16ded`
 
 **Fix Hot Themes on dashboard to render theme pills and stocks**

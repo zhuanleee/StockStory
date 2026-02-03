@@ -6,7 +6,7 @@
 // API Configuration
 export const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'
-    : 'https://zhuanleee--stock-scanner-api-v2-create-fastapi-app.modal.run';
+    : 'https://zhuanleee--stockstory-api-create-fastapi-app.modal.run';
 
 // Timeouts
 export const TIMEOUTS = {
