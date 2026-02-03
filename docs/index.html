@@ -1784,27 +1784,25 @@
                 </div>
             </div>
 
-            <!-- Deal Tracker Table -->
+            <!-- SEC Merger Filings Table -->
             <div class="card" style="margin-top: 20px;">
                 <div class="card-header">
-                    <div class="card-title">📊 Deal Tracker <span class="info-icon" data-tooltip="Track M&A positions and merger arb opportunities"></span></div>
-                    <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.75rem;" onclick="showAddDealModal()">+ Add Deal</button>
+                    <div class="card-title">📊 Pending Merger Filings <span class="info-icon" data-tooltip="Recent DEFM14A merger proxy filings from SEC EDGAR"></span></div>
+                    <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchDeals()">↻ Refresh</button>
                 </div>
                 <div class="card-body no-padding">
                     <div class="table-container">
                         <table class="data-table" id="deals-table">
                             <thead>
                                 <tr>
-                                    <th>Target <span class="info-icon" data-tooltip="Company being acquired"></span></th>
-                                    <th>Acquirer <span class="info-icon" data-tooltip="Company making the acquisition"></span></th>
-                                    <th>Deal $ <span class="info-icon" data-tooltip="Announced deal price/share"></span></th>
-                                    <th>Current <span class="info-icon" data-tooltip="Current market price"></span></th>
-                                    <th>Spread <span class="info-icon" data-tooltip="Gap between deal & current price"></span></th>
-                                    <th>Status <span class="info-icon" data-tooltip="Pending, Approved, or Blocked"></span></th>
+                                    <th>Ticker <span class="info-icon" data-tooltip="Stock ticker symbol"></span></th>
+                                    <th>Company <span class="info-icon" data-tooltip="Company name from SEC filing"></span></th>
+                                    <th>Form <span class="info-icon" data-tooltip="SEC form type (DEFM14A = Merger proxy)"></span></th>
+                                    <th>Filed <span class="info-icon" data-tooltip="Date filed with SEC"></span></th>
                                 </tr>
                             </thead>
                             <tbody id="deals-table-body">
-                                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No deals tracked. Click + Add Deal to start.</td></tr>
+                                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading merger filings...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -3839,37 +3837,47 @@
                 const data = await res.json();
 
                 if (data.ok) {
-                    // Update deals container
+                    // Update deals container with SEC EDGAR merger filings
                     let html = '';
                     if (!data.deals || data.deals.length === 0) {
-                        html = '<div style="color: var(--text-muted);">No deals tracked</div>';
+                        html = '<div style="color: var(--text-muted);">No pending mergers found</div>';
                         document.getElementById('deals-container').innerHTML = html;
-                        document.getElementById('deals-table-body').innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No deals tracked. Click + Add Deal to start.</td></tr>';
+                        document.getElementById('deals-table-body').innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No pending merger filings found</td></tr>';
                         return;
                     }
 
-                    // Summary in sidebar
-                    data.deals.forEach(deal => {
-                        const spreadColor = deal.spread_pct > 5 ? 'var(--green)' : deal.spread_pct > 2 ? 'var(--yellow)' : 'var(--text-muted)';
-                        html += `<div class="sidebar-item">
-                            <span class="sidebar-label">${deal.target} ← ${deal.acquirer}</span>
-                            <span class="sidebar-value" style="color: ${spreadColor};">+${deal.spread_pct.toFixed(1)}%</span>
+                    // Summary in sidebar - extract ticker from company name
+                    data.deals.slice(0, 8).forEach(deal => {
+                        let ticker = deal.ticker;
+                        if (!ticker || ticker === '?') {
+                            const match = deal.company?.match(/\(([A-Z]{1,5})\)/);
+                            ticker = match ? match[1] : 'N/A';
+                        }
+                        const formColor = deal.form === 'DEFM14A' ? 'var(--yellow)' : 'var(--green)';
+                        html += `<div class="sidebar-item" style="cursor: pointer;" onclick="lookupMACheckFor('${ticker}')">
+                            <span class="sidebar-label">${ticker}</span>
+                            <span class="sidebar-value" style="color: ${formColor};">${deal.form || 'SEC'}</span>
                         </div>`;
                     });
                     document.getElementById('deals-container').innerHTML = html;
 
-                    // Table
+                    // Table with SEC filing details
                     let tableHtml = '';
                     data.deals.forEach(deal => {
-                        const statusEmoji = deal.status === 'approved' ? '🟢' : deal.status === 'pending' ? '🟡' : '⚪';
-                        const spreadColor = deal.spread_pct > 5 ? 'var(--green)' : deal.spread_pct > 2 ? 'var(--yellow)' : 'var(--text-muted)';
-                        tableHtml += `<tr>
-                            <td><strong>${deal.target}</strong></td>
-                            <td>${deal.acquirer}</td>
-                            <td>$${deal.deal_price.toFixed(2)}</td>
-                            <td>$${deal.current_price.toFixed(2)}</td>
-                            <td style="color: ${spreadColor};">+${deal.spread_pct.toFixed(1)}%</td>
-                            <td>${statusEmoji} ${deal.status}</td>
+                        let ticker = deal.ticker;
+                        if (!ticker || ticker === '?') {
+                            const match = deal.company?.match(/\(([A-Z]{1,5})\)/);
+                            ticker = match ? match[1] : 'N/A';
+                        }
+                        // Extract just company name (before ticker)
+                        const companyName = deal.company?.split('(')[0]?.trim() || deal.company || 'Unknown';
+                        const filedDate = deal.filed_date || 'N/A';
+                        const formBadge = deal.form === 'DEFM14A' ? '🟡 DEFM14A' : '🔵 ' + (deal.form || 'Filing');
+                        tableHtml += `<tr style="cursor: pointer;" onclick="lookupMACheckFor('${ticker}')">
+                            <td><strong>${ticker}</strong></td>
+                            <td>${companyName.substring(0, 40)}${companyName.length > 40 ? '...' : ''}</td>
+                            <td>${formBadge}</td>
+                            <td>${filedDate}</td>
                         </tr>`;
                     });
                     document.getElementById('deals-table-body').innerHTML = tableHtml;

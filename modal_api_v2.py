@@ -1187,8 +1187,8 @@ Get an API key at `/api-keys/request`
     @web_app.get("/sec/deals")
     def sec_deals():
         try:
-            from src.data.sec_edgar import get_recent_ma_deals
-            deals = get_recent_ma_deals()
+            from src.data.sec_edgar import get_pending_mergers_from_sec
+            deals = get_pending_mergers_from_sec()
             return {"ok": True, "deals": deals or []}
         except Exception as e:
             return {"ok": False, "error": str(e), "deals": []}
@@ -1205,8 +1205,8 @@ Get an API key at `/api-keys/request`
     @web_app.get("/sec/ma-check/{ticker_symbol}")
     def sec_ma_check(ticker_symbol: str):
         try:
-            from src.data.sec_edgar import check_ticker_ma_activity
-            activity = check_ticker_ma_activity(ticker_symbol)
+            from src.data.sec_edgar import detect_ma_activity
+            activity = detect_ma_activity(ticker_symbol.upper())
             # Extract ma_score and signals from activity dict
             if isinstance(activity, dict):
                 return {
