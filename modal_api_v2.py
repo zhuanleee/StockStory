@@ -1554,8 +1554,11 @@ Get an API key at `/api-keys/request`
     def contracts_themes():
         try:
             from src.data.gov_contracts import get_contract_trends
-            themes = get_contract_trends()
-            return {"ok": True, "themes": themes or {}}
+            result = get_contract_trends()
+            # Handle if result is already a full response object
+            if isinstance(result, dict) and 'themes' in result:
+                return {"ok": True, "themes": result.get('themes', {})}
+            return {"ok": True, "themes": result or {}}
         except Exception as e:
             return {"ok": False, "error": str(e), "themes": {}}
 
@@ -1601,8 +1604,11 @@ Get an API key at `/api-keys/request`
     def patents_themes():
         try:
             from src.data.patents import get_patent_trends
-            themes = get_patent_trends()
-            return {"ok": True, "themes": themes or {}}
+            result = get_patent_trends()
+            # Handle if result is already a full response object
+            if isinstance(result, dict) and 'themes' in result:
+                return {"ok": True, "themes": result.get('themes', {})}
+            return {"ok": True, "themes": result or {}}
         except Exception as e:
             return {"ok": False, "error": str(e), "themes": {}}
 

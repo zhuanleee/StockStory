@@ -3811,11 +3811,20 @@
                         html = '<div style="color: var(--text-muted);">No M&A activity detected</div>';
                     } else {
                         data.radar.slice(0, 8).forEach(item => {
-                            const color = item.score >= 50 ? 'var(--red)' : item.score >= 25 ? 'var(--yellow)' : 'var(--green)';
-                            const level = item.score >= 50 ? 'HIGH' : item.score >= 25 ? 'MED' : 'LOW';
-                            html += `<div class="sidebar-item" style="cursor: pointer;" onclick="lookupMACheckFor('${item.ticker}')">
-                                <span class="sidebar-label">${item.ticker}</span>
-                                <span class="sidebar-value" style="color: ${color};">${level} ${item.score}%</span>
+                            // Extract ticker from company name or use provided ticker
+                            let ticker = item.ticker;
+                            if (!ticker || ticker === '?') {
+                                // Try to extract from company name: "COMPANY NAME (TICK) (CIK...)"
+                                const match = item.company?.match(/\(([A-Z]{1,5})\)/);
+                                ticker = match ? match[1] : 'N/A';
+                            }
+                            // Use score if available, otherwise mark all as HIGH (DEFM14A = definitive merger proxy)
+                            const score = item.score || (item.form === 'DEFM14A' ? 75 : 50);
+                            const color = score >= 50 ? 'var(--yellow)' : 'var(--green)';
+                            const formBadge = item.form || 'SEC';
+                            html += `<div class="sidebar-item" style="cursor: pointer;" onclick="lookupMACheckFor('${ticker}')">
+                                <span class="sidebar-label">${ticker}</span>
+                                <span class="sidebar-value" style="color: ${color};">${formBadge}</span>
                             </div>`;
                         });
                     }

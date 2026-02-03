@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:25 - `5de66fd`
+
+**Fix SEC Intel API response structure to match dashboard JS**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:16 - `eb21f71`
 
 **Bot only reads and replies in Bot Alerts topic**
