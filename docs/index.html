@@ -2932,7 +2932,18 @@
             document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
             document.getElementById(tabId).classList.add('active');
 
-            // Auto-load data for specific tabs
+            // Check cache - skip if data loaded recently
+            const lastLoaded = tabLoadedAt[tabId] || 0;
+            const isCached = (Date.now() - lastLoaded) < CACHE_TTL;
+
+            if (isCached) {
+                console.log(`Tab ${tabId} cached, skipping fetch`);
+                return;
+            }
+
+            console.log(`Loading data for tab: ${tabId}`);
+
+            // Lazy load data for specific tabs
             if (tabId === 'themeradar') {
                 fetchThemeRadar();
                 loadThemeConfig();
@@ -2941,11 +2952,21 @@
                 fetchDeals();
             } else if (tabId === 'trades') {
                 fetchTrades();
+            } else if (tabId === 'watchlist') {
+                refreshWatchlistTab();
+            } else if (tabId === 'analytics') {
+                fetchEvolution();
+                fetchParameters();
+                fetchCorrelations();
+            } else if (tabId === 'themes') {
+                fetchThemes();
             } else if (tabId === 'options') {
                 loadMarketSentiment();
                 loadWhaleTrades();
                 loadUnusualActivity();
             }
+
+            tabLoadedAt[tabId] = Date.now();
         }
 
         // Modal
@@ -6665,36 +6686,74 @@
             }
         }
 
+        // Simple cache to avoid refetching
+        const tabLoadedAt = {};
+        const CACHE_TTL = 60000; // 1 minute
+
         async function refreshAll() {
-            console.log('🔄 refreshAll() called');
+            console.log('🔄 refreshAll() called - loading overview only');
             document.getElementById('last-update').textContent = 'Refreshing...';
 
+            // Only load essential overview data on page load (2 calls instead of 18)
             await Promise.all([
                 fetchHealth(),
                 fetchScan(),
-                fetchConvictionAlerts(),
-                fetchSupplyChain(),
-                fetchEarnings(),
-                fetchEvolution(),
-                fetchParameters(),
-                fetchCorrelations(),
-                fetchThemes(),
-                fetchMARadar(),
-                fetchDeals(),
-                fetchContractThemes(),
-                fetchRecentContracts(),
-                fetchPatentThemes(),
-                fetchThemeRadar(),
-                fetchThemeAlerts(),
-                fetchTrades(),
-                fetchUnusualOptions(),
             ]);
+
+            tabLoadedAt['overview'] = Date.now();
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
                 timeZone: 'Asia/Kuala_Lumpur',
                 hour: '2-digit',
                 minute: '2-digit'
             }) + ' MYT';
+        }
+
+        // Force refresh all data (manual refresh button)
+        async function forceRefreshAll() {
+            console.log('🔄 Force refresh all');
+            tabLoadedAt = {}; // Clear cache
+            document.getElementById('last-update').textContent = 'Refreshing...';
+
+            // Load current tab data
+            const activeTab = document.querySelector('.tab.active')?.dataset?.tab || 'overview';
+            await loadTabDataForce(activeTab);
+
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
+                timeZone: 'Asia/Kuala_Lumpur',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) + ' MYT';
+        }
+
+        async function loadTabDataForce(tabId) {
+            switch(tabId) {
+                case 'overview':
+                    await Promise.all([fetchHealth(), fetchScan()]);
+                    break;
+                case 'themes':
+                    await fetchThemes();
+                    break;
+                case 'themeradar':
+                    await Promise.all([fetchThemeRadar(), fetchThemeAlerts()]);
+                    break;
+                case 'sec':
+                    await Promise.all([fetchMARadar(), fetchDeals()]);
+                    break;
+                case 'trades':
+                    await fetchTrades();
+                    break;
+                case 'watchlist':
+                    await refreshWatchlistTab();
+                    break;
+                case 'analytics':
+                    await Promise.all([fetchEvolution(), fetchParameters(), fetchCorrelations()]);
+                    break;
+                case 'options':
+                    await Promise.all([loadMarketSentiment(), loadWhaleTrades(), loadUnusualActivity()]);
+                    break;
+            }
+            tabLoadedAt[tabId] = Date.now();
         }
 
         // Init

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:11 - `e238d70`
+
+**Fix watchlist persistence with volume.commit()**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:04 - `671bc5d`
 
 **Add expandable scan rows with individual stock add/remove**
