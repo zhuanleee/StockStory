@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 16:15 - `7d04c87`
+
+**Optimize dashboard performance with lazy loading**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:11 - `e238d70`
 
 **Fix watchlist persistence with volume.commit()**

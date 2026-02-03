@@ -1239,7 +1239,7 @@
                     <span id="sync-status-text" style="font-size: 0.7rem; color: var(--text-muted);">OFFLINE</span>
                 </div>
                 <span class="update-time">Updated: <span id="last-update">--:--</span></span>
-                <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
+                <button class="btn btn-ghost" onclick="refreshCurrentTab()">↻ Refresh</button>
                 <a href="https://t.me/Stocks_Story_Bot" target="_blank" class="btn btn-primary">Open Bot</a>
             </div>
         </div>
@@ -6709,14 +6709,16 @@
             }) + ' MYT';
         }
 
-        // Force refresh all data (manual refresh button)
-        async function forceRefreshAll() {
-            console.log('🔄 Force refresh all');
-            tabLoadedAt = {}; // Clear cache
+        // Refresh only the current active tab
+        async function refreshCurrentTab() {
+            const activeTab = document.querySelector('.tab.active')?.dataset?.tab || 'overview';
+            console.log(`🔄 Refreshing current tab: ${activeTab}`);
+
+            // Clear cache for this tab to force refresh
+            delete tabLoadedAt[activeTab];
+
             document.getElementById('last-update').textContent = 'Refreshing...';
 
-            // Load current tab data
-            const activeTab = document.querySelector('.tab.active')?.dataset?.tab || 'overview';
             await loadTabDataForce(activeTab);
 
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
@@ -6731,11 +6733,14 @@
                 case 'overview':
                     await Promise.all([fetchHealth(), fetchScan()]);
                     break;
+                case 'scan':
+                    await fetchScan();
+                    break;
                 case 'themes':
                     await fetchThemes();
                     break;
                 case 'themeradar':
-                    await Promise.all([fetchThemeRadar(), fetchThemeAlerts()]);
+                    await Promise.all([fetchThemeRadar(), fetchThemeAlerts(), loadThemeConfig()]);
                     break;
                 case 'sec':
                     await Promise.all([fetchMARadar(), fetchDeals()]);
