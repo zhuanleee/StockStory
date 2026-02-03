@@ -1741,12 +1741,132 @@ Get an API key at `/api-keys/request`
             "alternatives": ["Use /scan for analysis", "Use /conviction/alerts for setups"]
         }
 
-    @web_app.get("/trades/watchlist", status_code=501)
-    def trades_watchlist():
+    @web_app.get("/watchlist", tags=["Watchlist"])
+    def get_watchlist():
+        """Get watchlist with performance data"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            watchlist = wm.get_watchlist_with_performance()
+            return {
+                "ok": True,
+                "watchlist": watchlist,
+                "count": len(watchlist)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/watchlist/add", tags=["Watchlist"])
+    def add_to_watchlist(ticker: str, notes: str = ""):
+        """Add a stock to watchlist"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            item = wm.add_to_watchlist(ticker.upper(), notes=notes)
+            return {"ok": True, "item": item.to_dict()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.delete("/watchlist/{ticker}", tags=["Watchlist"])
+    def remove_from_watchlist(ticker: str):
+        """Remove a stock from watchlist"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            success = wm.remove_from_watchlist(ticker.upper())
+            return {"ok": success}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/scans", tags=["Scans"])
+    def get_scans(starred_only: bool = False, archived: bool = False, limit: int = 20):
+        """Get scan history"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+
+            if starred_only:
+                scans = wm.get_starred_scans()
+            elif archived:
+                scans = wm.get_archived_scans()
+            else:
+                scans = wm.get_recent_scans(limit)
+
+            return {
+                "ok": True,
+                "scans": [s.to_dict() for s in scans],
+                "count": len(scans)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/scans/{scan_id}", tags=["Scans"])
+    def get_scan_detail(scan_id: int):
+        """Get full scan data"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            record = wm.get_scan(scan_id)
+            if not record:
+                return {"ok": False, "error": "Scan not found"}
+            data = wm.get_scan_data(scan_id)
+            return {
+                "ok": True,
+                "scan": record.to_dict(),
+                "data": data
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/scans/{scan_id}/star", tags=["Scans"])
+    def star_scan(scan_id: int, add_to_watchlist: bool = False):
+        """Star a scan to preserve it"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            record = wm.star_scan(scan_id, add_to_watchlist=add_to_watchlist)
+            if not record:
+                return {"ok": False, "error": "Scan not found"}
+            return {"ok": True, "scan": record.to_dict()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/scans/{scan_id}/unstar", tags=["Scans"])
+    def unstar_scan(scan_id: int):
+        """Remove star from a scan"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            record = wm.unstar_scan(scan_id)
+            if not record:
+                return {"ok": False, "error": "Scan not found"}
+            return {"ok": True, "scan": record.to_dict()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/history/{ticker}", tags=["Watchlist"])
+    def get_stock_history(ticker: str):
+        """Get scan history for a specific stock"""
+        try:
+            from src.data.watchlist_manager import get_watchlist_manager
+            wm = get_watchlist_manager(VOLUME_PATH)
+            history = wm.get_stock_history(ticker.upper())
+            return {
+                "ok": True,
+                "ticker": ticker.upper(),
+                "history": history,
+                "count": len(history)
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/trades/watchlist", tags=["Deprecated"])
+    def trades_watchlist_deprecated():
+        """Deprecated - use /watchlist instead"""
         return {
             "ok": False,
-            "error": "Watchlist feature not implemented",
-            "message": "Use browser localStorage or external tools for watchlists."
+            "error": "Endpoint deprecated",
+            "message": "Use /watchlist endpoint instead"
         }
 
     @web_app.get("/trades/activity", status_code=501)
@@ -1887,8 +2007,8 @@ Get an API key at `/api-keys/request`
     # TELEGRAM WEBHOOK - Full-Featured Bot
     # =============================================================================
 
-    # In-memory watchlist (resets on cold start - could persist to volume)
-    _telegram_watchlists = {}
+    # Import WatchlistManager for persistent watchlist and scan management
+    from src.data.watchlist_manager import get_watchlist_manager
 
     @web_app.post("/telegram/webhook")
     async def telegram_webhook(request: Request):
@@ -2573,26 +2693,46 @@ Get an API key at `/api-keys/request`
 
             # ============ WATCHLIST ============
             elif cmd == '/watchlist':
-                watchlist = _telegram_watchlists.get(user_id, [])
+                wm = get_watchlist_manager(VOLUME_PATH)
+                watchlist = wm.get_watchlist_with_performance()
                 if watchlist:
                     msg = "👁 *YOUR WATCHLIST*\n\n"
+                    # Update prices first
                     try:
-                        import pandas as pd
-                        latest_path = Path(VOLUME_PATH) / 'scan_results_latest.csv'
-                        df = pd.read_csv(latest_path) if latest_path.exists() else pd.DataFrame()
-                        for ticker in watchlist:
-                            row = df[df['ticker'] == ticker].iloc[0] if ticker in df['ticker'].values else None
-                            if row is not None:
-                                score = row.get('composite_score', row.get('story_score', 0))
-                                price = row.get('price', 0)
-                                msg += f"`{ticker:5}` Score: {score:.0f}"
-                                if price:
-                                    msg += f" | ${price:.2f}"
-                                msg += "\n"
-                            else:
-                                msg += f"`{ticker:5}` (no data)\n"
+                        import yfinance as yf
+                        tickers = [item['ticker'] for item in watchlist]
+                        prices = {}
+                        for t in tickers[:20]:
+                            try:
+                                stock = yf.Ticker(t)
+                                prices[t] = stock.info.get('regularMarketPrice', 0)
+                            except:
+                                pass
+                        wm.update_watchlist_prices(prices)
+                        watchlist = wm.get_watchlist_with_performance()
                     except:
-                        msg += ", ".join(watchlist)
+                        pass
+
+                    for item in watchlist:
+                        ticker = item['ticker']
+                        change_pct = item.get('change_pct')
+                        entry = item.get('entry_price')
+                        current = item.get('current_price')
+                        source = item.get('source_scan', {})
+
+                        if change_pct is not None:
+                            emoji = "🟢" if change_pct >= 0 else "🔴"
+                            msg += f"`{ticker:5}` {emoji} {change_pct:+.1f}%"
+                        else:
+                            msg += f"`{ticker:5}`"
+
+                        if current:
+                            msg += f" | ${current:,.2f}"
+                        if source.get('id'):
+                            msg += f" (Scan #{source['id']})"
+                        msg += "\n"
+
+                    msg += f"\n_Total: {len(watchlist)} stocks_"
                     send_reply(msg)
                 else:
                     send_reply("Your watchlist is empty.\nUse `/watch TICKER` to add stocks.")
@@ -2600,32 +2740,198 @@ Get an API key at `/api-keys/request`
 
             elif cmd == '/watch':
                 if not args:
-                    send_reply("Usage: `/watch TICKER`\nExample: `/watch NVDA`")
+                    send_reply("Usage: `/watch TICKER [notes]`\nExample: `/watch NVDA Strong AI play`")
                     return {"ok": True}
-                ticker = args.split()[0]
-                if user_id not in _telegram_watchlists:
-                    _telegram_watchlists[user_id] = []
-                if ticker not in _telegram_watchlists[user_id]:
-                    if len(_telegram_watchlists[user_id]) >= 20:
-                        send_reply("❌ Watchlist full (max 20). Remove some first.")
-                    else:
-                        _telegram_watchlists[user_id].append(ticker)
-                        send_reply(f"✅ Added `{ticker}` to watchlist ({len(_telegram_watchlists[user_id])}/20)")
-                else:
-                    send_reply(f"`{ticker}` is already in your watchlist.")
+                parts = args.split(maxsplit=1)
+                ticker = parts[0].upper()
+                notes = parts[1] if len(parts) > 1 else ""
+
+                wm = get_watchlist_manager(VOLUME_PATH)
+
+                # Get current price
+                entry_price = None
+                try:
+                    import yfinance as yf
+                    stock = yf.Ticker(ticker)
+                    entry_price = stock.info.get('regularMarketPrice', 0)
+                except:
+                    pass
+
+                item = wm.add_to_watchlist(ticker, entry_price=entry_price, notes=notes)
+                msg = f"✅ Added `{ticker}` to watchlist"
+                if entry_price:
+                    msg += f" @ ${entry_price:,.2f}"
+                if notes:
+                    msg += f"\n📝 {notes}"
+                send_reply(msg)
                 return {"ok": True}
 
             elif cmd == '/unwatch':
                 if not args:
                     send_reply("Usage: `/unwatch TICKER`\nExample: `/unwatch NVDA`")
                     return {"ok": True}
-                ticker = args.split()[0]
-                if user_id in _telegram_watchlists and ticker in _telegram_watchlists[user_id]:
-                    _telegram_watchlists[user_id].remove(ticker)
+                ticker = args.split()[0].upper()
+                wm = get_watchlist_manager(VOLUME_PATH)
+                if wm.remove_from_watchlist(ticker):
                     send_reply(f"✅ Removed `{ticker}` from watchlist")
                 else:
                     send_reply(f"`{ticker}` is not in your watchlist.")
                 return {"ok": True}
+
+            # ============ SCAN MANAGEMENT ============
+            elif cmd == '/scans':
+                wm = get_watchlist_manager(VOLUME_PATH)
+                recent = wm.get_recent_scans(10)
+                if recent:
+                    msg = "📊 *RECENT SCANS*\n\n"
+                    for scan in recent:
+                        star = "⭐" if scan.starred else "  "
+                        date = scan.date[:10] if scan.date else "Unknown"
+                        picks = ", ".join(scan.top_picks[:3]) if scan.top_picks else "No picks"
+                        msg += f"{star} `#{scan.scan_id:3}` {date}\n"
+                        msg += f"    Top: {picks}\n"
+                    msg += "\n_Use `/star ID` to keep a scan_"
+                    send_reply(msg)
+                else:
+                    send_reply("No scans found.")
+                return {"ok": True}
+
+            elif cmd == '/star':
+                wm = get_watchlist_manager(VOLUME_PATH)
+                if not args:
+                    # Star latest scan
+                    latest = wm.get_latest_scan()
+                    if latest:
+                        scan_id = latest.scan_id
+                    else:
+                        send_reply("No scans available to star.")
+                        return {"ok": True}
+                else:
+                    try:
+                        scan_id = int(args.split()[0].replace('#', ''))
+                    except ValueError:
+                        send_reply("Usage: `/star [ID]`\nExample: `/star 12` or `/star` for latest")
+                        return {"ok": True}
+
+                # Check if user wants to add to watchlist
+                add_to_wl = 'watch' in args.lower() or 'add' in args.lower()
+                record = wm.star_scan(scan_id, add_to_watchlist=add_to_wl)
+
+                if record:
+                    msg = f"⭐ *Starred Scan #{scan_id}*\n\n"
+                    msg += f"Date: {record.date[:10]}\n"
+                    msg += f"Top Picks: {', '.join(record.top_picks[:5])}\n"
+                    if add_to_wl:
+                        msg += f"\n✅ Added top 5 picks to watchlist"
+                    msg += "\n\n_This scan won't be auto-deleted_"
+                    send_reply(msg)
+                else:
+                    send_reply(f"Scan #{scan_id} not found.")
+                return {"ok": True}
+
+            elif cmd == '/unstar':
+                if not args:
+                    send_reply("Usage: `/unstar ID`\nExample: `/unstar 12`")
+                    return {"ok": True}
+                try:
+                    scan_id = int(args.split()[0].replace('#', ''))
+                except ValueError:
+                    send_reply("Invalid scan ID. Use `/unstar 12`")
+                    return {"ok": True}
+
+                wm = get_watchlist_manager(VOLUME_PATH)
+                record = wm.unstar_scan(scan_id)
+                if record:
+                    send_reply(f"Removed star from Scan #{scan_id}")
+                else:
+                    send_reply(f"Scan #{scan_id} not found.")
+                return {"ok": True}
+
+            elif cmd == '/starred':
+                wm = get_watchlist_manager(VOLUME_PATH)
+                starred = wm.get_starred_scans()
+                if starred:
+                    msg = "⭐ *STARRED SCANS*\n\n"
+                    for scan in sorted(starred, key=lambda x: x.date, reverse=True):
+                        date = scan.date[:10] if scan.date else "Unknown"
+                        picks = ", ".join(scan.top_picks[:3]) if scan.top_picks else "No picks"
+                        msg += f"⭐ `#{scan.scan_id:3}` {date}\n"
+                        msg += f"    {picks}\n"
+                    msg += f"\n_Total: {len(starred)} starred scans_"
+                    send_reply(msg)
+                else:
+                    send_reply("No starred scans.\nUse `/star` to star the latest scan.")
+                return {"ok": True}
+
+            elif cmd == '/archive':
+                wm = get_watchlist_manager(VOLUME_PATH)
+                if args:
+                    # Archive specific scan
+                    try:
+                        scan_id = int(args.split()[0].replace('#', ''))
+                        record = wm.archive_scan(scan_id)
+                        if record:
+                            send_reply(f"📁 Archived Scan #{scan_id}")
+                        else:
+                            send_reply(f"Scan #{scan_id} not found.")
+                    except ValueError:
+                        send_reply("Usage: `/archive [ID]` or `/archive` to view")
+                else:
+                    # List archived scans
+                    archived = wm.get_archived_scans()
+                    if archived:
+                        msg = "📁 *ARCHIVED SCANS*\n\n"
+                        for scan in sorted(archived, key=lambda x: x.date, reverse=True)[:15]:
+                            date = scan.date[:10] if scan.date else "Unknown"
+                            picks = ", ".join(scan.top_picks[:2]) if scan.top_picks else ""
+                            msg += f"`#{scan.scan_id:3}` {date} - {picks}\n"
+                        msg += f"\n_Total: {len(archived)} archived_"
+                        send_reply(msg)
+                    else:
+                        send_reply("No archived scans.")
+                return {"ok": True}
+
+            elif cmd == '/history':
+                if not args:
+                    send_reply("Usage: `/history TICKER`\nExample: `/history NVDA`")
+                    return {"ok": True}
+                ticker = args.split()[0].upper()
+                wm = get_watchlist_manager(VOLUME_PATH)
+                history = wm.get_stock_history(ticker)
+
+                if history:
+                    msg = f"📜 *{ticker} SCAN HISTORY*\n\n"
+                    for entry in history[:10]:
+                        star = "⭐" if entry['starred'] else "  "
+                        date = entry['date'][:10] if entry['date'] else "Unknown"
+                        msg += f"{star} `#{entry['scan_id']:3}` {date}\n"
+
+                        if entry.get('stock_data'):
+                            sd = entry['stock_data']
+                            score = sd.get('story_score', sd.get('composite_score', 0))
+                            price = sd.get('price', 0)
+                            if score:
+                                msg += f"      Score: {score:.0f}"
+                            if price:
+                                msg += f" | ${price:,.2f}"
+                            msg += "\n"
+
+                    msg += f"\n_Found in {len(history)} scans_"
+                    send_reply(msg)
+                else:
+                    send_reply(f"`{ticker}` not found in any scans.")
+                return {"ok": True}
+
+            elif cmd == '/cleanup':
+                wm = get_watchlist_manager(VOLUME_PATH)
+                days = 7
+                if args:
+                    try:
+                        days = int(args.split()[0])
+                    except:
+                        pass
+                archived = wm.cleanup_old_scans(days)
+                send_reply(f"🧹 Cleaned up {archived} scans older than {days} days\n\n_Starred scans are preserved_")
 
             # ============ TICKER ANALYSIS (rich version) ============
             elif len(text) <= 5 and text.isalpha():
@@ -3044,10 +3350,18 @@ Get an API key at `/api-keys/request`
                 msg += "  `/whales` - Large options trades\n"
                 msg += "  `/unusual` - Unusual activity scan\n"
                 msg += "  `/hedge [amount]` - Put protection recs\n\n"
+                msg += "*Watchlist & Scans:*\n"
+                msg += "  `/watchlist` - Your watchlist with P&L\n"
+                msg += "  `/watch NVDA` - Add to watchlist\n"
+                msg += "  `/unwatch NVDA` - Remove from watchlist\n"
+                msg += "  `/scans` - Recent scans\n"
+                msg += "  `/star [ID]` - Star a scan (keep forever)\n"
+                msg += "  `/starred` - View starred scans\n"
+                msg += "  `/history NVDA` - Scan history for stock\n"
+                msg += "  `/archive [ID]` - View/archive scans\n"
+                msg += "  `/cleanup` - Archive old scans\n\n"
                 msg += "*Other:*\n"
                 msg += "  `/earnings` - Upcoming earnings\n"
-                msg += "  `/watchlist` - Your watchlist\n"
-                msg += "  `/watch NVDA` - Add to watchlist\n"
                 msg += "  `/chatid` - Get chat ID for group alerts\n"
                 msg += "  `/help` - Quick start guide"
                 send_reply(msg)

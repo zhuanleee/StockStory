@@ -274,6 +274,25 @@ def _run_daily_scan():
     volume.commit()  # Persist to volume
     print(f"💾 Saved to Modal Volume: {json_filename}")
 
+    # Register scan with WatchlistManager for tracking
+    try:
+        from src.data.watchlist_manager import get_watchlist_manager
+        wm = get_watchlist_manager(VOLUME_PATH)
+
+        # Extract top picks and themes
+        top_picks = df.head(10)['ticker'].tolist() if 'ticker' in df.columns else []
+        themes = df.head(20)['hottest_theme'].dropna().unique().tolist()[:5] if 'hottest_theme' in df.columns else []
+
+        scan_record = wm.register_scan(
+            filename=json_filename,
+            top_picks=top_picks,
+            themes=themes,
+            total_stocks=len(successful)
+        )
+        print(f"📋 Registered as Scan #{scan_record.scan_id}")
+    except Exception as e:
+        print(f"⚠️  Could not register scan: {e}")
+
     # Print top 10
     print(f"\n📈 Top 10 Stocks by Story Score:")
     print("-" * 70)

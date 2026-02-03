@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 04:17 - `49f5b09`
+
+**feat: Add group chat support for all notifications**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+src/notifications/notification_manager.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 04:12 - `e9a6c3a`
 
 **fix: Use correct variable name in /chatid command**

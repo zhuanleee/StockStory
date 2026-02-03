@@ -13,6 +13,10 @@ from src.data.cache_manager import (
     CacheConfig,
     BackgroundPrefetcher,
 )
+from src.data.watchlist_manager import (
+    WatchlistManager,
+    get_watchlist_manager,
+)
 
 __all__ = [
     'UniverseManager',
@@ -20,4 +24,6 @@ __all__ = [
     'CacheManager',
     'CacheConfig',
     'BackgroundPrefetcher',
+    'WatchlistManager',
+    'get_watchlist_manager',
 ]
