@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 21:09 - `4f6654e`
+
+**Fix wrong API URL in config.js that was breaking dashboard data loading**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/config.js
+```
+</details>
+
+---
+
+
 ### 2026-02-03 21:04 - `a0701d0`
 
 **Fix dashboard data loading with improved error handling and logging**
