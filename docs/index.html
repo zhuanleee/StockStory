@@ -2271,6 +2271,124 @@
                     <div style="color: var(--text-muted); font-size: 0.8125rem;">Click refresh to generate AI briefing...</div>
                 </div>
             </div>
+
+            <!-- Economic Dashboard (FRED) -->
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <div class="card-title">📊 Economic Dashboard <span class="info-icon" data-tooltip="Real-time economic indicators from Federal Reserve (FRED). Key metrics for macro market analysis."></span></div>
+                    <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchEconomicDashboard()">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <!-- Overall Health Score -->
+                    <div id="econ-overall" style="display: flex; align-items: center; gap: 16px; padding: 12px; background: var(--bg-hover); border-radius: 8px; margin-bottom: 16px;">
+                        <div style="font-size: 2rem; font-weight: 700;" id="econ-score">--</div>
+                        <div>
+                            <div style="font-size: 1rem; font-weight: 600;" id="econ-label">Loading...</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Economic Health Score</div>
+                        </div>
+                    </div>
+
+                    <!-- Alerts -->
+                    <div id="econ-alerts" style="margin-bottom: 16px;"></div>
+
+                    <!-- Yield Curve (Featured) -->
+                    <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">YIELD CURVE (10Y-2Y) <span class="info-icon" data-tooltip="Spread between 10-year and 2-year Treasury yields. Inverted curve (negative) historically precedes recessions by 12-18 months."></span></div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-yield-curve">--</div>
+                            </div>
+                            <div id="econ-yield-status" style="font-size: 1.5rem;">🟡</div>
+                        </div>
+                    </div>
+
+                    <!-- Indicator Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <!-- Fed Policy -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">FED FUNDS RATE <span class="info-icon" data-tooltip="The interest rate banks charge each other for overnight loans. Set by the Federal Reserve to control monetary policy."></span></div>
+                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-fed-rate">--</div>
+                        </div>
+
+                        <!-- 10Y Treasury -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">10Y TREASURY <span class="info-icon" data-tooltip="Yield on 10-year US government bonds. Key benchmark for mortgages and long-term rates."></span></div>
+                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-10y">--</div>
+                        </div>
+
+                        <!-- 2Y Treasury -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">2Y TREASURY <span class="info-icon" data-tooltip="Yield on 2-year US government bonds. Reflects near-term Fed rate expectations."></span></div>
+                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-2y">--</div>
+                        </div>
+
+                        <!-- Unemployment -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">UNEMPLOYMENT <span class="info-icon" data-tooltip="Percentage of labor force without jobs. Below 4% is considered full employment."></span></div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-unemployment">--</div>
+                                </div>
+                                <span id="econ-unemployment-status">🟡</span>
+                            </div>
+                        </div>
+
+                        <!-- Initial Claims -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">JOBLESS CLAIMS <span class="info-icon" data-tooltip="Weekly new unemployment filings. Leading indicator - rising claims signal economic weakness."></span></div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-claims">--</div>
+                                </div>
+                                <span id="econ-claims-status">🟡</span>
+                            </div>
+                        </div>
+
+                        <!-- CPI Inflation -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">CPI INFLATION <span class="info-icon" data-tooltip="Consumer Price Index year-over-year change. Fed targets 2% inflation."></span></div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-cpi">--</div>
+                                </div>
+                                <span id="econ-cpi-status">🟡</span>
+                            </div>
+                        </div>
+
+                        <!-- High Yield Spread -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">HY SPREAD <span class="info-icon" data-tooltip="Difference between junk bond and treasury yields. Widening spread = credit stress/risk-off."></span></div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-hy-spread">--</div>
+                                </div>
+                                <span id="econ-hy-status">🟡</span>
+                            </div>
+                        </div>
+
+                        <!-- Consumer Sentiment -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SENTIMENT <span class="info-icon" data-tooltip="University of Michigan survey of consumer confidence. Above 80 is healthy."></span></div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-sentiment">--</div>
+                                </div>
+                                <span id="econ-sentiment-status">🟡</span>
+                            </div>
+                        </div>
+
+                        <!-- M2 Money Supply -->
+                        <div style="padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">M2 SUPPLY <span class="info-icon" data-tooltip="Total money in circulation including savings. Growth rate indicates liquidity conditions."></span></div>
+                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-m2">--</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 12px; font-size: 0.7rem; color: var(--text-muted); text-align: right;">
+                        Data from Federal Reserve (FRED) • <span id="econ-timestamp">--</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Options Tab -->
@@ -3050,6 +3168,7 @@
                 fetchEvolution();
                 fetchParameters();
                 fetchCorrelations();
+                fetchEconomicDashboard();
             } else if (tabId === 'themes') {
                 fetchThemes();
             } else if (tabId === 'options') {
@@ -3812,6 +3931,111 @@
                 }
             } catch (e) {
                 document.getElementById('briefing-container').innerHTML = '<div style="color: var(--red);">Failed to generate briefing</div>';
+            }
+        }
+
+        // Economic Dashboard (FRED)
+        async function fetchEconomicDashboard() {
+            try {
+                const res = await fetch(`${API_BASE}/economic/dashboard`);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    document.getElementById('econ-score').textContent = '--';
+                    document.getElementById('econ-label').textContent = data.error || 'Not configured';
+                    return;
+                }
+
+                // Overall score
+                const score = data.overall_score || 50;
+                const label = data.overall_label || 'Neutral';
+                const color = data.overall_color || '#eab308';
+
+                document.getElementById('econ-score').textContent = score;
+                document.getElementById('econ-score').style.color = color;
+                document.getElementById('econ-label').textContent = label;
+                document.getElementById('econ-label').style.color = color;
+
+                // Alerts
+                const alertsContainer = document.getElementById('econ-alerts');
+                if (data.alerts && data.alerts.length > 0) {
+                    alertsContainer.innerHTML = data.alerts.map(a => `
+                        <div style="padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; margin-bottom: 8px; font-size: 0.8rem;">
+                            <span style="color: #ef4444;">⚠️ ${a.message}</span>
+                        </div>
+                    `).join('');
+                } else {
+                    alertsContainer.innerHTML = '';
+                }
+
+                // Yield curve
+                const yc = data.yield_curve || {};
+                document.getElementById('econ-yield-curve').textContent = yc.display || '--';
+                document.getElementById('econ-yield-curve').style.color = yc.inverted ? '#ef4444' : (yc.spread > 0.5 ? '#22c55e' : '#eab308');
+                document.getElementById('econ-yield-status').textContent = yc.emoji || '🟡';
+
+                // Individual indicators
+                const indicators = data.indicators || {};
+
+                // Fed Rate
+                if (indicators.fed_funds_rate) {
+                    document.getElementById('econ-fed-rate').textContent = indicators.fed_funds_rate.display;
+                }
+
+                // 10Y Treasury
+                if (indicators.treasury_10y) {
+                    document.getElementById('econ-10y').textContent = indicators.treasury_10y.display;
+                }
+
+                // 2Y Treasury
+                if (indicators.treasury_2y) {
+                    document.getElementById('econ-2y').textContent = indicators.treasury_2y.display;
+                }
+
+                // Unemployment
+                if (indicators.unemployment) {
+                    document.getElementById('econ-unemployment').textContent = indicators.unemployment.display;
+                    document.getElementById('econ-unemployment-status').textContent = indicators.unemployment.emoji;
+                }
+
+                // Initial Claims
+                if (indicators.initial_claims) {
+                    document.getElementById('econ-claims').textContent = indicators.initial_claims.display;
+                    document.getElementById('econ-claims-status').textContent = indicators.initial_claims.emoji;
+                }
+
+                // CPI
+                if (indicators.cpi_yoy) {
+                    document.getElementById('econ-cpi').textContent = indicators.cpi_yoy.display;
+                    document.getElementById('econ-cpi-status').textContent = indicators.cpi_yoy.emoji;
+                }
+
+                // High Yield Spread
+                if (indicators.high_yield_spread) {
+                    document.getElementById('econ-hy-spread').textContent = indicators.high_yield_spread.display;
+                    document.getElementById('econ-hy-status').textContent = indicators.high_yield_spread.emoji;
+                }
+
+                // Consumer Sentiment
+                if (indicators.consumer_sentiment) {
+                    document.getElementById('econ-sentiment').textContent = indicators.consumer_sentiment.display;
+                    document.getElementById('econ-sentiment-status').textContent = indicators.consumer_sentiment.emoji;
+                }
+
+                // M2 Money Supply
+                if (indicators.m2_money) {
+                    document.getElementById('econ-m2').textContent = indicators.m2_money.display;
+                }
+
+                // Timestamp
+                if (data.timestamp) {
+                    const ts = new Date(data.timestamp);
+                    document.getElementById('econ-timestamp').textContent = ts.toLocaleString();
+                }
+
+            } catch (e) {
+                console.warn('Economic dashboard fetch failed:', e);
+                document.getElementById('econ-label').textContent = 'Failed to load';
             }
         }
 

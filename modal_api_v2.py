@@ -1160,6 +1160,58 @@ Get an API key at `/api-keys/request`
             return {"ok": True, "briefing": "Briefing unavailable. Run a scan to populate data."}
 
     # =============================================================================
+    # ROUTES - ECONOMIC DASHBOARD (FRED)
+    # =============================================================================
+
+    @web_app.get("/economic/dashboard")
+    def economic_dashboard():
+        """
+        Get comprehensive economic indicators from FRED.
+        Includes yield curve, employment, inflation, and credit data.
+        """
+        try:
+            from utils.data_providers import FREDProvider
+
+            if not FREDProvider.is_configured():
+                return {
+                    "ok": False,
+                    "error": "FRED API key not configured",
+                    "message": "Add FRED_API_KEY to environment variables"
+                }
+
+            dashboard = FREDProvider.get_economic_dashboard()
+            return {"ok": True, **dashboard}
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()[:500]}
+
+    @web_app.get("/economic/series/{series_name}")
+    def economic_series(series_name: str):
+        """Get historical data for a specific economic series."""
+        try:
+            from utils.data_providers import FREDProvider
+
+            if not FREDProvider.is_configured():
+                return {"ok": False, "error": "FRED API key not configured"}
+
+            series_id = FREDProvider.SERIES.get(series_name)
+            if not series_id:
+                return {"ok": False, "error": f"Unknown series: {series_name}"}
+
+            data = FREDProvider.get_series(series_id, limit=30)
+            meta = FREDProvider.SERIES_META.get(series_name, {})
+
+            return {
+                "ok": True,
+                "series": series_name,
+                "name": meta.get('name', series_name),
+                "tooltip": meta.get('tooltip', ''),
+                "data": data
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =============================================================================
     # ROUTES - SUPPLY CHAIN
     # =============================================================================
 

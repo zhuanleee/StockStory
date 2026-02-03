@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 18:06 - `63cdaeb`
+
+**Fix themes tab API and JS for proper data rendering**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 18:03 - `c59dd49`
 
 **Fix correlations endpoint to return flat pair format for dashboard**

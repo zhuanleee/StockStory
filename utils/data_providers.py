@@ -651,22 +651,102 @@ class FREDProvider:
 
     # Common series IDs
     SERIES = {
+        # Interest Rates
         'fed_funds_rate': 'FEDFUNDS',
-        'unemployment': 'UNRATE',
-        'cpi': 'CPIAUCSL',
-        'gdp': 'GDP',
         'treasury_10y': 'DGS10',
         'treasury_2y': 'DGS2',
-        'sp500': 'SP500',
-        'vix': 'VIXCLS',
-        'consumer_sentiment': 'UMCSENT',
-        'industrial_production': 'INDPRO',
-        'housing_starts': 'HOUST',
-        'retail_sales': 'RSAFS',
+        'treasury_3m': 'DGS3MO',
+        'treasury_30y': 'DGS30',
+        # Employment
+        'unemployment': 'UNRATE',
+        'initial_claims': 'ICSA',
+        'continuing_claims': 'CCSA',
+        'nonfarm_payrolls': 'PAYEMS',
+        # Inflation
+        'cpi': 'CPIAUCSL',
+        'cpi_yoy': 'CPIAUCSL',
+        'core_cpi': 'CPILFESL',
         'pce': 'PCE',
         'core_pce': 'PCEPILFE',
+        # Growth
+        'gdp': 'GDP',
+        'real_gdp': 'A191RL1Q225SBEA',
+        'industrial_production': 'INDPRO',
+        # Consumer
+        'consumer_sentiment': 'UMCSENT',
+        'retail_sales': 'RSAFS',
+        'housing_starts': 'HOUST',
+        # Credit & Liquidity
+        'high_yield_spread': 'BAMLH0A0HYM2',
         'm2_money': 'M2SL',
-        'initial_claims': 'ICSA'
+        'fed_balance_sheet': 'WALCL',
+        # Market
+        'sp500': 'SP500',
+        'vix': 'VIXCLS',
+    }
+
+    # Series metadata for tooltips and interpretation
+    SERIES_META = {
+        'fed_funds_rate': {
+            'name': 'Fed Funds Rate',
+            'tooltip': 'The interest rate banks charge each other for overnight loans. Set by the Federal Reserve to control monetary policy.',
+            'unit': '%',
+            'good_direction': None,  # Context dependent
+        },
+        'treasury_10y': {
+            'name': '10-Year Treasury',
+            'tooltip': 'Yield on 10-year US government bonds. Key benchmark for mortgages and long-term rates.',
+            'unit': '%',
+            'good_direction': None,
+        },
+        'treasury_2y': {
+            'name': '2-Year Treasury',
+            'tooltip': 'Yield on 2-year US government bonds. Reflects near-term Fed rate expectations.',
+            'unit': '%',
+            'good_direction': None,
+        },
+        'unemployment': {
+            'name': 'Unemployment Rate',
+            'tooltip': 'Percentage of labor force without jobs. Below 4% is considered full employment.',
+            'unit': '%',
+            'good_direction': 'down',
+            'thresholds': {'good': 4.0, 'warning': 5.5, 'danger': 7.0},
+        },
+        'initial_claims': {
+            'name': 'Initial Jobless Claims',
+            'tooltip': 'Weekly new unemployment filings. Leading indicator - rising claims signal economic weakness.',
+            'unit': 'K',
+            'good_direction': 'down',
+            'thresholds': {'good': 220, 'warning': 280, 'danger': 350},
+        },
+        'cpi_yoy': {
+            'name': 'CPI Inflation',
+            'tooltip': 'Consumer Price Index year-over-year change. Fed targets 2% inflation.',
+            'unit': '%',
+            'good_direction': 'target',
+            'target': 2.0,
+            'thresholds': {'good': 2.5, 'warning': 4.0, 'danger': 6.0},
+        },
+        'high_yield_spread': {
+            'name': 'High Yield Spread',
+            'tooltip': 'Difference between junk bond and treasury yields. Widening spread = credit stress/risk-off.',
+            'unit': 'bp',
+            'good_direction': 'down',
+            'thresholds': {'good': 350, 'warning': 500, 'danger': 700},
+        },
+        'm2_money': {
+            'name': 'M2 Money Supply',
+            'tooltip': 'Total money in circulation including savings. Growth rate indicates liquidity conditions.',
+            'unit': 'T$',
+            'good_direction': None,
+        },
+        'consumer_sentiment': {
+            'name': 'Consumer Sentiment',
+            'tooltip': 'University of Michigan survey of consumer confidence. Above 80 is healthy.',
+            'unit': '',
+            'good_direction': 'up',
+            'thresholds': {'good': 80, 'warning': 65, 'danger': 55},
+        },
     }
 
     @staticmethod
@@ -731,34 +811,165 @@ class FREDProvider:
     @staticmethod
     def get_economic_dashboard() -> Dict[str, Any]:
         """
-        Get key economic indicators for market analysis.
+        Get comprehensive economic indicators for market analysis.
 
-        Returns dict with latest values for major indicators.
+        Returns dict with latest values, interpretations, and alerts.
         """
-        dashboard = {}
+        dashboard = {
+            'indicators': {},
+            'yield_curve': {},
+            'alerts': [],
+            'overall_score': 50,
+            'overall_label': 'Neutral',
+            'timestamp': datetime.now().isoformat()
+        }
 
+        # Key series to fetch
         key_series = [
-            'fed_funds_rate', 'unemployment', 'treasury_10y',
-            'treasury_2y', 'vix', 'consumer_sentiment'
+            'fed_funds_rate', 'treasury_10y', 'treasury_2y',
+            'unemployment', 'initial_claims', 'cpi_yoy',
+            'high_yield_spread', 'consumer_sentiment', 'm2_money'
         ]
+
+        scores = []
 
         for name in key_series:
             series_id = FREDProvider.SERIES.get(name)
             if series_id:
                 result = FREDProvider.get_latest_value(series_id)
                 if result:
-                    dashboard[name] = {
+                    value = result[1]
+                    meta = FREDProvider.SERIES_META.get(name, {})
+
+                    # Format value based on unit
+                    unit = meta.get('unit', '')
+                    if unit == 'K':
+                        display_value = f"{value/1000:.0f}K" if value > 1000 else f"{value:.0f}"
+                    elif unit == 'T$':
+                        display_value = f"${value/1000:.1f}T" if value > 1000 else f"${value:.1f}B"
+                    elif unit == 'bp':
+                        display_value = f"{value*100:.0f}bp"
+                    elif unit == '%':
+                        display_value = f"{value:.2f}%"
+                    else:
+                        display_value = f"{value:.1f}"
+
+                    # Calculate status
+                    status = 'neutral'
+                    status_emoji = '🟡'
+                    thresholds = meta.get('thresholds', {})
+
+                    if thresholds:
+                        good_dir = meta.get('good_direction')
+                        if good_dir == 'down':
+                            if value <= thresholds.get('good', float('inf')):
+                                status, status_emoji = 'good', '🟢'
+                            elif value >= thresholds.get('danger', float('inf')):
+                                status, status_emoji = 'danger', '🔴'
+                            elif value >= thresholds.get('warning', float('inf')):
+                                status, status_emoji = 'warning', '🟠'
+                        elif good_dir == 'up':
+                            if value >= thresholds.get('good', 0):
+                                status, status_emoji = 'good', '🟢'
+                            elif value <= thresholds.get('danger', 0):
+                                status, status_emoji = 'danger', '🔴'
+                            elif value <= thresholds.get('warning', 0):
+                                status, status_emoji = 'warning', '🟠'
+                        elif good_dir == 'target':
+                            target = meta.get('target', 2.0)
+                            diff = abs(value - target)
+                            if diff <= 0.5:
+                                status, status_emoji = 'good', '🟢'
+                            elif value >= thresholds.get('danger', float('inf')):
+                                status, status_emoji = 'danger', '🔴'
+                            elif value >= thresholds.get('warning', float('inf')):
+                                status, status_emoji = 'warning', '🟠'
+
+                    # Score contribution (0-100)
+                    if status == 'good':
+                        scores.append(80)
+                    elif status == 'danger':
+                        scores.append(20)
+                    elif status == 'warning':
+                        scores.append(40)
+                    else:
+                        scores.append(50)
+
+                    dashboard['indicators'][name] = {
+                        'value': value,
+                        'display': display_value,
                         'date': result[0],
-                        'value': result[1]
+                        'name': meta.get('name', name),
+                        'tooltip': meta.get('tooltip', ''),
+                        'status': status,
+                        'emoji': status_emoji,
+                        'unit': unit
                     }
 
-        # Calculate yield curve (10y - 2y spread)
-        if 'treasury_10y' in dashboard and 'treasury_2y' in dashboard:
-            spread = dashboard['treasury_10y']['value'] - dashboard['treasury_2y']['value']
-            dashboard['yield_curve_spread'] = {
-                'value': round(spread, 2),
-                'inverted': spread < 0
+                    # Add alerts for danger conditions
+                    if status == 'danger':
+                        dashboard['alerts'].append({
+                            'indicator': meta.get('name', name),
+                            'message': f"{meta.get('name', name)} at {display_value} - elevated risk",
+                            'severity': 'high'
+                        })
+
+        # Calculate yield curve
+        t10 = dashboard['indicators'].get('treasury_10y', {}).get('value')
+        t2 = dashboard['indicators'].get('treasury_2y', {}).get('value')
+
+        if t10 is not None and t2 is not None:
+            spread = t10 - t2
+            inverted = spread < 0
+
+            if inverted:
+                yc_status, yc_emoji = 'danger', '🔴'
+                scores.append(10)
+                dashboard['alerts'].append({
+                    'indicator': 'Yield Curve',
+                    'message': f'Yield curve INVERTED ({spread:.2f}%) - recession warning',
+                    'severity': 'high'
+                })
+            elif spread < 0.25:
+                yc_status, yc_emoji = 'warning', '🟠'
+                scores.append(35)
+            elif spread > 1.0:
+                yc_status, yc_emoji = 'good', '🟢'
+                scores.append(80)
+            else:
+                yc_status, yc_emoji = 'neutral', '🟡'
+                scores.append(55)
+
+            dashboard['yield_curve'] = {
+                'spread': round(spread, 2),
+                'display': f"{spread:+.2f}%",
+                'inverted': inverted,
+                'status': yc_status,
+                'emoji': yc_emoji,
+                'name': 'Yield Curve (10Y-2Y)',
+                'tooltip': 'Spread between 10-year and 2-year Treasury yields. Inverted curve (negative) historically precedes recessions by 12-18 months.'
             }
+
+        # Calculate overall score
+        if scores:
+            overall = sum(scores) / len(scores)
+            dashboard['overall_score'] = round(overall, 0)
+
+            if overall >= 70:
+                dashboard['overall_label'] = 'Healthy'
+                dashboard['overall_color'] = '#22c55e'
+            elif overall >= 55:
+                dashboard['overall_label'] = 'Stable'
+                dashboard['overall_color'] = '#84cc16'
+            elif overall >= 40:
+                dashboard['overall_label'] = 'Cautious'
+                dashboard['overall_color'] = '#eab308'
+            elif overall >= 25:
+                dashboard['overall_label'] = 'Stressed'
+                dashboard['overall_color'] = '#f97316'
+            else:
+                dashboard['overall_label'] = 'Risk-Off'
+                dashboard['overall_color'] = '#ef4444'
 
         return dashboard
 
