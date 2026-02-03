@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 22:42 - `84c8b65`
+
+**Fix: Dashboard and Telegram now show same sorted results**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 22:40 - `460e46c`
 
 **Fix Google Trends rate limiting with throttling and backoff**

@@ -258,6 +258,8 @@ def _run_daily_scan():
 
     # Save to JSON in Modal Volume for API access
     # Use sorted DataFrame records so API returns same order as Telegram
+    # Replace NaN with None for JSON serialization
+    df_clean = df.where(pd.notnull(df), None)
     scan_data = {
         "status": "success",
         "timestamp": datetime.now().isoformat(),
@@ -265,7 +267,7 @@ def _run_daily_scan():
         "successful": len(successful),
         "failed": len(failed),
         "duration_seconds": duration,
-        "results": df.to_dict('records')  # Sorted by story_score descending
+        "results": df_clean.to_dict('records')  # Sorted by story_score descending
     }
 
     json_path = Path(VOLUME_PATH) / json_filename
