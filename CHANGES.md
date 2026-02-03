@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 21:18 - `2352d15`
+
+**Fix missing fetchAIIntelligence and fetchUnusualOptions in module's refreshAll**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/main.js
+```
+</details>
+
+---
+
+
 ### 2026-02-03 21:15 - `20a0fd5`
 
 **Add fetchUnusualOptions to dashboard data loading**

@@ -7679,23 +7679,28 @@
             console.log('🔄 refreshAll() called - loading dashboard data');
             document.getElementById('last-update').textContent = 'Refreshing...';
 
-            // Load dashboard data on page load
+            // Stage 1: Load fast data first (user sees results quickly)
             await Promise.all([
                 fetchHealth(),
                 fetchScan(),
-                fetchAIIntelligence(),
-                fetchConvictionAlerts(),
                 fetchThemes(),
-                fetchUnusualOptions(),
+                fetchConvictionAlerts(),
             ]);
 
-            tabLoadedAt['dashboard'] = Date.now();
-
+            // Update time after fast data loads
             document.getElementById('last-update').textContent = new Date().toLocaleTimeString('en-MY', {
                 timeZone: 'Asia/Kuala_Lumpur',
                 hour: '2-digit',
                 minute: '2-digit'
             }) + ' MYT';
+
+            tabLoadedAt['dashboard'] = Date.now();
+
+            // Stage 2: Load slower AI data in background (don't block UI)
+            Promise.all([
+                fetchAIIntelligence(),
+                fetchUnusualOptions(),
+            ]).catch(e => console.warn('Background AI fetch error:', e));
         }
 
         // Refresh only the current active tab

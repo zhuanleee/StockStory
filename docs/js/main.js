@@ -114,26 +114,12 @@ async function refreshAll() {
     store.setState('isRefreshing', true);
 
     try {
-        // Fetch all data in parallel
+        // Stage 1: Fast data first (user sees results quickly)
         await Promise.allSettled([
             typeof fetchHealth === 'function' ? fetchHealth() : Promise.resolve(),
             typeof fetchScan === 'function' ? fetchScan() : Promise.resolve(),
-            typeof fetchAIIntelligence === 'function' ? fetchAIIntelligence() : Promise.resolve(),
-            typeof fetchConvictionAlerts === 'function' ? fetchConvictionAlerts() : Promise.resolve(),
-            typeof fetchUnusualOptions === 'function' ? fetchUnusualOptions() : Promise.resolve(),
-            typeof fetchSupplyChain === 'function' ? fetchSupplyChain() : Promise.resolve(),
-            typeof fetchEarnings === 'function' ? fetchEarnings() : Promise.resolve(),
-            typeof fetchEvolution === 'function' ? fetchEvolution() : Promise.resolve(),
-            typeof fetchParameters === 'function' ? fetchParameters() : Promise.resolve(),
-            typeof fetchCorrelations === 'function' ? fetchCorrelations() : Promise.resolve(),
             typeof fetchThemes === 'function' ? fetchThemes() : Promise.resolve(),
-            typeof fetchMARadar === 'function' ? fetchMARadar() : Promise.resolve(),
-            typeof fetchDeals === 'function' ? fetchDeals() : Promise.resolve(),
-            typeof fetchContractThemes === 'function' ? fetchContractThemes() : Promise.resolve(),
-            typeof fetchRecentContracts === 'function' ? fetchRecentContracts() : Promise.resolve(),
-            typeof fetchPatentThemes === 'function' ? fetchPatentThemes() : Promise.resolve(),
-            typeof fetchThemeRadar === 'function' ? fetchThemeRadar() : Promise.resolve(),
-            typeof fetchThemeAlerts === 'function' ? fetchThemeAlerts() : Promise.resolve(),
+            typeof fetchConvictionAlerts === 'function' ? fetchConvictionAlerts() : Promise.resolve(),
             typeof fetchTrades === 'function' ? fetchTrades() : Promise.resolve(),
         ]);
 
@@ -146,6 +132,24 @@ async function refreshAll() {
         }
 
         store.setState('lastUpdate', now.toISOString());
+
+        // Stage 2: Slower AI/analytics data in background
+        Promise.allSettled([
+            typeof fetchAIIntelligence === 'function' ? fetchAIIntelligence() : Promise.resolve(),
+            typeof fetchUnusualOptions === 'function' ? fetchUnusualOptions() : Promise.resolve(),
+            typeof fetchSupplyChain === 'function' ? fetchSupplyChain() : Promise.resolve(),
+            typeof fetchEarnings === 'function' ? fetchEarnings() : Promise.resolve(),
+            typeof fetchEvolution === 'function' ? fetchEvolution() : Promise.resolve(),
+            typeof fetchParameters === 'function' ? fetchParameters() : Promise.resolve(),
+            typeof fetchCorrelations === 'function' ? fetchCorrelations() : Promise.resolve(),
+            typeof fetchMARadar === 'function' ? fetchMARadar() : Promise.resolve(),
+            typeof fetchDeals === 'function' ? fetchDeals() : Promise.resolve(),
+            typeof fetchContractThemes === 'function' ? fetchContractThemes() : Promise.resolve(),
+            typeof fetchRecentContracts === 'function' ? fetchRecentContracts() : Promise.resolve(),
+            typeof fetchPatentThemes === 'function' ? fetchPatentThemes() : Promise.resolve(),
+            typeof fetchThemeRadar === 'function' ? fetchThemeRadar() : Promise.resolve(),
+            typeof fetchThemeAlerts === 'function' ? fetchThemeAlerts() : Promise.resolve(),
+        ]).catch(e => console.warn('Background fetch error:', e));
     } catch (error) {
         console.error('Error refreshing data:', error);
         if (el) {
