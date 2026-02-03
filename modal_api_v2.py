@@ -3004,7 +3004,7 @@ Provide brief JSON interpretation:
                     "entry_price": decision.entry_price,
                     "stop_loss": decision.stop_loss,
                     "targets": decision.targets,
-                    "risk_reward": decision.risk_reward_ratio
+                    "risk_reward": round((decision.targets[0] - decision.entry_price) / (decision.entry_price - decision.stop_loss), 2) if decision.entry_price and decision.stop_loss and decision.targets and decision.entry_price != decision.stop_loss else None
                 },
 
                 # Director Scores
