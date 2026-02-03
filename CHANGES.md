@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:16 - `eb21f71`
+
+**Bot only reads and replies in Bot Alerts topic**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 17:12 - `16f7cf8`
 
 **Send bot messages to group topic instead of main chat**

@@ -1189,9 +1189,9 @@ Get an API key at `/api-keys/request`
         try:
             from src.data.sec_edgar import get_recent_ma_deals
             deals = get_recent_ma_deals()
-            return {"ok": True, "data": deals}
+            return {"ok": True, "deals": deals or []}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "deals": []}
 
     @web_app.get("/sec/ma-radar")
     def sec_ma_radar():
@@ -1207,9 +1207,16 @@ Get an API key at `/api-keys/request`
         try:
             from src.data.sec_edgar import check_ticker_ma_activity
             activity = check_ticker_ma_activity(ticker_symbol)
-            return {"ok": True, "data": activity}
+            # Extract ma_score and signals from activity dict
+            if isinstance(activity, dict):
+                return {
+                    "ok": True,
+                    "ma_score": activity.get("ma_score", activity.get("score", 0)),
+                    "signals": activity.get("signals", [])
+                }
+            return {"ok": True, "ma_score": 0, "signals": []}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "ma_score": 0, "signals": []}
 
     @web_app.get("/sec/filings/{ticker_symbol}")
     def sec_filings(ticker_symbol: str):
@@ -1217,18 +1224,20 @@ Get an API key at `/api-keys/request`
             from src.data.sec_edgar import SECEdgarClient
             client = SECEdgarClient()
             filings = client.get_company_filings(ticker_symbol.upper(), days_back=90)
-            return {"ok": True, "data": [f.to_dict() for f in filings]}
+            filings_list = [f.to_dict() for f in filings] if filings else []
+            return {"ok": True, "filings": filings_list, "count": len(filings_list)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "filings": [], "count": 0}
 
     @web_app.get("/sec/insider/{ticker_symbol}")
     def sec_insider(ticker_symbol: str):
         try:
             from src.data.sec_edgar import get_insider_transactions_sync
             trades = get_insider_transactions_sync(ticker_symbol.upper())
-            return {"ok": True, "data": trades}
+            trades_list = trades if trades else []
+            return {"ok": True, "transactions": trades_list, "count": len(trades_list)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "transactions": [], "count": 0}
 
     # =============================================================================
     # ROUTES - OPTIONS (POLYGON)
@@ -1546,27 +1555,43 @@ Get an API key at `/api-keys/request`
         try:
             from src.data.gov_contracts import get_contract_trends
             themes = get_contract_trends()
-            return {"ok": True, "data": themes}
+            return {"ok": True, "themes": themes or {}}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "themes": {}}
 
     @web_app.get("/contracts/recent")
     def contracts_recent():
         try:
             from src.data.gov_contracts import get_recent_contracts
             contracts = get_recent_contracts()
-            return {"ok": True, "data": contracts}
+            return {"ok": True, "contracts": contracts or []}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "contracts": []}
 
     @web_app.get("/contracts/company/{ticker_symbol}")
     def contracts_company(ticker_symbol: str):
         try:
             from src.data.gov_contracts import get_company_contracts
-            contracts = get_company_contracts(ticker_symbol)
-            return {"ok": True, "data": contracts}
+            result = get_company_contracts(ticker_symbol)
+            # Handle both dict (activity) and list formats
+            if isinstance(result, dict):
+                return {"ok": True, "activity": result}
+            elif isinstance(result, list):
+                # Convert list to activity summary
+                total_value = sum(c.get('amount', 0) for c in result) if result else 0
+                agencies = list(set(c.get('agency', 'Unknown') for c in result if c.get('agency')))
+                return {
+                    "ok": True,
+                    "activity": {
+                        "contract_count": len(result),
+                        "total_value": total_value,
+                        "signal_strength": min(len(result) / 100, 1.0),
+                        "top_agencies": agencies[:5]
+                    }
+                }
+            return {"ok": True, "activity": None}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "activity": None}
 
     # =============================================================================
     # ROUTES - PATENTS
@@ -1577,18 +1602,40 @@ Get an API key at `/api-keys/request`
         try:
             from src.data.patents import get_patent_trends
             themes = get_patent_trends()
-            return {"ok": True, "data": themes}
+            return {"ok": True, "themes": themes or {}}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "themes": {}}
 
     @web_app.get("/patents/company/{ticker_symbol}")
     def patents_company(ticker_symbol: str):
         try:
             from src.data.patents import get_company_patents
-            patents = get_company_patents(ticker_symbol)
-            return {"ok": True, "data": patents}
+            result = get_company_patents(ticker_symbol)
+            # Handle both dict (activity) and list formats
+            if isinstance(result, dict):
+                return {"ok": True, "activity": result}
+            elif isinstance(result, list):
+                # Convert list to activity summary
+                keywords = []
+                for p in result[:50]:
+                    if p.get('title'):
+                        words = p['title'].lower().split()
+                        keywords.extend([w for w in words if len(w) > 4])
+                # Get top keywords by frequency
+                from collections import Counter
+                top_kw = [w for w, _ in Counter(keywords).most_common(10)]
+                return {
+                    "ok": True,
+                    "activity": {
+                        "patent_count": len(result),
+                        "trend": "neutral",
+                        "yoy_change": 0,
+                        "top_keywords": top_kw
+                    }
+                }
+            return {"ok": True, "activity": None}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": str(e), "activity": None}
 
     # =============================================================================
     # ROUTES - EVOLUTION & PARAMETERS
