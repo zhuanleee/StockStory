@@ -2,6 +2,28 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-03 17:12 - `16f7cf8`
+
+**Send bot messages to group topic instead of main chat**
+
+Files changed: 6
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+src/notifications/notification_manager.py
+tests/check_cron_status.py
+tests/test_group_notification.py
+tests/trigger_crisis_monitor.py
+```
+</details>
+
+---
+
+
 ### 2026-02-03 16:46 - `1f90a23`
 
 **Change tooltips from underlined text to info icons**

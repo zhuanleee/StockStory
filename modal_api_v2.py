@@ -2046,11 +2046,15 @@ Get an API key at `/api-keys/request`
 
             # Handle callback queries (button clicks)
             callback_query = update.get('callback_query')
+            msg_thread_id = None  # Initialize thread ID
+
             if callback_query:
                 callback_id = callback_query.get('id')
                 callback_data = callback_query.get('data', '')
-                cb_chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+                cb_message = callback_query.get('message', {})
+                cb_chat_id = cb_message.get('chat', {}).get('id')
                 cb_user = callback_query.get('from', {}).get('username', 'unknown')
+                msg_thread_id = cb_message.get('message_thread_id')  # Get topic ID from callback message
 
                 log(f"🔘 BUTTON CLICK from @{cb_user}: {callback_data}")
 
@@ -2080,36 +2084,59 @@ Get an API key at `/api-keys/request`
                 message = update.get('message', {})
                 text = message.get('text', '').strip()
                 msg_chat_id = message.get('chat', {}).get('id')
+                msg_thread_id = message.get('message_thread_id')  # Topic ID if in a topic
                 user_id = str(message.get('from', {}).get('id', msg_chat_id))
                 username = message.get('from', {}).get('username', 'unknown')
+
+                # Filter: Only respond to messages in Bot Alerts topic when in group
+                group_chat_id = os.environ.get('TELEGRAM_GROUP_CHAT_ID', '-1003774843100')
+                group_topic_id = int(os.environ.get('TELEGRAM_GROUP_TOPIC_ID', '46'))
+
+                # Check if message is from the group
+                if str(msg_chat_id) == group_chat_id:
+                    # Only process if it's in the Bot Alerts topic
+                    if msg_thread_id != group_topic_id:
+                        log(f"⏭️ Ignoring group message outside Bot Alerts topic (thread_id: {msg_thread_id})")
+                        return {"ok": True}
+                    log(f"✅ Processing message from Bot Alerts topic")
 
             if not text or not msg_chat_id:
                 log("⏭️ Skipping non-text update")
                 return {"ok": True}
 
+            # Use topic thread ID for replies (set earlier in message/callback processing)
+            reply_thread_id = msg_thread_id
+
             def send_reply(reply_text: str):
                 log(f"📤 SENDING REPLY ({len(reply_text)} chars): {reply_text[:100]}...")
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 try:
-                    # Try with Markdown first
-                    resp = http_requests.post(url, json={
+                    # Build payload
+                    payload = {
                         'chat_id': msg_chat_id,
                         'text': reply_text,
                         'parse_mode': 'Markdown',
                         'disable_web_page_preview': True
-                    }, timeout=15)
+                    }
+                    # Add thread_id if replying to a topic
+                    if reply_thread_id:
+                        payload['message_thread_id'] = reply_thread_id
+
+                    resp = http_requests.post(url, json=payload, timeout=15)
                     if resp.status_code == 200:
                         log("✅ Reply sent successfully")
                     elif resp.status_code == 400 and 'parse entities' in resp.text:
                         # Markdown parsing failed - retry without formatting
                         log("⚠️ Markdown parse failed, retrying without formatting...")
-                        # Remove markdown characters
                         plain_text = reply_text.replace('*', '').replace('_', '').replace('`', '')
-                        resp2 = http_requests.post(url, json={
+                        payload2 = {
                             'chat_id': msg_chat_id,
                             'text': plain_text,
                             'disable_web_page_preview': True
-                        }, timeout=15)
+                        }
+                        if reply_thread_id:
+                            payload2['message_thread_id'] = reply_thread_id
+                        resp2 = http_requests.post(url, json=payload2, timeout=15)
                         if resp2.status_code == 200:
                             log("✅ Reply sent (plain text)")
                         else:
@@ -2124,6 +2151,9 @@ Get an API key at `/api-keys/request`
                 url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
                 files = {'photo': ('chart.png', photo_bytes, 'image/png')}
                 data = {'chat_id': msg_chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
+                # Add thread_id if replying to a topic
+                if reply_thread_id:
+                    data['message_thread_id'] = reply_thread_id
                 try:
                     resp = http_requests.post(url, files=files, data=data, timeout=30)
                     if resp.status_code == 200:
@@ -2138,7 +2168,7 @@ Get an API key at `/api-keys/request`
                 log(f"📤 SENDING WITH BUTTONS: {reply_text[:50]}...")
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 try:
-                    resp = http_requests.post(url, json={
+                    payload = {
                         'chat_id': msg_chat_id,
                         'text': reply_text,
                         'parse_mode': 'Markdown',
@@ -2146,17 +2176,24 @@ Get an API key at `/api-keys/request`
                         'reply_markup': {
                             'inline_keyboard': buttons
                         }
-                    }, timeout=15)
+                    }
+                    if reply_thread_id:
+                        payload['message_thread_id'] = reply_thread_id
+
+                    resp = http_requests.post(url, json=payload, timeout=15)
                     if resp.status_code == 200:
                         log("✅ Message with buttons sent")
                     elif resp.status_code == 400 and 'parse entities' in resp.text:
                         # Retry without markdown
                         plain_text = reply_text.replace('*', '').replace('_', '').replace('`', '')
-                        http_requests.post(url, json={
+                        payload2 = {
                             'chat_id': msg_chat_id,
                             'text': plain_text,
                             'reply_markup': {'inline_keyboard': buttons}
-                        }, timeout=15)
+                        }
+                        if reply_thread_id:
+                            payload2['message_thread_id'] = reply_thread_id
+                        http_requests.post(url, json=payload2, timeout=15)
                     else:
                         log(f"❌ Buttons failed: {resp.status_code}")
                 except Exception as e:
