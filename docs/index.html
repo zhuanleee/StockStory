@@ -8305,8 +8305,16 @@
                 return;
             }
 
+            // Show container first, then render after a brief delay to get dimensions
             container.style.display = 'block';
 
+            // Use requestAnimationFrame to ensure container is visible and has dimensions
+            requestAnimationFrame(() => {
+                renderMaxPainChartInternal(canvas, painByStrike, maxPainPrice, currentPrice);
+            });
+        }
+
+        function renderMaxPainChartInternal(canvas, painByStrike, maxPainPrice, currentPrice) {
             // Get computed styles for colors
             const styles = getComputedStyle(document.documentElement);
             const purple = styles.getPropertyValue('--purple').trim() || '#a855f7';
@@ -8314,18 +8322,23 @@
             const textMuted = styles.getPropertyValue('--text-muted').trim() || '#64748b';
             const border = styles.getPropertyValue('--border').trim() || '#334155';
 
-            // Setup canvas
+            // Setup canvas with fixed dimensions if parent has no size
             const ctx = canvas.getContext('2d');
             const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.parentElement.getBoundingClientRect();
-            canvas.width = (rect.width - 32) * dpr;
-            canvas.height = (rect.height - 32) * dpr;
-            canvas.style.width = (rect.width - 32) + 'px';
-            canvas.style.height = (rect.height - 32) + 'px';
+            const parentRect = canvas.parentElement.getBoundingClientRect();
+
+            // Use fixed dimensions if parent is too small
+            const canvasWidth = Math.max(parentRect.width - 32, 400);
+            const canvasHeight = Math.max(parentRect.height - 32, 168);
+
+            canvas.width = canvasWidth * dpr;
+            canvas.height = canvasHeight * dpr;
+            canvas.style.width = canvasWidth + 'px';
+            canvas.style.height = canvasHeight + 'px';
             ctx.scale(dpr, dpr);
 
-            const width = rect.width - 32;
-            const height = rect.height - 32;
+            const width = canvasWidth;
+            const height = canvasHeight;
             const padding = { top: 20, right: 20, bottom: 35, left: 60 };
             const chartWidth = width - padding.left - padding.right;
             const chartHeight = height - padding.top - padding.bottom;
@@ -8333,18 +8346,29 @@
             // Clear canvas
             ctx.clearRect(0, 0, width, height);
 
-            // Filter to reasonable number of strikes (around current price)
+            // Filter to strikes within reasonable range of current price (+/- 20%)
             let data = painByStrike.slice();
-            if (data.length > 30) {
-                // Find index of max pain strike
+            if (currentPrice > 0) {
+                const minRange = currentPrice * 0.8;
+                const maxRange = currentPrice * 1.2;
+                data = data.filter(d => d.strike >= minRange && d.strike <= maxRange);
+            }
+
+            // If still too many, center around max pain
+            if (data.length > 25) {
                 const maxPainIdx = data.findIndex(d => d.strike === maxPainPrice);
                 const centerIdx = maxPainIdx >= 0 ? maxPainIdx : Math.floor(data.length / 2);
-                const start = Math.max(0, centerIdx - 15);
-                const end = Math.min(data.length, centerIdx + 15);
+                const start = Math.max(0, centerIdx - 12);
+                const end = Math.min(data.length, centerIdx + 13);
                 data = data.slice(start, end);
             }
 
-            if (data.length === 0) return;
+            if (data.length === 0) {
+                console.log('No pain data in range for chart');
+                return;
+            }
+
+            console.log('Rendering max pain chart with', data.length, 'strikes');
 
             // Get min/max values
             const strikes = data.map(d => d.strike);

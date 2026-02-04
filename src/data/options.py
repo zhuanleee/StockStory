@@ -376,6 +376,22 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
         elif days_to_expiry <= 5:
             interpretation += f" Options expire in {days_to_expiry} days."
 
+        # Filter pain_by_strike to strikes around current price (+/- 15%)
+        # This gives a meaningful chart view
+        if current_price > 0:
+            min_strike = current_price * 0.85
+            max_strike = current_price * 1.15
+            filtered_pain = [p for p in pain_by_strike if min_strike <= p['strike'] <= max_strike]
+            # If not enough strikes in range, use strikes around max pain
+            if len(filtered_pain) < 10:
+                # Find max pain index and take 25 strikes centered on it
+                max_pain_idx = next((i for i, p in enumerate(pain_by_strike) if p['strike'] == max_pain_price), len(pain_by_strike) // 2)
+                start = max(0, max_pain_idx - 12)
+                end = min(len(pain_by_strike), max_pain_idx + 13)
+                filtered_pain = pain_by_strike[start:end]
+        else:
+            filtered_pain = pain_by_strike[:25]
+
         result = {
             'ticker': ticker.upper(),
             'expiration': used_expiration,
@@ -384,7 +400,7 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
             'current_price': current_price,
             'distance_pct': round(distance_pct, 2),
             'direction': direction,
-            'pain_by_strike': pain_by_strike[:20],  # Top 20 strikes
+            'pain_by_strike': filtered_pain,
             'total_call_oi': total_call_oi,
             'total_put_oi': total_put_oi,
             'interpretation': interpretation

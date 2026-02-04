@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:11 - `6b9973c`
+
+**Add pain by strike chart to Max Pain analysis**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:04 - `d1fa743`
 
 **Fix max pain current price to use real-time snapshot**
