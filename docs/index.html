@@ -385,6 +385,270 @@
             border-bottom-color: var(--blue);
         }
 
+        /* === VISUAL HIERARCHY SYSTEM === */
+
+        /* Hero Zone - Tier 1 */
+        .hero-zone {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(59, 130, 246, 0.15) 50%, rgba(168, 85, 247, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 20px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.15);
+        }
+
+        .hero-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .hero-regime {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .hero-regime-emoji {
+            font-size: 3rem;
+            line-height: 1;
+        }
+
+        .hero-regime-info h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+        }
+
+        .hero-regime-info p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .hero-stat {
+            text-align: center;
+        }
+
+        .hero-stat-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .hero-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .hero-opportunities {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .hero-stock-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .hero-stock-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .hero-stock-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .hero-stock-ticker {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .hero-stock-score {
+            background: var(--green);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .hero-stock-score.developing {
+            background: var(--yellow);
+            color: #000;
+        }
+
+        .hero-stock-theme {
+            font-size: 0.75rem;
+            color: var(--blue-light);
+            margin-bottom: 4px;
+        }
+
+        .hero-stock-catalyst {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Compact Stats Bar */
+        .stats-bar {
+            display: flex;
+            gap: 24px;
+            padding: 12px 20px;
+            background: var(--bg-elevated);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .stats-bar-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stats-bar-label {
+            color: var(--text-muted);
+        }
+
+        .stats-bar-value {
+            font-weight: 600;
+        }
+
+        .stats-bar-value.green { color: var(--green); }
+        .stats-bar-value.blue { color: var(--blue); }
+        .stats-bar-value.yellow { color: var(--yellow); }
+
+        /* Collapsible Sidebar Sections */
+        .sidebar-accordion {
+            margin-bottom: 12px;
+        }
+
+        .sidebar-accordion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .sidebar-accordion-header:hover {
+            background: var(--bg-hover);
+        }
+
+        .sidebar-accordion-header h4 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-accordion-toggle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .sidebar-accordion.open .sidebar-accordion-toggle {
+            transform: rotate(180deg);
+        }
+
+        .sidebar-accordion-content {
+            display: none;
+            padding: 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            margin-top: -10px;
+            padding-top: 20px;
+        }
+
+        .sidebar-accordion.open .sidebar-accordion-content {
+            display: block;
+        }
+
+        .sidebar-accordion.open .sidebar-accordion-header {
+            border-radius: 10px 10px 0 0;
+        }
+
+        /* Quick Action Buttons */
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .quick-action-btn {
+            padding: 8px 12px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: var(--text);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .quick-action-btn:hover {
+            background: var(--bg-card);
+            border-color: var(--blue);
+        }
+
+        /* Tier 2 Cards (Primary) */
+        .card-primary {
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Tier 3 Cards (Supporting) */
+        .card-supporting {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .card-supporting .card-header {
+            padding: 12px 16px;
+        }
+
+        .card-supporting .card-title {
+            font-size: 0.8rem;
+        }
+
         /* Main */
         .main {
             max-width: 1400px;
@@ -1438,176 +1702,246 @@
 
     <!-- Main Content -->
     <main class="main">
-        <!-- Dashboard Tab (merged Overview + Intelligence) -->
+        <!-- Dashboard Tab - Restructured with Visual Hierarchy -->
         <div id="dashboard" class="tab-content active">
-            <!-- Market Regime Banner -->
-            <div class="card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%); border: 1px solid rgba(99, 102, 241, 0.3); margin-bottom: 20px;">
-                <div class="card-body" style="padding: 16px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <div style="font-size: 2.5rem;" id="regime-emoji">🎯</div>
-                            <div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Market Regime</div>
-                                <div style="font-size: 1.5rem; font-weight: 700;" id="regime-label">Loading...</div>
-                                <div style="font-size: 0.8rem; color: var(--text-muted);" id="regime-reasoning">Analyzing market conditions...</div>
-                            </div>
+
+            <!-- ========== TIER 1: HERO ZONE ========== -->
+            <div class="hero-zone">
+                <div class="hero-header">
+                    <div class="hero-regime">
+                        <div class="hero-regime-emoji" id="regime-emoji">🎯</div>
+                        <div class="hero-regime-info">
+                            <h2 id="regime-label">Loading...</h2>
+                            <p id="regime-reasoning">Analyzing market conditions...</p>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 24px;">
-                            <div style="text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">CONFIDENCE</div>
-                                <div style="font-size: 1.25rem; font-weight: 600;" id="regime-confidence">--%</div>
-                            </div>
-                            <button class="btn btn-primary" onclick="fetchAIIntelligence()" style="padding: 8px 16px;">
-                                🧠 Refresh AI
-                            </button>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="hero-stat">
+                            <div class="hero-stat-label">CONFIDENCE</div>
+                            <div class="hero-stat-value" id="regime-confidence">--%</div>
                         </div>
+                        <div class="hero-stat">
+                            <div class="hero-stat-label">FEAR/GREED</div>
+                            <div class="hero-stat-value" id="fg-value">--</div>
+                        </div>
+                        <button class="btn btn-primary" onclick="fetchAIIntelligence()" style="padding: 10px 20px;">
+                            🧠 Refresh AI
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Top 3 Opportunities - Hero Cards -->
+                <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">TOP OPPORTUNITIES TODAY</div>
+                    <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.7rem;" onclick="fetchScan()">View All</button>
+                </div>
+                <div class="hero-opportunities" id="hero-top-picks">
+                    <div class="hero-stock-card">
+                        <div class="hero-stock-header">
+                            <span class="hero-stock-ticker">--</span>
+                            <span class="hero-stock-score">--</span>
+                        </div>
+                        <div class="hero-stock-theme">Loading...</div>
+                        <div class="hero-stock-catalyst">Scanning for opportunities...</div>
+                    </div>
+                    <div class="hero-stock-card">
+                        <div class="hero-stock-header">
+                            <span class="hero-stock-ticker">--</span>
+                            <span class="hero-stock-score">--</span>
+                        </div>
+                        <div class="hero-stock-theme">Loading...</div>
+                        <div class="hero-stock-catalyst">Scanning for opportunities...</div>
+                    </div>
+                    <div class="hero-stock-card">
+                        <div class="hero-stock-header">
+                            <span class="hero-stock-ticker">--</span>
+                            <span class="hero-stock-score">--</span>
+                        </div>
+                        <div class="hero-stock-theme">Loading...</div>
+                        <div class="hero-stock-catalyst">Scanning for opportunities...</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Stats Row -->
-            <div class="stats-row">
-                <div class="stat">
-                    <div class="stat-label">Stocks Scanned</div>
-                    <div class="stat-value blue" id="stat-scanned">0</div>
+            <!-- Compact Stats Bar -->
+            <div class="stats-bar">
+                <div class="stats-bar-item">
+                    <span class="stats-bar-label">Scanned:</span>
+                    <span class="stats-bar-value blue" id="stat-scanned">0</span>
                 </div>
-                <div class="stat">
-                    <div class="stat-label">Hot Opportunities</div>
-                    <div class="stat-value green" id="stat-hot">0</div>
+                <div class="stats-bar-item">
+                    <span class="stats-bar-label">Hot:</span>
+                    <span class="stats-bar-value green" id="stat-hot">0</span>
                 </div>
-                <div class="stat">
-                    <div class="stat-label">Developing</div>
-                    <div class="stat-value" id="stat-developing">0</div>
+                <div class="stats-bar-item">
+                    <span class="stats-bar-label">Developing:</span>
+                    <span class="stats-bar-value yellow" id="stat-developing">0</span>
                 </div>
-                <div class="stat">
-                    <div class="stat-label">Watchlist</div>
-                    <div class="stat-value" id="stat-watchlist">0</div>
+                <div class="stats-bar-item">
+                    <span class="stats-bar-label">Watchlist:</span>
+                    <span class="stats-bar-value" id="stat-watchlist">0</span>
+                </div>
+                <div class="stats-bar-item" style="margin-left: auto;">
+                    <span class="stats-bar-label">Breadth:</span>
+                    <span class="stats-bar-value" id="breadth-score">--</span>
+                </div>
+                <div class="stats-bar-item">
+                    <span class="stats-bar-label">Put/Call:</span>
+                    <span class="stats-bar-value" id="put-call">--</span>
                 </div>
             </div>
 
-            <!-- Signal Matrix Row -->
+            <!-- Alerts Container (if any) -->
+            <div id="alerts-container"></div>
+
+            <!-- ========== TIER 2: PRIMARY INSIGHTS ========== -->
             <div class="grid grid-2" style="margin-bottom: 20px;">
-                <!-- Signal Matrix -->
-                <div class="card">
+                <!-- AI Synthesis - Primary Card -->
+                <div class="card card-primary">
                     <div class="card-header">
-                        <div class="card-title">📊 Signal Matrix <span class="info-icon" data-tooltip="Cross-signal analysis showing confirmations and conflicts between different market indicators."></span></div>
+                        <div class="card-title">🧠 AI Market Synthesis</div>
+                        <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIIntelligence()">Regenerate</button>
+                    </div>
+                    <div class="card-body" id="ai-synthesis-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Refresh AI" to generate market intelligence...</div>
+                    </div>
+                </div>
+
+                <!-- Signal Matrix - Primary Card -->
+                <div class="card card-primary">
+                    <div class="card-header">
+                        <div class="card-title">📊 Signal Matrix</div>
                     </div>
                     <div class="card-body" id="signal-matrix-container">
                         <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading signal matrix...</div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Confirmations & Conflicts -->
-                <div class="card">
+            <!-- ========== TIER 3: SUPPORTING DATA ========== -->
+            <div class="grid grid-4" style="margin-bottom: 20px;">
+                <!-- Hot Themes -->
+                <div class="card card-supporting">
                     <div class="card-header">
-                        <div class="card-title">✅ Confirmations & ⚠️ Conflicts</div>
+                        <div class="card-title">🔥 Hot Themes</div>
                     </div>
-                    <div class="card-body" id="confirmations-container">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Analyzing signal alignment...</div>
+                    <div class="card-body">
+                        <div class="themes-row" id="theme-pills" style="flex-wrap: wrap; gap: 6px;"></div>
+                    </div>
+                </div>
+
+                <!-- Conviction Picks -->
+                <div class="card card-supporting">
+                    <div class="card-header">
+                        <div class="card-title">🎯 Conviction Picks</div>
+                    </div>
+                    <div class="card-body" id="conviction-picks-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Key Risks -->
+                <div class="card card-supporting">
+                    <div class="card-header">
+                        <div class="card-title">⚠️ Key Risks</div>
+                    </div>
+                    <div class="card-body" id="key-risks-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- Unusual Options -->
+                <div class="card card-supporting">
+                    <div class="card-header">
+                        <div class="card-title">🔥 Options Flow</div>
+                        <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.65rem;" onclick="fetchUnusualOptions()">↻</button>
+                    </div>
+                    <div class="card-body" id="unusual-options-container">
+                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading...</div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-sidebar">
-                <!-- Main Column -->
+            <!-- ========== TIER 4: EXPANDABLE SECTIONS ========== -->
+            <div style="display: grid; grid-template-columns: 1fr 300px; gap: 20px;">
+                <!-- Main Expandable Content -->
                 <div>
-                    <!-- Alerts -->
-                    <div id="alerts-container"></div>
-
-                    <!-- AI Synthesis -->
-                    <div class="card" style="margin-bottom: 20px;">
-                        <div class="card-header">
-                            <div class="card-title">🧠 AI Market Synthesis <span class="info-icon" data-tooltip="AI-powered analysis combining all data sources into actionable intelligence."></span></div>
-                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchAIIntelligence()">Regenerate</button>
+                    <!-- More Opportunities (Expandable) -->
+                    <div class="sidebar-accordion open">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>📋 All Opportunities</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-                        <div class="card-body" id="ai-synthesis-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Refresh AI" to generate market intelligence...</div>
-                        </div>
-                    </div>
-
-                    <!-- Top Opportunities -->
-                    <div class="card" style="margin-bottom: 20px;">
-                        <div class="card-header">
-                            <div class="card-title">🎯 Top Opportunities</div>
-                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchScan()">Refresh</button>
-                        </div>
-                        <div class="card-body no-padding" id="top-picks">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📊</div>
-                                <div>Loading opportunities...</div>
+                        <div class="sidebar-accordion-content">
+                            <div id="top-picks">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem; text-align: center; padding: 20px;">Loading opportunities...</div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Conviction Picks & Trade Ideas -->
-                    <div class="grid grid-2" style="margin-bottom: 20px;">
-                        <!-- Conviction Picks -->
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title">🎯 Top Conviction Picks</div>
-                            </div>
-                            <div class="card-body" id="conviction-picks-container">
-                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading conviction picks...</div>
-                            </div>
+                    <!-- Confirmations & Conflicts (Expandable) -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>✅ Confirmations & Conflicts</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-
-                        <!-- Trade Ideas -->
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title">💡 Trade Ideas</div>
-                            </div>
-                            <div class="card-body" id="trade-ideas-container">
-                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading trade ideas...</div>
+                        <div class="sidebar-accordion-content">
+                            <div id="confirmations-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Analyzing signal alignment...</div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Hot Themes -->
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="card-title">🔥 Hot Themes</div>
+                    <!-- Theme Stocks (Expandable) -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>📈 Theme Stocks</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-                        <div class="card-body">
-                            <div class="themes-row" id="theme-pills">
-
+                        <div class="sidebar-accordion-content">
+                            <div id="theme-stocks">
+                                <div class="theme-stocks" id="theme-stocks-grid"></div>
                             </div>
-                            <div id="theme-stocks" style="margin-top: 20px;">
-                                <div class="theme-stocks" id="theme-stocks-grid">
+                        </div>
+                    </div>
 
-                                </div>
+                    <!-- Market Narrative (Collapsed by default) -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>📝 Market Narrative</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
+                        </div>
+                        <div class="sidebar-accordion-content">
+                            <div id="market-narrative" style="font-size: 0.875rem; line-height: 1.6; color: var(--text);">
+                                Loading market narrative...
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sidebar -->
+                <!-- Right Sidebar - Compact -->
                 <div>
-                    <!-- Fear & Greed -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">Fear & Greed</div>
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <button class="quick-action-btn" onclick="fetchAIDigest()">📰 Digest</button>
+                        <button class="quick-action-btn" onclick="fetchAgenticStatus()">🧠 AI Status</button>
+                        <button class="quick-action-btn" onclick="fetchConvictionAlerts()">🎯 Alerts</button>
+                    </div>
+
+                    <!-- Market Health Accordion -->
+                    <div class="sidebar-accordion open">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>📊 Market Health</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-                        <div class="card-body">
-                            <div class="gauge-container">
+                        <div class="sidebar-accordion-content">
+                            <!-- Fear & Greed Gauge -->
+                            <div class="gauge-container" style="margin-bottom: 16px;">
                                 <div class="gauge">
                                     <div class="gauge-bg"></div>
                                     <div class="gauge-needle" id="gauge-needle" style="--rotation: 0deg;"></div>
                                 </div>
-                                <div class="gauge-value" id="fg-value">--</div>
                                 <div class="gauge-label" id="fg-label">Loading...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Market Health -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">Market Health</div>
-                        </div>
-                        <div class="card-body">
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Breadth Score</span>
-                                <span class="sidebar-value" id="breadth-score">--</span>
                             </div>
                             <div class="sidebar-item">
                                 <span class="sidebar-label">Advance/Decline</span>
@@ -1617,78 +1951,59 @@
                                 <span class="sidebar-label">New Highs/Lows</span>
                                 <span class="sidebar-value" id="hi-lo">--</span>
                             </div>
-                            <div class="sidebar-item">
-                                <span class="sidebar-label">Put/Call Ratio</span>
-                                <span class="sidebar-value" id="put-call">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Daily Digest Accordion -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>📰 Daily Digest</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
+                        </div>
+                        <div class="sidebar-accordion-content">
+                            <div id="daily-digest-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Click Quick Actions to generate...</div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Key Risks -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">⚠️ Key Risks to Watch</div>
+                    <!-- AI Command Center Accordion -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139, 92, 246, 0.1) 100%);">
+                            <h4>🧠 AI Command</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-                        <div class="card-body" id="key-risks-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading risk analysis...</div>
+                        <div class="sidebar-accordion-content">
+                            <div id="agentic-status-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Click Quick Actions to load...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trade Ideas Accordion -->
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>💡 Trade Ideas</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
+                        </div>
+                        <div class="sidebar-accordion-content">
+                            <div id="trade-ideas-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading trade ideas...</div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- High Conviction Alerts -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">🎯 High Conviction</div>
-                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchConvictionAlerts()">Refresh</button>
+                    <div class="sidebar-accordion">
+                        <div class="sidebar-accordion-header" onclick="toggleAccordion(this.parentElement)">
+                            <h4>🎯 Conviction Alerts</h4>
+                            <span class="sidebar-accordion-toggle">▼</span>
                         </div>
-                        <div class="card-body" id="conviction-alerts-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading multi-signal alerts...</div>
+                        <div class="sidebar-accordion-content">
+                            <div id="conviction-alerts-container">
+                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading multi-signal alerts...</div>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- Unusual Options Activity -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">🔥 Unusual Options</div>
-                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchUnusualOptions()">Refresh</button>
-                        </div>
-                        <div class="card-body" id="unusual-options-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading unusual activity...</div>
-                        </div>
-                    </div>
-
-                    <!-- Daily Digest -->
-                    <div class="card sidebar-card">
-                        <div class="card-header">
-                            <div class="card-title">📰 Daily Digest</div>
-                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchAIDigest()">Generate</button>
-                        </div>
-                        <div class="card-body" id="daily-digest-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Click "Generate" for morning briefing...</div>
-                        </div>
-                    </div>
-
-                    <!-- AI Command Center -->
-                    <div class="card sidebar-card" style="background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139, 92, 246, 0.1) 100%); border: 1px solid rgba(139, 92, 246, 0.3);">
-                        <div class="card-header">
-                            <div class="card-title">🧠 AI Command Center</div>
-                            <button class="btn btn-ghost" style="padding: 2px 8px; font-size: 0.7rem;" onclick="fetchAgenticStatus()">Refresh</button>
-                        </div>
-                        <div class="card-body" id="agentic-status-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading AI brain status...</div>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- Market Narrative -->
-            <div class="card" style="margin-top: 20px; background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);">
-                <div class="card-header">
-                    <div class="card-title">📝 Market Narrative</div>
-                </div>
-                <div class="card-body">
-                    <div id="market-narrative" style="font-size: 1rem; line-height: 1.6; color: var(--text);">
-                        Loading market narrative...
                     </div>
                 </div>
             </div>
@@ -3322,6 +3637,36 @@
             });
         });
 
+        // Accordion toggle for collapsible sections
+        function toggleAccordion(element) {
+            element.classList.toggle('open');
+        }
+
+        // Populate hero top picks (called from fetchScan)
+        function updateHeroTopPicks(stocks) {
+            const container = document.getElementById('hero-top-picks');
+            if (!container || !stocks || stocks.length === 0) return;
+
+            const top3 = stocks.slice(0, 3);
+            container.innerHTML = top3.map(stock => {
+                const score = stock.story_score || stock.composite_score || 0;
+                const scoreClass = score >= 70 ? '' : 'developing';
+                const theme = stock.hottest_theme || stock.theme || 'Analyzing...';
+                const catalyst = stock.next_catalyst || stock.catalyst?.description || 'Click for details';
+
+                return `
+                    <div class="hero-stock-card" onclick="showTickerDetail('${stock.ticker}')">
+                        <div class="hero-stock-header">
+                            <span class="hero-stock-ticker">${stock.ticker}</span>
+                            <span class="hero-stock-score ${scoreClass}">${Math.round(score)}</span>
+                        </div>
+                        <div class="hero-stock-theme">${theme}</div>
+                        <div class="hero-stock-catalyst">${catalyst.substring(0, 50)}${catalyst.length > 50 ? '...' : ''}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
         function switchCategory(categoryId) {
             // Update main tabs
             document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
@@ -3654,6 +3999,7 @@
                     console.log('✅ Rendering', stocks.length, 'stocks');
                     renderTopPicks(stocks);
                     renderScanTable(stocks);
+                    updateHeroTopPicks(stocks);  // Update hero zone top 3
 
                     // Update stats
                     document.getElementById('stat-scanned').textContent = stocks.length;

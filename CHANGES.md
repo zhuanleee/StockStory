@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 13:01 - `d9ed275`
+
+**Add utils mount to Modal image for Theme Registry**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 00:15 - `9c4e8b8`
 
 **Fix X Intelligence to use same pattern as working xai_x_intelligence_v2**
