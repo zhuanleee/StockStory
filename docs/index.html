@@ -2957,25 +2957,35 @@
                 <div class="card card-primary" style="border-left: 3px solid var(--purple);">
                     <div class="card-header">
                         <div class="card-title">🎯 Max Pain Analysis <span class="info-icon" data-tooltip="Max Pain: The strike where option writers lose the least money. Stocks tend to gravitate here near expiration."></span></div>
-                        <span id="max-pain-ticker" style="font-weight: 600; color: var(--blue);"></span>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span id="max-pain-ticker" style="font-weight: 600; color: var(--blue);"></span>
+                            <select id="max-pain-expiry-select" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;" onchange="loadMaxPainForExpiry()">
+                                <option value="">Loading expirations...</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">MAX PAIN PRICE</div>
-                                <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="max-pain-price">--</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">EXPIRATION</div>
+                                <div style="font-size: 1rem; font-weight: 600;" id="max-pain-expiry">--</div>
+                                <div style="font-size: 0.7rem; color: var(--yellow);" id="max-pain-dte">-- days</div>
                             </div>
-                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">CURRENT PRICE</div>
-                                <div style="font-size: 1.5rem; font-weight: 700;" id="max-pain-current">--</div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">MAX PAIN</div>
+                                <div style="font-size: 1.25rem; font-weight: 700; color: var(--purple);" id="max-pain-price">--</div>
                             </div>
-                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">DISTANCE</div>
-                                <div style="font-size: 1.5rem; font-weight: 700;" id="max-pain-distance">--</div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">CURRENT</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="max-pain-current">--</div>
                             </div>
-                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.7rem; color: var(--text-muted);">TOTAL OI</div>
-                                <div style="font-size: 1.25rem; font-weight: 600;" id="max-pain-oi">--</div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">DISTANCE</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="max-pain-distance">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">CALL / PUT OI</div>
+                                <div style="font-size: 1rem; font-weight: 600;" id="max-pain-oi">--</div>
                             </div>
                         </div>
                         <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
@@ -8057,6 +8067,9 @@
         }
 
         // Max Pain Analysis loader
+        // Store current max pain ticker for expiry changes
+        let maxPainCurrentTicker = '';
+
         async function loadMaxPain() {
             const ticker = document.getElementById('options-ticker-input').value.trim().toUpperCase();
             if (!ticker) {
@@ -8064,25 +8077,73 @@
                 return;
             }
 
+            maxPainCurrentTicker = ticker;
+
             const container = document.getElementById('max-pain-container');
             const tickerEl = document.getElementById('max-pain-ticker');
+            const expirySelect = document.getElementById('max-pain-expiry-select');
+
+            // Show container with loading state
+            container.style.display = 'block';
+            tickerEl.textContent = ticker;
+            expirySelect.innerHTML = '<option value="">Loading expirations...</option>';
+
+            // First, fetch available expirations
+            try {
+                const expRes = await fetch(`${API_BASE}/options/expirations/${ticker}`);
+                const expData = await expRes.json();
+
+                if (expData.ok && expData.data && expData.data.expirations) {
+                    const expirations = expData.data.expirations;
+                    expirySelect.innerHTML = expirations.map((exp, i) => {
+                        const date = new Date(exp + 'T00:00:00');
+                        const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        const daysOut = Math.ceil((date - new Date()) / (1000 * 60 * 60 * 24));
+                        const label = daysOut <= 0 ? `${formatted} (expired)` :
+                                     daysOut === 1 ? `${formatted} (tomorrow)` :
+                                     daysOut <= 7 ? `${formatted} (${daysOut}d)` :
+                                     `${formatted} (${daysOut}d)`;
+                        return `<option value="${exp}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
+                    }).join('');
+
+                    // Load max pain for nearest expiration
+                    await loadMaxPainForExpiry();
+                } else {
+                    expirySelect.innerHTML = '<option value="">No expirations found</option>';
+                    throw new Error('Could not load expirations');
+                }
+            } catch (e) {
+                console.error('Failed to load expirations:', e);
+                expirySelect.innerHTML = '<option value="">Error loading</option>';
+                document.getElementById('max-pain-interpretation').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function loadMaxPainForExpiry() {
+            const ticker = maxPainCurrentTicker;
+            const expiry = document.getElementById('max-pain-expiry-select').value;
+
+            if (!ticker) return;
+
             const priceEl = document.getElementById('max-pain-price');
             const currentEl = document.getElementById('max-pain-current');
             const distanceEl = document.getElementById('max-pain-distance');
             const oiEl = document.getElementById('max-pain-oi');
             const interpEl = document.getElementById('max-pain-interpretation');
+            const expiryEl = document.getElementById('max-pain-expiry');
+            const dteEl = document.getElementById('max-pain-dte');
 
             try {
-                // Show container with loading state
-                container.style.display = 'block';
-                tickerEl.textContent = ticker;
                 priceEl.textContent = '...';
                 currentEl.textContent = '...';
                 distanceEl.textContent = '...';
                 oiEl.textContent = '...';
+                expiryEl.textContent = '...';
+                dteEl.textContent = '...';
                 interpEl.textContent = 'Calculating max pain...';
 
-                const res = await fetch(`${API_BASE}/options/max-pain/${ticker}`);
+                const url = expiry ? `${API_BASE}/options/max-pain/${ticker}?expiration=${expiry}` : `${API_BASE}/options/max-pain/${ticker}`;
+                const res = await fetch(url);
                 const data = await res.json();
 
                 if (!data.ok || data.error) {
@@ -8090,6 +8151,19 @@
                 }
 
                 const mp = data.data;
+
+                // Expiration display
+                if (mp.expiration && mp.expiration !== 'Unknown') {
+                    const expDate = new Date(mp.expiration + 'T00:00:00');
+                    expiryEl.textContent = expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                } else {
+                    expiryEl.textContent = '--';
+                }
+
+                // Days to expiry with color
+                const dte = mp.days_to_expiry || 0;
+                dteEl.textContent = dte + ' days';
+                dteEl.style.color = dte <= 2 ? 'var(--red)' : dte <= 5 ? 'var(--yellow)' : 'var(--text-muted)';
 
                 // Update display
                 priceEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(2);
@@ -8111,13 +8185,13 @@
                 }
 
                 // Open Interest
-                const totalOI = (mp.total_call_oi || 0) + (mp.total_put_oi || 0);
                 oiEl.innerHTML = `<span style="color: var(--green);">${(mp.total_call_oi || 0).toLocaleString()}</span> / <span style="color: var(--red);">${(mp.total_put_oi || 0).toLocaleString()}</span>`;
 
                 // Interpretation
                 interpEl.textContent = mp.interpretation || 'Max pain analysis complete.';
+                interpEl.style.color = 'var(--text)';
 
-                console.log('✅ Max pain loaded for', ticker, ':', mp.max_pain_price);
+                console.log('✅ Max pain loaded for', ticker, mp.expiration, ':', mp.max_pain_price);
 
             } catch (e) {
                 console.error('Failed to load max pain:', e);
@@ -8125,6 +8199,8 @@
                 currentEl.textContent = '--';
                 distanceEl.textContent = '--';
                 oiEl.textContent = '--';
+                expiryEl.textContent = '--';
+                dteEl.textContent = '--';
                 interpEl.textContent = 'Error: ' + e.message;
                 interpEl.style.color = 'var(--red)';
             }

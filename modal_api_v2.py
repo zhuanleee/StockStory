@@ -1369,19 +1369,39 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @web_app.get("/options/max-pain/{ticker_symbol}")
-    def options_max_pain(ticker_symbol: str):
+    @web_app.get("/options/expirations/{ticker_symbol}")
+    def options_expirations(ticker_symbol: str):
         """
-        Calculate Max Pain price for a ticker.
+        Get available options expiration dates for a ticker.
+
+        Returns list of expiration dates (YYYY-MM-DD format) sorted chronologically.
+        """
+        try:
+            from src.data.options import get_options_expirations
+            result = get_options_expirations(ticker_symbol.upper())
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/max-pain/{ticker_symbol}")
+    def options_max_pain(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Calculate Max Pain price for a ticker at a specific expiration.
 
         Max Pain Theory: The strike price where option writers lose the least money.
         Stocks tend to gravitate toward max pain near expiration.
 
-        Returns max pain price, current price, distance %, and interpretation.
+        Args:
+            ticker_symbol: Stock ticker (e.g., SPY, NVDA)
+            expiration: Expiration date (YYYY-MM-DD). If not provided, uses nearest expiration.
+
+        Returns max pain price, current price, distance %, expiration date, days to expiry, and interpretation.
         """
         try:
             from src.data.options import calculate_max_pain
-            result = calculate_max_pain(ticker_symbol.upper())
+            result = calculate_max_pain(ticker_symbol.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}

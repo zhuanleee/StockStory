@@ -141,16 +141,70 @@ def get_technical_indicators(ticker: str) -> Dict:
         return {"error": str(e)}
 
 
-def calculate_max_pain(ticker: str) -> Dict:
+def get_options_expirations(ticker: str) -> Dict:
     """
-    Calculate Max Pain price for a ticker.
-
-    Max Pain Theory: The strike price where option writers (sellers)
-    lose the least money if the stock closes at that price at expiration.
+    Get available options expiration dates for a ticker.
 
     Returns:
         {
             'ticker': str,
+            'expirations': List[str],  # YYYY-MM-DD format
+            'nearest': str,  # Nearest expiration
+            'count': int
+        }
+    """
+    try:
+        logger.info(f"Fetching options expirations for {ticker}")
+
+        # Get options chain to extract unique expirations
+        chain = get_options_chain_sync(ticker)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options data", "ticker": ticker}
+
+        # Extract unique expirations from all contracts
+        expirations = set()
+        for c in chain.get('calls', []):
+            exp = c.get('expiration')
+            if exp:
+                expirations.add(exp)
+        for p in chain.get('puts', []):
+            exp = p.get('expiration')
+            if exp:
+                expirations.add(exp)
+
+        # Sort chronologically
+        sorted_exps = sorted(list(expirations))
+
+        if not sorted_exps:
+            return {"error": "No expirations found", "ticker": ticker}
+
+        return {
+            'ticker': ticker.upper(),
+            'expirations': sorted_exps,
+            'nearest': sorted_exps[0] if sorted_exps else None,
+            'count': len(sorted_exps)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get expirations for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
+    """
+    Calculate Max Pain price for a ticker at a specific expiration.
+
+    Max Pain Theory: The strike price where option writers (sellers)
+    lose the least money if the stock closes at that price at expiration.
+
+    Args:
+        ticker: Stock symbol
+        expiration: Expiration date (YYYY-MM-DD). If None, uses nearest expiration.
+
+    Returns:
+        {
+            'ticker': str,
+            'expiration': str,  # The expiration date used
             'max_pain_price': float,
             'current_price': float,
             'distance_pct': float,  # How far current price is from max pain
@@ -158,15 +212,15 @@ def calculate_max_pain(ticker: str) -> Dict:
             'pain_by_strike': List[Dict],  # Pain value at each strike
             'total_call_oi': int,
             'total_put_oi': int,
-            'nearest_expiry': str,
+            'days_to_expiry': int,
             'interpretation': str
         }
     """
     try:
-        logger.info(f"Calculating max pain for {ticker}")
+        logger.info(f"Calculating max pain for {ticker} (expiration: {expiration or 'nearest'})")
 
-        # Get options chain data
-        chain = get_options_chain_sync(ticker)
+        # Get options chain data (optionally filtered by expiration)
+        chain = get_options_chain_sync(ticker, expiration)
         if not chain or 'error' in chain:
             return {"error": "Could not fetch options chain", "ticker": ticker}
 
@@ -255,11 +309,36 @@ def calculate_max_pain(ticker: str) -> Dict:
         total_call_oi = sum(c.get('open_interest', 0) for c in calls)
         total_put_oi = sum(p.get('open_interest', 0) for p in puts)
 
-        # Get nearest expiry from chain
-        nearest_expiry = chain.get('expiration', 'Unknown')
+        # Determine actual expiration used (from first contract or parameter)
+        used_expiration = expiration
+        if not used_expiration and calls:
+            used_expiration = calls[0].get('expiration')
+        if not used_expiration and puts:
+            used_expiration = puts[0].get('expiration')
+        if not used_expiration:
+            used_expiration = 'Unknown'
+
+        # Calculate days to expiry
+        days_to_expiry = 0
+        if used_expiration and used_expiration != 'Unknown':
+            try:
+                exp_date = datetime.strptime(used_expiration, '%Y-%m-%d')
+                days_to_expiry = (exp_date - datetime.now()).days
+                if days_to_expiry < 0:
+                    days_to_expiry = 0
+            except:
+                pass
+
+        # Enhanced interpretation with expiry context
+        if days_to_expiry <= 2:
+            interpretation += f" ⚠️ Expiration in {days_to_expiry} days - max pain effect strongest!"
+        elif days_to_expiry <= 5:
+            interpretation += f" Options expire in {days_to_expiry} days."
 
         result = {
             'ticker': ticker.upper(),
+            'expiration': used_expiration,
+            'days_to_expiry': days_to_expiry,
             'max_pain_price': max_pain_price,
             'current_price': current_price,
             'distance_pct': round(distance_pct, 2),
@@ -267,11 +346,10 @@ def calculate_max_pain(ticker: str) -> Dict:
             'pain_by_strike': pain_by_strike[:20],  # Top 20 strikes
             'total_call_oi': total_call_oi,
             'total_put_oi': total_put_oi,
-            'nearest_expiry': nearest_expiry,
             'interpretation': interpretation
         }
 
-        logger.info(f"✅ Max pain for {ticker}: ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%)")
+        logger.info(f"✅ Max pain for {ticker} ({used_expiration}): ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%)")
         return result
 
     except Exception as e:
