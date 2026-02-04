@@ -2275,14 +2275,6 @@
             <!-- TIER 1: Quick Stats Bar -->
             <div class="stats-bar" style="margin-bottom: 20px;">
                 <div class="stat-item">
-                    <span class="stat-label">Active M&A</span>
-                    <span class="stat-value" id="sec-ma-count">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Recent 8-Ks</span>
-                    <span class="stat-value" id="sec-8k-count">--</span>
-                </div>
-                <div class="stat-item">
                     <span class="stat-label">Insider Buys</span>
                     <span class="stat-value green" id="sec-insider-buys">--</span>
                 </div>
@@ -2301,9 +2293,7 @@
                 <div style="flex: 1; display: flex; gap: 8px; align-items: center;">
                     <input type="text" id="sec-ticker-input" placeholder="Enter ticker (e.g., NVDA)..."
                         style="flex: 1; max-width: 200px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;">
-                    <button class="btn btn-primary" onclick="lookupSECFilings()" style="padding: 8px 16px;">SEC Filings</button>
-                    <button class="btn btn-ghost" onclick="lookupMACheck()" style="padding: 8px 12px;">M&A Check</button>
-                    <button class="btn btn-ghost" onclick="lookupInsider()" style="padding: 8px 12px;">Insider</button>
+                    <button class="btn btn-primary" onclick="lookupInsider()" style="padding: 8px 16px;">Insider</button>
                     <button class="btn btn-ghost" onclick="lookupCompanyContracts()" style="padding: 8px 12px;">Contracts</button>
                     <button class="btn btn-ghost" onclick="lookupCompanyPatents()" style="padding: 8px 12px;">Patents</button>
                 </div>
@@ -2314,68 +2304,7 @@
                 <div class="card-body" style="padding: 16px;"></div>
             </div>
 
-            <!-- TIER 2: Primary Intelligence - 2:1 Grid -->
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
-                <!-- Left: M&A Intelligence -->
-                <div>
-                    <div class="card card-primary" style="margin-bottom: 16px;">
-                        <div class="card-header">
-                            <div class="card-title">🔍 M&A Radar <span class="info-icon" data-tooltip="SEC filings: 13D, tender offers, ownership changes"></span></div>
-                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchMARadar()">Refresh</button>
-                        </div>
-                        <div class="card-body" id="ma-radar-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading M&A activity...</div>
-                        </div>
-                    </div>
-
-                    <div class="card card-primary">
-                        <div class="card-header">
-                            <div class="card-title">🤝 Active Deals <span class="info-icon" data-tooltip="Current M&A deals and merger arb opportunities"></span></div>
-                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchDeals()">Refresh</button>
-                        </div>
-                        <div class="card-body" id="deals-container">
-                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading deals...</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right: SEC Alerts Feed -->
-                <div class="card card-primary">
-                    <div class="card-header">
-                        <div class="card-title">📄 SEC Alerts Feed</div>
-                    </div>
-                    <div class="card-body" id="filings-feed" style="max-height: 400px; overflow-y: auto;">
-                        <div style="color: var(--text-muted); font-size: 0.8125rem;">Recent SEC filings will appear here...</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TIER 3: Supporting Data - Merger Filings Table -->
-            <div class="card card-supporting" style="margin-bottom: 20px;">
-                <div class="card-header">
-                    <div class="card-title">📊 Pending Merger Filings <span class="info-icon" data-tooltip="Recent DEFM14A merger proxy filings from SEC EDGAR"></span></div>
-                    <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="fetchDeals()">Refresh</button>
-                </div>
-                <div class="card-body no-padding">
-                    <div class="table-container">
-                        <table class="data-table" id="deals-table">
-                            <thead>
-                                <tr>
-                                    <th style="width: 80px;">Ticker</th>
-                                    <th>Company</th>
-                                    <th style="width: 100px;">Form</th>
-                                    <th style="width: 100px;">Filed</th>
-                                </tr>
-                            </thead>
-                            <tbody id="deals-table-body">
-                                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading merger filings...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TIER 4: Expandable Sections -->
+            <!-- TIER 2: Expandable Sections -->
             <!-- Government Contracts Accordion -->
             <div class="sidebar-accordion" onclick="toggleAccordion(this)" style="margin-bottom: 12px;">
                 <div class="accordion-header">
@@ -2386,27 +2315,14 @@
                     <p style="color: var(--text-muted); font-size: 0.8125rem; margin-bottom: 16px;">
                         Track federal spending on defense, tech, and infrastructure. Government contracts signal sector momentum.
                     </p>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                        <!-- Theme Spending -->
-                        <div class="card card-supporting">
-                            <div class="card-header">
-                                <div class="card-title">📊 Theme Spending</div>
-                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="event.stopPropagation(); fetchContractThemes()">Refresh</button>
-                            </div>
-                            <div class="card-body" id="contract-themes-container">
-                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading contract data...</div>
-                            </div>
+                    <!-- Theme Spending -->
+                    <div class="card card-supporting">
+                        <div class="card-header">
+                            <div class="card-title">📊 Theme Spending</div>
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="event.stopPropagation(); fetchContractThemes()">Refresh</button>
                         </div>
-
-                        <!-- Recent Awards -->
-                        <div class="card card-supporting">
-                            <div class="card-header">
-                                <div class="card-title">📋 Recent Awards</div>
-                                <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="event.stopPropagation(); fetchRecentContracts()">Refresh</button>
-                            </div>
-                            <div class="card-body" id="recent-contracts-container">
-                                <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading recent contracts...</div>
-                            </div>
+                        <div class="card-body" id="contract-themes-container">
+                            <div style="color: var(--text-muted); font-size: 0.8125rem;">Loading contract data...</div>
                         </div>
                     </div>
                     <!-- Contract Lookup Results -->
@@ -2693,6 +2609,68 @@
 
         <!-- Market Health Tab -->
         <div id="health" class="tab-content">
+            <!-- Economic Health Section -->
+            <div class="hero-zone" style="margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: center;">
+                    <!-- Left: Big Economic Health Score -->
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">ECONOMIC HEALTH</div>
+                        <div style="font-size: 3rem; font-weight: 700;" id="econ-score">--</div>
+                        <div style="font-size: 1rem; font-weight: 500;" id="econ-label">Loading...</div>
+                        <button class="btn btn-ghost" style="margin-top: 8px; padding: 4px 12px; font-size: 0.75rem;" onclick="fetchEconomicDashboard()">Refresh</button>
+                    </div>
+                    <!-- Right: Key Economic Indicators -->
+                    <div>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">YIELD CURVE</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-yield-curve">--</div>
+                                <div id="econ-yield-status" style="font-size: 0.8rem;">🟡</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">FED RATE</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-fed-rate">--</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted);">CPI INFLATION</div>
+                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-cpi">--</div>
+                                <span id="econ-cpi-status" style="font-size: 0.8rem;">🟡</span>
+                            </div>
+                        </div>
+                        <!-- Alerts -->
+                        <div id="econ-alerts"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Economic Indicators Stats Bar -->
+            <div class="stats-bar" style="margin-bottom: 20px;">
+                <div class="stat-item">
+                    <span class="stat-label">10Y Treasury</span>
+                    <span class="stat-value" id="econ-10y">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">2Y Treasury</span>
+                    <span class="stat-value" id="econ-2y">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Unemployment</span>
+                    <span class="stat-value" id="econ-unemployment">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Jobless Claims</span>
+                    <span class="stat-value" id="econ-claims">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">HY Spread</span>
+                    <span class="stat-value" id="econ-hy-spread">--</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Consumer Sentiment</span>
+                    <span class="stat-value" id="econ-sentiment">--</span>
+                </div>
+            </div>
+
             <!-- TIER 1: Hero Zone - Composite Score + AI Synthesis -->
             <div class="hero-zone" style="margin-bottom: 20px;">
                 <div style="display: grid; grid-template-columns: 280px 1fr; gap: 24px;">
@@ -3001,72 +2979,65 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Full Economic Dashboard Accordion -->
+            <div class="sidebar-accordion" onclick="toggleAccordion(this)">
+                <div class="accordion-header">
+                    <span>📊 Full Economic Dashboard</span>
+                    <span class="accordion-icon">+</span>
+                </div>
+                <div class="accordion-content">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">UNEMPLOYMENT</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-unemployment-full">--</div>
+                                </div>
+                                <span id="econ-unemployment-status">🟡</span>
+                            </div>
+                        </div>
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">JOBLESS CLAIMS</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-claims-full">--</div>
+                                </div>
+                                <span id="econ-claims-status">🟡</span>
+                            </div>
+                        </div>
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">HY SPREAD</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-hy-spread-full">--</div>
+                                </div>
+                                <span id="econ-hy-status">🟡</span>
+                            </div>
+                        </div>
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-size: 0.7rem; color: var(--text-muted);">SENTIMENT</div>
+                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-sentiment-full">--</div>
+                                </div>
+                                <span id="econ-sentiment-status">🟡</span>
+                            </div>
+                        </div>
+                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">M2 SUPPLY</div>
+                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-m2">--</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 12px; font-size: 0.7rem; color: var(--text-muted); text-align: right;">
+                        Data from Federal Reserve (FRED) • <span id="econ-timestamp">--</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Analytics Tab -->
         <div id="analytics" class="tab-content">
-            <!-- TIER 1: Hero Zone - Economic Health -->
-            <div class="hero-zone" style="margin-bottom: 20px;">
-                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: center;">
-                    <!-- Left: Big Health Score -->
-                    <div style="text-align: center;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">ECONOMIC HEALTH</div>
-                        <div style="font-size: 3rem; font-weight: 700;" id="econ-score">--</div>
-                        <div style="font-size: 1rem; font-weight: 500;" id="econ-label">Loading...</div>
-                        <button class="btn btn-ghost" style="margin-top: 8px; padding: 4px 12px; font-size: 0.75rem;" onclick="fetchEconomicDashboard()">Refresh</button>
-                    </div>
-                    <!-- Right: Key Indicators -->
-                    <div>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
-                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.65rem; color: var(--text-muted);">YIELD CURVE</div>
-                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-yield-curve">--</div>
-                                <div id="econ-yield-status" style="font-size: 0.8rem;">🟡</div>
-                            </div>
-                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.65rem; color: var(--text-muted);">FED RATE</div>
-                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-fed-rate">--</div>
-                            </div>
-                            <div style="background: var(--bg-card); padding: 12px; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.65rem; color: var(--text-muted);">CPI INFLATION</div>
-                                <div style="font-size: 1.25rem; font-weight: 700;" id="econ-cpi">--</div>
-                                <span id="econ-cpi-status" style="font-size: 0.8rem;">🟡</span>
-                            </div>
-                        </div>
-                        <!-- Alerts -->
-                        <div id="econ-alerts"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Stats Bar: More Economic Indicators -->
-            <div class="stats-bar" style="margin-bottom: 20px;">
-                <div class="stat-item">
-                    <span class="stat-label">10Y Treasury</span>
-                    <span class="stat-value" id="econ-10y">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">2Y Treasury</span>
-                    <span class="stat-value" id="econ-2y">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Unemployment</span>
-                    <span class="stat-value" id="econ-unemployment">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Jobless Claims</span>
-                    <span class="stat-value" id="econ-claims">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">HY Spread</span>
-                    <span class="stat-value" id="econ-hy-spread">--</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Consumer Sentiment</span>
-                    <span class="stat-value" id="econ-sentiment">--</span>
-                </div>
-            </div>
-
             <!-- Technical Analysis Bar -->
             <div class="filter-bar" style="margin-bottom: 20px;">
                 <input type="text" id="technical-ticker-input" placeholder="Enter ticker for technicals..."
@@ -3177,59 +3148,6 @@
                 </div>
             </div>
 
-            <div class="sidebar-accordion" onclick="toggleAccordion(this)">
-                <div class="accordion-header">
-                    <span>📊 Full Economic Dashboard</span>
-                    <span class="accordion-icon">+</span>
-                </div>
-                <div class="accordion-content">
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
-                                <div>
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">UNEMPLOYMENT</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-unemployment-full">--</div>
-                                </div>
-                                <span id="econ-unemployment-status">🟡</span>
-                            </div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
-                                <div>
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">JOBLESS CLAIMS</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-claims-full">--</div>
-                                </div>
-                                <span id="econ-claims-status">🟡</span>
-                            </div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
-                                <div>
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">HY SPREAD</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-hy-spread-full">--</div>
-                                </div>
-                                <span id="econ-hy-status">🟡</span>
-                            </div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
-                            <div style="display: flex; justify-content: space-between; align-items: start;">
-                                <div>
-                                    <div style="font-size: 0.7rem; color: var(--text-muted);">SENTIMENT</div>
-                                    <div style="font-size: 1.1rem; font-weight: 600;" id="econ-sentiment-full">--</div>
-                                </div>
-                                <span id="econ-sentiment-status">🟡</span>
-                            </div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-hover); border-radius: 8px;">
-                            <div style="font-size: 0.7rem; color: var(--text-muted);">M2 SUPPLY</div>
-                            <div style="font-size: 1.1rem; font-weight: 600;" id="econ-m2">--</div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 12px; font-size: 0.7rem; color: var(--text-muted); text-align: right;">
-                        Data from Federal Reserve (FRED) • <span id="econ-timestamp">--</span>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- Options Tab -->
