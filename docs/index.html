@@ -2946,9 +2946,46 @@
                     style="flex: 1; max-width: 200px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;"
                     onkeypress="if(event.key==='Enter') loadOptionsChain()" />
                 <button class="btn btn-primary" onclick="loadOptionsChain()" style="padding: 8px 16px;">Load Chain</button>
+                <button class="btn btn-ghost" onclick="loadMaxPain()" style="padding: 8px 12px;">Max Pain</button>
                 <button class="btn btn-ghost" onclick="loadSmartMoneyFlow()" style="padding: 8px 12px;">Smart Flow</button>
                 <button class="btn btn-ghost" onclick="loadWhaleTrades()" style="padding: 8px 12px;">Whale Trades</button>
                 <button class="btn btn-ghost" onclick="loadUnusualActivity()" style="padding: 8px 12px;">Unusual Activity</button>
+            </div>
+
+            <!-- Max Pain Display (shown when loaded) -->
+            <div id="max-pain-container" style="display: none; margin-bottom: 20px;">
+                <div class="card card-primary" style="border-left: 3px solid var(--purple);">
+                    <div class="card-header">
+                        <div class="card-title">🎯 Max Pain Analysis <span class="info-icon" data-tooltip="Max Pain: The strike where option writers lose the least money. Stocks tend to gravitate here near expiration."></span></div>
+                        <span id="max-pain-ticker" style="font-weight: 600; color: var(--blue);"></span>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">MAX PAIN PRICE</div>
+                                <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="max-pain-price">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">CURRENT PRICE</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="max-pain-current">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">DISTANCE</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="max-pain-distance">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted);">TOTAL OI</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;" id="max-pain-oi">--</div>
+                            </div>
+                        </div>
+                        <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                            <div style="font-size: 0.8125rem; color: var(--text);" id="max-pain-interpretation">Loading interpretation...</div>
+                        </div>
+                        <div style="margin-top: 12px; font-size: 0.7rem; color: var(--text-muted);">
+                            <strong>Max Pain Theory:</strong> Option sellers (market makers) hedge their positions. Near expiration, the stock often moves toward the strike where most options expire worthless, minimizing payouts to option buyers.
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Ticker Summary Stats (shown when ticker loaded) -->
@@ -8016,6 +8053,80 @@
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
                 document.getElementById('puts-table-body').innerHTML =
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
+            }
+        }
+
+        // Max Pain Analysis loader
+        async function loadMaxPain() {
+            const ticker = document.getElementById('options-ticker-input').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+
+            const container = document.getElementById('max-pain-container');
+            const tickerEl = document.getElementById('max-pain-ticker');
+            const priceEl = document.getElementById('max-pain-price');
+            const currentEl = document.getElementById('max-pain-current');
+            const distanceEl = document.getElementById('max-pain-distance');
+            const oiEl = document.getElementById('max-pain-oi');
+            const interpEl = document.getElementById('max-pain-interpretation');
+
+            try {
+                // Show container with loading state
+                container.style.display = 'block';
+                tickerEl.textContent = ticker;
+                priceEl.textContent = '...';
+                currentEl.textContent = '...';
+                distanceEl.textContent = '...';
+                oiEl.textContent = '...';
+                interpEl.textContent = 'Calculating max pain...';
+
+                const res = await fetch(`${API_BASE}/options/max-pain/${ticker}`);
+                const data = await res.json();
+
+                if (!data.ok || data.error) {
+                    throw new Error(data.error || 'Failed to calculate max pain');
+                }
+
+                const mp = data.data;
+
+                // Update display
+                priceEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(2);
+                currentEl.textContent = '$' + (mp.current_price || 0).toFixed(2);
+
+                // Distance with color coding
+                const dist = mp.distance_pct || 0;
+                const distColor = Math.abs(dist) < 2 ? 'var(--green)' :
+                                 Math.abs(dist) < 5 ? 'var(--yellow)' :
+                                 'var(--red)';
+                distanceEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '%';
+                distanceEl.style.color = distColor;
+
+                // Direction indicator
+                if (mp.direction === 'above') {
+                    distanceEl.textContent += ' ↓';
+                } else if (mp.direction === 'below') {
+                    distanceEl.textContent += ' ↑';
+                }
+
+                // Open Interest
+                const totalOI = (mp.total_call_oi || 0) + (mp.total_put_oi || 0);
+                oiEl.innerHTML = `<span style="color: var(--green);">${(mp.total_call_oi || 0).toLocaleString()}</span> / <span style="color: var(--red);">${(mp.total_put_oi || 0).toLocaleString()}</span>`;
+
+                // Interpretation
+                interpEl.textContent = mp.interpretation || 'Max pain analysis complete.';
+
+                console.log('✅ Max pain loaded for', ticker, ':', mp.max_pain_price);
+
+            } catch (e) {
+                console.error('Failed to load max pain:', e);
+                priceEl.textContent = '--';
+                currentEl.textContent = '--';
+                distanceEl.textContent = '--';
+                oiEl.textContent = '--';
+                interpEl.textContent = 'Error: ' + e.message;
+                interpEl.style.color = 'var(--red)';
             }
         }
 

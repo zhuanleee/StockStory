@@ -141,6 +141,144 @@ def get_technical_indicators(ticker: str) -> Dict:
         return {"error": str(e)}
 
 
+def calculate_max_pain(ticker: str) -> Dict:
+    """
+    Calculate Max Pain price for a ticker.
+
+    Max Pain Theory: The strike price where option writers (sellers)
+    lose the least money if the stock closes at that price at expiration.
+
+    Returns:
+        {
+            'ticker': str,
+            'max_pain_price': float,
+            'current_price': float,
+            'distance_pct': float,  # How far current price is from max pain
+            'direction': str,  # 'above' or 'below' max pain
+            'pain_by_strike': List[Dict],  # Pain value at each strike
+            'total_call_oi': int,
+            'total_put_oi': int,
+            'nearest_expiry': str,
+            'interpretation': str
+        }
+    """
+    try:
+        logger.info(f"Calculating max pain for {ticker}")
+
+        # Get options chain data
+        chain = get_options_chain_sync(ticker)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options chain", "ticker": ticker}
+
+        calls = chain.get('calls', [])
+        puts = chain.get('puts', [])
+
+        if not calls and not puts:
+            return {"error": "No options data available", "ticker": ticker}
+
+        # Get current price from chain summary or first contract
+        current_price = chain.get('summary', {}).get('underlying_price', 0)
+        if not current_price and calls:
+            # Estimate from ATM strike
+            current_price = calls[len(calls)//2].get('strike', 0)
+
+        # Collect all unique strikes
+        strikes = set()
+        for c in calls:
+            strikes.add(c.get('strike', 0))
+        for p in puts:
+            strikes.add(p.get('strike', 0))
+
+        strikes = sorted([s for s in strikes if s > 0])
+
+        if not strikes:
+            return {"error": "No valid strikes found", "ticker": ticker}
+
+        # Build OI lookup by strike
+        call_oi_by_strike = {c.get('strike'): c.get('open_interest', 0) for c in calls}
+        put_oi_by_strike = {p.get('strike'): p.get('open_interest', 0) for p in puts}
+
+        # Calculate pain at each strike
+        # Pain = sum of (intrinsic value * OI) for all options that would be ITM
+        pain_by_strike = []
+
+        for strike in strikes:
+            total_pain = 0
+
+            # If stock closes at this strike:
+            # - All calls with strike < this price are ITM (pain to call writers)
+            # - All puts with strike > this price are ITM (pain to put writers)
+
+            for call_strike, call_oi in call_oi_by_strike.items():
+                if call_strike < strike:  # Call is ITM
+                    intrinsic = (strike - call_strike) * 100  # Per contract value
+                    total_pain += intrinsic * call_oi
+
+            for put_strike, put_oi in put_oi_by_strike.items():
+                if put_strike > strike:  # Put is ITM
+                    intrinsic = (put_strike - strike) * 100  # Per contract value
+                    total_pain += intrinsic * put_oi
+
+            pain_by_strike.append({
+                'strike': strike,
+                'pain': total_pain,
+                'call_oi': call_oi_by_strike.get(strike, 0),
+                'put_oi': put_oi_by_strike.get(strike, 0)
+            })
+
+        # Max pain is the strike with minimum total pain
+        if pain_by_strike:
+            min_pain = min(pain_by_strike, key=lambda x: x['pain'])
+            max_pain_price = min_pain['strike']
+        else:
+            max_pain_price = current_price
+
+        # Calculate distance from current price
+        if current_price > 0:
+            distance_pct = ((current_price - max_pain_price) / current_price) * 100
+            direction = 'above' if current_price > max_pain_price else 'below'
+        else:
+            distance_pct = 0
+            direction = 'unknown'
+
+        # Generate interpretation
+        if abs(distance_pct) < 1:
+            interpretation = f"Price is near max pain (${max_pain_price:.2f}). Expect sideways movement."
+        elif distance_pct > 3:
+            interpretation = f"Price is {abs(distance_pct):.1f}% above max pain. Gravitational pull may bring price down toward ${max_pain_price:.2f}."
+        elif distance_pct < -3:
+            interpretation = f"Price is {abs(distance_pct):.1f}% below max pain. Gravitational pull may push price up toward ${max_pain_price:.2f}."
+        else:
+            interpretation = f"Price is within normal range of max pain (${max_pain_price:.2f})."
+
+        # Get totals
+        total_call_oi = sum(c.get('open_interest', 0) for c in calls)
+        total_put_oi = sum(p.get('open_interest', 0) for p in puts)
+
+        # Get nearest expiry from chain
+        nearest_expiry = chain.get('expiration', 'Unknown')
+
+        result = {
+            'ticker': ticker.upper(),
+            'max_pain_price': max_pain_price,
+            'current_price': current_price,
+            'distance_pct': round(distance_pct, 2),
+            'direction': direction,
+            'pain_by_strike': pain_by_strike[:20],  # Top 20 strikes
+            'total_call_oi': total_call_oi,
+            'total_put_oi': total_put_oi,
+            'nearest_expiry': nearest_expiry,
+            'interpretation': interpretation
+        }
+
+        logger.info(f"✅ Max pain for {ticker}: ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%)")
+        return result
+
+    except Exception as e:
+        logger.error(f"Max pain calculation error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
 def get_options_overview(ticker: str) -> Dict:
     """
     Comprehensive options overview combining:

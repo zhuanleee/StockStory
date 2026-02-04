@@ -1369,6 +1369,25 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/max-pain/{ticker_symbol}")
+    def options_max_pain(ticker_symbol: str):
+        """
+        Calculate Max Pain price for a ticker.
+
+        Max Pain Theory: The strike price where option writers lose the least money.
+        Stocks tend to gravitate toward max pain near expiration.
+
+        Returns max pain price, current price, distance %, and interpretation.
+        """
+        try:
+            from src.data.options import calculate_max_pain
+            result = calculate_max_pain(ticker_symbol.upper())
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):
         """Scan all tracked stocks for unusual options activity"""
