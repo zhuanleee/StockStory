@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 18:06 - `a49338f`
+
+**Add real GEX calculation with proper gamma values**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 17:53 - `33e29f6`
 
 **Add clickable GEX and Max Pain charts with toggle**

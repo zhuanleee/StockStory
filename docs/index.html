@@ -9210,8 +9210,10 @@
                 const flow = flowData.data || {};
                 const gex = gexData.data || {};
 
-                // P/C Ratio
-                const pcRatio = flow.put_call_ratio || sentiment.put_call_ratio || 0;
+                // P/C Ratio (calculate from expiration-specific OI data)
+                const callOI = mp.total_call_oi || 0;
+                const putOI = mp.total_put_oi || 0;
+                const pcRatio = callOI > 0 ? (putOI / callOI) : (flow.put_call_ratio || 0);
                 document.getElementById('oa-pc-ratio').textContent = pcRatio.toFixed(2);
                 let pcLabel = 'Neutral';
                 let pcColor = 'var(--text)';
