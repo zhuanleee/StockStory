@@ -19,6 +19,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from src.scoring.sec_scoring import get_sec_activity_score, get_institutional_score
+except ImportError:
+    pass
+
 __all__ = [
     'calculate_story_score_legacy',
     'calculate_technical_confirmation',

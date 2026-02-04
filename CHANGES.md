@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 15:40 - `ce54540`
+
+**Fix SVG gauge rendering - use stroke-dashoffset**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 15:35 - `c9dee0d`
 
 **Add comprehensive Market Health visualization tab**
