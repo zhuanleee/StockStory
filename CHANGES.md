@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:26 - `352256c`
+
+**Add debug logging to chart render function**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:23 - `218d254`
 
 **Fix chart: replace canvas with div-based bar chart, remove orphan code**
