@@ -9637,78 +9637,68 @@
             document.getElementById('spy-call-put-oi').textContent = '...';
 
             try {
-                // Fetch options chain and max pain for selected expiration
-                const [chainRes, maxPainRes] = await Promise.all([
-                    fetch(`${API_BASE}/options/chain/SPY?expiration=${expiry}`),
-                    fetch(`${API_BASE}/options/max-pain/SPY?expiration=${expiry}`)
+                // Fetch all data in parallel - same endpoints as Options Analysis
+                const [maxPainRes, gexRes] = await Promise.all([
+                    fetch(`${API_BASE}/options/max-pain/SPY?expiration=${expiry}`),
+                    fetch(`${API_BASE}/options/gex/SPY?expiration=${expiry}`)
                 ]);
 
-                const chainData = await chainRes.json();
                 const maxPainData = await maxPainRes.json();
+                const gexData = await gexRes.json();
 
-                // Calculate P/C Ratio from chain
-                if (chainData.ok && chainData.data) {
-                    const chain = chainData.data;
-                    const summary = chain.summary || {};
+                const mp = maxPainData.data || {};
+                const gex = gexData.data || {};
 
-                    // P/C Ratio
-                    const pcRatio = summary.put_call_volume_ratio || summary.put_call_ratio || 0;
-                    const pcEl = document.getElementById('spy-pc-ratio');
-                    pcEl.textContent = pcRatio.toFixed(2);
-                    pcEl.style.color = pcRatio > 1.0 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--text)';
-                    document.getElementById('spy-pc-label').textContent = pcRatio > 1.0 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
+                // P/C Ratio (same calculation as Options Analysis - OI based)
+                const callOI = mp.total_call_oi || 0;
+                const putOI = mp.total_put_oi || 0;
+                const pcRatio = callOI > 0 ? (putOI / callOI) : 0;
+                const pcEl = document.getElementById('spy-pc-ratio');
+                pcEl.textContent = pcRatio.toFixed(2);
+                pcEl.style.color = pcRatio > 1.0 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--text)';
+                document.getElementById('spy-pc-label').textContent = pcRatio > 1.0 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
 
-                    // Call/Put OI
-                    const callOI = summary.total_call_oi || 0;
-                    const putOI = summary.total_put_oi || 0;
-                    const oiEl = document.getElementById('spy-call-put-oi');
-                    if (oiEl) {
-                        oiEl.innerHTML = `<span style="color: var(--green);">${(callOI/1000).toFixed(0)}K</span>/<span style="color: var(--red);">${(putOI/1000).toFixed(0)}K</span>`;
-                    }
-                    const oiLabelEl = document.getElementById('spy-oi-label');
-                    if (oiLabelEl) {
-                        const oiRatio = callOI / (putOI || 1);
-                        oiLabelEl.textContent = oiRatio > 1.2 ? 'Call Heavy' : oiRatio < 0.8 ? 'Put Heavy' : 'Balanced';
-                    }
-
-                    // GEX estimate (simplified)
-                    const gex = (callOI - putOI) * 100; // Simplified GEX proxy
-                    const gexEl = document.getElementById('market-gex');
-                    if (Math.abs(gex) >= 1e9) {
-                        gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
-                    } else if (Math.abs(gex) >= 1e6) {
-                        gexEl.textContent = (gex / 1e6).toFixed(1) + 'M';
-                    } else {
-                        gexEl.textContent = (gex / 1e3).toFixed(0) + 'K';
-                    }
-                    gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
-                    document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
-
-                    // Update sentiment gauge
-                    const vixText = document.getElementById('vix-level').textContent;
-                    const vix = parseFloat(vixText) || 0;
-                    updateSentimentGauge(pcRatio, vix);
+                // Call/Put OI display
+                const oiEl = document.getElementById('spy-call-put-oi');
+                if (oiEl) {
+                    oiEl.innerHTML = `<span style="color: var(--green);">${(callOI/1000).toFixed(0)}K</span>/<span style="color: var(--red);">${(putOI/1000).toFixed(0)}K</span>`;
                 }
+
+                // GEX (real GEX from dedicated endpoint - same as Options Analysis)
+                let gexValue = gex.total_gex || 0;
+                if (typeof gexValue === 'object') gexValue = gexValue.total || 0;
+                const gexEl = document.getElementById('market-gex');
+                if (Math.abs(gexValue) >= 1e9) {
+                    gexEl.textContent = '$' + (gexValue / 1e9).toFixed(1) + 'B';
+                } else if (Math.abs(gexValue) >= 1e6) {
+                    gexEl.textContent = '$' + (gexValue / 1e6).toFixed(1) + 'M';
+                } else {
+                    gexEl.textContent = '$' + (gexValue / 1e3).toFixed(0) + 'K';
+                }
+                gexEl.style.color = gexValue > 0 ? 'var(--green)' : 'var(--red)';
+                document.getElementById('gex-label').textContent = gexValue > 0 ? 'Stabilizing' : 'Volatile';
 
                 // Max Pain
-                if (maxPainData.ok && maxPainData.data) {
-                    const mp = maxPainData.data;
-                    const maxPainEl = document.getElementById('spy-max-pain');
-                    const distEl = document.getElementById('spy-max-pain-dist');
+                const maxPainEl = document.getElementById('spy-max-pain');
+                const distEl = document.getElementById('spy-max-pain-dist');
+                const maxPain = mp.max_pain_price || 0;
+                maxPainEl.textContent = maxPain > 0 ? '$' + maxPain.toFixed(0) : '--';
 
-                    maxPainEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(0);
+                const dist = mp.distance_pct || 0;
+                const direction = mp.direction || '';
+                const arrow = direction === 'above' ? '↓' : direction === 'below' ? '↑' : '';
+                distEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '% ' + arrow;
+                distEl.style.color = Math.abs(dist) < 2 ? 'var(--green)' : Math.abs(dist) < 5 ? 'var(--yellow)' : 'var(--text-muted)';
 
-                    const dist = mp.distance_pct || 0;
-                    const direction = mp.direction || '';
-                    const arrow = direction === 'above' ? '↓' : direction === 'below' ? '↑' : '';
-                    distEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '% ' + arrow;
-                    distEl.style.color = Math.abs(dist) < 1 ? 'var(--green)' : Math.abs(dist) < 3 ? 'var(--yellow)' : 'var(--text-muted)';
-                } else {
-                    document.getElementById('spy-max-pain').textContent = '--';
-                    document.getElementById('spy-max-pain-dist').textContent = 'N/A';
-                }
+                // Update sentiment gauge
+                const vixText = document.getElementById('vix-level').textContent;
+                const vix = parseFloat(vixText) || 0;
+                updateSentimentGauge(pcRatio, vix);
+
             } catch (e) {
                 console.error('Failed to load sentiment for expiry:', e);
+                document.getElementById('spy-max-pain').textContent = '--';
+                document.getElementById('spy-max-pain-dist').textContent = 'N/A';
             }
         }
 
