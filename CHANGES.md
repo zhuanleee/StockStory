@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 13:55 - `4e8b148`
+
+**Fix expirations endpoint to fetch all available dates**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 13:53 - `ec170c2`
 
 **Add expiration date support to Max Pain analysis**
