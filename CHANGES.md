@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:36 - `afc5af1`
+
+**Fix max pain bar highlight with tolerance for fractional strikes**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:34 - `7ca1bb0`
 
 **Fix chart bars using pixel heights instead of percentages**

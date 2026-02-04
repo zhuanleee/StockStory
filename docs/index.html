@@ -2916,11 +2916,16 @@
                     <div style="font-size: 1rem; font-weight: 600;">📊 Market Options Sentiment</div>
                     <button class="btn btn-ghost" onclick="loadMarketSentiment()" style="font-size: 0.75rem; padding: 4px 12px;">Refresh</button>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;" id="market-sentiment-grid">
+                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;" id="market-sentiment-grid">
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY P/C RATIO</div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="spy-pc-ratio">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
+                    </div>
+                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
+                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">SPY MAX PAIN</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
+                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-max-pain-dist">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL GEX</div>
@@ -8399,8 +8404,14 @@
         // Market Options Sentiment loader
         async function loadMarketSentiment() {
             try {
-                const res = await fetch(`${API_BASE}/options/market-sentiment`);
-                const data = await res.json();
+                // Fetch market sentiment and SPY max pain in parallel
+                const [sentimentRes, maxPainRes] = await Promise.all([
+                    fetch(`${API_BASE}/options/market-sentiment`),
+                    fetch(`${API_BASE}/options/max-pain/SPY`)
+                ]);
+
+                const data = await sentimentRes.json();
+                const maxPainData = await maxPainRes.json();
 
                 if (data.ok && data.data) {
                     const sentiment = data.data;
@@ -8434,6 +8445,22 @@
                     // 0DTE Volume
                     const zeroDte = sentiment.zero_dte_volume || 0;
                     document.getElementById('zero-dte-vol').textContent = (zeroDte / 1e6).toFixed(1) + 'M';
+                }
+
+                // SPY Max Pain
+                if (maxPainData.ok && maxPainData.data) {
+                    const mp = maxPainData.data;
+                    const maxPainEl = document.getElementById('spy-max-pain');
+                    const distEl = document.getElementById('spy-max-pain-dist');
+
+                    maxPainEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(0);
+
+                    // Show distance from current price
+                    const dist = mp.distance_pct || 0;
+                    const direction = mp.direction || '';
+                    const arrow = direction === 'above' ? '↓' : direction === 'below' ? '↑' : '';
+                    distEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '% ' + arrow;
+                    distEl.style.color = Math.abs(dist) < 1 ? 'var(--green)' : Math.abs(dist) < 3 ? 'var(--yellow)' : 'var(--text-muted)';
                 }
             } catch (e) {
                 console.error('Failed to load market sentiment:', e);
