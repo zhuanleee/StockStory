@@ -226,13 +226,15 @@ class ThemeIntelligenceDirector:
         # 1. TAM Analysis (adjusted for cycle stage)
         tam_analysis = None
         try:
-            tam_context = f"Market cycle: {sector_context.get('cycle_stage', 'unknown')}"
+            cycle_stage = sector_context.get('cycle_stage', 'unknown') if sector_context else 'unknown'
+            tam_context = f"Market cycle: {cycle_stage}"
             tam_analysis = self.engine.analyze_tam_expansion(
                 theme=theme_name,
                 current_players=players,
                 context=tam_context
             )
-            logger.info(f"TAM analysis complete: CAGR {tam_analysis.cagr_estimate}%")
+            if tam_analysis:
+                logger.info(f"TAM analysis complete: CAGR {tam_analysis.cagr_estimate}%")
         except Exception as e:
             logger.error(f"TAM analysis failed: {e}")
 
@@ -245,7 +247,8 @@ class ThemeIntelligenceDirector:
                     transcript=earnings_data.get('transcript', ''),
                     earnings_data=earnings_data
                 )
-                logger.info(f"Earnings analysis complete: {earnings_intel.management_tone}")
+                if earnings_intel:
+                    logger.info(f"Earnings analysis complete: {earnings_intel.management_tone}")
             except Exception as e:
                 logger.error(f"Earnings analysis failed: {e}")
 
@@ -274,8 +277,8 @@ class ThemeIntelligenceDirector:
 
         recommendation = self._generate_recommendation(
             theme_score,
-            market_context.get('stance'),
-            sector_context.get('cycle_stage')
+            market_context.get('stance') if market_context else None,
+            sector_context.get('cycle_stage') if sector_context else None
         )
 
         reasoning = self._generate_reasoning(
@@ -335,16 +338,18 @@ class ThemeIntelligenceDirector:
                 score += 1
 
         # Market context adjustment (-2 to +2)
-        if market_ctx.get('health') == 'healthy':
-            score += 1
-        elif market_ctx.get('health') == 'concerning':
-            score -= 2
+        if market_ctx:
+            if market_ctx.get('health') == 'healthy':
+                score += 1
+            elif market_ctx.get('health') == 'concerning':
+                score -= 2
 
         # Sector context adjustment (-1 to +1)
-        if sector_ctx.get('cycle_stage') == 'early':
-            score += 1
-        elif sector_ctx.get('cycle_stage') == 'late':
-            score -= 1
+        if sector_ctx:
+            if sector_ctx.get('cycle_stage') == 'early':
+                score += 1
+            elif sector_ctx.get('cycle_stage') == 'late':
+                score -= 1
 
         return max(1, min(10, score))  # Clamp to 1-10
 
@@ -499,13 +504,13 @@ class TradingIntelligenceDirector:
 
         execution_rec = self._generate_execution_recommendation(
             trade_score,
-            market_context.get('stance'),
-            market_context.get('risk_level')
+            market_context.get('stance') if market_context else None,
+            market_context.get('risk_level') if market_context else 5
         )
 
         position_size = self._calculate_position_size(
             trade_score,
-            market_context.get('risk_level'),
+            market_context.get('risk_level') if market_context else 5,
             signal_explanation
         )
 
@@ -563,15 +568,16 @@ class TradingIntelligenceDirector:
             score += min(2, bullish_actions)
 
         # Market context adjustment (-2 to +1)
-        if market_ctx.get('health') == 'healthy':
-            score += 1
-        elif market_ctx.get('health') == 'concerning':
-            score -= 2
+        if market_ctx:
+            if market_ctx.get('health') == 'healthy':
+                score += 1
+            elif market_ctx.get('health') == 'concerning':
+                score -= 2
 
-        # Risk level adjustment
-        risk = market_ctx.get('risk_level', 5)
-        if risk > 7:
-            score -= 1
+            # Risk level adjustment
+            risk = market_ctx.get('risk_level', 5)
+            if risk > 7:
+                score -= 1
 
         return max(1, min(10, score))
 
