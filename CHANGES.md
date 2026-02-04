@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 16:08 - `2cfc600`
+
+**Activate X/Social sentiment with real X search**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/ai/xai_x_intelligence_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 16:04 - `d1956cb`
 
 **Replace mock data with real data in Health tab**

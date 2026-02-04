@@ -3288,12 +3288,54 @@
             <div class="filter-bar" style="margin-bottom: 16px;">
                 <input type="text" id="options-ticker-input" placeholder="Enter ticker (e.g., NVDA, SPY)"
                     style="flex: 1; max-width: 200px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;"
-                    onkeypress="if(event.key==='Enter') loadOptionsChain()" />
-                <button class="btn btn-primary" onclick="loadOptionsChain()" style="padding: 8px 16px;">Load Chain</button>
+                    onkeypress="if(event.key==='Enter') loadQuickAnalysis()" />
+                <button class="btn btn-primary" onclick="loadQuickAnalysis()" style="padding: 8px 16px;">Analyze</button>
                 <button class="btn btn-ghost" onclick="loadMaxPain()" style="padding: 8px 12px;">Max Pain</button>
                 <button class="btn btn-ghost" onclick="loadSmartMoneyFlow()" style="padding: 8px 12px;">Smart Flow</button>
                 <button class="btn btn-ghost" onclick="loadWhaleTrades()" style="padding: 8px 12px;">Whale Trades</button>
                 <button class="btn btn-ghost" onclick="loadUnusualActivity()" style="padding: 8px 12px;">Unusual Activity</button>
+            </div>
+
+            <!-- Quick Analysis Panel (P/C, GEX, IV, Max Pain) -->
+            <div id="quick-analysis-container" style="display: none; margin-bottom: 20px;">
+                <div class="card" style="border-left: 3px solid var(--blue);">
+                    <div class="card-header">
+                        <div class="card-title">📊 Options Analysis <span id="quick-analysis-ticker" style="color: var(--blue); margin-left: 8px;"></span></div>
+                        <div id="quick-analysis-sentiment" style="padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">--</div>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;">
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">P/C RATIO</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="qa-pc-ratio">--</div>
+                                <div style="font-size: 0.7rem; margin-top: 4px;" id="qa-pc-label">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">GEX <span class="info-icon" data-tooltip="Gamma Exposure: Positive GEX = dealers hedge by buying dips/selling rips (stabilizing). Negative GEX = dealers amplify moves (volatile).">ⓘ</span></div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="qa-gex">--</div>
+                                <div style="font-size: 0.7rem; margin-top: 4px;" id="qa-gex-label">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">IV RANK <span class="info-icon" data-tooltip="IV Rank: Where current IV sits vs past year. High = options expensive, good for selling. Low = options cheap, good for buying.">ⓘ</span></div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="qa-iv-rank">--</div>
+                                <div style="font-size: 0.7rem; margin-top: 4px;" id="qa-iv-label">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">MAX PAIN</div>
+                                <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="qa-max-pain">--</div>
+                                <div style="font-size: 0.7rem; margin-top: 4px;" id="qa-mp-distance">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">CURRENT</div>
+                                <div style="font-size: 1.5rem; font-weight: 700;" id="qa-current-price">--</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;" id="qa-price-change">--</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 12px; padding: 12px; background: var(--bg-hover); border-radius: 8px;">
+                            <div style="font-size: 0.8rem;" id="qa-interpretation">Enter a ticker and click Analyze to see options sentiment.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Max Pain Display (shown when loaded) -->
@@ -9080,6 +9122,141 @@
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
                 document.getElementById('puts-table-body').innerHTML =
                     '<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--red);">Failed to load</td></tr>';
+            }
+        }
+
+        // Quick Analysis (P/C, GEX, IV, Max Pain)
+        async function loadQuickAnalysis() {
+            const ticker = document.getElementById('options-ticker-input').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+
+            const container = document.getElementById('quick-analysis-container');
+            container.style.display = 'block';
+            document.getElementById('quick-analysis-ticker').textContent = ticker;
+            document.getElementById('qa-interpretation').textContent = 'Loading analysis...';
+
+            try {
+                // Fetch options sentiment data (includes P/C, GEX, IV, Max Pain)
+                const res = await fetch(`${API_BASE}/options/sentiment/${ticker}`);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    throw new Error(data.error || 'Failed to load options data');
+                }
+
+                const sentiment = data.data;
+
+                // P/C Ratio
+                const pcRatio = sentiment.put_call_ratio || 0;
+                document.getElementById('qa-pc-ratio').textContent = pcRatio.toFixed(2);
+                let pcLabel = 'Neutral';
+                let pcColor = 'var(--text)';
+                if (pcRatio < 0.7) {
+                    pcLabel = 'Bullish';
+                    pcColor = 'var(--green)';
+                } else if (pcRatio > 1.0) {
+                    pcLabel = 'Bearish';
+                    pcColor = 'var(--red)';
+                }
+                document.getElementById('qa-pc-label').textContent = pcLabel;
+                document.getElementById('qa-pc-label').style.color = pcColor;
+                document.getElementById('qa-pc-ratio').style.color = pcColor;
+
+                // GEX (Gamma Exposure)
+                let gexValue = sentiment.gex || 0;
+                if (typeof gexValue === 'object') {
+                    gexValue = gexValue.total || 0;
+                }
+                let gexDisplay = '';
+                if (Math.abs(gexValue) >= 1e9) {
+                    gexDisplay = `$${(gexValue / 1e9).toFixed(1)}B`;
+                } else if (Math.abs(gexValue) >= 1e6) {
+                    gexDisplay = `$${(gexValue / 1e6).toFixed(0)}M`;
+                } else {
+                    gexDisplay = `$${(gexValue / 1e3).toFixed(0)}K`;
+                }
+                document.getElementById('qa-gex').textContent = gexDisplay;
+                const gexLabel = gexValue > 0 ? 'Stabilizing' : gexValue < 0 ? 'Volatile' : 'Neutral';
+                const gexColor = gexValue > 0 ? 'var(--green)' : gexValue < 0 ? 'var(--red)' : 'var(--text)';
+                document.getElementById('qa-gex-label').textContent = gexLabel;
+                document.getElementById('qa-gex-label').style.color = gexColor;
+                document.getElementById('qa-gex').style.color = gexColor;
+
+                // IV Rank
+                const ivRank = sentiment.iv_rank || 0;
+                document.getElementById('qa-iv-rank').textContent = `${ivRank.toFixed(0)}%`;
+                let ivLabel = 'Normal';
+                let ivColor = 'var(--text)';
+                if (ivRank > 50) {
+                    ivLabel = 'High (Sell)';
+                    ivColor = 'var(--orange)';
+                } else if (ivRank < 20) {
+                    ivLabel = 'Low (Buy)';
+                    ivColor = 'var(--green)';
+                }
+                document.getElementById('qa-iv-label').textContent = ivLabel;
+                document.getElementById('qa-iv-label').style.color = ivColor;
+
+                // Max Pain
+                const maxPain = sentiment.max_pain || 0;
+                document.getElementById('qa-max-pain').textContent = `$${maxPain.toFixed(0)}`;
+
+                // Current Price - fetch from snapshot
+                try {
+                    const flowRes = await fetch(`${API_BASE}/options/flow/${ticker}`);
+                    const flowData = await flowRes.json();
+                    if (flowData.ok && flowData.data) {
+                        const currentPrice = flowData.data.current_price || flowData.data.price || 0;
+                        if (currentPrice > 0) {
+                            document.getElementById('qa-current-price').textContent = `$${currentPrice.toFixed(2)}`;
+                            const distance = ((currentPrice - maxPain) / maxPain * 100).toFixed(1);
+                            const distColor = Math.abs(distance) < 2 ? 'var(--purple)' : 'var(--text-muted)';
+                            document.getElementById('qa-mp-distance').textContent = `${distance > 0 ? '+' : ''}${distance}% from MP`;
+                            document.getElementById('qa-mp-distance').style.color = distColor;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch current price:', e);
+                }
+
+                // Overall Sentiment Badge
+                const overallSentiment = sentiment.overall_sentiment ||
+                    (pcRatio < 0.7 && gexValue > 0 ? 'bullish' :
+                     pcRatio > 1.0 && gexValue < 0 ? 'bearish' : 'neutral');
+                const sentBadge = document.getElementById('quick-analysis-sentiment');
+                sentBadge.textContent = overallSentiment.toUpperCase();
+                sentBadge.style.background = overallSentiment === 'bullish' ? 'rgba(34,197,94,0.2)' :
+                                             overallSentiment === 'bearish' ? 'rgba(239,68,68,0.2)' : 'rgba(100,116,139,0.2)';
+                sentBadge.style.color = overallSentiment === 'bullish' ? 'var(--green)' :
+                                        overallSentiment === 'bearish' ? 'var(--red)' : 'var(--text-muted)';
+
+                // Interpretation
+                let interpretation = '';
+                if (pcRatio < 0.7 && gexValue > 0) {
+                    interpretation = `📈 Bullish setup: Low P/C (${pcRatio.toFixed(2)}) indicates call buying dominance. Positive GEX suggests dealer hedging will dampen selloffs.`;
+                } else if (pcRatio > 1.0 && gexValue < 0) {
+                    interpretation = `📉 Bearish setup: High P/C (${pcRatio.toFixed(2)}) indicates put buying/hedging. Negative GEX means dealers will amplify moves in either direction.`;
+                } else if (gexValue < 0) {
+                    interpretation = `⚠️ Volatile conditions: Negative GEX (${gexDisplay}) means market makers will amplify price moves. Expect larger swings.`;
+                } else {
+                    interpretation = `⚖️ Neutral conditions: P/C at ${pcRatio.toFixed(2)}, GEX at ${gexDisplay}. No strong directional bias from options flow.`;
+                }
+                if (ivRank > 50) {
+                    interpretation += ` High IV Rank (${ivRank.toFixed(0)}%) favors selling premium.`;
+                } else if (ivRank < 20) {
+                    interpretation += ` Low IV Rank (${ivRank.toFixed(0)}%) makes options cheap for directional bets.`;
+                }
+                document.getElementById('qa-interpretation').textContent = interpretation;
+
+            } catch (e) {
+                console.error('Quick analysis error:', e);
+                document.getElementById('qa-interpretation').textContent = `Error: ${e.message}. Try another ticker.`;
+                document.getElementById('quick-analysis-sentiment').textContent = 'ERROR';
+                document.getElementById('quick-analysis-sentiment').style.background = 'rgba(239,68,68,0.2)';
+                document.getElementById('quick-analysis-sentiment').style.color = 'var(--red)';
             }
         }
 
