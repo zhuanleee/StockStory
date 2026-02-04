@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 00:15 - `9c4e8b8`
+
+**Fix X Intelligence to use same pattern as working xai_x_intelligence_v2**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/intelligence/x_intelligence.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 00:07 - `8f3fc8f`
 
 **Remove Reddit, update X Intelligence to use xai_sdk with x_search**

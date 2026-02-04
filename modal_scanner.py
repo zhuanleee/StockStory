@@ -36,6 +36,7 @@ image = (
     .pip_install_from_requirements("requirements.txt")
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
+    .add_local_dir("utils", remote_path="/root/utils")
 )
 
 
