@@ -420,8 +420,10 @@ class OptionsSentimentAnalyzer:
                 except:
                     pass
 
-            # Calculate IV Rank (simplified)
-            result['iv_rank'], result['iv_percentile'] = self._calculate_iv_rank(ticker)
+            # Calculate IV Rank using actual IV from options chain
+            result['iv_rank'], result['iv_percentile'] = self._calculate_iv_rank(
+                ticker, result.get('current_iv')
+            )
 
             # Calculate overall sentiment score
             result['sentiment_score'] = self._calculate_sentiment_score(result)
@@ -493,40 +495,68 @@ class OptionsSentimentAnalyzer:
 
         return result
 
-    def _calculate_iv_rank(self, ticker: str) -> Tuple[float, float]:
-        """Calculate IV Rank and Percentile (simplified)."""
+    def _calculate_iv_rank(self, ticker: str, current_iv: float = None) -> Tuple[float, float]:
+        """
+        Calculate IV Rank and Percentile using actual IV from options.
+
+        IV Rank = (Current IV - 52w Low IV) / (52w High IV - 52w Low IV) * 100
+
+        Since Polygon doesn't provide historical IV, we estimate the 52-week range
+        using historical volatility as a baseline (IV typically trades at 1.0-1.5x HV).
+        """
         try:
-            if not HAS_YFINANCE:
+            # If no current IV provided, can't calculate proper IV rank
+            if current_iv is None or current_iv <= 0:
                 return 50, 50
+
+            if not HAS_YFINANCE:
+                # Without HV data, use typical IV ranges for estimation
+                # Most liquid stocks have IV between 15% and 80%
+                estimated_low = 20
+                estimated_high = 70
+                iv_rank = max(0, min(100, ((current_iv - estimated_low) / (estimated_high - estimated_low)) * 100))
+                return round(iv_rank, 1), round(iv_rank, 1)
 
             stock = yf.Ticker(ticker)
             hist = stock.history(period='1y')
 
             if len(hist) < 20:
-                return 50, 50
+                # Fallback to simple estimation
+                iv_rank = max(0, min(100, ((current_iv - 20) / 50) * 100))
+                return round(iv_rank, 1), round(iv_rank, 1)
 
-            # Use historical volatility as proxy for IV
+            # Calculate historical volatility to estimate IV range
             returns = hist['Close'].pct_change().dropna()
-            current_vol = returns.tail(20).std() * (252 ** 0.5) * 100
 
-            # Calculate rolling 20-day volatility for past year
-            rolling_vol = returns.rolling(20).std() * (252 ** 0.5) * 100
-            rolling_vol = rolling_vol.dropna()
+            # Calculate HV range over past year (20-day rolling)
+            rolling_hv = returns.rolling(20).std() * (252 ** 0.5) * 100
+            rolling_hv = rolling_hv.dropna()
 
-            if len(rolling_vol) == 0:
+            if len(rolling_hv) == 0:
                 return 50, 50
 
-            min_vol = rolling_vol.min()
-            max_vol = rolling_vol.max()
+            hv_min = rolling_hv.min()
+            hv_max = rolling_hv.max()
 
-            # IV Rank
-            if max_vol > min_vol:
-                iv_rank = ((current_vol - min_vol) / (max_vol - min_vol)) * 100
+            # Estimate IV range based on HV:
+            # - IV low: ~1.0x minimum HV (IV rarely drops below realized vol)
+            # - IV high: ~1.5x maximum HV (IV spikes during fear/uncertainty)
+            estimated_iv_low = max(10, hv_min * 1.0)
+            estimated_iv_high = max(estimated_iv_low + 20, hv_max * 1.5)
+
+            # Calculate IV Rank using actual current IV from options
+            if estimated_iv_high > estimated_iv_low:
+                iv_rank = ((current_iv - estimated_iv_low) / (estimated_iv_high - estimated_iv_low)) * 100
             else:
                 iv_rank = 50
 
-            # IV Percentile
-            iv_percentile = (rolling_vol < current_vol).sum() / len(rolling_vol) * 100
+            # Clamp to 0-100
+            iv_rank = max(0, min(100, iv_rank))
+
+            # IV Percentile: estimate what % of time IV was lower
+            # Use HV as proxy (scaled by typical IV/HV ratio of ~1.1)
+            scaled_hv = rolling_hv * 1.1
+            iv_percentile = (scaled_hv < current_iv).sum() / len(scaled_hv) * 100
 
             return round(iv_rank, 1), round(iv_percentile, 1)
 
