@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 16:28 - `7d0a686`
+
+**Add quick options analysis with P/C, GEX, IV Rank**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 16:08 - `2cfc600`
 
 **Activate X/Social sentiment with real X search**

@@ -9139,18 +9139,27 @@
             document.getElementById('qa-interpretation').textContent = 'Loading analysis...';
 
             try {
-                // Fetch options sentiment data (includes P/C, GEX, IV, Max Pain)
-                const res = await fetch(`${API_BASE}/options/sentiment/${ticker}`);
-                const data = await res.json();
+                // Fetch data from multiple endpoints for accuracy
+                const [sentimentRes, maxPainRes, flowRes] = await Promise.all([
+                    fetch(`${API_BASE}/options/sentiment/${ticker}`),
+                    fetch(`${API_BASE}/options/max-pain/${ticker}`),
+                    fetch(`${API_BASE}/options/flow/${ticker}`)
+                ]);
 
-                if (!data.ok) {
-                    throw new Error(data.error || 'Failed to load options data');
+                const sentimentData = await sentimentRes.json();
+                const maxPainData = await maxPainRes.json();
+                const flowData = await flowRes.json();
+
+                if (!sentimentData.ok && !flowData.ok) {
+                    throw new Error('Failed to load options data');
                 }
 
-                const sentiment = data.data;
+                const sentiment = sentimentData.data || {};
+                const maxPainInfo = maxPainData.data || {};
+                const flow = flowData.data || {};
 
-                // P/C Ratio
-                const pcRatio = sentiment.put_call_ratio || 0;
+                // P/C Ratio (from flow endpoint - most accurate)
+                const pcRatio = flow.put_call_ratio || sentiment.put_call_ratio || 0;
                 document.getElementById('qa-pc-ratio').textContent = pcRatio.toFixed(2);
                 let pcLabel = 'Neutral';
                 let pcColor = 'var(--text)';
@@ -9200,26 +9209,27 @@
                 document.getElementById('qa-iv-label').textContent = ivLabel;
                 document.getElementById('qa-iv-label').style.color = ivColor;
 
-                // Max Pain
-                const maxPain = sentiment.max_pain || 0;
+                // Max Pain (from dedicated max-pain endpoint - accurate calculation)
+                const maxPain = maxPainInfo.max_pain_price || sentiment.max_pain || 0;
                 document.getElementById('qa-max-pain').textContent = `$${maxPain.toFixed(0)}`;
 
-                // Current Price - fetch from snapshot
-                try {
-                    const flowRes = await fetch(`${API_BASE}/options/flow/${ticker}`);
-                    const flowData = await flowRes.json();
-                    if (flowData.ok && flowData.data) {
-                        const currentPrice = flowData.data.current_price || flowData.data.price || 0;
-                        if (currentPrice > 0) {
-                            document.getElementById('qa-current-price').textContent = `$${currentPrice.toFixed(2)}`;
-                            const distance = ((currentPrice - maxPain) / maxPain * 100).toFixed(1);
-                            const distColor = Math.abs(distance) < 2 ? 'var(--purple)' : 'var(--text-muted)';
-                            document.getElementById('qa-mp-distance').textContent = `${distance > 0 ? '+' : ''}${distance}% from MP`;
-                            document.getElementById('qa-mp-distance').style.color = distColor;
-                        }
+                // Current Price (from max-pain or flow endpoint)
+                const currentPrice = maxPainInfo.current_price || flow.current_price || sentiment.current_price || 0;
+                if (currentPrice > 0) {
+                    document.getElementById('qa-current-price').textContent = `$${currentPrice.toFixed(2)}`;
+                    if (maxPain > 0) {
+                        const distance = ((currentPrice - maxPain) / maxPain * 100).toFixed(1);
+                        const distColor = Math.abs(parseFloat(distance)) < 2 ? 'var(--purple)' : 'var(--text-muted)';
+                        document.getElementById('qa-mp-distance').textContent = `${distance > 0 ? '+' : ''}${distance}% from MP`;
+                        document.getElementById('qa-mp-distance').style.color = distColor;
                     }
-                } catch (e) {
-                    console.warn('Could not fetch current price:', e);
+                }
+
+                // Show expiration info if available
+                if (maxPainInfo.expiration) {
+                    const dte = maxPainInfo.days_to_expiry;
+                    const dteText = dte === 0 ? '(0DTE)' : dte === 1 ? '(1 day)' : `(${dte}d)`;
+                    document.getElementById('qa-mp-distance').textContent += ` ${dteText}`;
                 }
 
                 // Overall Sentiment Badge
