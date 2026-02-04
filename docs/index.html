@@ -2922,8 +2922,13 @@
                         <div style="font-size: 1.5rem; font-weight: 700;" id="spy-pc-ratio">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
                     </div>
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
-                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">SPY MAX PAIN</div>
+                    <div style="background: var(--bg-card); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <div style="font-size: 0.7rem; color: var(--purple);">SPY MAX PAIN</div>
+                            <select id="spy-max-pain-expiry" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 2px 4px; border-radius: 4px; font-size: 0.6rem; max-width: 80px;" onchange="loadSpyMaxPainForExpiry()">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
                         <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-max-pain-dist">Loading...</div>
                     </div>
@@ -8404,14 +8409,14 @@
         // Market Options Sentiment loader
         async function loadMarketSentiment() {
             try {
-                // Fetch market sentiment and SPY max pain in parallel
-                const [sentimentRes, maxPainRes] = await Promise.all([
+                // Fetch market sentiment, SPY expirations, and SPY max pain in parallel
+                const [sentimentRes, expirationsRes] = await Promise.all([
                     fetch(`${API_BASE}/options/market-sentiment`),
-                    fetch(`${API_BASE}/options/max-pain/SPY`)
+                    fetch(`${API_BASE}/options/expirations/SPY`)
                 ]);
 
                 const data = await sentimentRes.json();
-                const maxPainData = await maxPainRes.json();
+                const expData = await expirationsRes.json();
 
                 if (data.ok && data.data) {
                     const sentiment = data.data;
@@ -8447,12 +8452,45 @@
                     document.getElementById('zero-dte-vol').textContent = (zeroDte / 1e6).toFixed(1) + 'M';
                 }
 
-                // SPY Max Pain
+                // Populate SPY expiration dropdown
+                const expirySelect = document.getElementById('spy-max-pain-expiry');
+                if (expData.ok && expData.data && expData.data.expirations) {
+                    const expirations = expData.data.expirations.slice(0, 10); // Limit to 10 nearest
+                    expirySelect.innerHTML = expirations.map((exp, i) => {
+                        const d = new Date(exp + 'T00:00:00');
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const daysOut = Math.round((d - today) / (1000 * 60 * 60 * 24));
+                        const label = daysOut <= 0 ? 'Today' : daysOut === 1 ? '1d' : daysOut + 'd';
+                        return `<option value="${exp}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
+                    }).join('');
+
+                    // Load max pain for nearest expiration
+                    await loadSpyMaxPainForExpiry();
+                } else {
+                    expirySelect.innerHTML = '<option value="">N/A</option>';
+                }
+            } catch (e) {
+                console.error('Failed to load market sentiment:', e);
+            }
+        }
+
+        // Load SPY Max Pain for selected expiration
+        async function loadSpyMaxPainForExpiry() {
+            const expiry = document.getElementById('spy-max-pain-expiry').value;
+            const maxPainEl = document.getElementById('spy-max-pain');
+            const distEl = document.getElementById('spy-max-pain-dist');
+
+            try {
+                maxPainEl.textContent = '...';
+                distEl.textContent = 'Loading...';
+
+                const url = expiry ? `${API_BASE}/options/max-pain/SPY?expiration=${expiry}` : `${API_BASE}/options/max-pain/SPY`;
+                const res = await fetch(url);
+                const maxPainData = await res.json();
+
                 if (maxPainData.ok && maxPainData.data) {
                     const mp = maxPainData.data;
-                    const maxPainEl = document.getElementById('spy-max-pain');
-                    const distEl = document.getElementById('spy-max-pain-dist');
-
                     maxPainEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(0);
 
                     // Show distance from current price
@@ -8461,9 +8499,14 @@
                     const arrow = direction === 'above' ? '↓' : direction === 'below' ? '↑' : '';
                     distEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '% ' + arrow;
                     distEl.style.color = Math.abs(dist) < 1 ? 'var(--green)' : Math.abs(dist) < 3 ? 'var(--yellow)' : 'var(--text-muted)';
+                } else {
+                    maxPainEl.textContent = '--';
+                    distEl.textContent = 'Error';
                 }
             } catch (e) {
-                console.error('Failed to load market sentiment:', e);
+                console.error('Failed to load SPY max pain:', e);
+                maxPainEl.textContent = '--';
+                distEl.textContent = 'Error';
             }
         }
 
