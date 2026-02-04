@@ -1701,6 +1701,30 @@ Get an API key at `/api-keys/request`
             except Exception as e:
                 result['components']['sentiment'] = {'score': 50, 'error': str(e)}
 
+            # 4b. X/Social Sentiment (real-time from X search)
+            try:
+                from src.ai.xai_x_intelligence_v2 import get_x_intelligence_v2
+                x_intel = get_x_intelligence_v2()
+                if x_intel:
+                    x_sentiment = x_intel.get_market_sentiment()
+                    result['components']['x_sentiment'] = {
+                        'score': x_sentiment.get('score', 50),
+                        'sentiment': x_sentiment.get('sentiment', 'neutral'),
+                        'volume': x_sentiment.get('volume', 'normal'),
+                        'key_topics': x_sentiment.get('key_topics', []),
+                        'dominant_narrative': x_sentiment.get('dominant_narrative', ''),
+                        'available': True
+                    }
+                else:
+                    result['components']['x_sentiment'] = {
+                        'score': 50,
+                        'sentiment': 'neutral',
+                        'available': False,
+                        'error': 'X Intelligence not configured'
+                    }
+            except Exception as e:
+                result['components']['x_sentiment'] = {'score': 50, 'available': False, 'error': str(e)}
+
             # 5. Institutional/Government Data
             try:
                 inst_score = 60  # Default neutral-positive

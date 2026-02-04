@@ -574,6 +574,113 @@ ONLY include tickers with unusual activity. Skip tickers with normal/low activit
 
         return analysis
 
+    def get_market_sentiment(self) -> Dict:
+        """
+        Get overall market sentiment from X/Twitter.
+
+        Searches for $SPY, $QQQ, and general market sentiment posts.
+
+        Returns:
+            {
+                'score': int (0-100, 50 = neutral),
+                'sentiment': str (bullish/bearish/neutral),
+                'volume': str (low/normal/elevated/spiking),
+                'key_topics': List[str],
+                'sample_posts': List[str],
+                'timestamp': str
+            }
+        """
+        if not self.available:
+            return {'error': 'X Intelligence not available', 'score': 50, 'sentiment': 'neutral'}
+
+        # Check cache
+        cache_key = "market_sentiment"
+        cached = self._get_cache(cache_key)
+        if cached:
+            logger.info("Market sentiment served from cache")
+            return cached
+
+        try:
+            from src.ai.model_selector import get_sentiment_model
+            model = get_sentiment_model(quick=True)
+
+            chat = self.client.chat.create(
+                model=model,
+                tools=[x_search()],
+            )
+
+            prompt = """
+Search X (Twitter) RIGHT NOW for posts about overall market sentiment (last 1-2 hours).
+
+Search terms: $SPY $QQQ "stock market" "market sentiment" "bull market" "bear market"
+
+Focus on:
+- Verified financial accounts (traders, analysts, financial news)
+- High engagement posts (100+ likes/retweets)
+
+Analyze what you find and respond with JSON:
+{
+    "sentiment": "bullish" or "bearish" or "neutral",
+    "sentiment_score": -10 (extreme bearish) to +10 (extreme bullish),
+    "volume": "low" or "normal" or "elevated" or "spiking",
+    "key_topics": ["topic1", "topic2", ...],
+    "sample_posts": ["brief summary of notable post 1", "post 2", ...],
+    "dominant_narrative": "one sentence summary of what traders are saying"
+}
+
+Be honest - if sentiment is mixed or unclear, say neutral.
+"""
+
+            response = chat.send(prompt)
+            content = response.text
+
+            # Parse JSON response
+            import json
+            import re
+
+            result = {
+                'score': 50,
+                'sentiment': 'neutral',
+                'volume': 'normal',
+                'key_topics': [],
+                'sample_posts': [],
+                'dominant_narrative': '',
+                'timestamp': datetime.now().isoformat()
+            }
+
+            try:
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    data = json.loads(json_match.group(0))
+                    result['sentiment'] = data.get('sentiment', 'neutral')
+                    sentiment_score = data.get('sentiment_score', 0)
+                    # Convert -10 to +10 scale to 0-100 scale
+                    result['score'] = int(50 + (sentiment_score * 5))
+                    result['score'] = max(0, min(100, result['score']))
+                    result['volume'] = data.get('volume', 'normal')
+                    result['key_topics'] = data.get('key_topics', [])[:5]
+                    result['sample_posts'] = data.get('sample_posts', [])[:3]
+                    result['dominant_narrative'] = data.get('dominant_narrative', '')
+            except json.JSONDecodeError:
+                # Fallback text parsing
+                content_lower = content.lower()
+                if any(w in content_lower for w in ['bullish', 'rally', 'buying', 'green']):
+                    result['sentiment'] = 'bullish'
+                    result['score'] = 65
+                elif any(w in content_lower for w in ['bearish', 'crash', 'selling', 'red']):
+                    result['sentiment'] = 'bearish'
+                    result['score'] = 35
+
+            # Cache the result
+            self._set_cache(cache_key, result)
+            logger.info(f"Market sentiment: {result['sentiment']} (score: {result['score']})")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Market sentiment search failed: {e}")
+            return {'error': str(e), 'score': 50, 'sentiment': 'neutral'}
+
 
 def get_x_intelligence_v2() -> Optional[XAIXIntelligenceV2]:
     """Get X Intelligence V2 instance (singleton pattern)."""

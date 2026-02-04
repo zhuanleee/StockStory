@@ -8096,8 +8096,8 @@
                 // Update FRED Data
                 updateFREDSparklines(health.components.fred);
 
-                // Update Sentiment Donuts
-                updateSentimentDonuts(health.components.sentiment);
+                // Update Sentiment Donuts (News + X/Social)
+                updateSentimentDonuts(health.components.sentiment, health.components.x_sentiment);
 
                 // Update Radar Chart
                 updateRadarChart(health.components);
@@ -8376,34 +8376,51 @@
             });
         }
 
-        function updateSentimentDonuts(sentiment) {
+        function updateSentimentDonuts(sentiment, xSentiment) {
+            // News sentiment
             if (!sentiment || sentiment.error) {
                 document.getElementById('health-news-pct').textContent = '--%';
-                document.getElementById('health-x-pct').textContent = '--%';
-                return;
+            } else {
+                const newsScore = sentiment.score || 50;
+                const newsDonut = document.getElementById('health-news-donut');
+                const newsOffset = 251.2 * (1 - newsScore / 100);
+                newsDonut.setAttribute('stroke-dashoffset', newsOffset);
+                newsDonut.setAttribute('stroke', newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)');
+
+                document.getElementById('health-news-pct').textContent = `${newsScore}%`;
+                document.getElementById('health-news-label').textContent = sentiment.label || 'Neutral';
+                document.getElementById('health-news-label').style.color = newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)';
             }
 
-            const newsScore = sentiment.score || 50;
-
-            // News donut
-            const newsDonut = document.getElementById('health-news-donut');
-            const newsOffset = 251.2 * (1 - newsScore / 100);
-            newsDonut.setAttribute('stroke-dashoffset', newsOffset);
-            newsDonut.setAttribute('stroke', newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)');
-
-            document.getElementById('health-news-pct').textContent = `${newsScore}%`;
-            document.getElementById('health-news-label').textContent = sentiment.label || 'Neutral';
-            document.getElementById('health-news-label').style.color = newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)';
-
-            // X/Social donut - currently disabled (X Crisis Monitor stopped)
-            // Show disabled state instead of mock data
+            // X/Social sentiment (real-time from X search)
             const xDonut = document.getElementById('health-x-donut');
-            xDonut.setAttribute('stroke-dashoffset', '251.2');  // Hide arc
-            xDonut.setAttribute('stroke', 'rgba(100,116,139,0.3)');
+            if (!xSentiment || !xSentiment.available) {
+                // X Intelligence not available
+                xDonut.setAttribute('stroke-dashoffset', '251.2');
+                xDonut.setAttribute('stroke', 'rgba(100,116,139,0.3)');
+                document.getElementById('health-x-pct').textContent = 'N/A';
+                document.getElementById('health-x-label').textContent = xSentiment?.error ? 'Unavailable' : 'Not Configured';
+                document.getElementById('health-x-label').style.color = 'var(--text-muted)';
+            } else {
+                // Display real X sentiment
+                const xScore = xSentiment.score || 50;
+                const xOffset = 251.2 * (1 - xScore / 100);
+                xDonut.setAttribute('stroke-dashoffset', xOffset);
+                xDonut.setAttribute('stroke', xScore > 60 ? 'var(--green)' : xScore < 40 ? 'var(--red)' : 'var(--yellow)');
 
-            document.getElementById('health-x-pct').textContent = 'N/A';
-            document.getElementById('health-x-label').textContent = 'Disabled';
-            document.getElementById('health-x-label').style.color = 'var(--text-muted)';
+                document.getElementById('health-x-pct').textContent = `${xScore}%`;
+
+                // Label based on sentiment
+                const xLabel = xSentiment.sentiment === 'bullish' ? 'Bullish' :
+                               xSentiment.sentiment === 'bearish' ? 'Bearish' : 'Neutral';
+                document.getElementById('health-x-label').textContent = xLabel;
+                document.getElementById('health-x-label').style.color = xScore > 60 ? 'var(--green)' : xScore < 40 ? 'var(--red)' : 'var(--yellow)';
+
+                // Show volume indicator if elevated
+                if (xSentiment.volume === 'elevated' || xSentiment.volume === 'spiking') {
+                    document.getElementById('health-x-label').textContent = `${xLabel} 🔥`;
+                }
+            }
         }
 
         function updateRadarChart(components) {
