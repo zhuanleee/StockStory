@@ -2,6 +2,30 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 23:50 - `35f875f`
+
+**Improve Options tab UI and usability**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+**Changes:**
+- Quick ticker shortcuts (SPY, QQQ, NVDA, TSLA, AAPL, AMD, META)
+- Visual sentiment gauge with animated needle
+- Consolidated hero zone (2-column layout)
+- Auto-load SPY data on tab open
+- Mobile responsive layouts
+
+---
+
+
 ### 2026-02-04 23:35 - `472b068`
 
 **Replace Trading tab with Options as main tab**
