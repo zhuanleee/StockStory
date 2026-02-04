@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 13:58 - `bd00333`
+
+**Redesign options flow UI with visual sentiment gauge**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 13:55 - `4e8b148`
 
 **Fix expirations endpoint to fetch all available dates**

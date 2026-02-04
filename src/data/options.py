@@ -15,7 +15,8 @@ from src.data.polygon_provider import (
     get_unusual_options_sync,
     get_options_chain_sync,
     get_technical_summary_sync,
-    get_options_contracts_sync
+    get_options_contracts_sync,
+    get_snapshot_sync
 )
 from typing import Dict, List
 from datetime import datetime, timedelta
@@ -259,10 +260,21 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
         if not calls and not puts:
             return {"error": "No options data available", "ticker": ticker}
 
-        # Get current price from chain summary or first contract
-        current_price = chain.get('summary', {}).get('underlying_price', 0)
+        # Get current price from real-time snapshot (more accurate than options chain data)
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+                logger.debug(f"Got real-time price for {ticker}: ${current_price}")
+        except Exception as e:
+            logger.warning(f"Failed to get snapshot price for {ticker}: {e}")
+
+        # Fallback to chain data if snapshot failed
+        if not current_price:
+            current_price = chain.get('summary', {}).get('underlying_price', 0)
         if not current_price and calls:
-            # Estimate from ATM strike
+            # Last resort: estimate from ATM strike
             current_price = calls[len(calls)//2].get('strike', 0)
 
         # Collect all unique strikes
