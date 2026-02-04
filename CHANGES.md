@@ -2,6 +2,23 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 23:35 - `472b068`
+
+**Replace Trading tab with Options as main tab**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 23:25 - `884c2a3`
 
 **Add CHANGELOG.md to docs with v3.2.0 updates**
