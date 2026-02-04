@@ -3261,11 +3261,11 @@
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('META')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">META</button>
                 <span style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
                 <span style="font-size: 0.75rem; color: var(--orange); padding: 6px 0;">Futures:</span>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 Options">ES</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq Options">NQ</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil Options">CL</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold Options">GC</button>
-                <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 4px;" title="Futures options data may be limited">ⓘ</span>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 - Requires CME data (try SPY instead)">ES</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq - Requires CME data (try QQQ instead)">NQ</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil - Requires CME data (try USO instead)">CL</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold - Requires CME data (try GLD instead)">GC</button>
+                <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 4px;" title="Futures require Polygon Business tier. Use ETF alternatives: SPY, QQQ, USO, GLD">⚠️</span>
             </div>
 
             <!-- Search & Action Bar -->
@@ -9268,10 +9268,39 @@
                 }
             } catch (e) {
                 console.error('Failed to load options analysis:', e);
-                document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
-                document.getElementById('oa-sentiment').textContent = 'ERROR';
-                document.getElementById('oa-sentiment').style.background = 'rgba(239,68,68,0.2)';
-                document.getElementById('oa-sentiment').style.color = 'var(--red)';
+                const futuresInfo = getFuturesInfo(ticker);
+                if (futuresInfo.isFutures) {
+                    // Special message for futures tickers
+                    document.getElementById('oa-interpretation').innerHTML = `
+                        <span style="color: var(--orange);">⚠️ ${futuresInfo.name} (${ticker}) options data not available.</span><br>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">
+                            Futures options (ES, NQ, CL, GC) require Polygon.io Business tier or CME data add-on.<br>
+                            Try equity ETF alternatives: SPY (S&P), QQQ (Nasdaq), USO (Oil), GLD (Gold)
+                        </span>`;
+                    document.getElementById('oa-sentiment').textContent = 'N/A';
+                    document.getElementById('oa-sentiment').style.background = 'rgba(245,158,11,0.2)';
+                    document.getElementById('oa-sentiment').style.color = 'var(--orange)';
+                    // Clear the metrics
+                    ['oa-pc-ratio', 'oa-gex', 'oa-iv-rank', 'oa-max-pain'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = '--';
+                    });
+                    ['oa-pc-label', 'oa-gex-label', 'oa-iv-label', 'oa-mp-distance'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = '';
+                    });
+                    document.getElementById('oa-chart').innerHTML = `
+                        <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <div style="font-size: 2rem; margin-bottom: 12px;">📊</div>
+                            <div>Futures options data requires upgraded API access</div>
+                            <div style="margin-top: 8px; font-size: 0.8rem;">Use SPY, QQQ, USO, or GLD for similar exposure</div>
+                        </div>`;
+                } else {
+                    document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
+                    document.getElementById('oa-sentiment').textContent = 'ERROR';
+                    document.getElementById('oa-sentiment').style.background = 'rgba(239,68,68,0.2)';
+                    document.getElementById('oa-sentiment').style.color = 'var(--red)';
+                }
             }
         }
 
