@@ -8297,11 +8297,16 @@
         }
 
         function renderMaxPainChart(painByStrike, maxPainPrice, currentPrice) {
+            console.log('📊 renderMaxPainChart called:', painByStrike?.length, 'strikes, maxPain:', maxPainPrice, 'current:', currentPrice);
+
             const container = document.getElementById('max-pain-chart-container');
             const chartDiv = document.getElementById('max-pain-chart');
 
+            console.log('📊 Container found:', !!container, 'ChartDiv found:', !!chartDiv);
+
             if (!painByStrike || painByStrike.length === 0) {
-                container.style.display = 'none';
+                console.log('📊 No pain data, hiding chart');
+                if (container) container.style.display = 'none';
                 return;
             }
 
@@ -8387,6 +8392,7 @@
             html += '</div>';
 
             chartDiv.innerHTML = html;
+            console.log('📊 Chart rendered with', data.length, 'bars');
         }
 
         // Market Options Sentiment loader
