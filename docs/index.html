@@ -1678,6 +1678,7 @@
     <nav class="main-tabs">
         <div class="tabs-inner">
             <div class="main-tab active" data-category="dashboard">Dashboard</div>
+            <div class="main-tab" data-category="health">Health</div>
             <div class="main-tab" data-category="research">Research</div>
             <div class="main-tab" data-category="trading">Trading</div>
             <div class="main-tab" data-category="analytics">Analytics</div>
@@ -2685,6 +2686,318 @@
                 <div class="accordion-content">
                     <div id="recent-activity" style="max-height: 200px; overflow-y: auto;">
                         <div style="color: var(--text-muted); font-size: 0.8125rem;">No recent activity</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Health Tab -->
+        <div id="health" class="tab-content">
+            <!-- TIER 1: Hero Zone - Composite Score + AI Synthesis -->
+            <div class="hero-zone" style="margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: 280px 1fr; gap: 24px;">
+                    <!-- Left: Composite Score Gauge -->
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">MARKET HEALTH SCORE</div>
+                        <!-- SVG Gauge -->
+                        <div id="health-gauge-container" style="position: relative; width: 200px; height: 120px; margin: 0 auto;">
+                            <svg viewBox="0 0 200 120" style="width: 100%; height: 100%;">
+                                <!-- Background arc -->
+                                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="16" stroke-linecap="round"/>
+                                <!-- Colored arc (will be updated by JS) -->
+                                <path id="health-gauge-arc" d="M 20 100 A 80 80 0 0 1 100 20" fill="none" stroke="var(--green)" stroke-width="16" stroke-linecap="round"/>
+                                <!-- Score text -->
+                                <text id="health-gauge-score" x="100" y="85" text-anchor="middle" font-size="36" font-weight="700" fill="var(--text)">--</text>
+                                <text id="health-gauge-label" x="100" y="108" text-anchor="middle" font-size="12" fill="var(--text-muted)">Loading...</text>
+                            </svg>
+                        </div>
+                        <button class="btn btn-primary" style="margin-top: 12px; padding: 8px 20px;" onclick="fetchMarketHealth()">
+                            <span style="margin-right: 6px;">🔄</span> Refresh Analysis
+                        </button>
+                    </div>
+
+                    <!-- Right: AI Synthesis Panel -->
+                    <div style="background: var(--bg-card); border-radius: 12px; padding: 16px; border: 1px solid var(--border);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div style="font-size: 1rem; font-weight: 600;">🧠 AI Market Synthesis</div>
+                            <div id="health-risk-badge" style="padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; background: rgba(100,116,139,0.2);">--</div>
+                        </div>
+                        <div id="health-ai-insight" style="font-size: 0.875rem; line-height: 1.5; margin-bottom: 12px; color: var(--text);">
+                            Click "Refresh Analysis" to generate AI market synthesis...
+                        </div>
+                        <div id="health-observations" style="font-size: 0.8rem; color: var(--text-muted);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Score Trend Chart (7 days) -->
+            <div class="card" style="margin-bottom: 20px; padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div style="font-size: 0.9rem; font-weight: 600;">📈 Score Trend (7 Days)</div>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Historical composite score</div>
+                </div>
+                <div id="health-trend-chart" style="height: 80px; display: flex; align-items: flex-end; gap: 2px; padding: 0 10px;">
+                    <!-- Will be filled by JS with sparkline bars -->
+                    <div style="color: var(--text-muted); font-size: 0.8rem; width: 100%; text-align: center;">Loading trend data...</div>
+                </div>
+            </div>
+
+            <!-- Component Score Cards -->
+            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px;">
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">TECHNICAL</div>
+                    <div id="health-tech-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-tech-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--blue); border-radius: 2px;"></div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">OPTIONS</div>
+                    <div id="health-options-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-options-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--green); border-radius: 2px;"></div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">MACRO</div>
+                    <div id="health-macro-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-macro-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--yellow); border-radius: 2px;"></div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">SENTIMENT</div>
+                    <div id="health-sentiment-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-sentiment-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--purple); border-radius: 2px;"></div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">INSTITUTIONAL</div>
+                    <div id="health-inst-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-inst-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--cyan); border-radius: 2px;"></div>
+                    </div>
+                </div>
+                <div class="card" style="padding: 12px; text-align: center;">
+                    <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">RISK</div>
+                    <div id="health-risk-score" style="font-size: 1.5rem; font-weight: 700;">--</div>
+                    <div id="health-risk-bar" style="height: 4px; background: rgba(100,116,139,0.2); border-radius: 2px; margin-top: 6px; overflow: hidden;">
+                        <div style="height: 100%; width: 50%; background: var(--orange); border-radius: 2px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Charts Grid -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <!-- Volume Profile Chart -->
+                <div class="card" style="padding: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div style="font-size: 0.9rem; font-weight: 600;">📊 SPY Volume Profile</div>
+                        <div id="health-vp-position" style="font-size: 0.7rem; padding: 3px 8px; border-radius: 10px; background: rgba(100,116,139,0.2);">--</div>
+                    </div>
+                    <!-- Volume Profile Horizontal Bars -->
+                    <div id="health-volume-profile" style="height: 180px; position: relative;">
+                        <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding-top: 70px;">Loading volume profile...</div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+                        <span>VAL: <strong id="health-vp-val" style="color: var(--red);">--</strong></span>
+                        <span>POC: <strong id="health-vp-poc" style="color: #a855f7;">--</strong></span>
+                        <span>VAH: <strong id="health-vp-vah" style="color: var(--green);">--</strong></span>
+                        <span>Current: <strong id="health-vp-current">--</strong></span>
+                    </div>
+                </div>
+
+                <!-- Options Gauges -->
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;">⚡ Options Positioning</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <!-- P/C Ratio Gauge -->
+                        <div style="text-align: center;">
+                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
+                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-pc-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="var(--green)" stroke-width="8" stroke-linecap="round"/>
+                            </svg>
+                            <div id="health-pc-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);">P/C Ratio</div>
+                        </div>
+                        <!-- Max Pain Gauge -->
+                        <div style="text-align: center;">
+                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
+                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-mp-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
+                            </svg>
+                            <div id="health-mp-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);">Max Pain</div>
+                        </div>
+                        <!-- IV Rank Gauge -->
+                        <div style="text-align: center;">
+                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
+                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-iv-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="var(--cyan)" stroke-width="8" stroke-linecap="round"/>
+                            </svg>
+                            <div id="health-iv-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted);">Sentiment</div>
+                        </div>
+                    </div>
+                    <!-- Options Flow Bar -->
+                    <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 4px;">
+                            <span style="color: var(--green);">Calls</span>
+                            <span style="color: var(--red);">Puts</span>
+                        </div>
+                        <div style="height: 12px; background: rgba(100,116,139,0.2); border-radius: 6px; overflow: hidden; display: flex;">
+                            <div id="health-call-bar" style="width: 50%; background: linear-gradient(90deg, var(--green), rgba(34,197,94,0.6)); transition: width 0.3s;"></div>
+                            <div id="health-put-bar" style="width: 50%; background: linear-gradient(90deg, rgba(239,68,68,0.6), var(--red)); transition: width 0.3s;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 4px;">
+                            <span id="health-call-vol">-- vol</span>
+                            <span id="health-put-vol">-- vol</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Second Row: FRED + Sentiment -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <!-- FRED Sparklines -->
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;">📉 FRED Economic Indicators</div>
+                    <div id="health-fred-sparklines" style="display: grid; gap: 12px;">
+                        <!-- Fed Rate -->
+                        <div style="display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px; align-items: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Fed Rate</div>
+                            <div class="sparkline-container" style="height: 24px; background: rgba(100,116,139,0.1); border-radius: 4px; overflow: hidden;">
+                                <div id="health-fred-rate-spark" style="height: 100%; display: flex; align-items: flex-end; gap: 1px; padding: 2px;"></div>
+                            </div>
+                            <div id="health-fred-rate" style="font-size: 0.85rem; font-weight: 600; text-align: right;">--%</div>
+                        </div>
+                        <!-- CPI -->
+                        <div style="display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px; align-items: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">CPI Inflation</div>
+                            <div class="sparkline-container" style="height: 24px; background: rgba(100,116,139,0.1); border-radius: 4px; overflow: hidden;">
+                                <div id="health-fred-cpi-spark" style="height: 100%; display: flex; align-items: flex-end; gap: 1px; padding: 2px;"></div>
+                            </div>
+                            <div id="health-fred-cpi" style="font-size: 0.85rem; font-weight: 600; text-align: right;">--%</div>
+                        </div>
+                        <!-- Unemployment -->
+                        <div style="display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px; align-items: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Unemployment</div>
+                            <div class="sparkline-container" style="height: 24px; background: rgba(100,116,139,0.1); border-radius: 4px; overflow: hidden;">
+                                <div id="health-fred-unemp-spark" style="height: 100%; display: flex; align-items: flex-end; gap: 1px; padding: 2px;"></div>
+                            </div>
+                            <div id="health-fred-unemp" style="font-size: 0.85rem; font-weight: 600; text-align: right;">--%</div>
+                        </div>
+                        <!-- VIX -->
+                        <div style="display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px; align-items: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">VIX</div>
+                            <div class="sparkline-container" style="height: 24px; background: rgba(100,116,139,0.1); border-radius: 4px; overflow: hidden;">
+                                <div id="health-fred-vix-spark" style="height: 100%; display: flex; align-items: flex-end; gap: 1px; padding: 2px;"></div>
+                            </div>
+                            <div id="health-fred-vix" style="font-size: 0.85rem; font-weight: 600; text-align: right;">--</div>
+                        </div>
+                        <!-- Yield Curve -->
+                        <div style="display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px; align-items: center;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Yield Curve</div>
+                            <div style="height: 24px; display: flex; align-items: center;">
+                                <div id="health-yield-curve-visual" style="flex: 1; height: 8px; background: linear-gradient(90deg, var(--red), var(--yellow), var(--green)); border-radius: 4px; position: relative;">
+                                    <div id="health-yield-marker" style="position: absolute; top: -4px; left: 50%; width: 16px; height: 16px; background: white; border: 2px solid var(--text); border-radius: 50%; transform: translateX(-50%);"></div>
+                                </div>
+                            </div>
+                            <div id="health-fred-yield" style="font-size: 0.85rem; font-weight: 600; text-align: right;">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sentiment Donuts -->
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;">💬 Sentiment Analysis</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <!-- News Sentiment Donut -->
+                        <div style="text-align: center;">
+                            <svg viewBox="0 0 100 100" style="width: 100px; height: 100px;">
+                                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="12"/>
+                                <circle id="health-news-donut" cx="50" cy="50" r="40" fill="none" stroke="var(--green)" stroke-width="12"
+                                    stroke-dasharray="251.2" stroke-dashoffset="125.6" stroke-linecap="round"
+                                    transform="rotate(-90 50 50)"/>
+                                <text id="health-news-pct" x="50" y="55" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">--%</text>
+                            </svg>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">News Sentiment</div>
+                            <div id="health-news-label" style="font-size: 0.7rem; font-weight: 600; color: var(--green);">--</div>
+                        </div>
+                        <!-- X/Social Sentiment Donut -->
+                        <div style="text-align: center;">
+                            <svg viewBox="0 0 100 100" style="width: 100px; height: 100px;">
+                                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="12"/>
+                                <circle id="health-x-donut" cx="50" cy="50" r="40" fill="none" stroke="var(--blue)" stroke-width="12"
+                                    stroke-dasharray="251.2" stroke-dashoffset="125.6" stroke-linecap="round"
+                                    transform="rotate(-90 50 50)"/>
+                                <text id="health-x-pct" x="50" y="55" text-anchor="middle" font-size="18" font-weight="700" fill="var(--text)">--%</text>
+                            </svg>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">X/Social</div>
+                            <div id="health-x-label" style="font-size: 0.7rem; font-weight: 600; color: var(--blue);">--</div>
+                        </div>
+                    </div>
+                    <!-- Divergence Alert -->
+                    <div id="health-divergence-alert" style="margin-top: 16px; padding: 10px; background: rgba(245,158,11,0.1); border-radius: 8px; display: none;">
+                        <div style="font-size: 0.75rem; color: var(--orange);">
+                            <strong>⚠️ Divergence Detected</strong>
+                            <div id="health-divergence-text" style="margin-top: 4px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Third Row: Radar Chart + Catalyst Timeline -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <!-- Radar Chart -->
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;">🎯 Component Radar</div>
+                    <div id="health-radar-container" style="height: 200px; display: flex; justify-content: center; align-items: center;">
+                        <svg id="health-radar" viewBox="0 0 200 200" style="width: 200px; height: 200px;">
+                            <!-- Radar grid -->
+                            <polygon points="100,20 170,65 155,145 45,145 30,65" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <polygon points="100,40 150,72.5 140,130 60,130 50,72.5" fill="none" stroke="rgba(100,116,139,0.15)" stroke-width="1"/>
+                            <polygon points="100,60 130,80 125,115 75,115 70,80" fill="none" stroke="rgba(100,116,139,0.1)" stroke-width="1"/>
+                            <!-- Axis lines -->
+                            <line x1="100" y1="100" x2="100" y2="20" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <line x1="100" y1="100" x2="170" y2="65" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <line x1="100" y1="100" x2="155" y2="145" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <line x1="100" y1="100" x2="45" y2="145" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <line x1="100" y1="100" x2="30" y2="65" stroke="rgba(100,116,139,0.2)" stroke-width="1"/>
+                            <!-- Data polygon (will be updated by JS) -->
+                            <polygon id="health-radar-data" points="100,50 140,75 130,120 70,120 60,75" fill="rgba(139,92,246,0.3)" stroke="#a855f7" stroke-width="2"/>
+                            <!-- Labels -->
+                            <text x="100" y="12" text-anchor="middle" font-size="9" fill="var(--text-muted)">Technical</text>
+                            <text x="178" y="65" text-anchor="start" font-size="9" fill="var(--text-muted)">Options</text>
+                            <text x="160" y="155" text-anchor="start" font-size="9" fill="var(--text-muted)">Sentiment</text>
+                            <text x="40" y="155" text-anchor="end" font-size="9" fill="var(--text-muted)">Institutional</text>
+                            <text x="22" y="65" text-anchor="end" font-size="9" fill="var(--text-muted)">Macro</text>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Catalyst Timeline -->
+                <div class="card" style="padding: 16px;">
+                    <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;">📅 Upcoming Catalysts</div>
+                    <div id="health-catalysts" style="position: relative;">
+                        <!-- Timeline line -->
+                        <div style="position: absolute; top: 12px; left: 20px; right: 20px; height: 3px; background: linear-gradient(90deg, var(--green), var(--yellow), var(--orange), var(--red)); border-radius: 2px;"></div>
+                        <!-- Events -->
+                        <div id="health-catalyst-events" style="display: flex; justify-content: space-between; padding-top: 24px;">
+                            <div style="text-align: center; flex: 1;">
+                                <div style="width: 12px; height: 12px; background: var(--green); border-radius: 50%; margin: 0 auto 8px; border: 2px solid var(--bg-card);"></div>
+                                <div style="font-size: 0.7rem; font-weight: 600;">Loading...</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted);">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Action Items -->
+                    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+                        <div style="font-size: 0.8rem; font-weight: 600; margin-bottom: 8px;">📋 Action Items</div>
+                        <div id="health-action-items" style="font-size: 0.75rem; color: var(--text-muted);">
+                            Loading recommendations...
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3716,9 +4029,10 @@
         // Category to sub-tabs mapping
         const categorySubTabs = {
             dashboard: null,  // No sub-tabs
+            health: null,     // No sub-tabs - Market Health visualization
             research: ['themes', 'sec'],
             trading: ['scanner', 'trades', 'watchlist', 'options'],
-            analytics: null  // No sub-tabs
+            analytics: null   // No sub-tabs
         };
 
         // Current active state
@@ -3843,6 +4157,8 @@
                 fetchConvictionAlerts();
                 fetchThemes();  // For Hot Themes section
                 fetchUnusualOptions();
+            } else if (tabId === 'health') {
+                fetchMarketHealth();
             } else if (tabId === 'themes') {
                 fetchThemes();
                 fetchThemeRadar();
@@ -7741,6 +8057,453 @@
         }
 
         // =============================================================================
+        // MARKET HEALTH TAB
+        // =============================================================================
+
+        async function fetchMarketHealth() {
+            try {
+                // Show loading state
+                document.getElementById('health-gauge-score').textContent = '...';
+                document.getElementById('health-gauge-label').textContent = 'Analyzing...';
+
+                const res = await fetch(`${API_BASE}/market-health/ai-analysis`);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    console.error('Market health fetch failed:', data.error);
+                    document.getElementById('health-gauge-label').textContent = 'Error loading';
+                    return;
+                }
+
+                const health = data.data.health_data;
+                const ai = data.data.ai_analysis;
+
+                // Update Composite Score Gauge
+                updateHealthGauge(health.composite_score, health.verdict);
+
+                // Update AI Synthesis
+                updateAISynthesis(ai, health);
+
+                // Update Component Scores
+                updateComponentScores(health.components);
+
+                // Update Volume Profile Chart
+                updateVolumeProfileChart(health.components.volume_profile);
+
+                // Update Options Gauges
+                updateOptionsGauges(health.components.options);
+
+                // Update FRED Data
+                updateFREDSparklines(health.components.fred);
+
+                // Update Sentiment Donuts
+                updateSentimentDonuts(health.components.sentiment);
+
+                // Update Radar Chart
+                updateRadarChart(health.components);
+
+                // Update Catalysts & Actions
+                updateCatalysts(health.catalysts);
+                updateActionItems(health.action_items);
+
+                // Update Divergences
+                updateDivergences(health.divergences);
+
+                // Generate mock trend data (would come from history API)
+                updateScoreTrend(health.composite_score);
+
+            } catch (e) {
+                console.error('Market health error:', e);
+                document.getElementById('health-gauge-label').textContent = 'Error';
+            }
+        }
+
+        function updateHealthGauge(score, verdict) {
+            const scoreEl = document.getElementById('health-gauge-score');
+            const labelEl = document.getElementById('health-gauge-label');
+            const arcEl = document.getElementById('health-gauge-arc');
+
+            scoreEl.textContent = score;
+            labelEl.textContent = verdict;
+
+            // Calculate arc path based on score (0-100 maps to arc from left to right)
+            const angle = (score / 100) * 180; // 0 to 180 degrees
+            const radians = (angle - 180) * Math.PI / 180;
+            const endX = 100 + 80 * Math.cos(radians);
+            const endY = 100 + 80 * Math.sin(radians);
+            const largeArc = angle > 90 ? 1 : 0;
+
+            arcEl.setAttribute('d', `M 20 100 A 80 80 0 ${largeArc} 1 ${endX} ${endY}`);
+
+            // Set color based on score
+            let color = 'var(--yellow)';
+            if (score >= 70) color = 'var(--green)';
+            else if (score >= 55) color = '#86efac';
+            else if (score <= 30) color = 'var(--red)';
+            else if (score <= 45) color = 'var(--orange)';
+
+            arcEl.setAttribute('stroke', color);
+            scoreEl.style.fill = color;
+        }
+
+        function updateAISynthesis(ai, health) {
+            const insightEl = document.getElementById('health-ai-insight');
+            const obsEl = document.getElementById('health-observations');
+            const riskBadge = document.getElementById('health-risk-badge');
+
+            insightEl.textContent = ai.key_insight || 'Analysis not available';
+
+            // Risk badge
+            const riskColors = {
+                'low': { bg: 'rgba(34,197,94,0.2)', text: 'var(--green)' },
+                'medium': { bg: 'rgba(245,158,11,0.2)', text: 'var(--orange)' },
+                'high': { bg: 'rgba(239,68,68,0.2)', text: 'var(--red)' }
+            };
+            const riskStyle = riskColors[ai.risk_level] || riskColors.medium;
+            riskBadge.textContent = `${ai.risk_level?.toUpperCase() || 'MEDIUM'} RISK`;
+            riskBadge.style.background = riskStyle.bg;
+            riskBadge.style.color = riskStyle.text;
+
+            // Observations
+            if (ai.top_3_observations && ai.top_3_observations.length > 0) {
+                obsEl.innerHTML = ai.top_3_observations.map(obs =>
+                    `<div style="margin-bottom: 4px;">• ${obs}</div>`
+                ).join('');
+            }
+        }
+
+        function updateComponentScores(components) {
+            const updates = [
+                { id: 'health-tech-score', bar: 'health-tech-bar', key: 'volume_profile', color: 'var(--blue)' },
+                { id: 'health-options-score', bar: 'health-options-bar', key: 'options', color: 'var(--green)' },
+                { id: 'health-macro-score', bar: 'health-macro-bar', key: 'fred', color: 'var(--yellow)' },
+                { id: 'health-sentiment-score', bar: 'health-sentiment-bar', key: 'sentiment', color: 'var(--purple)' },
+                { id: 'health-inst-score', bar: 'health-inst-bar', key: 'institutional', color: 'var(--cyan)' },
+            ];
+
+            updates.forEach(({ id, bar, key, color }) => {
+                const score = components[key]?.score || 50;
+                document.getElementById(id).textContent = score;
+                const barEl = document.getElementById(bar);
+                if (barEl) {
+                    barEl.innerHTML = `<div style="height: 100%; width: ${score}%; background: ${color}; border-radius: 2px; transition: width 0.5s;"></div>`;
+                }
+            });
+
+            // Risk score (inverse of average - lower composite = higher risk)
+            const avgScore = Object.values(components).reduce((sum, c) => sum + (c.score || 50), 0) / Object.keys(components).length;
+            const riskScore = Math.round(100 - avgScore);
+            document.getElementById('health-risk-score').textContent = riskScore;
+            document.getElementById('health-risk-bar').innerHTML = `<div style="height: 100%; width: ${riskScore}%; background: var(--orange); border-radius: 2px;"></div>`;
+        }
+
+        function updateVolumeProfileChart(vp) {
+            const container = document.getElementById('health-volume-profile');
+            if (!vp || vp.error) {
+                container.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding-top: 70px;">Volume profile unavailable</div>';
+                return;
+            }
+
+            // Update position badge
+            const positionEl = document.getElementById('health-vp-position');
+            const positionLabels = {
+                'above_vah': { text: 'Above VAH', color: 'var(--green)' },
+                'below_val': { text: 'Below VAL', color: 'var(--red)' },
+                'at_poc': { text: 'At POC', color: '#a855f7' },
+                'above_poc': { text: 'Above POC', color: '#86efac' },
+                'below_poc': { text: 'Below POC', color: 'var(--orange)' },
+                'in_range': { text: 'In Range', color: 'var(--text-muted)' }
+            };
+            const pos = positionLabels[vp.position] || positionLabels.in_range;
+            positionEl.textContent = pos.text;
+            positionEl.style.background = pos.color;
+            positionEl.style.color = 'white';
+
+            // Update values
+            document.getElementById('health-vp-val').textContent = `$${vp.val?.toFixed(2) || '--'}`;
+            document.getElementById('health-vp-poc').textContent = `$${vp.poc?.toFixed(2) || '--'}`;
+            document.getElementById('health-vp-vah').textContent = `$${vp.vah?.toFixed(2) || '--'}`;
+            document.getElementById('health-vp-current').textContent = `$${vp.current_price?.toFixed(2) || '--'}`;
+
+            // Build horizontal bar chart
+            const poc = vp.poc || 0;
+            const vah = vp.vah || 0;
+            const val = vp.val || 0;
+            const current = vp.current_price || 0;
+
+            // Generate price levels
+            const range = vah - val;
+            const minPrice = val - range * 0.3;
+            const maxPrice = vah + range * 0.3;
+            const step = (maxPrice - minPrice) / 10;
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 2px; height: 100%;">';
+
+            for (let i = 10; i >= 0; i--) {
+                const price = minPrice + step * i;
+                const isVAH = Math.abs(price - vah) < step * 0.5;
+                const isPOC = Math.abs(price - poc) < step * 0.5;
+                const isVAL = Math.abs(price - val) < step * 0.5;
+                const isCurrent = Math.abs(price - current) < step * 0.5;
+                const inValueArea = price >= val && price <= vah;
+
+                // Random volume for visual effect (would come from real data)
+                const volumePct = isPOC ? 100 : inValueArea ? 60 + Math.random() * 30 : 20 + Math.random() * 30;
+
+                let barColor = 'rgba(100,116,139,0.3)';
+                if (isPOC) barColor = '#a855f7';
+                else if (isVAH) barColor = 'var(--green)';
+                else if (isVAL) barColor = 'var(--red)';
+                else if (inValueArea) barColor = 'rgba(139,92,246,0.4)';
+
+                html += `<div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+                    <div style="width: 45px; font-size: 0.6rem; color: var(--text-muted); text-align: right;">$${price.toFixed(0)}</div>
+                    <div style="flex: 1; height: 100%; background: rgba(100,116,139,0.1); border-radius: 2px; position: relative;">
+                        <div style="height: 100%; width: ${volumePct}%; background: ${barColor}; border-radius: 2px;"></div>
+                        ${isCurrent ? `<div style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; background: white; border: 2px solid ${pos.color}; border-radius: 50%;"></div>` : ''}
+                    </div>
+                    <div style="width: 30px; font-size: 0.55rem; color: var(--text-muted);">
+                        ${isPOC ? 'POC' : isVAH ? 'VAH' : isVAL ? 'VAL' : isCurrent ? '●' : ''}
+                    </div>
+                </div>`;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function updateOptionsGauges(options) {
+            if (!options || options.error) return;
+
+            // P/C Ratio
+            const pcRatio = options.put_call_ratio || 1;
+            document.getElementById('health-pc-value').textContent = pcRatio.toFixed(2);
+            const pcAngle = Math.min(1, Math.max(0, (1.5 - pcRatio) / 1)); // 0.5-1.5 range
+            updateMiniGauge('health-pc-arc', pcAngle, pcRatio < 0.8 ? 'var(--green)' : pcRatio > 1.2 ? 'var(--red)' : 'var(--yellow)');
+
+            // Max Pain
+            const maxPain = options.max_pain || 0;
+            document.getElementById('health-mp-value').textContent = `$${maxPain.toFixed(0)}`;
+            const mpDistance = Math.abs(options.max_pain_distance || 0);
+            const mpAngle = Math.max(0, 1 - mpDistance / 5); // 0-5% range
+            updateMiniGauge('health-mp-arc', mpAngle, '#a855f7');
+
+            // Sentiment
+            const sentiment = options.sentiment || 'neutral';
+            document.getElementById('health-iv-value').textContent = sentiment.charAt(0).toUpperCase() + sentiment.slice(1);
+            const sentAngle = sentiment === 'bullish' ? 0.8 : sentiment === 'bearish' ? 0.2 : 0.5;
+            updateMiniGauge('health-iv-arc', sentAngle, sentiment === 'bullish' ? 'var(--green)' : sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)');
+
+            // Volume bars
+            const callVol = options.call_volume || 0;
+            const putVol = options.put_volume || 0;
+            const totalVol = callVol + putVol || 1;
+            const callPct = (callVol / totalVol) * 100;
+
+            document.getElementById('health-call-bar').style.width = `${callPct}%`;
+            document.getElementById('health-put-bar').style.width = `${100 - callPct}%`;
+            document.getElementById('health-call-vol').textContent = formatVolume(callVol);
+            document.getElementById('health-put-vol').textContent = formatVolume(putVol);
+        }
+
+        function updateMiniGauge(id, pct, color) {
+            const arc = document.getElementById(id);
+            if (!arc) return;
+
+            const angle = pct * 180;
+            const radians = (angle - 180) * Math.PI / 180;
+            const endX = 50 + 40 * Math.cos(radians);
+            const endY = 50 + 40 * Math.sin(radians);
+            const largeArc = angle > 90 ? 1 : 0;
+
+            arc.setAttribute('d', `M 10 50 A 40 40 0 ${largeArc} 1 ${endX} ${endY}`);
+            arc.setAttribute('stroke', color);
+        }
+
+        function formatVolume(vol) {
+            if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M';
+            if (vol >= 1000) return (vol / 1000).toFixed(0) + 'K';
+            return vol.toString();
+        }
+
+        function updateFREDSparklines(fred) {
+            if (!fred || fred.error) return;
+
+            const data = fred.data || {};
+
+            // Update values
+            document.getElementById('health-fred-rate').textContent = `${data.fed_funds_rate?.value?.toFixed(2) || '--'}%`;
+            document.getElementById('health-fred-cpi').textContent = `${data.cpi_yoy?.value?.toFixed(1) || '--'}%`;
+            document.getElementById('health-fred-unemp').textContent = `${data.unemployment?.value?.toFixed(1) || '--'}%`;
+            document.getElementById('health-fred-vix').textContent = data.vix?.value?.toFixed(1) || '--';
+            document.getElementById('health-fred-yield').textContent = `${data.yield_curve?.toFixed(2) || '--'}%`;
+
+            // Yield curve marker position
+            const yieldCurve = data.yield_curve || 0;
+            const yieldPct = Math.min(100, Math.max(0, (yieldCurve + 1) / 2 * 100)); // -1 to +1 maps to 0-100%
+            document.getElementById('health-yield-marker').style.left = `${yieldPct}%`;
+
+            // Generate simple sparklines (would use real historical data)
+            ['rate', 'cpi', 'unemp', 'vix'].forEach(key => {
+                const sparkEl = document.getElementById(`health-fred-${key}-spark`);
+                if (sparkEl) {
+                    // Generate mock sparkline bars
+                    let html = '';
+                    for (let i = 0; i < 20; i++) {
+                        const height = 30 + Math.random() * 70;
+                        html += `<div style="flex: 1; height: ${height}%; background: rgba(100,116,139,0.4); border-radius: 1px;"></div>`;
+                    }
+                    sparkEl.innerHTML = html;
+                }
+            });
+        }
+
+        function updateSentimentDonuts(sentiment) {
+            if (!sentiment || sentiment.error) {
+                document.getElementById('health-news-pct').textContent = '--%';
+                document.getElementById('health-x-pct').textContent = '--%';
+                return;
+            }
+
+            const newsScore = sentiment.score || 50;
+
+            // News donut
+            const newsDonut = document.getElementById('health-news-donut');
+            const newsOffset = 251.2 * (1 - newsScore / 100);
+            newsDonut.setAttribute('stroke-dashoffset', newsOffset);
+            newsDonut.setAttribute('stroke', newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)');
+
+            document.getElementById('health-news-pct').textContent = `${newsScore}%`;
+            document.getElementById('health-news-label').textContent = sentiment.label || 'Neutral';
+            document.getElementById('health-news-label').style.color = newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)';
+
+            // X/Social donut (mock - would come from X intelligence)
+            const xScore = 50; // Would come from X intelligence API
+            const xDonut = document.getElementById('health-x-donut');
+            const xOffset = 251.2 * (1 - xScore / 100);
+            xDonut.setAttribute('stroke-dashoffset', xOffset);
+
+            document.getElementById('health-x-pct').textContent = `${xScore}%`;
+            document.getElementById('health-x-label').textContent = 'Neutral';
+        }
+
+        function updateRadarChart(components) {
+            const radar = document.getElementById('health-radar-data');
+            if (!radar) return;
+
+            // Get scores (0-100)
+            const tech = (components.volume_profile?.score || 50) / 100;
+            const options = (components.options?.score || 50) / 100;
+            const sentiment = (components.sentiment?.score || 50) / 100;
+            const inst = (components.institutional?.score || 50) / 100;
+            const macro = (components.fred?.score || 50) / 100;
+
+            // Calculate points (5 axes)
+            // Technical: top (100, 20)
+            // Options: top-right (170, 65)
+            // Sentiment: bottom-right (155, 145)
+            // Institutional: bottom-left (45, 145)
+            // Macro: top-left (30, 65)
+
+            const center = 100;
+            const maxRadius = 80;
+
+            const points = [
+                { x: center, y: center - maxRadius * tech },
+                { x: center + maxRadius * 0.875 * options, y: center - maxRadius * 0.44 * options },
+                { x: center + maxRadius * 0.69 * sentiment, y: center + maxRadius * 0.56 * sentiment },
+                { x: center - maxRadius * 0.69 * inst, y: center + maxRadius * 0.56 * inst },
+                { x: center - maxRadius * 0.875 * macro, y: center - maxRadius * 0.44 * macro }
+            ];
+
+            const pointsStr = points.map(p => `${p.x.toFixed(0)},${p.y.toFixed(0)}`).join(' ');
+            radar.setAttribute('points', pointsStr);
+        }
+
+        function updateCatalysts(catalysts) {
+            const container = document.getElementById('health-catalyst-events');
+            if (!catalysts || catalysts.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted);">No upcoming catalysts</div>';
+                return;
+            }
+
+            const impactColors = {
+                'high': 'var(--red)',
+                'medium': 'var(--orange)',
+                'low': 'var(--green)'
+            };
+
+            container.innerHTML = catalysts.slice(0, 4).map(cat => `
+                <div style="text-align: center; flex: 1;">
+                    <div style="width: 12px; height: 12px; background: ${impactColors[cat.impact] || 'var(--yellow)'}; border-radius: 50%; margin: 0 auto 8px; border: 2px solid var(--bg-card);"></div>
+                    <div style="font-size: 0.7rem; font-weight: 600;">${cat.event}</div>
+                    <div style="font-size: 0.6rem; color: var(--text-muted);">${cat.days_away}d away</div>
+                </div>
+            `).join('');
+        }
+
+        function updateActionItems(items) {
+            const container = document.getElementById('health-action-items');
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted);">No specific actions recommended</div>';
+                return;
+            }
+
+            container.innerHTML = items.slice(0, 4).map(item =>
+                `<div style="margin-bottom: 6px; padding-left: 12px; border-left: 2px solid var(--blue);">${item}</div>`
+            ).join('');
+        }
+
+        function updateDivergences(divergences) {
+            const alertEl = document.getElementById('health-divergence-alert');
+            const textEl = document.getElementById('health-divergence-text');
+
+            if (!divergences || divergences.length === 0) {
+                alertEl.style.display = 'none';
+                return;
+            }
+
+            alertEl.style.display = 'block';
+            textEl.innerHTML = divergences.map(d => `<div>• ${d}</div>`).join('');
+        }
+
+        function updateScoreTrend(currentScore) {
+            const container = document.getElementById('health-trend-chart');
+
+            // Generate mock historical data (would come from storage)
+            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const scores = [];
+            for (let i = 6; i >= 0; i--) {
+                if (i === 0) {
+                    scores.push(currentScore);
+                } else {
+                    scores.push(Math.max(20, Math.min(80, currentScore + (Math.random() - 0.5) * 20)));
+                }
+            }
+
+            const maxScore = Math.max(...scores);
+            const minScore = Math.min(...scores);
+            const range = maxScore - minScore || 1;
+
+            let html = '<div style="display: flex; align-items: flex-end; gap: 4px; width: 100%; height: 100%;">';
+            scores.forEach((score, i) => {
+                const height = ((score - minScore) / range) * 60 + 20; // 20-80px height
+                const color = score >= 60 ? 'var(--green)' : score <= 40 ? 'var(--red)' : 'var(--yellow)';
+                const isToday = i === scores.length - 1;
+
+                html += `
+                    <div style="flex: 1; display: flex; flex-direction: column; align-items: center;">
+                        <div style="width: 100%; height: ${height}px; background: ${color}; border-radius: 4px 4px 0 0; opacity: ${isToday ? 1 : 0.6};"></div>
+                        <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">${days[i]}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // =============================================================================
         // THEME CONCENTRATION
         // =============================================================================
 
@@ -9039,6 +9802,9 @@
             switch(tabId) {
                 case 'dashboard':
                     await Promise.all([fetchHealth(), fetchScan(), fetchAIIntelligence(), fetchConvictionAlerts(), fetchThemes(), fetchUnusualOptions(), fetchVolumeProfile(), fetchAgenticStatus(), fetchAgenticPicks()]);
+                    break;
+                case 'health':
+                    await fetchMarketHealth();
                     break;
                 case 'scanner':
                     await fetchScan();

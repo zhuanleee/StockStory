@@ -1392,6 +1392,451 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/market-health", tags=["Market Health"])
+    def market_health_dashboard():
+        """
+        Comprehensive Market Health Dashboard aggregating all data sources.
+
+        Returns composite health score and all component data for visualization:
+        - Volume Profile (SPY)
+        - Options Positioning (GEX, P/C, IV, Max Pain)
+        - FRED Economic Data (Rates, CPI, Unemployment, GDP)
+        - News Sentiment
+        - Institutional Signals (SEC filings)
+
+        Includes 7-day historical scores for trend visualization.
+        """
+        try:
+            from datetime import datetime, timedelta
+            import json
+            from pathlib import Path
+
+            result = {
+                'timestamp': datetime.now().isoformat(),
+                'composite_score': 50,
+                'verdict': 'Neutral',
+                'components': {},
+                'history': [],
+                'divergences': [],
+                'action_items': [],
+                'catalysts': []
+            }
+
+            # 1. Volume Profile
+            try:
+                from src.data.options import calculate_volume_profile
+                vp = calculate_volume_profile('SPY', days=30)
+                if not vp.get('error'):
+                    current = vp.get('current_price', 0)
+                    poc = vp.get('poc', 0)
+                    vah = vp.get('vah', 0)
+                    val = vp.get('val', 0)
+
+                    # Calculate technical score based on position
+                    tech_score = 50
+                    position = 'in_range'
+                    if current > vah:
+                        tech_score = 75  # Extended but bullish
+                        position = 'above_vah'
+                    elif current < val:
+                        tech_score = 25  # Weak
+                        position = 'below_val'
+                    elif abs(current - poc) < (vah - val) * 0.1:
+                        tech_score = 60  # At fair value
+                        position = 'at_poc'
+                    elif current > poc:
+                        tech_score = 65
+                        position = 'above_poc'
+                    else:
+                        tech_score = 45
+                        position = 'below_poc'
+
+                    result['components']['volume_profile'] = {
+                        'score': tech_score,
+                        'current_price': round(current, 2),
+                        'poc': round(poc, 2),
+                        'vah': round(vah, 2),
+                        'val': round(val, 2),
+                        'position': position,
+                        'analysis': vp.get('analysis', '')
+                    }
+            except Exception as e:
+                result['components']['volume_profile'] = {'score': 50, 'error': str(e)}
+
+            # 2. Options Data
+            try:
+                from src.data.options import get_options_flow, calculate_max_pain
+
+                flow = get_options_flow('SPY')
+                max_pain = calculate_max_pain('SPY')
+
+                options_score = 50
+                if not flow.get('error'):
+                    pc_ratio = flow.get('put_call_ratio', 1.0)
+                    sentiment = flow.get('sentiment', 'neutral')
+
+                    if sentiment == 'bullish':
+                        options_score = 70
+                    elif sentiment == 'bearish':
+                        options_score = 30
+
+                    # Adjust based on P/C ratio
+                    if pc_ratio < 0.7:
+                        options_score += 10
+                    elif pc_ratio > 1.2:
+                        options_score -= 10
+
+                    options_score = max(0, min(100, options_score))
+
+                    result['components']['options'] = {
+                        'score': options_score,
+                        'put_call_ratio': round(pc_ratio, 2),
+                        'sentiment': sentiment,
+                        'sentiment_score': flow.get('sentiment_score', 50),
+                        'call_volume': flow.get('total_call_volume', 0),
+                        'put_volume': flow.get('total_put_volume', 0),
+                        'call_oi': flow.get('total_call_oi', 0),
+                        'put_oi': flow.get('total_put_oi', 0),
+                        'max_pain': max_pain.get('max_pain_price', 0) if not max_pain.get('error') else 0,
+                        'max_pain_distance': max_pain.get('distance_pct', 0) if not max_pain.get('error') else 0
+                    }
+            except Exception as e:
+                result['components']['options'] = {'score': 50, 'error': str(e)}
+
+            # 3. FRED Economic Data
+            try:
+                from utils.data_providers import FREDProvider
+
+                fred_data = {}
+                fred_score = 50
+
+                # Get key indicators
+                indicators = ['fed_funds_rate', 'treasury_10y', 'treasury_2y', 'unemployment', 'vix']
+                for ind in indicators:
+                    series_id = FREDProvider.SERIES.get(ind)
+                    if series_id:
+                        val = FREDProvider.get_latest_value(series_id)
+                        if val:
+                            fred_data[ind] = {'date': val[0], 'value': val[1]}
+
+                # Get CPI YoY
+                cpi_yoy = FREDProvider.get_yoy_change(FREDProvider.SERIES['cpi'])
+                if cpi_yoy:
+                    fred_data['cpi_yoy'] = {'date': cpi_yoy[0], 'value': cpi_yoy[1]}
+
+                # Calculate FRED score
+                vix_val = fred_data.get('vix', {}).get('value', 20)
+                cpi_val = fred_data.get('cpi_yoy', {}).get('value', 3)
+                unemp_val = fred_data.get('unemployment', {}).get('value', 4)
+
+                # VIX scoring (lower is better for bulls)
+                if vix_val < 15:
+                    fred_score += 15
+                elif vix_val > 25:
+                    fred_score -= 20
+                elif vix_val > 20:
+                    fred_score -= 10
+
+                # CPI scoring (closer to 2% is better)
+                if cpi_val <= 2.5:
+                    fred_score += 10
+                elif cpi_val > 5:
+                    fred_score -= 15
+                elif cpi_val > 3.5:
+                    fred_score -= 5
+
+                # Unemployment (lower is better)
+                if unemp_val < 4:
+                    fred_score += 10
+                elif unemp_val > 5:
+                    fred_score -= 10
+
+                # Yield curve (2y-10y)
+                t2y = fred_data.get('treasury_2y', {}).get('value', 0)
+                t10y = fred_data.get('treasury_10y', {}).get('value', 0)
+                yield_curve = t10y - t2y if t10y and t2y else 0
+                fred_data['yield_curve'] = round(yield_curve, 2)
+
+                if yield_curve < 0:
+                    fred_score -= 10  # Inverted = recession risk
+                    result['divergences'].append('Yield curve inverted - recession signal')
+
+                fred_score = max(0, min(100, fred_score))
+
+                result['components']['fred'] = {
+                    'score': fred_score,
+                    'data': fred_data,
+                    'yield_curve_status': 'inverted' if yield_curve < 0 else 'normal'
+                }
+            except Exception as e:
+                result['components']['fred'] = {'score': 50, 'error': str(e)}
+
+            # 4. News Sentiment
+            try:
+                from src.data.polygon_provider import get_news_sync
+
+                news = get_news_sync(limit=20)
+                sentiment_score = 50
+
+                if news:
+                    # Simple sentiment based on headline keywords
+                    positive_words = ['surge', 'rally', 'gain', 'rise', 'jump', 'soar', 'bullish', 'beat', 'strong']
+                    negative_words = ['fall', 'drop', 'plunge', 'crash', 'decline', 'bearish', 'miss', 'weak', 'fear']
+
+                    pos_count = 0
+                    neg_count = 0
+
+                    for article in news[:10]:
+                        title = (article.get('title', '') or '').lower()
+                        for word in positive_words:
+                            if word in title:
+                                pos_count += 1
+                        for word in negative_words:
+                            if word in title:
+                                neg_count += 1
+
+                    total = pos_count + neg_count
+                    if total > 0:
+                        sentiment_score = int((pos_count / total) * 100)
+
+                    result['components']['sentiment'] = {
+                        'score': sentiment_score,
+                        'positive_count': pos_count,
+                        'negative_count': neg_count,
+                        'news_count': len(news),
+                        'label': 'Bullish' if sentiment_score > 60 else 'Bearish' if sentiment_score < 40 else 'Neutral'
+                    }
+            except Exception as e:
+                result['components']['sentiment'] = {'score': 50, 'error': str(e)}
+
+            # 5. Institutional/Government Data
+            try:
+                inst_score = 60  # Default neutral-positive
+
+                # Try to get SEC filing data
+                from src.scoring.sec_scoring import get_sec_activity_score
+                sec_data = get_sec_activity_score()
+                if sec_data and not sec_data.get('error'):
+                    inst_score = sec_data.get('score', 60)
+
+                result['components']['institutional'] = {
+                    'score': inst_score,
+                    'sec_filings': sec_data if sec_data else {}
+                }
+            except Exception as e:
+                result['components']['institutional'] = {'score': 50, 'error': str(e)}
+
+            # Calculate Composite Score
+            weights = {
+                'volume_profile': 0.20,
+                'options': 0.25,
+                'fred': 0.25,
+                'sentiment': 0.15,
+                'institutional': 0.15
+            }
+
+            composite = 0
+            total_weight = 0
+            for component, weight in weights.items():
+                if component in result['components']:
+                    score = result['components'][component].get('score', 50)
+                    composite += score * weight
+                    total_weight += weight
+
+            if total_weight > 0:
+                composite = composite / total_weight * (1 / max(total_weight, 0.01))
+                composite = composite * total_weight  # Re-scale
+
+            result['composite_score'] = int(round(composite))
+
+            # Determine verdict
+            if result['composite_score'] >= 70:
+                result['verdict'] = 'Bullish'
+                result['verdict_color'] = 'green'
+            elif result['composite_score'] >= 55:
+                result['verdict'] = 'Cautiously Bullish'
+                result['verdict_color'] = 'lightgreen'
+            elif result['composite_score'] >= 45:
+                result['verdict'] = 'Neutral'
+                result['verdict_color'] = 'gray'
+            elif result['composite_score'] >= 30:
+                result['verdict'] = 'Cautiously Bearish'
+                result['verdict_color'] = 'orange'
+            else:
+                result['verdict'] = 'Bearish'
+                result['verdict_color'] = 'red'
+
+            # Check for divergences
+            vp_score = result['components'].get('volume_profile', {}).get('score', 50)
+            opt_score = result['components'].get('options', {}).get('score', 50)
+            sent_score = result['components'].get('sentiment', {}).get('score', 50)
+
+            if abs(opt_score - sent_score) > 30:
+                result['divergences'].append(f"Options ({opt_score}) vs Sentiment ({sent_score}) divergence")
+            if abs(vp_score - opt_score) > 25:
+                result['divergences'].append(f"Technical ({vp_score}) vs Options ({opt_score}) divergence")
+
+            # Generate action items based on conditions
+            vp_data = result['components'].get('volume_profile', {})
+            if vp_data.get('position') == 'above_vah':
+                result['action_items'].append(f"SPY extended above VAH (${vp_data.get('vah', 0)}) - wait for pullback to POC")
+            elif vp_data.get('position') == 'below_val':
+                result['action_items'].append(f"SPY weak below VAL (${vp_data.get('val', 0)}) - caution, wait for reclaim")
+
+            opt_data = result['components'].get('options', {})
+            if opt_data.get('put_call_ratio', 1) > 1.2:
+                result['action_items'].append("High P/C ratio - contrarian bullish signal or hedging")
+            elif opt_data.get('put_call_ratio', 1) < 0.6:
+                result['action_items'].append("Low P/C ratio - complacency warning, consider protection")
+
+            fred_data = result['components'].get('fred', {}).get('data', {})
+            vix = fred_data.get('vix', {}).get('value', 15)
+            if vix > 25:
+                result['action_items'].append(f"VIX elevated at {vix:.1f} - high fear, potential buying opportunity")
+            elif vix < 13:
+                result['action_items'].append(f"VIX low at {vix:.1f} - complacency, consider hedges")
+
+            # Upcoming catalysts (mock for now - would integrate with calendar)
+            result['catalysts'] = [
+                {'event': 'FOMC Minutes', 'date': '2025-02-05', 'days_away': 1, 'impact': 'high'},
+                {'event': 'Jobs Report', 'date': '2025-02-07', 'days_away': 3, 'impact': 'high'},
+                {'event': 'CPI Release', 'date': '2025-02-12', 'days_away': 8, 'impact': 'high'},
+            ]
+
+            return {"ok": True, "data": result}
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+
+    @web_app.get("/market-health/ai-analysis", tags=["Market Health"])
+    def market_health_ai_analysis():
+        """
+        Get AI synthesis of market health data.
+
+        Uses the Agentic Brain to analyze all market health components
+        and generate actionable insights.
+        """
+        try:
+            # First get the market health data
+            from datetime import datetime
+
+            # Get health data (reuse the endpoint logic)
+            health_response = market_health_dashboard()
+            if not health_response.get('ok'):
+                return health_response
+
+            health_data = health_response['data']
+
+            # Build context for AI
+            context = f"""
+## Current Market Health Data
+
+### Composite Score: {health_data['composite_score']}/100 ({health_data['verdict']})
+
+### Volume Profile (Technical)
+- Score: {health_data['components'].get('volume_profile', {}).get('score', 'N/A')}
+- SPY Current: ${health_data['components'].get('volume_profile', {}).get('current_price', 'N/A')}
+- POC: ${health_data['components'].get('volume_profile', {}).get('poc', 'N/A')}
+- VAH: ${health_data['components'].get('volume_profile', {}).get('vah', 'N/A')}
+- VAL: ${health_data['components'].get('volume_profile', {}).get('val', 'N/A')}
+- Position: {health_data['components'].get('volume_profile', {}).get('position', 'N/A')}
+
+### Options Positioning
+- Score: {health_data['components'].get('options', {}).get('score', 'N/A')}
+- P/C Ratio: {health_data['components'].get('options', {}).get('put_call_ratio', 'N/A')}
+- Sentiment: {health_data['components'].get('options', {}).get('sentiment', 'N/A')}
+- Max Pain: ${health_data['components'].get('options', {}).get('max_pain', 'N/A')}
+
+### FRED Economic Data
+- Score: {health_data['components'].get('fred', {}).get('score', 'N/A')}
+- VIX: {health_data['components'].get('fred', {}).get('data', {}).get('vix', {}).get('value', 'N/A')}
+- Fed Rate: {health_data['components'].get('fred', {}).get('data', {}).get('fed_funds_rate', {}).get('value', 'N/A')}%
+- CPI YoY: {health_data['components'].get('fred', {}).get('data', {}).get('cpi_yoy', {}).get('value', 'N/A')}%
+- Unemployment: {health_data['components'].get('fred', {}).get('data', {}).get('unemployment', {}).get('value', 'N/A')}%
+- Yield Curve: {health_data['components'].get('fred', {}).get('data', {}).get('yield_curve', 'N/A')}
+
+### Sentiment
+- Score: {health_data['components'].get('sentiment', {}).get('score', 'N/A')}
+- Label: {health_data['components'].get('sentiment', {}).get('label', 'N/A')}
+
+### Divergences Detected
+{chr(10).join(['- ' + d for d in health_data.get('divergences', [])]) or '- None'}
+"""
+
+            # Call AI for synthesis
+            try:
+                from src.ai.deepseek_client import DeepSeekClient
+
+                ai_prompt = f"""You are a senior market strategist. Analyze this market health data and provide a concise synthesis.
+
+{context}
+
+Provide your analysis in this exact JSON format:
+{{
+    "key_insight": "2-3 sentence summary of the most important market condition",
+    "risk_level": "low|medium|high",
+    "bias": "bullish|bearish|neutral",
+    "top_3_observations": ["observation 1", "observation 2", "observation 3"],
+    "recommended_action": "One specific actionable recommendation",
+    "watch_for": "Key level or event to monitor"
+}}
+
+Be specific with price levels and data points. Keep it actionable for traders."""
+
+                client = DeepSeekClient()
+                response = client.chat(ai_prompt, max_tokens=500)
+
+                # Parse AI response
+                import json
+                import re
+
+                # Extract JSON from response
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    ai_analysis = json.loads(json_match.group())
+                else:
+                    ai_analysis = {
+                        "key_insight": response[:300],
+                        "risk_level": "medium",
+                        "bias": health_data['verdict'].lower(),
+                        "top_3_observations": [],
+                        "recommended_action": "Monitor key levels",
+                        "watch_for": "Volume profile levels"
+                    }
+
+                return {
+                    "ok": True,
+                    "data": {
+                        "health_data": health_data,
+                        "ai_analysis": ai_analysis,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+
+            except Exception as ai_error:
+                # Return health data without AI if AI fails
+                return {
+                    "ok": True,
+                    "data": {
+                        "health_data": health_data,
+                        "ai_analysis": {
+                            "key_insight": f"Market score is {health_data['composite_score']}/100 ({health_data['verdict']}). {health_data['components'].get('volume_profile', {}).get('analysis', '')}",
+                            "risk_level": "medium",
+                            "bias": health_data['verdict'].lower().replace('cautiously ', ''),
+                            "top_3_observations": health_data.get('action_items', [])[:3],
+                            "recommended_action": health_data.get('action_items', ['Monitor markets'])[0] if health_data.get('action_items') else 'Monitor markets',
+                            "watch_for": f"POC at ${health_data['components'].get('volume_profile', {}).get('poc', 'N/A')}"
+                        },
+                        "ai_error": str(ai_error),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+
+        except Exception as e:
+            import traceback
+            return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+
     @web_app.get("/options/expirations/{ticker_symbol}")
     def options_expirations(ticker_symbol: str):
         """

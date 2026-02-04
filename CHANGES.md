@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 15:13 - `dbce3e3`
+
+**Add info tooltips to SPY Key Levels card**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 15:10 - `f7911cc`
 
 **Disable X Crisis Monitor cron schedule**
