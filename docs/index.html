@@ -698,18 +698,6 @@
             background: var(--blue) !important;
             color: white !important;
         }
-        .ticker-btn.futures-btn {
-            border: 1px solid var(--orange) !important;
-            color: var(--orange);
-        }
-        .ticker-btn.futures-btn:hover {
-            background: rgba(245, 158, 11, 0.1) !important;
-        }
-        .ticker-btn.futures-btn.active {
-            background: var(--orange) !important;
-            color: white !important;
-        }
-
         /* Cards */
         .card {
             background: var(--bg-glass);
@@ -3259,13 +3247,6 @@
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AAPL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AAPL</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AMD')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AMD</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('META')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">META</button>
-                <span style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
-                <span style="font-size: 0.75rem; color: var(--orange); padding: 6px 0;">Futures:</span>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 Options">ES</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq Options">NQ</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil Options">CL</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold Options">GC</button>
-                <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 4px;" title="Futures options data may be limited">ⓘ</span>
             </div>
 
             <!-- Search & Action Bar -->
@@ -9097,31 +9078,6 @@
         let activeOptionsChart = 'maxpain';
         let isSyncingExpiry = false; // Prevent infinite sync loops
 
-        // Futures contract specs (for display)
-        const FUTURES_SPECS = {
-            'ES': { name: 'E-mini S&P 500', multiplier: 50 },
-            'NQ': { name: 'E-mini Nasdaq 100', multiplier: 20 },
-            'CL': { name: 'Crude Oil', multiplier: 1000 },
-            'GC': { name: 'Gold', multiplier: 100 },
-            'SI': { name: 'Silver', multiplier: 5000 },
-            'RTY': { name: 'E-mini Russell 2000', multiplier: 50 },
-            'YM': { name: 'E-mini Dow', multiplier: 5 },
-            'MES': { name: 'Micro E-mini S&P', multiplier: 5 },
-            'MNQ': { name: 'Micro E-mini Nasdaq', multiplier: 2 },
-        };
-
-        function isFuturesTicker(ticker) {
-            return ticker.toUpperCase() in FUTURES_SPECS;
-        }
-
-        function getFuturesInfo(ticker) {
-            const upper = ticker.toUpperCase();
-            if (upper in FUTURES_SPECS) {
-                return { isFutures: true, ...FUTURES_SPECS[upper] };
-            }
-            return { isFutures: false, name: null, multiplier: 100 };
-        }
-
         function showOptionsChart(chartType) {
             activeOptionsChart = chartType;
 
@@ -9224,15 +9180,9 @@
             const container = document.getElementById('options-analysis-container');
             container.style.display = 'block';
 
-            // Show ticker with futures badge if applicable
-            const futuresInfo = getFuturesInfo(ticker);
+            // Show ticker
             const tickerEl = document.getElementById('oa-ticker');
-            if (futuresInfo.isFutures) {
-                tickerEl.innerHTML = `${ticker} <span style="font-size: 0.65rem; padding: 2px 6px; background: var(--orange); color: white; border-radius: 4px; margin-left: 4px;">FUTURES</span>
-                    <span style="font-size: 0.65rem; color: var(--text-muted); margin-left: 4px;">${futuresInfo.name} (${futuresInfo.multiplier}x)</span>`;
-            } else {
-                tickerEl.textContent = ticker;
-            }
+            tickerEl.textContent = ticker;
             document.getElementById('oa-interpretation').textContent = 'Loading analysis...';
             document.getElementById('oa-chart').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 40px;">Loading...</div>';
 
@@ -9413,19 +9363,6 @@
                     const distAbs = Math.abs(mp.distance_pct || 0);
                     if (distAbs < 2) interpretation += ` Price near max pain ($${maxPain.toFixed(0)}) - expect pinning.`;
                     else if (dte <= 2) interpretation += ` ${dte === 0 ? '0DTE' : dte + 'd'} to expiry - max pain effect strongest.`;
-                }
-
-                // Add futures context if applicable
-                const futuresInfo = getFuturesInfo(ticker);
-                if (futuresInfo.isFutures) {
-                    // Check if data looks valid (ES should have strikes ~6000, not ~50)
-                    const avgStrike = optionsChartData.painByStrike.length > 0
-                        ? optionsChartData.painByStrike.reduce((s, p) => s + p.strike, 0) / optionsChartData.painByStrike.length
-                        : 0;
-                    const dataWarning = (ticker === 'ES' && avgStrike < 1000) || (ticker === 'NQ' && avgStrike < 5000)
-                        ? ' ⚠️ Note: Data may be limited - check Polygon subscription for full CME futures options.'
-                        : '';
-                    interpretation = `🔶 ${futuresInfo.name} Options (${futuresInfo.multiplier}x). ` + interpretation + dataWarning;
                 }
 
                 document.getElementById('oa-interpretation').textContent = interpretation;
