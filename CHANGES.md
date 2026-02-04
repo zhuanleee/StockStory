@@ -2,6 +2,92 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 23:25 - `884c2a3`
+
+**Add CHANGELOG.md to docs with v3.2.0 updates**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/CHANGELOG.md
+```
+</details>
+
+---
+
+
+### 2026-02-04 23:20 - `fa5ad17`
+
+**Simplify dashboard: restructure SEC Intel and Health tabs**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+---
+
+
+### 2026-02-04 22:45 - `eb750ac`
+
+**Fix scan file loading to exclude non-date-formatted files**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+modal_api_v2.py
+```
+</details>
+
+---
+
+
+### 2026-02-04 22:30 - `07be44d`
+
+**Fix null pointer errors in agentic_brain.py and rename test script**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+src/ai/agentic_brain.py
+tests/telegram_diagnostic.py
+```
+</details>
+
+---
+
+
+### 2026-02-04 22:15 - `8ed0353`
+
+**Fix IV Rank to use actual IV from Polygon options**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+src/analysis/options_flow.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 18:06 - `a49338f`
 
 **Add real GEX calculation with proper gamma values**
