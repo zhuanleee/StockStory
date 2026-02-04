@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:16 - `ea56cfa`
+
+**Fix max pain chart - filter strikes around current price**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:11 - `6b9973c`
 
 **Add pain by strike chart to Max Pain analysis**

@@ -8300,36 +8300,54 @@
             const container = document.getElementById('max-pain-chart-container');
             const canvas = document.getElementById('max-pain-chart');
 
+            console.log('renderMaxPainChart called:', { painByStrike: painByStrike?.length, maxPainPrice, currentPrice });
+
             if (!painByStrike || painByStrike.length === 0) {
+                console.log('No pain data, hiding chart');
                 container.style.display = 'none';
                 return;
             }
 
-            // Show container first, then render after a brief delay to get dimensions
+            // Show container first
             container.style.display = 'block';
 
-            // Use requestAnimationFrame to ensure container is visible and has dimensions
-            requestAnimationFrame(() => {
-                renderMaxPainChartInternal(canvas, painByStrike, maxPainPrice, currentPrice);
-            });
+            // Use setTimeout to ensure container is rendered and has dimensions
+            setTimeout(() => {
+                try {
+                    renderMaxPainChartInternal(canvas, painByStrike, maxPainPrice, currentPrice);
+                } catch (e) {
+                    console.error('Chart render error:', e);
+                }
+            }, 100);
         }
 
         function renderMaxPainChartInternal(canvas, painByStrike, maxPainPrice, currentPrice) {
-            // Get computed styles for colors
-            const styles = getComputedStyle(document.documentElement);
-            const purple = styles.getPropertyValue('--purple').trim() || '#a855f7';
-            const blue = styles.getPropertyValue('--blue').trim() || '#3b82f6';
-            const textMuted = styles.getPropertyValue('--text-muted').trim() || '#64748b';
-            const border = styles.getPropertyValue('--border').trim() || '#334155';
+            if (!canvas) {
+                console.error('Canvas element not found');
+                return;
+            }
 
-            // Setup canvas with fixed dimensions if parent has no size
             const ctx = canvas.getContext('2d');
-            const dpr = window.devicePixelRatio || 1;
-            const parentRect = canvas.parentElement.getBoundingClientRect();
+            if (!ctx) {
+                console.error('Could not get 2d context');
+                return;
+            }
 
-            // Use fixed dimensions if parent is too small
-            const canvasWidth = Math.max(parentRect.width - 32, 400);
-            const canvasHeight = Math.max(parentRect.height - 32, 168);
+            // Colors
+            const purple = '#a855f7';
+            const blue = '#3b82f6';
+            const textMuted = '#64748b';
+            const borderColor = '#334155';
+
+            // Get parent dimensions
+            const parent = canvas.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            console.log('Parent dimensions:', parentRect.width, parentRect.height);
+
+            // Setup canvas - use parent dimensions or fallback
+            const dpr = window.devicePixelRatio || 1;
+            const canvasWidth = parentRect.width > 50 ? parentRect.width - 32 : 500;
+            const canvasHeight = parentRect.height > 50 ? parentRect.height - 32 : 168;
 
             canvas.width = canvasWidth * dpr;
             canvas.height = canvasHeight * dpr;
@@ -8346,15 +8364,18 @@
             // Clear canvas
             ctx.clearRect(0, 0, width, height);
 
-            // Filter to strikes within reasonable range of current price (+/- 20%)
+            // Filter data to reasonable range
             let data = painByStrike.slice();
-            if (currentPrice > 0) {
-                const minRange = currentPrice * 0.8;
-                const maxRange = currentPrice * 1.2;
-                data = data.filter(d => d.strike >= minRange && d.strike <= maxRange);
+            if (currentPrice > 0 && data.length > 25) {
+                const minRange = currentPrice * 0.85;
+                const maxRange = currentPrice * 1.15;
+                const filtered = data.filter(d => d.strike >= minRange && d.strike <= maxRange);
+                if (filtered.length >= 5) {
+                    data = filtered;
+                }
             }
 
-            // If still too many, center around max pain
+            // Limit to 25 strikes centered on max pain
             if (data.length > 25) {
                 const maxPainIdx = data.findIndex(d => d.strike === maxPainPrice);
                 const centerIdx = maxPainIdx >= 0 ? maxPainIdx : Math.floor(data.length / 2);
@@ -8364,11 +8385,11 @@
             }
 
             if (data.length === 0) {
-                console.log('No pain data in range for chart');
+                console.log('No pain data after filtering');
                 return;
             }
 
-            console.log('Rendering max pain chart with', data.length, 'strikes');
+            console.log('Rendering chart with', data.length, 'strikes');
 
             // Get min/max values
             const strikes = data.map(d => d.strike);
@@ -8383,7 +8404,7 @@
             const yScale = (pain) => padding.top + chartHeight - ((pain - minPain) / (maxPain - minPain || 1)) * chartHeight;
 
             // Draw grid lines
-            ctx.strokeStyle = border;
+            ctx.strokeStyle = borderColor;
             ctx.lineWidth = 0.5;
             for (let i = 0; i <= 4; i++) {
                 const y = padding.top + (i / 4) * chartHeight;
