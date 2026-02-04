@@ -1864,7 +1864,7 @@
                 <!-- SPY Key Levels (Volume Profile) -->
                 <div class="card card-supporting">
                     <div class="card-header">
-                        <div class="card-title">📍 SPY Key Levels</div>
+                        <div class="card-title">📍 SPY Key Levels <span class="info-icon" data-tooltip="Volume Profile: Shows price levels where most trading occurred over 30 days. POC = strongest support/resistance, VAH/VAL = 70% volume zone boundaries."></span></div>
                         <button class="btn btn-ghost" style="padding: 2px 6px; font-size: 0.65rem;" onclick="fetchVolumeProfile()">↻</button>
                     </div>
                     <div class="card-body" id="volume-profile-container">
@@ -7993,15 +7993,15 @@
                     <!-- Key Levels -->
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 0.7rem;">
                         <div style="text-align: left;">
-                            <div style="color: var(--text-muted);">VAL</div>
+                            <div style="color: var(--text-muted);">VAL <span class="info-icon" data-tooltip="Value Area Low: Lower bound of the 70% volume zone. Strong support - price below VAL indicates weakness and may rally back."></span></div>
                             <div style="font-weight: 600; color: var(--red);">$${val.toFixed(2)}</div>
                         </div>
                         <div style="text-align: center;">
-                            <div style="color: var(--text-muted);">POC</div>
+                            <div style="color: var(--text-muted);">POC <span class="info-icon" data-tooltip="Point of Control: Price with highest trading volume - the 'fair value' where most activity occurred. Strongest support/resistance level."></span></div>
                             <div style="font-weight: 600; color: #a855f7;">$${poc.toFixed(2)}</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="color: var(--text-muted);">VAH</div>
+                            <div style="color: var(--text-muted);">VAH <span class="info-icon" data-tooltip="Value Area High: Upper bound of the 70% volume zone. Strong resistance - price above VAH indicates strength but may pull back."></span></div>
                             <div style="font-weight: 600; color: var(--green);">$${vah.toFixed(2)}</div>
                         </div>
                     </div>

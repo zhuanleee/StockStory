@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 15:10 - `f7911cc`
+
+**Disable X Crisis Monitor cron schedule**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_scanner.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 15:09 - `e0b6fd8`
 
 **Add SPY volume profile key levels to dashboard**
