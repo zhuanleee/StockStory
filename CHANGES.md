@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:21 - `2baaf7b`
+
+**Fix chart rendering - variable name bug and add debugging**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:16 - `ea56cfa`
 
 **Fix max pain chart - filter strikes around current price**
