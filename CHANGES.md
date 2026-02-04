@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 17:22 - `0d12d12`
+
+**Merge Options Analysis and Max Pain into unified panel**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 17:10 - `57c02d7`
 
 **Fix max pain to auto-select nearest expiration when none provided**
