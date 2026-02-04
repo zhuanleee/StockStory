@@ -2,6 +2,56 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 00:30 - Futures Options Support
+
+**Add futures options support (ES, NQ, CL, GC)**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+src/data/options.py
+```
+</details>
+
+**New Feature:** Added support for futures options analysis:
+- Added quick ticker buttons for ES, NQ, CL, GC (E-mini S&P, Nasdaq, Crude, Gold)
+- Added futures contract specs with proper multipliers (ES=50x, NQ=20x, CL=1000x, GC=100x)
+- Updated GEX calculation to use futures-specific multipliers
+- Updated Max Pain calculation to use futures-specific multipliers
+- Added "FUTURES" badge and contract info in analysis panel
+- Added futures context to interpretation text
+- Styled futures buttons with orange theme for visual distinction
+
+---
+
+
+### 2026-02-05 00:15 - GEX Consistency Fix
+
+**Fix GEX data consistency between Market Sentiment and Options Analysis**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+**Fix:** GEX values differed between hero zone and Options Analysis panel when viewing SPY:
+- Removed fallback to `sentiment.gex` (stale/unfiltered) - now only uses real GEX endpoint
+- Added expiration sync between Market Sentiment and Options Analysis for SPY
+- Added `isSyncingExpiry` flag to prevent infinite recursion
+- Both sections now show identical values when same ticker/expiration selected
+
+---
+
+
 ### 2026-02-05 00:05 - `2f62916`
 
 **Fix Market Sentiment to use same data as Options Analysis**

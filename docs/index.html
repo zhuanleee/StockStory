@@ -698,6 +698,17 @@
             background: var(--blue) !important;
             color: white !important;
         }
+        .ticker-btn.futures-btn {
+            border: 1px solid var(--orange) !important;
+            color: var(--orange);
+        }
+        .ticker-btn.futures-btn:hover {
+            background: rgba(245, 158, 11, 0.1) !important;
+        }
+        .ticker-btn.futures-btn.active {
+            background: var(--orange) !important;
+            color: white !important;
+        }
 
         /* Cards */
         .card {
@@ -3239,8 +3250,8 @@
             </div>
 
             <!-- Quick Ticker Shortcuts -->
-            <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;" class="quick-tickers">
-                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 6px 0;">Quick:</span>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;" class="quick-tickers">
+                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 6px 0;">Equities:</span>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('SPY')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">SPY</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('QQQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">QQQ</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('NVDA')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">NVDA</button>
@@ -3248,6 +3259,13 @@
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AAPL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AAPL</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AMD')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AMD</button>
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('META')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">META</button>
+                <span style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
+                <span style="font-size: 0.75rem; color: var(--orange); padding: 6px 0;">Futures:</span>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 Options">ES</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq Options">NQ</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil Options">CL</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold Options">GC</button>
+                <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 4px;" title="Futures options data may be limited">ⓘ</span>
             </div>
 
             <!-- Search & Action Bar -->
@@ -9077,6 +9095,32 @@
         let optionsAnalysisTicker = '';
         let optionsChartData = { painByStrike: [], gexByStrike: [], maxPainPrice: 0, currentPrice: 0 };
         let activeOptionsChart = 'maxpain';
+        let isSyncingExpiry = false; // Prevent infinite sync loops
+
+        // Futures contract specs (for display)
+        const FUTURES_SPECS = {
+            'ES': { name: 'E-mini S&P 500', multiplier: 50 },
+            'NQ': { name: 'E-mini Nasdaq 100', multiplier: 20 },
+            'CL': { name: 'Crude Oil', multiplier: 1000 },
+            'GC': { name: 'Gold', multiplier: 100 },
+            'SI': { name: 'Silver', multiplier: 5000 },
+            'RTY': { name: 'E-mini Russell 2000', multiplier: 50 },
+            'YM': { name: 'E-mini Dow', multiplier: 5 },
+            'MES': { name: 'Micro E-mini S&P', multiplier: 5 },
+            'MNQ': { name: 'Micro E-mini Nasdaq', multiplier: 2 },
+        };
+
+        function isFuturesTicker(ticker) {
+            return ticker.toUpperCase() in FUTURES_SPECS;
+        }
+
+        function getFuturesInfo(ticker) {
+            const upper = ticker.toUpperCase();
+            if (upper in FUTURES_SPECS) {
+                return { isFutures: true, ...FUTURES_SPECS[upper] };
+            }
+            return { isFutures: false, name: null, multiplier: 100 };
+        }
 
         function showOptionsChart(chartType) {
             activeOptionsChart = chartType;
@@ -9179,7 +9223,16 @@
 
             const container = document.getElementById('options-analysis-container');
             container.style.display = 'block';
-            document.getElementById('oa-ticker').textContent = ticker;
+
+            // Show ticker with futures badge if applicable
+            const futuresInfo = getFuturesInfo(ticker);
+            const tickerEl = document.getElementById('oa-ticker');
+            if (futuresInfo.isFutures) {
+                tickerEl.innerHTML = `${ticker} <span style="font-size: 0.65rem; padding: 2px 6px; background: var(--orange); color: white; border-radius: 4px; margin-left: 4px;">FUTURES</span>
+                    <span style="font-size: 0.65rem; color: var(--text-muted); margin-left: 4px;">${futuresInfo.name} (${futuresInfo.multiplier}x)</span>`;
+            } else {
+                tickerEl.textContent = ticker;
+            }
             document.getElementById('oa-interpretation').textContent = 'Loading analysis...';
             document.getElementById('oa-chart').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 40px;">Loading...</div>';
 
@@ -9228,6 +9281,20 @@
 
             if (!ticker) return;
 
+            // Sync expirations when viewing SPY - ensures consistency between hero zone and analysis panel
+            if (ticker === 'SPY' && expiry && !isSyncingExpiry) {
+                const marketExpirySelect = document.getElementById('market-sentiment-expiry');
+                if (marketExpirySelect && marketExpirySelect.value !== expiry) {
+                    // Check if this expiry exists in market sentiment dropdown
+                    const options = Array.from(marketExpirySelect.options).map(o => o.value);
+                    if (options.includes(expiry)) {
+                        isSyncingExpiry = true;
+                        marketExpirySelect.value = expiry;
+                        loadMarketSentimentForExpiry().finally(() => { isSyncingExpiry = false; });
+                    }
+                }
+            }
+
             try {
                 // Fetch all data in parallel
                 const [sentimentRes, maxPainRes, flowRes, gexRes] = await Promise.all([
@@ -9260,8 +9327,8 @@
                 document.getElementById('oa-pc-label').style.color = pcColor;
                 document.getElementById('oa-pc-ratio').style.color = pcColor;
 
-                // GEX (from dedicated GEX endpoint with real gamma calculations)
-                let gexValue = gex.total_gex || sentiment.gex || 0;
+                // GEX (from dedicated GEX endpoint with real gamma calculations - no fallback to ensure consistency)
+                let gexValue = gex.total_gex || 0;
                 if (typeof gexValue === 'object') gexValue = gexValue.total || 0;
                 let gexDisplay = Math.abs(gexValue) >= 1e9 ? `$${(gexValue / 1e9).toFixed(1)}B` :
                                  Math.abs(gexValue) >= 1e6 ? `$${(gexValue / 1e6).toFixed(1)}M` :
@@ -9347,6 +9414,20 @@
                     if (distAbs < 2) interpretation += ` Price near max pain ($${maxPain.toFixed(0)}) - expect pinning.`;
                     else if (dte <= 2) interpretation += ` ${dte === 0 ? '0DTE' : dte + 'd'} to expiry - max pain effect strongest.`;
                 }
+
+                // Add futures context if applicable
+                const futuresInfo = getFuturesInfo(ticker);
+                if (futuresInfo.isFutures) {
+                    // Check if data looks valid (ES should have strikes ~6000, not ~50)
+                    const avgStrike = optionsChartData.painByStrike.length > 0
+                        ? optionsChartData.painByStrike.reduce((s, p) => s + p.strike, 0) / optionsChartData.painByStrike.length
+                        : 0;
+                    const dataWarning = (ticker === 'ES' && avgStrike < 1000) || (ticker === 'NQ' && avgStrike < 5000)
+                        ? ' ⚠️ Note: Data may be limited - check Polygon subscription for full CME futures options.'
+                        : '';
+                    interpretation = `🔶 ${futuresInfo.name} Options (${futuresInfo.multiplier}x). ` + interpretation + dataWarning;
+                }
+
                 document.getElementById('oa-interpretation').textContent = interpretation;
 
                 // Store chart data for toggling
@@ -9629,6 +9710,19 @@
         async function loadMarketSentimentForExpiry() {
             const expiry = document.getElementById('market-sentiment-expiry').value;
             if (!expiry) return;
+
+            // Sync to Options Analysis if SPY is selected there
+            if (optionsAnalysisTicker === 'SPY' && !isSyncingExpiry) {
+                const oaExpirySelect = document.getElementById('oa-expiry-select');
+                if (oaExpirySelect && oaExpirySelect.value !== expiry) {
+                    const options = Array.from(oaExpirySelect.options).map(o => o.value);
+                    if (options.includes(expiry)) {
+                        isSyncingExpiry = true;
+                        oaExpirySelect.value = expiry;
+                        loadOptionsForExpiry().finally(() => { isSyncingExpiry = false; });
+                    }
+                }
+            }
 
             // Set loading states
             document.getElementById('spy-pc-ratio').textContent = '...';

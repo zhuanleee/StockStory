@@ -25,6 +25,47 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Futures contract specifications
+# Multiplier = dollar value per point of movement
+FUTURES_SPECS = {
+    'ES': {'name': 'E-mini S&P 500', 'multiplier': 50, 'tick_size': 0.25},
+    'NQ': {'name': 'E-mini Nasdaq 100', 'multiplier': 20, 'tick_size': 0.25},
+    'CL': {'name': 'Crude Oil', 'multiplier': 1000, 'tick_size': 0.01},
+    'GC': {'name': 'Gold', 'multiplier': 100, 'tick_size': 0.10},
+    'SI': {'name': 'Silver', 'multiplier': 5000, 'tick_size': 0.005},
+    'ZB': {'name': '30-Year Treasury', 'multiplier': 1000, 'tick_size': 1/32},
+    'ZN': {'name': '10-Year Treasury', 'multiplier': 1000, 'tick_size': 1/64},
+    'RTY': {'name': 'E-mini Russell 2000', 'multiplier': 50, 'tick_size': 0.10},
+    'YM': {'name': 'E-mini Dow', 'multiplier': 5, 'tick_size': 1.0},
+    'MES': {'name': 'Micro E-mini S&P', 'multiplier': 5, 'tick_size': 0.25},
+    'MNQ': {'name': 'Micro E-mini Nasdaq', 'multiplier': 2, 'tick_size': 0.25},
+}
+
+
+def is_futures_ticker(ticker: str) -> bool:
+    """Check if ticker is a futures contract."""
+    return ticker.upper() in FUTURES_SPECS
+
+
+def get_futures_info(ticker: str) -> Dict:
+    """Get futures contract info if it's a futures ticker."""
+    ticker_upper = ticker.upper()
+    if ticker_upper in FUTURES_SPECS:
+        return {
+            'is_futures': True,
+            'ticker': ticker_upper,
+            **FUTURES_SPECS[ticker_upper]
+        }
+    return {'is_futures': False, 'ticker': ticker_upper, 'multiplier': 100}  # Default for equities
+
+
+def get_contract_multiplier(ticker: str) -> int:
+    """Get contract multiplier for a ticker (futures or equity options)."""
+    ticker_upper = ticker.upper()
+    if ticker_upper in FUTURES_SPECS:
+        return FUTURES_SPECS[ticker_upper]['multiplier']
+    return 100  # Standard equity options = 100 shares
+
 
 def get_options_flow(ticker: str) -> Dict:
     """
@@ -306,6 +347,10 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
 
         # Calculate pain at each strike
         # Pain = sum of (intrinsic value * OI) for all options that would be ITM
+        # Get contract multiplier (100 for equities, varies for futures)
+        multiplier = get_contract_multiplier(ticker)
+        futures_info = get_futures_info(ticker)
+
         pain_by_strike = []
 
         for strike in strikes:
@@ -317,12 +362,12 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
 
             for call_strike, call_oi in call_oi_by_strike.items():
                 if call_strike < strike:  # Call is ITM
-                    intrinsic = (strike - call_strike) * 100  # Per contract value
+                    intrinsic = (strike - call_strike) * multiplier  # Per contract value
                     total_pain += intrinsic * call_oi
 
             for put_strike, put_oi in put_oi_by_strike.items():
                 if put_strike > strike:  # Put is ITM
-                    intrinsic = (put_strike - strike) * 100  # Per contract value
+                    intrinsic = (put_strike - strike) * multiplier  # Per contract value
                     total_pain += intrinsic * put_oi
 
             pain_by_strike.append({
@@ -414,10 +459,13 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
             'pain_by_strike': filtered_pain,
             'total_call_oi': total_call_oi,
             'total_put_oi': total_put_oi,
-            'interpretation': interpretation
+            'interpretation': interpretation,
+            'is_futures': futures_info.get('is_futures', False),
+            'futures_name': futures_info.get('name'),
+            'contract_multiplier': multiplier
         }
 
-        logger.info(f"✅ Max pain for {ticker} ({used_expiration}): ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%)")
+        logger.info(f"✅ Max pain for {ticker} ({used_expiration}): ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%, multiplier={multiplier})")
         return result
 
     except Exception as e:
@@ -503,9 +551,13 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
                 put_data[strike] = {'gamma': gamma, 'oi': oi}
 
         # Calculate GEX per strike
-        # GEX = Gamma × OI × 100 × Spot Price (in $ terms)
+        # GEX = Gamma × OI × Multiplier × Spot Price (in $ terms)
         # Calls: positive contribution (dealers long gamma)
         # Puts: negative contribution (dealers short gamma on puts they sold)
+        # Multiplier: 100 for equities, varies for futures (ES=50, NQ=20, etc.)
+        multiplier = get_contract_multiplier(ticker)
+        futures_info = get_futures_info(ticker)
+
         gex_by_strike = []
         total_gex = 0
 
@@ -513,10 +565,10 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             call_info = call_data.get(strike, {'gamma': 0, 'oi': 0})
             put_info = put_data.get(strike, {'gamma': 0, 'oi': 0})
 
-            # GEX in dollar terms (gamma × OI × 100 shares × spot)
-            call_gex = call_info['gamma'] * call_info['oi'] * 100 * current_price
+            # GEX in dollar terms (gamma × OI × multiplier × spot)
+            call_gex = call_info['gamma'] * call_info['oi'] * multiplier * current_price
             # Puts: dealers are SHORT gamma, so it's negative
-            put_gex = -put_info['gamma'] * put_info['oi'] * 100 * current_price
+            put_gex = -put_info['gamma'] * put_info['oi'] * multiplier * current_price
             net_gex = call_gex + put_gex
 
             total_gex += net_gex
@@ -548,7 +600,7 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
         if not used_exp and calls:
             used_exp = calls[0].get('expiration')
 
-        logger.info(f"✅ GEX calculated for {ticker}: total ${total_gex/1e6:.1f}M")
+        logger.info(f"✅ GEX calculated for {ticker}: total ${total_gex/1e6:.1f}M (multiplier={multiplier})")
 
         return {
             'ticker': ticker.upper(),
@@ -556,7 +608,10 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             'current_price': current_price,
             'total_gex': round(total_gex, 0),
             'gex_by_strike': gex_by_strike,
-            'zero_gamma_level': zero_gamma
+            'zero_gamma_level': zero_gamma,
+            'is_futures': futures_info.get('is_futures', False),
+            'futures_name': futures_info.get('name'),
+            'contract_multiplier': multiplier
         }
 
     except Exception as e:
