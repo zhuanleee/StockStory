@@ -413,7 +413,9 @@ Get an API key at `/api-keys/request`
             pass  # Continue even if reload fails
 
         data_dir = Path(VOLUME_PATH)
-        scan_files = sorted(data_dir.glob("scan_*.json"), reverse=True)
+        # Only match date-formatted scan files (scan_YYYYMMDD_HHMMSS.json)
+        scan_files = sorted([f for f in data_dir.glob("scan_*.json")
+                            if f.stem[5:13].isdigit()], reverse=True)
         if scan_files:
             try:
                 with open(scan_files[0]) as f:
