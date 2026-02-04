@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 15:09 - `e0b6fd8`
+
+**Add SPY volume profile key levels to dashboard**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:53 - `bd5727e`
 
 **Add info tooltips to Market Options Sentiment metrics**

@@ -2628,7 +2628,7 @@ def monitoring_cycle_bundle():
 @app.function(
     image=image,
     timeout=300,  # 5 minutes max
-    schedule=modal.Cron("0 * * * *"),  # Run every hour (at minute 0)
+    # schedule=modal.Cron("0 * * * *"),  # DISABLED - X Crisis Monitor paused
     secrets=[modal.Secret.from_name("Stock_Story")],
 )
 def x_intelligence_crisis_monitor():
