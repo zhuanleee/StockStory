@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:04 - `d1fa743`
+
+**Fix max pain current price to use real-time snapshot**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 13:58 - `bd00333`
 
 **Redesign options flow UI with visual sentiment gauge**
