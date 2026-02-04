@@ -14,10 +14,11 @@ from src.data.polygon_provider import (
     get_options_flow_sync,
     get_unusual_options_sync,
     get_options_chain_sync,
-    get_technical_summary_sync
+    get_technical_summary_sync,
+    get_options_contracts_sync
 )
 from typing import Dict, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -156,27 +157,55 @@ def get_options_expirations(ticker: str) -> Dict:
     try:
         logger.info(f"Fetching options expirations for {ticker}")
 
-        # Get options chain to extract unique expirations
-        chain = get_options_chain_sync(ticker)
-        if not chain or 'error' in chain:
+        # Use contracts endpoint to get all available expirations
+        # Search for contracts expiring in the next 90 days
+        today = datetime.now().strftime('%Y-%m-%d')
+        end_date = (datetime.now() + timedelta(days=90)).strftime('%Y-%m-%d')
+
+        contracts = get_options_contracts_sync(
+            underlying=ticker,
+            expiration_date_gte=today,
+            expiration_date_lte=end_date,
+            limit=1000  # Get lots of contracts to find all expirations
+        )
+
+        if not contracts:
+            # Fallback: try to get from chain data
+            chain = get_options_chain_sync(ticker)
+            if chain and 'calls' in chain:
+                expirations = set()
+                for c in chain.get('calls', []):
+                    exp = c.get('expiration')
+                    if exp:
+                        expirations.add(exp)
+                for p in chain.get('puts', []):
+                    exp = p.get('expiration')
+                    if exp:
+                        expirations.add(exp)
+                if expirations:
+                    sorted_exps = sorted(list(expirations))
+                    return {
+                        'ticker': ticker.upper(),
+                        'expirations': sorted_exps,
+                        'nearest': sorted_exps[0],
+                        'count': len(sorted_exps)
+                    }
             return {"error": "Could not fetch options data", "ticker": ticker}
 
-        # Extract unique expirations from all contracts
+        # Extract unique expirations from contracts
         expirations = set()
-        for c in chain.get('calls', []):
+        for c in contracts:
             exp = c.get('expiration')
             if exp:
                 expirations.add(exp)
-        for p in chain.get('puts', []):
-            exp = p.get('expiration')
-            if exp:
-                expirations.add(exp)
 
-        # Sort chronologically
-        sorted_exps = sorted(list(expirations))
+        # Sort chronologically and filter to future dates only
+        sorted_exps = sorted([e for e in expirations if e >= today])
 
         if not sorted_exps:
             return {"error": "No expirations found", "ticker": ticker}
+
+        logger.info(f"Found {len(sorted_exps)} expirations for {ticker}")
 
         return {
             'ticker': ticker.upper(),

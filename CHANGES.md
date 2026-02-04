@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 13:53 - `ec170c2`
+
+**Add expiration date support to Max Pain analysis**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 13:40 - `9415a65`
 
 **Add Max Pain theory to Options tab**
