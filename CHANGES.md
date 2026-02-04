@@ -2,6 +2,28 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 00:05 - `2f62916`
+
+**Fix Market Sentiment to use same data as Options Analysis**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+**Fix:** Market Sentiment hero now uses identical data sources as Options Analysis:
+- P/C Ratio: OI-based (putOI/callOI) instead of volume-based
+- GEX: Real GEX from `/options/gex` endpoint instead of simplified proxy
+- Consistent thresholds and labels
+
+---
+
+
 ### 2026-02-04 23:55 - `c1629f4`
 
 **Fix Options tab - guard missing element references**
