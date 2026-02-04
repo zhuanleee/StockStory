@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:49 - `b584b32`
+
+**Add global expiration selector for Market Options Sentiment**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:43 - `d50e85a`
 
 **Add expiration date selector for SPY Max Pain in Market Sentiment**

@@ -2923,27 +2923,37 @@
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;" id="market-sentiment-grid">
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY P/C RATIO</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            SPY P/C RATIO <span class="info-icon" data-tooltip="Put/Call Volume Ratio: >1.0 = Bearish (more puts), <0.7 = Bullish (more calls). Measures trader sentiment for the selected expiration."></span>
+                        </div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="spy-pc-ratio">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
-                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">SPY MAX PAIN</div>
+                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">
+                            SPY MAX PAIN <span class="info-icon" data-tooltip="Max Pain: Strike price where option sellers lose the least money. SPY often gravitates toward this level near expiration as market makers hedge positions."></span>
+                        </div>
                         <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-max-pain-dist">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY GEX</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            SPY GEX <span class="info-icon" data-tooltip="Gamma Exposure: Positive GEX = dealers hedge by selling into rallies (supportive, lower volatility). Negative GEX = dealers amplify moves (volatile)."></span>
+                        </div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="market-gex">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="gex-label">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">VIX LEVEL</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            VIX LEVEL <span class="info-icon" data-tooltip="CBOE Volatility Index: Measures expected 30-day volatility. <15 = Low fear (complacency), 15-25 = Normal, >25 = High fear (potential buying opportunity)."></span>
+                        </div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="vix-level">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="vix-label">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">CALL/PUT OI</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
+                            CALL/PUT OI <span class="info-icon" data-tooltip="Open Interest: Total outstanding contracts. Call Heavy = bullish positioning, Put Heavy = bearish positioning or hedging. Shows where traders have placed bets."></span>
+                        </div>
                         <div style="font-size: 1.25rem; font-weight: 700;" id="spy-call-put-oi">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-oi-label">Loading...</div>
                     </div>
