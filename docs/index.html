@@ -2700,15 +2700,15 @@
                     <div style="text-align: center; padding: 20px;">
                         <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">MARKET HEALTH SCORE</div>
                         <!-- SVG Gauge -->
-                        <div id="health-gauge-container" style="position: relative; width: 200px; height: 120px; margin: 0 auto;">
-                            <svg viewBox="0 0 200 120" style="width: 100%; height: 100%;">
-                                <!-- Background arc -->
-                                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="16" stroke-linecap="round"/>
-                                <!-- Colored arc (will be updated by JS) -->
-                                <path id="health-gauge-arc" d="M 20 100 A 80 80 0 0 1 100 20" fill="none" stroke="var(--green)" stroke-width="16" stroke-linecap="round"/>
+                        <div id="health-gauge-container" style="position: relative; width: 200px; height: 130px; margin: 0 auto;">
+                            <svg viewBox="0 0 200 130" style="width: 100%; height: 100%;">
+                                <!-- Background arc (full semi-circle) -->
+                                <path d="M 20 110 A 80 80 0 0 1 180 110" fill="none" stroke="rgba(100,116,139,0.3)" stroke-width="14" stroke-linecap="round"/>
+                                <!-- Colored arc (will be updated by JS) - uses stroke-dasharray for smooth animation -->
+                                <path id="health-gauge-arc" d="M 20 110 A 80 80 0 0 1 180 110" fill="none" stroke="var(--green)" stroke-width="14" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="125.6"/>
                                 <!-- Score text -->
-                                <text id="health-gauge-score" x="100" y="85" text-anchor="middle" font-size="36" font-weight="700" fill="var(--text)">--</text>
-                                <text id="health-gauge-label" x="100" y="108" text-anchor="middle" font-size="12" fill="var(--text-muted)">Loading...</text>
+                                <text id="health-gauge-score" x="100" y="95" text-anchor="middle" font-size="40" font-weight="700" fill="var(--text)">--</text>
+                                <text id="health-gauge-label" x="100" y="118" text-anchor="middle" font-size="13" fill="var(--text-muted)">Loading...</text>
                             </svg>
                         </div>
                         <button class="btn btn-primary" style="margin-top: 12px; padding: 8px 20px;" onclick="fetchMarketHealth()">
@@ -2814,27 +2814,27 @@
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
                         <!-- P/C Ratio Gauge -->
                         <div style="text-align: center;">
-                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
-                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
-                                <path id="health-pc-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="var(--green)" stroke-width="8" stroke-linecap="round"/>
+                            <svg viewBox="0 0 100 60" style="width: 90px; height: 54px;">
+                                <path d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="rgba(100,116,139,0.3)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-pc-arc" d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="var(--green)" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="62.8"/>
                             </svg>
                             <div id="health-pc-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);">P/C Ratio</div>
                         </div>
                         <!-- Max Pain Gauge -->
                         <div style="text-align: center;">
-                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
-                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
-                                <path id="health-mp-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round"/>
+                            <svg viewBox="0 0 100 60" style="width: 90px; height: 54px;">
+                                <path d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="rgba(100,116,139,0.3)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-mp-arc" d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="#a855f7" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="62.8"/>
                             </svg>
                             <div id="health-mp-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);">Max Pain</div>
                         </div>
-                        <!-- IV Rank Gauge -->
+                        <!-- Sentiment Gauge -->
                         <div style="text-align: center;">
-                            <svg viewBox="0 0 100 60" style="width: 80px; height: 48px;">
-                                <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(100,116,139,0.2)" stroke-width="8" stroke-linecap="round"/>
-                                <path id="health-iv-arc" d="M 10 50 A 40 40 0 0 1 50 10" fill="none" stroke="var(--cyan)" stroke-width="8" stroke-linecap="round"/>
+                            <svg viewBox="0 0 100 60" style="width: 90px; height: 54px;">
+                                <path d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="rgba(100,116,139,0.3)" stroke-width="8" stroke-linecap="round"/>
+                                <path id="health-iv-arc" d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="var(--cyan)" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="62.8"/>
                             </svg>
                             <div id="health-iv-value" style="font-size: 1.1rem; font-weight: 700; margin-top: 4px;">--</div>
                             <div style="font-size: 0.65rem; color: var(--text-muted);">Sentiment</div>
@@ -8126,14 +8126,13 @@
             scoreEl.textContent = score;
             labelEl.textContent = verdict;
 
-            // Calculate arc path based on score (0-100 maps to arc from left to right)
-            const angle = (score / 100) * 180; // 0 to 180 degrees
-            const radians = (angle - 180) * Math.PI / 180;
-            const endX = 100 + 80 * Math.cos(radians);
-            const endY = 100 + 80 * Math.sin(radians);
-            const largeArc = angle > 90 ? 1 : 0;
-
-            arcEl.setAttribute('d', `M 20 100 A 80 80 0 ${largeArc} 1 ${endX} ${endY}`);
+            // Semi-circle arc length for radius 80 = π * 80 = 251.2
+            // stroke-dashoffset controls how much is hidden
+            // At 0%: dashoffset = 251.2 (fully hidden)
+            // At 100%: dashoffset = 0 (fully visible)
+            const arcLength = 251.2;
+            const dashOffset = arcLength * (1 - score / 100);
+            arcEl.setAttribute('stroke-dashoffset', dashOffset);
 
             // Set color based on score
             let color = 'var(--yellow)';
@@ -8310,13 +8309,11 @@
             const arc = document.getElementById(id);
             if (!arc) return;
 
-            const angle = pct * 180;
-            const radians = (angle - 180) * Math.PI / 180;
-            const endX = 50 + 40 * Math.cos(radians);
-            const endY = 50 + 40 * Math.sin(radians);
-            const largeArc = angle > 90 ? 1 : 0;
-
-            arc.setAttribute('d', `M 10 50 A 40 40 0 ${largeArc} 1 ${endX} ${endY}`);
+            // Semi-circle arc length for radius 40 = π * 40 = 125.6
+            // pct is 0-1, so dashoffset = arcLength * (1 - pct)
+            const arcLength = 125.6;
+            const dashOffset = arcLength * (1 - pct);
+            arc.setAttribute('stroke-dashoffset', dashOffset);
             arc.setAttribute('stroke', color);
         }
 
