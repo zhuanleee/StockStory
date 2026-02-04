@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 13:17 - `0295754`
+
+**Restructure dashboard with 4-tier visual hierarchy**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 13:01 - `d9ed275`
 
 **Add utils mount to Modal image for Theme Registry**
