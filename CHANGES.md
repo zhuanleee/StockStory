@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:43 - `d50e85a`
+
+**Add expiration date selector for SPY Max Pain in Market Sentiment**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:42 - `ae49367`
 
 **Add SPY Max Pain to Market Options Sentiment section**

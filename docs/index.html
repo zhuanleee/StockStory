@@ -2913,7 +2913,12 @@
             <!-- TIER 1: Hero Zone - Market Options Sentiment -->
             <div class="hero-zone" style="margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <div style="font-size: 1rem; font-weight: 600;">📊 Market Options Sentiment</div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="font-size: 1rem; font-weight: 600;">📊 Market Options Sentiment</div>
+                        <select id="market-sentiment-expiry" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;" onchange="loadMarketSentimentForExpiry()">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
                     <button class="btn btn-ghost" onclick="loadMarketSentiment()" style="font-size: 0.75rem; padding: 4px 12px;">Refresh</button>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;" id="market-sentiment-grid">
@@ -2922,18 +2927,13 @@
                         <div style="font-size: 1.5rem; font-weight: 700;" id="spy-pc-ratio">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
                     </div>
-                    <div style="background: var(--bg-card); padding: 12px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <div style="font-size: 0.7rem; color: var(--purple);">SPY MAX PAIN</div>
-                            <select id="spy-max-pain-expiry" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 2px 4px; border-radius: 4px; font-size: 0.6rem; max-width: 80px;" onchange="loadSpyMaxPainForExpiry()">
-                                <option value="">Loading...</option>
-                            </select>
-                        </div>
+                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
+                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">SPY MAX PAIN</div>
                         <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-max-pain-dist">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">TOTAL GEX</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">SPY GEX</div>
                         <div style="font-size: 1.5rem; font-weight: 700;" id="market-gex">--</div>
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="gex-label">Loading...</div>
                     </div>
@@ -2943,9 +2943,9 @@
                         <div style="font-size: 0.65rem; color: var(--text-muted);" id="vix-label">Loading...</div>
                     </div>
                     <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">0DTE VOLUME</div>
-                        <div style="font-size: 1.5rem; font-weight: 700;" id="zero-dte-vol">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);">Intraday</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">CALL/PUT OI</div>
+                        <div style="font-size: 1.25rem; font-weight: 700;" id="spy-call-put-oi">--</div>
+                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-oi-label">Loading...</div>
                     </div>
                 </div>
             </div>
@@ -8409,7 +8409,7 @@
         // Market Options Sentiment loader
         async function loadMarketSentiment() {
             try {
-                // Fetch market sentiment, SPY expirations, and SPY max pain in parallel
+                // Fetch VIX and SPY expirations in parallel
                 const [sentimentRes, expirationsRes] = await Promise.all([
                     fetch(`${API_BASE}/options/market-sentiment`),
                     fetch(`${API_BASE}/options/expirations/SPY`)
@@ -8418,42 +8418,18 @@
                 const data = await sentimentRes.json();
                 const expData = await expirationsRes.json();
 
+                // VIX (not expiration specific)
                 if (data.ok && data.data) {
                     const sentiment = data.data;
-
-                    // SPY P/C Ratio
-                    const pcRatio = sentiment.spy_put_call_ratio || sentiment.put_call_ratio || 0;
-                    const pcEl = document.getElementById('spy-pc-ratio');
-                    pcEl.textContent = pcRatio.toFixed(2);
-                    pcEl.style.color = pcRatio > 1.0 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--text)';
-                    document.getElementById('spy-pc-label').textContent = pcRatio > 1.0 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
-
-                    // GEX
-                    const gex = sentiment.total_gex || sentiment.gex || 0;
-                    const gexEl = document.getElementById('market-gex');
-                    // Display in millions or billions based on magnitude
-                    if (Math.abs(gex) >= 1e9) {
-                        gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
-                    } else {
-                        gexEl.textContent = (gex / 1e6).toFixed(1) + 'M';
-                    }
-                    gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
-                    document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
-
-                    // VIX
                     const vix = sentiment.vix || 0;
                     const vixEl = document.getElementById('vix-level');
                     vixEl.textContent = vix.toFixed(1);
                     vixEl.style.color = vix > 25 ? 'var(--red)' : vix < 15 ? 'var(--green)' : 'var(--text)';
                     document.getElementById('vix-label').textContent = vix > 25 ? 'High Fear' : vix < 15 ? 'Low Fear' : 'Normal';
-
-                    // 0DTE Volume
-                    const zeroDte = sentiment.zero_dte_volume || 0;
-                    document.getElementById('zero-dte-vol').textContent = (zeroDte / 1e6).toFixed(1) + 'M';
                 }
 
-                // Populate SPY expiration dropdown
-                const expirySelect = document.getElementById('spy-max-pain-expiry');
+                // Populate expiration dropdown
+                const expirySelect = document.getElementById('market-sentiment-expiry');
                 if (expData.ok && expData.data && expData.data.expirations) {
                     const expirations = expData.data.expirations.slice(0, 10); // Limit to 10 nearest
                     expirySelect.innerHTML = expirations.map((exp, i) => {
@@ -8461,12 +8437,15 @@
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
                         const daysOut = Math.round((d - today) / (1000 * 60 * 60 * 24));
-                        const label = daysOut <= 0 ? 'Today' : daysOut === 1 ? '1d' : daysOut + 'd';
+                        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                        const label = daysOut <= 0 ? `${months[d.getMonth()]} ${d.getDate()} (0DTE)` :
+                                     daysOut === 1 ? `${months[d.getMonth()]} ${d.getDate()} (1d)` :
+                                     `${months[d.getMonth()]} ${d.getDate()} (${daysOut}d)`;
                         return `<option value="${exp}" ${i === 0 ? 'selected' : ''}>${label}</option>`;
                     }).join('');
 
-                    // Load max pain for nearest expiration
-                    await loadSpyMaxPainForExpiry();
+                    // Load sentiment data for nearest expiration
+                    await loadMarketSentimentForExpiry();
                 } else {
                     expirySelect.innerHTML = '<option value="">N/A</option>';
                 }
@@ -8475,38 +8454,80 @@
             }
         }
 
-        // Load SPY Max Pain for selected expiration
-        async function loadSpyMaxPainForExpiry() {
-            const expiry = document.getElementById('spy-max-pain-expiry').value;
-            const maxPainEl = document.getElementById('spy-max-pain');
-            const distEl = document.getElementById('spy-max-pain-dist');
+        // Load all sentiment data for selected expiration
+        async function loadMarketSentimentForExpiry() {
+            const expiry = document.getElementById('market-sentiment-expiry').value;
+            if (!expiry) return;
+
+            // Set loading states
+            document.getElementById('spy-pc-ratio').textContent = '...';
+            document.getElementById('spy-max-pain').textContent = '...';
+            document.getElementById('market-gex').textContent = '...';
+            document.getElementById('spy-call-put-oi').textContent = '...';
 
             try {
-                maxPainEl.textContent = '...';
-                distEl.textContent = 'Loading...';
+                // Fetch options chain and max pain for selected expiration
+                const [chainRes, maxPainRes] = await Promise.all([
+                    fetch(`${API_BASE}/options/chain/SPY?expiration=${expiry}`),
+                    fetch(`${API_BASE}/options/max-pain/SPY?expiration=${expiry}`)
+                ]);
 
-                const url = expiry ? `${API_BASE}/options/max-pain/SPY?expiration=${expiry}` : `${API_BASE}/options/max-pain/SPY`;
-                const res = await fetch(url);
-                const maxPainData = await res.json();
+                const chainData = await chainRes.json();
+                const maxPainData = await maxPainRes.json();
 
+                // Calculate P/C Ratio from chain
+                if (chainData.ok && chainData.data) {
+                    const chain = chainData.data;
+                    const summary = chain.summary || {};
+
+                    // P/C Ratio
+                    const pcRatio = summary.put_call_volume_ratio || summary.put_call_ratio || 0;
+                    const pcEl = document.getElementById('spy-pc-ratio');
+                    pcEl.textContent = pcRatio.toFixed(2);
+                    pcEl.style.color = pcRatio > 1.0 ? 'var(--red)' : pcRatio < 0.7 ? 'var(--green)' : 'var(--text)';
+                    document.getElementById('spy-pc-label').textContent = pcRatio > 1.0 ? 'Bearish' : pcRatio < 0.7 ? 'Bullish' : 'Neutral';
+
+                    // Call/Put OI
+                    const callOI = summary.total_call_oi || 0;
+                    const putOI = summary.total_put_oi || 0;
+                    const oiEl = document.getElementById('spy-call-put-oi');
+                    oiEl.innerHTML = `<span style="color: var(--green);">${(callOI/1000).toFixed(0)}K</span>/<span style="color: var(--red);">${(putOI/1000).toFixed(0)}K</span>`;
+                    const oiRatio = callOI / (putOI || 1);
+                    document.getElementById('spy-oi-label').textContent = oiRatio > 1.2 ? 'Call Heavy' : oiRatio < 0.8 ? 'Put Heavy' : 'Balanced';
+
+                    // GEX estimate (simplified)
+                    const gex = (callOI - putOI) * 100; // Simplified GEX proxy
+                    const gexEl = document.getElementById('market-gex');
+                    if (Math.abs(gex) >= 1e9) {
+                        gexEl.textContent = (gex / 1e9).toFixed(1) + 'B';
+                    } else if (Math.abs(gex) >= 1e6) {
+                        gexEl.textContent = (gex / 1e6).toFixed(1) + 'M';
+                    } else {
+                        gexEl.textContent = (gex / 1e3).toFixed(0) + 'K';
+                    }
+                    gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
+                    document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
+                }
+
+                // Max Pain
                 if (maxPainData.ok && maxPainData.data) {
                     const mp = maxPainData.data;
+                    const maxPainEl = document.getElementById('spy-max-pain');
+                    const distEl = document.getElementById('spy-max-pain-dist');
+
                     maxPainEl.textContent = '$' + (mp.max_pain_price || 0).toFixed(0);
 
-                    // Show distance from current price
                     const dist = mp.distance_pct || 0;
                     const direction = mp.direction || '';
                     const arrow = direction === 'above' ? '↓' : direction === 'below' ? '↑' : '';
                     distEl.textContent = (dist > 0 ? '+' : '') + dist.toFixed(1) + '% ' + arrow;
                     distEl.style.color = Math.abs(dist) < 1 ? 'var(--green)' : Math.abs(dist) < 3 ? 'var(--yellow)' : 'var(--text-muted)';
                 } else {
-                    maxPainEl.textContent = '--';
-                    distEl.textContent = 'Error';
+                    document.getElementById('spy-max-pain').textContent = '--';
+                    document.getElementById('spy-max-pain-dist').textContent = 'N/A';
                 }
             } catch (e) {
-                console.error('Failed to load SPY max pain:', e);
-                maxPainEl.textContent = '--';
-                distEl.textContent = 'Error';
+                console.error('Failed to load sentiment for expiry:', e);
             }
         }
 
