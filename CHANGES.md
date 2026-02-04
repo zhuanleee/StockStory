@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 23:55 - `c1629f4`
+
+**Fix Options tab - guard missing element references**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+```
+</details>
+
+**Fix:** spy-oi-label element was removed in new layout but JS still tried to access it, causing error that blocked GEX and sentiment gauge updates.
+
+---
+
+
 ### 2026-02-04 23:50 - `35f875f`
 
 **Improve Options tab UI and usability**
