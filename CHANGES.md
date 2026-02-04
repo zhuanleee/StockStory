@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 15:48 - `14b8ce7`
+
+**Add SEC/institutional scoring module for Market Health**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/scoring/__init__.py
+src/scoring/sec_scoring.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 15:40 - `ce54540`
 
 **Fix SVG gauge rendering - use stroke-dashoffset**

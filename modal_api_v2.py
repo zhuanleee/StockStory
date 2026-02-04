@@ -1392,6 +1392,97 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # Helper functions for market health history
+    def _load_health_history():
+        """Load market health score history from volume."""
+        history_file = Path(VOLUME_PATH) / "market_health_history.json"
+        try:
+            if history_file.exists():
+                with open(history_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"Failed to load health history: {e}")
+        return []
+
+    def _save_health_history(history):
+        """Save market health score history to volume."""
+        history_file = Path(VOLUME_PATH) / "market_health_history.json"
+        try:
+            # Keep only last 30 days of data
+            history = history[-30:]
+            with open(history_file, 'w') as f:
+                json.dump(history, f, indent=2)
+            volume.commit()
+        except Exception as e:
+            print(f"Failed to save health history: {e}")
+
+    def _add_score_to_history(score, verdict, timestamp):
+        """Add a new score to history (max 1 per hour to avoid duplicates)."""
+        from datetime import datetime, timedelta
+
+        history = _load_health_history()
+
+        # Parse timestamp
+        current_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if 'Z' in timestamp else datetime.fromisoformat(timestamp)
+        current_date = current_time.strftime('%Y-%m-%d')
+        current_hour = current_time.strftime('%Y-%m-%d-%H')
+
+        # Check if we already have an entry for this hour
+        for entry in history:
+            entry_time = datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00')) if 'Z' in entry['timestamp'] else datetime.fromisoformat(entry['timestamp'])
+            if entry_time.strftime('%Y-%m-%d-%H') == current_hour:
+                # Update existing entry if score changed significantly
+                if abs(entry['score'] - score) >= 5:
+                    entry['score'] = score
+                    entry['verdict'] = verdict
+                    entry['timestamp'] = timestamp
+                    _save_health_history(history)
+                return history
+
+        # Add new entry
+        history.append({
+            'date': current_date,
+            'score': score,
+            'verdict': verdict,
+            'timestamp': timestamp
+        })
+
+        _save_health_history(history)
+        return history
+
+    def _get_daily_history(days=7):
+        """Get daily average scores for the last N days."""
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+
+        history = _load_health_history()
+
+        # Group by date and calculate daily average
+        daily_scores = defaultdict(list)
+        for entry in history:
+            daily_scores[entry['date']].append(entry['score'])
+
+        # Calculate averages
+        daily_avg = {}
+        for date, scores in daily_scores.items():
+            daily_avg[date] = int(sum(scores) / len(scores))
+
+        # Get last N days
+        today = datetime.now()
+        result = []
+        for i in range(days - 1, -1, -1):
+            date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+            day_name = (today - timedelta(days=i)).strftime('%a')
+            if date in daily_avg:
+                result.append({
+                    'date': date,
+                    'day': day_name,
+                    'score': daily_avg[date]
+                })
+            # Don't add placeholder for missing days - only show real data
+
+        return result
+
     @web_app.get("/market-health", tags=["Market Health"])
     def market_health_dashboard():
         """
@@ -1404,7 +1495,7 @@ Get an API key at `/api-keys/request`
         - News Sentiment
         - Institutional Signals (SEC filings)
 
-        Includes 7-day historical scores for trend visualization.
+        Includes 7-day historical scores for trend visualization (real data only).
         """
         try:
             from datetime import datetime, timedelta
@@ -1458,7 +1549,8 @@ Get an API key at `/api-keys/request`
                         'vah': round(vah, 2),
                         'val': round(val, 2),
                         'position': position,
-                        'analysis': vp.get('analysis', '')
+                        'analysis': vp.get('analysis', ''),
+                        'volume_by_price': vp.get('volume_by_price', [])  # Real volume data for visualization
                     }
             except Exception as e:
                 result['components']['volume_profile'] = {'score': 50, 'error': str(e)}
@@ -1702,6 +1794,18 @@ Get an API key at `/api-keys/request`
                 {'event': 'Jobs Report', 'date': '2025-02-07', 'days_away': 3, 'impact': 'high'},
                 {'event': 'CPI Release', 'date': '2025-02-12', 'days_away': 8, 'impact': 'high'},
             ]
+
+            # Save current score to history and get historical data
+            try:
+                _add_score_to_history(
+                    result['composite_score'],
+                    result['verdict'],
+                    result['timestamp']
+                )
+                result['history'] = _get_daily_history(days=7)
+            except Exception as e:
+                print(f"History tracking error: {e}")
+                result['history'] = []
 
             return {"ok": True, "data": result}
 

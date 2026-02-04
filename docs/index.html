@@ -8109,8 +8109,8 @@
                 // Update Divergences
                 updateDivergences(health.divergences);
 
-                // Generate mock trend data (would come from history API)
-                updateScoreTrend(health.composite_score);
+                // Update score trend with real history data from API
+                updateScoreTrend(health.history || [], health.composite_score);
 
             } catch (e) {
                 console.error('Market health error:', e);
@@ -8224,47 +8224,49 @@
             document.getElementById('health-vp-vah').textContent = `$${vp.vah?.toFixed(2) || '--'}`;
             document.getElementById('health-vp-current').textContent = `$${vp.current_price?.toFixed(2) || '--'}`;
 
-            // Build horizontal bar chart
+            // Build horizontal bar chart using real volume_by_price data
             const poc = vp.poc || 0;
             const vah = vp.vah || 0;
             const val = vp.val || 0;
             const current = vp.current_price || 0;
-
-            // Generate price levels
-            const range = vah - val;
-            const minPrice = val - range * 0.3;
-            const maxPrice = vah + range * 0.3;
-            const step = (maxPrice - minPrice) / 10;
+            const volumeByPrice = vp.volume_by_price || [];
 
             let html = '<div style="display: flex; flex-direction: column; gap: 2px; height: 100%;">';
 
-            for (let i = 10; i >= 0; i--) {
-                const price = minPrice + step * i;
-                const isVAH = Math.abs(price - vah) < step * 0.5;
-                const isPOC = Math.abs(price - poc) < step * 0.5;
-                const isVAL = Math.abs(price - val) < step * 0.5;
-                const isCurrent = Math.abs(price - current) < step * 0.5;
-                const inValueArea = price >= val && price <= vah;
+            // Use real volume data if available, otherwise show placeholder
+            if (volumeByPrice.length === 0) {
+                html += '<div style="color: var(--text-muted); text-align: center; padding-top: 60px;">Volume data loading...</div>';
+            } else {
+                // Show up to 12 price levels (reverse to show high prices at top)
+                const levels = volumeByPrice.slice(-12).reverse();
+                const priceStep = levels.length > 1 ? Math.abs(levels[0].price - levels[1].price) : 1;
 
-                // Random volume for visual effect (would come from real data)
-                const volumePct = isPOC ? 100 : inValueArea ? 60 + Math.random() * 30 : 20 + Math.random() * 30;
+                levels.forEach(level => {
+                    const price = level.price;
+                    const volumePct = level.pct || 0;  // Real percentage from API
+                    const isVAH = Math.abs(price - vah) < priceStep * 0.6;
+                    const isPOC = Math.abs(price - poc) < priceStep * 0.6;
+                    const isVAL = Math.abs(price - val) < priceStep * 0.6;
+                    const isCurrent = Math.abs(price - current) < priceStep * 0.6;
+                    const inValueArea = price >= val && price <= vah;
 
-                let barColor = 'rgba(100,116,139,0.3)';
-                if (isPOC) barColor = '#a855f7';
-                else if (isVAH) barColor = 'var(--green)';
-                else if (isVAL) barColor = 'var(--red)';
-                else if (inValueArea) barColor = 'rgba(139,92,246,0.4)';
+                    let barColor = 'rgba(100,116,139,0.3)';
+                    if (isPOC) barColor = '#a855f7';
+                    else if (isVAH) barColor = 'var(--green)';
+                    else if (isVAL) barColor = 'var(--red)';
+                    else if (inValueArea) barColor = 'rgba(139,92,246,0.4)';
 
-                html += `<div style="display: flex; align-items: center; gap: 4px; flex: 1;">
-                    <div style="width: 45px; font-size: 0.6rem; color: var(--text-muted); text-align: right;">$${price.toFixed(0)}</div>
-                    <div style="flex: 1; height: 100%; background: rgba(100,116,139,0.1); border-radius: 2px; position: relative;">
-                        <div style="height: 100%; width: ${volumePct}%; background: ${barColor}; border-radius: 2px;"></div>
-                        ${isCurrent ? `<div style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; background: white; border: 2px solid ${pos.color}; border-radius: 50%;"></div>` : ''}
-                    </div>
-                    <div style="width: 30px; font-size: 0.55rem; color: var(--text-muted);">
-                        ${isPOC ? 'POC' : isVAH ? 'VAH' : isVAL ? 'VAL' : isCurrent ? '●' : ''}
-                    </div>
-                </div>`;
+                    html += `<div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+                        <div style="width: 45px; font-size: 0.6rem; color: var(--text-muted); text-align: right;">$${price.toFixed(0)}</div>
+                        <div style="flex: 1; height: 100%; background: rgba(100,116,139,0.1); border-radius: 2px; position: relative;">
+                            <div style="height: 100%; width: ${volumePct}%; background: ${barColor}; border-radius: 2px;"></div>
+                            ${isCurrent ? `<div style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; background: white; border: 2px solid ${pos.color}; border-radius: 50%;"></div>` : ''}
+                        </div>
+                        <div style="width: 30px; font-size: 0.55rem; color: var(--text-muted);">
+                            ${isPOC ? 'POC' : isVAH ? 'VAH' : isVAL ? 'VAL' : isCurrent ? '●' : ''}
+                        </div>
+                    </div>`;
+                });
             }
 
             html += '</div>';
@@ -8340,17 +8342,36 @@
             const yieldPct = Math.min(100, Math.max(0, (yieldCurve + 1) / 2 * 100)); // -1 to +1 maps to 0-100%
             document.getElementById('health-yield-marker').style.left = `${yieldPct}%`;
 
-            // Generate simple sparklines (would use real historical data)
+            // Show current value indicator (real data, no mock sparklines)
+            // Historical sparklines require time-series data not currently available from FRED API
             ['rate', 'cpi', 'unemp', 'vix'].forEach(key => {
                 const sparkEl = document.getElementById(`health-fred-${key}-spark`);
                 if (sparkEl) {
-                    // Generate mock sparkline bars
-                    let html = '';
-                    for (let i = 0; i < 20; i++) {
-                        const height = 30 + Math.random() * 70;
-                        html += `<div style="flex: 1; height: ${height}%; background: rgba(100,116,139,0.4); border-radius: 1px;"></div>`;
+                    // Show a single bar representing current value relative to typical range
+                    const ranges = { rate: [0, 8], cpi: [0, 10], unemp: [3, 10], vix: [10, 40] };
+                    const values = {
+                        rate: data.fed_funds_rate?.value || 0,
+                        cpi: data.cpi_yoy?.value || 0,
+                        unemp: data.unemployment?.value || 0,
+                        vix: data.vix?.value || 0
+                    };
+                    const [min, max] = ranges[key];
+                    const val = values[key];
+                    const pct = Math.min(100, Math.max(0, ((val - min) / (max - min)) * 100));
+
+                    // Color based on value (green=good, red=concerning)
+                    let color = 'var(--blue)';
+                    if (key === 'vix') {
+                        color = val < 15 ? 'var(--green)' : val > 25 ? 'var(--red)' : 'var(--yellow)';
+                    } else if (key === 'cpi') {
+                        color = val <= 2.5 ? 'var(--green)' : val > 5 ? 'var(--red)' : 'var(--yellow)';
+                    } else if (key === 'unemp') {
+                        color = val < 4 ? 'var(--green)' : val > 5.5 ? 'var(--red)' : 'var(--yellow)';
                     }
-                    sparkEl.innerHTML = html;
+
+                    sparkEl.innerHTML = `<div style="width: 100%; height: 100%; background: rgba(100,116,139,0.2); border-radius: 2px; position: relative;">
+                        <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: ${pct}%; background: ${color}; opacity: 0.6; border-radius: 2px;"></div>
+                    </div>`;
                 }
             });
         }
@@ -8374,14 +8395,15 @@
             document.getElementById('health-news-label').textContent = sentiment.label || 'Neutral';
             document.getElementById('health-news-label').style.color = newsScore > 60 ? 'var(--green)' : newsScore < 40 ? 'var(--red)' : 'var(--yellow)';
 
-            // X/Social donut (mock - would come from X intelligence)
-            const xScore = 50; // Would come from X intelligence API
+            // X/Social donut - currently disabled (X Crisis Monitor stopped)
+            // Show disabled state instead of mock data
             const xDonut = document.getElementById('health-x-donut');
-            const xOffset = 251.2 * (1 - xScore / 100);
-            xDonut.setAttribute('stroke-dashoffset', xOffset);
+            xDonut.setAttribute('stroke-dashoffset', '251.2');  // Hide arc
+            xDonut.setAttribute('stroke', 'rgba(100,116,139,0.3)');
 
-            document.getElementById('health-x-pct').textContent = `${xScore}%`;
-            document.getElementById('health-x-label').textContent = 'Neutral';
+            document.getElementById('health-x-pct').textContent = 'N/A';
+            document.getElementById('health-x-label').textContent = 'Disabled';
+            document.getElementById('health-x-label').style.color = 'var(--text-muted)';
         }
 
         function updateRadarChart(components) {
@@ -8464,34 +8486,45 @@
             textEl.innerHTML = divergences.map(d => `<div>• ${d}</div>`).join('');
         }
 
-        function updateScoreTrend(currentScore) {
+        function updateScoreTrend(history, currentScore) {
             const container = document.getElementById('health-trend-chart');
 
-            // Generate mock historical data (would come from storage)
-            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            const scores = [];
-            for (let i = 6; i >= 0; i--) {
-                if (i === 0) {
-                    scores.push(currentScore);
-                } else {
-                    scores.push(Math.max(20, Math.min(80, currentScore + (Math.random() - 0.5) * 20)));
-                }
+            // Use real historical data from API - no mock data
+            // history format: [{date: '2025-02-03', day: 'Mon', score: 52}, ...]
+
+            if (!history || history.length === 0) {
+                // No historical data yet - show current score only
+                const today = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+                container.innerHTML = `
+                    <div style="display: flex; align-items: flex-end; gap: 4px; width: 100%; height: 100%;">
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;">
+                            <div style="width: 100%; height: 60px; background: var(--yellow); border-radius: 4px 4px 0 0;"></div>
+                            <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">${today}</div>
+                        </div>
+                        <div style="flex: 5; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.75rem;">
+                            Building history... (refreshes every hour)
+                        </div>
+                    </div>
+                `;
+                return;
             }
 
+            const scores = history.map(h => h.score);
             const maxScore = Math.max(...scores);
             const minScore = Math.min(...scores);
             const range = maxScore - minScore || 1;
 
             let html = '<div style="display: flex; align-items: flex-end; gap: 4px; width: 100%; height: 100%;">';
-            scores.forEach((score, i) => {
-                const height = ((score - minScore) / range) * 60 + 20; // 20-80px height
-                const color = score >= 60 ? 'var(--green)' : score <= 40 ? 'var(--red)' : 'var(--yellow)';
-                const isToday = i === scores.length - 1;
+            history.forEach((entry, i) => {
+                const height = ((entry.score - minScore) / range) * 60 + 20; // 20-80px height
+                const color = entry.score >= 60 ? 'var(--green)' : entry.score <= 40 ? 'var(--red)' : 'var(--yellow)';
+                const isLatest = i === history.length - 1;
 
                 html += `
-                    <div style="flex: 1; display: flex; flex-direction: column; align-items: center;">
-                        <div style="width: 100%; height: ${height}px; background: ${color}; border-radius: 4px 4px 0 0; opacity: ${isToday ? 1 : 0.6};"></div>
-                        <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">${days[i]}</div>
+                    <div style="flex: 1; display: flex; flex-direction: column; align-items: center;" title="${entry.date}: ${entry.score}">
+                        <div style="font-size: 0.5rem; color: ${color}; margin-bottom: 2px;">${entry.score}</div>
+                        <div style="width: 100%; height: ${height}px; background: ${color}; border-radius: 4px 4px 0 0; opacity: ${isLatest ? 1 : 0.6};"></div>
+                        <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px;">${entry.day}</div>
                     </div>
                 `;
             });
