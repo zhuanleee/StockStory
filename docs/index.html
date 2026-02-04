@@ -1680,7 +1680,7 @@
             <div class="main-tab active" data-category="dashboard">Dashboard</div>
             <div class="main-tab" data-category="health">Health</div>
             <div class="main-tab" data-category="research">Research</div>
-            <div class="main-tab" data-category="trading">Trading</div>
+            <div class="main-tab" data-category="options">Options</div>
             <div class="main-tab" data-category="analytics">Analytics</div>
         </div>
     </nav>
@@ -1689,15 +1689,6 @@
         <div class="tabs-inner">
             <div class="sub-tab active" data-tab="themes">Themes</div>
             <div class="sub-tab" data-tab="sec">SEC Intel</div>
-        </div>
-    </nav>
-    <!-- Trading Sub-tabs -->
-    <nav class="sub-tabs" id="sub-tabs-trading">
-        <div class="tabs-inner">
-            <div class="sub-tab active" data-tab="scanner">Scanner</div>
-            <div class="sub-tab" data-tab="trades">Trades</div>
-            <div class="sub-tab" data-tab="watchlist">Watchlist</div>
-            <div class="sub-tab" data-tab="options">Options</div>
         </div>
     </nav>
 
@@ -4134,17 +4125,17 @@
             } else if (tabId === 'themeradar') {
                 switchCategory('research');
                 switchSubTab('themes');
-            } else if (tabId === 'scan') {
-                switchCategory('trading');
-                switchSubTab('scanner');
+            } else if (tabId === 'scan' || tabId === 'scanner') {
+                switchCategory('dashboard');
             } else if (['themes', 'sec'].includes(tabId)) {
                 switchCategory('research');
                 switchSubTab(tabId);
-            } else if (['scanner', 'trades', 'watchlist', 'options'].includes(tabId)) {
-                switchCategory('trading');
-                switchSubTab(tabId);
+            } else if (tabId === 'options') {
+                switchCategory('options');
             } else if (tabId === 'analytics') {
                 switchCategory('analytics');
+            } else if (tabId === 'health') {
+                switchCategory('health');
             }
         }
 
