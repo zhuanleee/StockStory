@@ -677,6 +677,26 @@
             .main-tab { padding: 12px 16px; font-size: 0.8rem; }
             .sub-tab { padding: 8px 12px; font-size: 0.75rem; }
             .tabs-inner { flex-wrap: wrap; }
+
+            /* Options tab mobile */
+            .options-hero-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+            .options-metrics-grid { grid-template-columns: repeat(2, 1fr) !important; }
+            .quick-tickers { justify-content: center; }
+            .quick-tickers .ticker-btn { padding: 8px 14px !important; }
+            .filter-bar { gap: 8px; }
+            #options-analysis-container .card-body > div:first-child { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+
+        @media (max-width: 480px) {
+            .options-metrics-grid { grid-template-columns: 1fr !important; }
+            .quick-tickers span:first-child { display: none; }
+            .quick-tickers .ticker-btn { padding: 6px 10px !important; font-size: 0.75rem !important; }
+        }
+
+        /* Ticker button active state */
+        .ticker-btn.active {
+            background: var(--blue) !important;
+            color: white !important;
         }
 
         /* Cards */
@@ -3143,60 +3163,97 @@
 
         <!-- Options Tab -->
         <div id="options" class="tab-content">
-            <!-- TIER 1: Hero Zone - Market Options Sentiment -->
+            <!-- TIER 1: Consolidated Hero Zone - Market Pulse -->
             <div class="hero-zone" style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <div style="font-size: 1rem; font-weight: 600;">📊 Market Options Sentiment</div>
-                        <select id="market-sentiment-expiry" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;" onchange="loadMarketSentimentForExpiry()">
-                            <option value="">Loading...</option>
-                        </select>
-                    </div>
-                    <button class="btn btn-ghost" onclick="loadMarketSentiment()" style="font-size: 0.75rem; padding: 4px 12px;">Refresh</button>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;" id="market-sentiment-grid">
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
-                            SPY P/C RATIO <span class="info-icon" data-tooltip="Put/Call Volume Ratio: >1.0 = Bearish (more puts), <0.7 = Bullish (more calls). Measures trader sentiment for the selected expiration."></span>
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: center;" class="options-hero-grid">
+                    <!-- Left: Visual Sentiment Gauge -->
+                    <div style="text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">MARKET SENTIMENT</div>
+                        <div style="position: relative; width: 180px; height: 100px; margin: 0 auto;">
+                            <!-- Sentiment Arc -->
+                            <svg viewBox="0 0 180 100" style="width: 100%; height: 100%;">
+                                <!-- Background gradient arc -->
+                                <defs>
+                                    <linearGradient id="sentimentGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" style="stop-color:#ef4444"/>
+                                        <stop offset="50%" style="stop-color:#f59e0b"/>
+                                        <stop offset="100%" style="stop-color:#10b981"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M 15 85 A 75 75 0 0 1 165 85" fill="none" stroke="url(#sentimentGradient)" stroke-width="12" stroke-linecap="round"/>
+                                <!-- Needle -->
+                                <g id="sentiment-needle" transform="rotate(0, 90, 85)">
+                                    <line x1="90" y1="85" x2="90" y2="25" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/>
+                                    <circle cx="90" cy="85" r="6" fill="var(--text)"/>
+                                </g>
+                            </svg>
+                            <div style="position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; font-size: 0.6rem; color: var(--text-muted); padding: 0 10px;">
+                                <span>Bearish</span>
+                                <span>Neutral</span>
+                                <span>Bullish</span>
+                            </div>
                         </div>
-                        <div style="font-size: 1.5rem; font-weight: 700;" id="spy-pc-ratio">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-pc-label">Loading...</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; margin-top: 8px;" id="sentiment-label">--</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);" id="sentiment-description">Loading...</div>
                     </div>
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--purple);">
-                        <div style="font-size: 0.7rem; color: var(--purple); margin-bottom: 4px;">
-                            SPY MAX PAIN <span class="info-icon" data-tooltip="Max Pain: Strike price where option sellers lose the least money. SPY often gravitates toward this level near expiration as market makers hedge positions."></span>
+
+                    <!-- Right: Key Metrics Grid -->
+                    <div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;" class="options-metrics-grid">
+                            <div style="background: var(--bg-card); padding: 14px; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">VIX</div>
+                                <div style="font-size: 1.75rem; font-weight: 700;" id="vix-level">--</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted);" id="vix-label">--</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 14px; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">P/C RATIO</div>
+                                <div style="font-size: 1.75rem; font-weight: 700;" id="spy-pc-ratio">--</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted);" id="spy-pc-label">--</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 14px; border-radius: 10px; text-align: center; border: 1px solid var(--purple);">
+                                <div style="font-size: 0.65rem; color: var(--purple); margin-bottom: 4px;">MAX PAIN</div>
+                                <div style="font-size: 1.75rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted);" id="spy-max-pain-dist">--</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 14px; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">GEX</div>
+                                <div style="font-size: 1.75rem; font-weight: 700;" id="market-gex">--</div>
+                                <div style="font-size: 0.6rem; color: var(--text-muted);" id="gex-label">--</div>
+                            </div>
                         </div>
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);" id="spy-max-pain">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-max-pain-dist">Loading...</div>
-                    </div>
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
-                            SPY GEX <span class="info-icon" data-tooltip="Gamma Exposure: Positive GEX = dealers hedge by selling into rallies (supportive, lower volatility). Negative GEX = dealers amplify moves (volatile)."></span>
+                        <!-- Expiry selector and refresh -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 8px 12px; background: var(--bg-card); border-radius: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 0.7rem; color: var(--text-muted);">SPY Expiry:</span>
+                                <select id="market-sentiment-expiry" style="background: var(--bg-hover); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 0.75rem;" onchange="loadMarketSentimentForExpiry()">
+                                    <option value="">Loading...</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 0.65rem; color: var(--text-muted);" id="spy-call-put-oi">--</span>
+                                <button class="btn btn-ghost" onclick="loadMarketSentiment()" style="font-size: 0.7rem; padding: 4px 10px;">Refresh</button>
+                            </div>
                         </div>
-                        <div style="font-size: 1.5rem; font-weight: 700;" id="market-gex">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="gex-label">Loading...</div>
-                    </div>
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
-                            VIX LEVEL <span class="info-icon" data-tooltip="CBOE Volatility Index: Measures expected 30-day volatility. <15 = Low fear (complacency), 15-25 = Normal, >25 = High fear (potential buying opportunity)."></span>
-                        </div>
-                        <div style="font-size: 1.5rem; font-weight: 700;" id="vix-level">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="vix-label">Loading...</div>
-                    </div>
-                    <div style="background: var(--bg-card); padding: 16px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px;">
-                            CALL/PUT OI <span class="info-icon" data-tooltip="Open Interest: Total outstanding contracts. Call Heavy = bullish positioning, Put Heavy = bearish positioning or hedging. Shows where traders have placed bets."></span>
-                        </div>
-                        <div style="font-size: 1.25rem; font-weight: 700;" id="spy-call-put-oi">--</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted);" id="spy-oi-label">Loading...</div>
                     </div>
                 </div>
             </div>
 
+            <!-- Quick Ticker Shortcuts -->
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;" class="quick-tickers">
+                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 6px 0;">Quick:</span>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('SPY')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">SPY</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('QQQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">QQQ</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('NVDA')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">NVDA</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('TSLA')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">TSLA</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AAPL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AAPL</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('AMD')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">AMD</button>
+                <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('META')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">META</button>
+            </div>
+
             <!-- Search & Action Bar -->
-            <div class="filter-bar" style="margin-bottom: 16px;">
-                <input type="text" id="options-ticker-input" placeholder="Enter ticker (e.g., NVDA, SPY)"
-                    style="flex: 1; max-width: 200px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;"
+            <div class="filter-bar" style="margin-bottom: 16px; flex-wrap: wrap;">
+                <input type="text" id="options-ticker-input" placeholder="Enter ticker..."
+                    style="flex: 1; min-width: 120px; max-width: 180px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.875rem;"
                     onkeypress="if(event.key==='Enter') loadOptionsAnalysis()" />
                 <button class="btn btn-primary" onclick="loadOptionsAnalysis()" style="padding: 8px 16px;">Analyze</button>
                 <button class="btn btn-ghost" onclick="loadSmartMoneyFlow()" style="padding: 8px 12px;">Smart Flow</button>
@@ -4107,6 +4164,8 @@
                 loadMarketSentiment();
                 loadWhaleTrades();
                 loadUnusualActivity();
+                // Auto-load SPY options analysis
+                quickAnalyzeTicker('SPY');
             } else if (tabId === 'analytics') {
                 fetchEvolution();
                 fetchParameters();
@@ -9039,6 +9098,75 @@
             }
         }
 
+        // Quick ticker analysis - sets input and triggers analysis
+        function quickAnalyzeTicker(ticker) {
+            document.getElementById('options-ticker-input').value = ticker;
+            // Highlight active ticker button
+            document.querySelectorAll('.ticker-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === ticker) btn.classList.add('active');
+            });
+            loadOptionsAnalysis();
+        }
+
+        // Update sentiment gauge needle position
+        function updateSentimentGauge(pcRatio, vix) {
+            // Calculate sentiment: P/C > 1 = bearish, P/C < 0.7 = bullish
+            // VIX > 25 = fear, VIX < 15 = complacent
+            let sentiment = 50; // neutral
+
+            if (pcRatio && !isNaN(pcRatio)) {
+                if (pcRatio < 0.6) sentiment += 30;
+                else if (pcRatio < 0.8) sentiment += 15;
+                else if (pcRatio > 1.2) sentiment -= 30;
+                else if (pcRatio > 1.0) sentiment -= 15;
+            }
+
+            if (vix && !isNaN(vix)) {
+                if (vix < 15) sentiment += 10;
+                else if (vix > 30) sentiment -= 20;
+                else if (vix > 25) sentiment -= 10;
+            }
+
+            // Clamp between 0-100
+            sentiment = Math.max(0, Math.min(100, sentiment));
+
+            // Convert to rotation angle (-90 to 90 degrees)
+            const angle = (sentiment / 100) * 180 - 90;
+
+            const needle = document.getElementById('sentiment-needle');
+            if (needle) {
+                needle.setAttribute('transform', `rotate(${angle}, 90, 85)`);
+            }
+
+            // Update label
+            const label = document.getElementById('sentiment-label');
+            const desc = document.getElementById('sentiment-description');
+            if (label && desc) {
+                if (sentiment >= 70) {
+                    label.textContent = 'BULLISH';
+                    label.style.color = 'var(--green)';
+                    desc.textContent = 'Call heavy, low fear';
+                } else if (sentiment >= 55) {
+                    label.textContent = 'LEAN BULLISH';
+                    label.style.color = 'var(--green-light)';
+                    desc.textContent = 'Slightly bullish positioning';
+                } else if (sentiment <= 30) {
+                    label.textContent = 'BEARISH';
+                    label.style.color = 'var(--red)';
+                    desc.textContent = 'Put heavy, high fear';
+                } else if (sentiment <= 45) {
+                    label.textContent = 'LEAN BEARISH';
+                    label.style.color = 'var(--red-light)';
+                    desc.textContent = 'Slightly bearish positioning';
+                } else {
+                    label.textContent = 'NEUTRAL';
+                    label.style.color = 'var(--yellow)';
+                    desc.textContent = 'Balanced positioning';
+                }
+            }
+        }
+
         async function loadOptionsAnalysis() {
             const ticker = document.getElementById('options-ticker-input').value.trim().toUpperCase();
             if (!ticker) {
@@ -9550,6 +9678,11 @@
                     }
                     gexEl.style.color = gex > 0 ? 'var(--green)' : 'var(--red)';
                     document.getElementById('gex-label').textContent = gex > 0 ? 'Supportive' : 'Volatile';
+
+                    // Update sentiment gauge
+                    const vixText = document.getElementById('vix-level').textContent;
+                    const vix = parseFloat(vixText) || 0;
+                    updateSentimentGauge(pcRatio, vix);
                 }
 
                 // Max Pain
