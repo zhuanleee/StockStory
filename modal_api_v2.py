@@ -2004,6 +2004,30 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/gex/{ticker_symbol}", tags=["Options"])
+    def options_gex(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Calculate Gamma Exposure (GEX) by strike price.
+
+        GEX measures dealer hedging flow:
+        - Positive GEX: Dealers buy dips, sell rips (price stabilizing)
+        - Negative GEX: Dealers amplify moves (increased volatility)
+
+        Args:
+            ticker_symbol: Stock ticker (e.g., TSLA, SPY)
+            expiration: Expiration date (YYYY-MM-DD). If not provided, uses nearest.
+
+        Returns GEX by strike with call/put breakdown, total GEX, and zero-gamma level.
+        """
+        try:
+            from src.data.options import calculate_gex_by_strike
+            result = calculate_gex_by_strike(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):
         """Scan all tracked stocks for unusual options activity"""

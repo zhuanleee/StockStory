@@ -425,6 +425,145 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
+def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
+    """
+    Calculate Gamma Exposure (GEX) by strike price.
+
+    GEX measures how much dealers need to hedge as price moves.
+    - Positive GEX: Dealers buy dips, sell rips (stabilizing)
+    - Negative GEX: Dealers amplify moves (volatile)
+
+    Formula per strike:
+    GEX = (Call Gamma × Call OI × 100) - (Put Gamma × Put OI × 100)
+
+    Returns:
+        {
+            'ticker': str,
+            'expiration': str,
+            'current_price': float,
+            'total_gex': float,
+            'gex_by_strike': List[Dict],  # [{strike, call_gex, put_gex, net_gex}, ...]
+            'zero_gamma_level': float,  # Strike where GEX flips sign
+        }
+    """
+    try:
+        logger.info(f"Calculating GEX by strike for {ticker}")
+
+        # If no expiration, get nearest
+        if not expiration:
+            try:
+                expirations = get_options_expirations(ticker)
+                if expirations and expirations.get('expirations'):
+                    expiration = expirations['expirations'][0]
+            except:
+                pass
+
+        # Get options chain with gamma data
+        chain = get_options_chain_sync(ticker, expiration)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options chain", "ticker": ticker}
+
+        calls = chain.get('calls', [])
+        puts = chain.get('puts', [])
+
+        if not calls and not puts:
+            return {"error": "No options data", "ticker": ticker}
+
+        # Get current price
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+        if not current_price and calls:
+            current_price = calls[len(calls)//2].get('underlying_price') or 0
+
+        # Build GEX by strike
+        # Group by strike
+        strikes = set()
+        call_data = {}  # strike -> {gamma, oi}
+        put_data = {}   # strike -> {gamma, oi}
+
+        for c in calls:
+            strike = c.get('strike')
+            if strike:
+                strikes.add(strike)
+                gamma = c.get('gamma') or 0
+                oi = c.get('open_interest') or 0
+                call_data[strike] = {'gamma': gamma, 'oi': oi}
+
+        for p in puts:
+            strike = p.get('strike')
+            if strike:
+                strikes.add(strike)
+                gamma = p.get('gamma') or 0
+                oi = p.get('open_interest') or 0
+                put_data[strike] = {'gamma': gamma, 'oi': oi}
+
+        # Calculate GEX per strike
+        # GEX = Gamma × OI × 100 × Spot Price (in $ terms)
+        # Calls: positive contribution (dealers long gamma)
+        # Puts: negative contribution (dealers short gamma on puts they sold)
+        gex_by_strike = []
+        total_gex = 0
+
+        for strike in sorted(strikes):
+            call_info = call_data.get(strike, {'gamma': 0, 'oi': 0})
+            put_info = put_data.get(strike, {'gamma': 0, 'oi': 0})
+
+            # GEX in dollar terms (gamma × OI × 100 shares × spot)
+            call_gex = call_info['gamma'] * call_info['oi'] * 100 * current_price
+            # Puts: dealers are SHORT gamma, so it's negative
+            put_gex = -put_info['gamma'] * put_info['oi'] * 100 * current_price
+            net_gex = call_gex + put_gex
+
+            total_gex += net_gex
+
+            gex_by_strike.append({
+                'strike': strike,
+                'call_gex': round(call_gex, 0),
+                'put_gex': round(put_gex, 0),
+                'net_gex': round(net_gex, 0),
+                'call_oi': call_info['oi'],
+                'put_oi': put_info['oi']
+            })
+
+        # Find zero gamma level (where GEX flips from negative to positive)
+        zero_gamma = None
+        for i, g in enumerate(gex_by_strike):
+            if i > 0 and gex_by_strike[i-1]['net_gex'] < 0 and g['net_gex'] >= 0:
+                zero_gamma = g['strike']
+                break
+
+        # Filter to +/- 15% of current price
+        if current_price > 0:
+            min_s = current_price * 0.85
+            max_s = current_price * 1.15
+            gex_by_strike = [g for g in gex_by_strike if min_s <= g['strike'] <= max_s]
+
+        # Get expiration used
+        used_exp = expiration
+        if not used_exp and calls:
+            used_exp = calls[0].get('expiration')
+
+        logger.info(f"✅ GEX calculated for {ticker}: total ${total_gex/1e6:.1f}M")
+
+        return {
+            'ticker': ticker.upper(),
+            'expiration': used_exp,
+            'current_price': current_price,
+            'total_gex': round(total_gex, 0),
+            'gex_by_strike': gex_by_strike,
+            'zero_gamma_level': zero_gamma
+        }
+
+    except Exception as e:
+        logger.error(f"GEX calculation error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
 def get_options_overview(ticker: str) -> Dict:
     """
     Comprehensive options overview combining:

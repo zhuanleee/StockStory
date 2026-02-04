@@ -9193,19 +9193,22 @@
 
             try {
                 // Fetch all data in parallel
-                const [sentimentRes, maxPainRes, flowRes] = await Promise.all([
+                const [sentimentRes, maxPainRes, flowRes, gexRes] = await Promise.all([
                     fetch(`${API_BASE}/options/sentiment/${ticker}`),
                     fetch(`${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`),
-                    fetch(`${API_BASE}/options/flow/${ticker}`)
+                    fetch(`${API_BASE}/options/flow/${ticker}`),
+                    fetch(`${API_BASE}/options/gex/${ticker}${expiry ? '?expiration=' + expiry : ''}`)
                 ]);
 
                 const sentimentData = await sentimentRes.json();
                 const maxPainData = await maxPainRes.json();
                 const flowData = await flowRes.json();
+                const gexData = await gexRes.json();
 
                 const sentiment = sentimentData.data || {};
                 const mp = maxPainData.data || {};
                 const flow = flowData.data || {};
+                const gex = gexData.data || {};
 
                 // P/C Ratio
                 const pcRatio = flow.put_call_ratio || sentiment.put_call_ratio || 0;
@@ -9218,11 +9221,11 @@
                 document.getElementById('oa-pc-label').style.color = pcColor;
                 document.getElementById('oa-pc-ratio').style.color = pcColor;
 
-                // GEX
-                let gexValue = sentiment.gex || 0;
+                // GEX (from dedicated GEX endpoint with real gamma calculations)
+                let gexValue = gex.total_gex || sentiment.gex || 0;
                 if (typeof gexValue === 'object') gexValue = gexValue.total || 0;
                 let gexDisplay = Math.abs(gexValue) >= 1e9 ? `$${(gexValue / 1e9).toFixed(1)}B` :
-                                 Math.abs(gexValue) >= 1e6 ? `$${(gexValue / 1e6).toFixed(0)}M` :
+                                 Math.abs(gexValue) >= 1e6 ? `$${(gexValue / 1e6).toFixed(1)}M` :
                                  `$${(gexValue / 1e3).toFixed(0)}K`;
                 document.getElementById('oa-gex').textContent = gexDisplay;
                 const gexLabel = gexValue > 0 ? 'Stabilizing' : gexValue < 0 ? 'Volatile' : 'Neutral';
@@ -9312,13 +9315,12 @@
                 optionsChartData.maxPainPrice = maxPain;
                 optionsChartData.currentPrice = currentPrice;
 
-                // Build GEX by strike from pain_by_strike data (gamma * OI)
-                // For now, use OI difference as proxy for GEX direction at each strike
-                optionsChartData.gexByStrike = (mp.pain_by_strike || []).map(s => ({
+                // Use real GEX data from API (calculated with actual gamma values)
+                optionsChartData.gexByStrike = (gex.gex_by_strike || []).map(s => ({
                     strike: s.strike,
-                    callGex: (s.call_oi || 0) * 100,  // Simplified: positive for calls
-                    putGex: -(s.put_oi || 0) * 100,   // Negative for puts
-                    netGex: ((s.call_oi || 0) - (s.put_oi || 0)) * 100
+                    callGex: s.call_gex || 0,
+                    putGex: s.put_gex || 0,
+                    netGex: s.net_gex || 0
                 }));
 
                 // Render the active chart

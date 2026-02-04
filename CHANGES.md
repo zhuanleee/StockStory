@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 17:53 - `33e29f6`
+
+**Add clickable GEX and Max Pain charts with toggle**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 17:22 - `0d12d12`
 
 **Merge Options Analysis and Max Pain into unified panel**
