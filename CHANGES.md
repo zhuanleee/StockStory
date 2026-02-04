@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 17:10 - `57c02d7`
+
+**Fix max pain to auto-select nearest expiration when none provided**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-04 17:02 - `cf6f083`
 
 **Fix Quick Analysis max pain accuracy - fetch from dedicated endpoint**
