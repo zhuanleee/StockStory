@@ -9662,9 +9662,14 @@
                     const callOI = summary.total_call_oi || 0;
                     const putOI = summary.total_put_oi || 0;
                     const oiEl = document.getElementById('spy-call-put-oi');
-                    oiEl.innerHTML = `<span style="color: var(--green);">${(callOI/1000).toFixed(0)}K</span>/<span style="color: var(--red);">${(putOI/1000).toFixed(0)}K</span>`;
-                    const oiRatio = callOI / (putOI || 1);
-                    document.getElementById('spy-oi-label').textContent = oiRatio > 1.2 ? 'Call Heavy' : oiRatio < 0.8 ? 'Put Heavy' : 'Balanced';
+                    if (oiEl) {
+                        oiEl.innerHTML = `<span style="color: var(--green);">${(callOI/1000).toFixed(0)}K</span>/<span style="color: var(--red);">${(putOI/1000).toFixed(0)}K</span>`;
+                    }
+                    const oiLabelEl = document.getElementById('spy-oi-label');
+                    if (oiLabelEl) {
+                        const oiRatio = callOI / (putOI || 1);
+                        oiLabelEl.textContent = oiRatio > 1.2 ? 'Call Heavy' : oiRatio < 0.8 ? 'Put Heavy' : 'Balanced';
+                    }
 
                     // GEX estimate (simplified)
                     const gex = (callOI - putOI) * 100; // Simplified GEX proxy
