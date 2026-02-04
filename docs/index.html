@@ -8365,10 +8365,12 @@
             data.forEach((d, i) => {
                 const heightPct = (d.pain - minPain) / painRange;
                 const barHeight = Math.max(Math.round(heightPct * chartHeight), 3); // min 3px
-                const isMaxPain = d.strike === maxPainPrice;
-                const barColor = isMaxPain ? 'var(--purple)' : 'rgba(100, 116, 139, 0.6)';
+                // Compare with tolerance for floating point strikes like 417.5
+                const isMaxPain = Math.abs(d.strike - maxPainPrice) < 0.01;
+                const barColor = isMaxPain ? '#a855f7' : 'rgba(100, 116, 139, 0.6)';
+                const barStyle = isMaxPain ? 'box-shadow: 0 0 8px #a855f7;' : '';
 
-                html += `<div style="flex: 1; height: ${barHeight}px; background: ${barColor}; border-radius: 2px 2px 0 0; min-width: 4px;"></div>`;
+                html += `<div style="flex: 1; height: ${barHeight}px; background: ${barColor}; border-radius: 2px 2px 0 0; min-width: 4px; ${barStyle}" title="$${d.strike}: ${(d.pain/1e6).toFixed(1)}M pain"></div>`;
             });
 
             html += '</div>';

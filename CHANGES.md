@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-04 14:34 - `7ca1bb0`
+
+**Fix chart bars using pixel heights instead of percentages**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-04 14:26 - `352256c`
 
 **Add debug logging to chart render function**
