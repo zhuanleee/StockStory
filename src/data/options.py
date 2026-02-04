@@ -250,7 +250,17 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
     try:
         logger.info(f"Calculating max pain for {ticker} (expiration: {expiration or 'nearest'})")
 
-        # Get options chain data (optionally filtered by expiration)
+        # If no expiration provided, get the nearest one to avoid mixing multiple expirations
+        if not expiration:
+            try:
+                expirations = get_options_expirations(ticker)
+                if expirations and expirations.get('expirations'):
+                    expiration = expirations['expirations'][0]  # Nearest expiration
+                    logger.info(f"Using nearest expiration for {ticker}: {expiration}")
+            except Exception as e:
+                logger.warning(f"Could not fetch expirations for {ticker}: {e}")
+
+        # Get options chain data filtered by expiration
         chain = get_options_chain_sync(ticker, expiration)
         if not chain or 'error' in chain:
             return {"error": "Could not fetch options chain", "ticker": ticker}
