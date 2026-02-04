@@ -1369,6 +1369,29 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/volume-profile/{ticker_symbol}", tags=["Technical"])
+    def volume_profile(ticker_symbol: str, days: int = Query(30)):
+        """
+        Calculate Volume Profile for a stock.
+
+        Volume Profile shows price levels with the most trading activity:
+        - POC (Point of Control): Highest volume price - key support/resistance
+        - VAH (Value Area High): Upper bound of 70% volume zone
+        - VAL (Value Area Low): Lower bound of 70% volume zone
+
+        Args:
+            ticker_symbol: Stock ticker (e.g., SPY)
+            days: Days of history to analyze (default 30)
+        """
+        try:
+            from src.data.options import calculate_volume_profile
+            result = calculate_volume_profile(ticker_symbol.upper(), days=days)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/expirations/{ticker_symbol}")
     def options_expirations(ticker_symbol: str):
         """

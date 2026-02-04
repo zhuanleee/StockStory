@@ -16,7 +16,8 @@ from src.data.polygon_provider import (
     get_options_chain_sync,
     get_technical_summary_sync,
     get_options_contracts_sync,
-    get_snapshot_sync
+    get_snapshot_sync,
+    get_price_data_sync
 )
 from typing import Dict, List
 from datetime import datetime, timedelta
@@ -513,6 +514,196 @@ def scan_unusual_options_universe(tickers: List[str], min_threshold: float = 2.0
     except Exception as e:
         logger.error(f"Unusual options scan error: {e}")
         return []
+
+
+def calculate_volume_profile(ticker: str, days: int = 30, num_bins: int = 50) -> Dict:
+    """
+    Calculate Volume Profile for a stock.
+
+    Volume Profile shows where the most trading activity occurred at each price level.
+    Key levels:
+    - POC (Point of Control): Price level with highest volume - strongest support/resistance
+    - VAH (Value Area High): Upper bound of 70% volume zone
+    - VAL (Value Area Low): Lower bound of 70% volume zone
+    - HVN (High Volume Nodes): Prices with heavy trading - support/resistance
+    - LVN (Low Volume Nodes): Prices with light trading - breakout zones
+
+    Args:
+        ticker: Stock symbol (e.g., 'SPY')
+        days: Number of days to analyze (default 30)
+        num_bins: Number of price levels to group volume (default 50)
+
+    Returns:
+        {
+            'ticker': str,
+            'current_price': float,
+            'poc': float (Point of Control - highest volume price),
+            'vah': float (Value Area High),
+            'val': float (Value Area Low),
+            'daily_high': float,
+            'daily_low': float,
+            'hvn': List[float] (High Volume Nodes),
+            'lvn': List[float] (Low Volume Nodes),
+            'volume_by_price': List[{'price': float, 'volume': int, 'pct': float}],
+            'analysis': str,
+            'days_analyzed': int
+        }
+    """
+    try:
+        logger.info(f"Calculating volume profile for {ticker} ({days} days)")
+
+        # Get price data
+        df = get_price_data_sync(ticker, days=days)
+
+        if df is None or df.empty:
+            return {"error": f"No price data available for {ticker}", "ticker": ticker}
+
+        # Get current price from snapshot
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+
+        if not current_price:
+            current_price = float(df['Close'].iloc[-1])
+
+        # Get daily high/low from most recent day
+        daily_high = float(df['High'].iloc[-1])
+        daily_low = float(df['Low'].iloc[-1])
+
+        # Calculate price range for binning
+        price_high = float(df['High'].max())
+        price_low = float(df['Low'].min())
+        price_range = price_high - price_low
+
+        if price_range == 0:
+            return {"error": "Invalid price range", "ticker": ticker}
+
+        bin_size = price_range / num_bins
+
+        # Create volume profile - allocate volume to price bins
+        volume_profile = {}
+
+        for idx, row in df.iterrows():
+            # Distribute volume across high-low range for each bar
+            bar_high = float(row['High'])
+            bar_low = float(row['Low'])
+            bar_volume = float(row['Volume'])
+
+            # Find bins this bar covers
+            low_bin = int((bar_low - price_low) / bin_size)
+            high_bin = int((bar_high - price_low) / bin_size)
+
+            # Clamp to valid range
+            low_bin = max(0, min(low_bin, num_bins - 1))
+            high_bin = max(0, min(high_bin, num_bins - 1))
+
+            # Distribute volume evenly across covered bins
+            bins_covered = max(1, high_bin - low_bin + 1)
+            volume_per_bin = bar_volume / bins_covered
+
+            for b in range(low_bin, high_bin + 1):
+                bin_price = price_low + (b + 0.5) * bin_size
+                if bin_price not in volume_profile:
+                    volume_profile[bin_price] = 0
+                volume_profile[bin_price] += volume_per_bin
+
+        # Sort by price
+        sorted_prices = sorted(volume_profile.keys())
+        total_volume = sum(volume_profile.values())
+
+        # Find POC (Point of Control) - price with highest volume
+        poc_price = max(volume_profile.keys(), key=lambda p: volume_profile[p])
+
+        # Calculate Value Area (70% of volume around POC)
+        # Start from POC and expand until we capture 70%
+        poc_idx = sorted_prices.index(poc_price)
+        value_area_volume = volume_profile[poc_price]
+        target_volume = total_volume * 0.70
+
+        low_idx = poc_idx
+        high_idx = poc_idx
+
+        while value_area_volume < target_volume and (low_idx > 0 or high_idx < len(sorted_prices) - 1):
+            # Check which direction adds more volume
+            low_add = volume_profile[sorted_prices[low_idx - 1]] if low_idx > 0 else 0
+            high_add = volume_profile[sorted_prices[high_idx + 1]] if high_idx < len(sorted_prices) - 1 else 0
+
+            if low_add >= high_add and low_idx > 0:
+                low_idx -= 1
+                value_area_volume += low_add
+            elif high_idx < len(sorted_prices) - 1:
+                high_idx += 1
+                value_area_volume += high_add
+            else:
+                break
+
+        val = sorted_prices[low_idx]  # Value Area Low
+        vah = sorted_prices[high_idx]  # Value Area High
+
+        # Find HVN and LVN
+        avg_volume = total_volume / len(volume_profile)
+        hvn = []
+        lvn = []
+
+        for price, vol in volume_profile.items():
+            if vol > avg_volume * 1.5:
+                hvn.append(round(price, 2))
+            elif vol < avg_volume * 0.5:
+                lvn.append(round(price, 2))
+
+        # Sort and limit
+        hvn = sorted(hvn)[:5]  # Top 5 HVNs
+        lvn = sorted(lvn)[:5]  # Top 5 LVNs
+
+        # Build volume by price list (for visualization)
+        volume_by_price = []
+        max_vol = max(volume_profile.values())
+        for price in sorted_prices:
+            vol = volume_profile[price]
+            volume_by_price.append({
+                'price': round(price, 2),
+                'volume': int(vol),
+                'pct': round(vol / max_vol * 100, 1)
+            })
+
+        # Analysis
+        analysis = ""
+        if current_price > vah:
+            analysis = f"Price above Value Area High (${vah:.2f}) - Extended, may pull back to POC"
+        elif current_price < val:
+            analysis = f"Price below Value Area Low (${val:.2f}) - Weak, may rally to VAL/POC"
+        elif abs(current_price - poc_price) < (vah - val) * 0.1:
+            analysis = f"Price at POC (${poc_price:.2f}) - Fair value zone, consolidation expected"
+        elif current_price > poc_price:
+            analysis = f"Price above POC - Bullish bias, VAH (${vah:.2f}) is resistance"
+        else:
+            analysis = f"Price below POC - Bearish bias, VAL (${val:.2f}) is support"
+
+        result = {
+            'ticker': ticker.upper(),
+            'current_price': round(current_price, 2),
+            'poc': round(poc_price, 2),
+            'vah': round(vah, 2),
+            'val': round(val, 2),
+            'daily_high': round(daily_high, 2),
+            'daily_low': round(daily_low, 2),
+            'hvn': hvn,
+            'lvn': lvn,
+            'volume_by_price': volume_by_price[-20:] if len(volume_by_price) > 20 else volume_by_price,  # Limit for API
+            'analysis': analysis,
+            'days_analyzed': len(df)
+        }
+
+        logger.info(f"✅ Volume profile for {ticker}: POC=${poc_price:.2f}, VAH=${vah:.2f}, VAL=${val:.2f}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Volume profile error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
 
 
 # Example usage
