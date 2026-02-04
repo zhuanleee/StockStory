@@ -25,46 +25,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Futures contract specifications
-# Multiplier = dollar value per point of movement
-FUTURES_SPECS = {
-    'ES': {'name': 'E-mini S&P 500', 'multiplier': 50, 'tick_size': 0.25},
-    'NQ': {'name': 'E-mini Nasdaq 100', 'multiplier': 20, 'tick_size': 0.25},
-    'CL': {'name': 'Crude Oil', 'multiplier': 1000, 'tick_size': 0.01},
-    'GC': {'name': 'Gold', 'multiplier': 100, 'tick_size': 0.10},
-    'SI': {'name': 'Silver', 'multiplier': 5000, 'tick_size': 0.005},
-    'ZB': {'name': '30-Year Treasury', 'multiplier': 1000, 'tick_size': 1/32},
-    'ZN': {'name': '10-Year Treasury', 'multiplier': 1000, 'tick_size': 1/64},
-    'RTY': {'name': 'E-mini Russell 2000', 'multiplier': 50, 'tick_size': 0.10},
-    'YM': {'name': 'E-mini Dow', 'multiplier': 5, 'tick_size': 1.0},
-    'MES': {'name': 'Micro E-mini S&P', 'multiplier': 5, 'tick_size': 0.25},
-    'MNQ': {'name': 'Micro E-mini Nasdaq', 'multiplier': 2, 'tick_size': 0.25},
-}
-
-
-def is_futures_ticker(ticker: str) -> bool:
-    """Check if ticker is a futures contract."""
-    return ticker.upper() in FUTURES_SPECS
-
-
-def get_futures_info(ticker: str) -> Dict:
-    """Get futures contract info if it's a futures ticker."""
-    ticker_upper = ticker.upper()
-    if ticker_upper in FUTURES_SPECS:
-        return {
-            'is_futures': True,
-            'ticker': ticker_upper,
-            **FUTURES_SPECS[ticker_upper]
-        }
-    return {'is_futures': False, 'ticker': ticker_upper, 'multiplier': 100}  # Default for equities
-
-
-def get_contract_multiplier(ticker: str) -> int:
-    """Get contract multiplier for a ticker (futures or equity options)."""
-    ticker_upper = ticker.upper()
-    if ticker_upper in FUTURES_SPECS:
-        return FUTURES_SPECS[ticker_upper]['multiplier']
-    return 100  # Standard equity options = 100 shares
+# Standard equity options contract multiplier (100 shares per contract)
+CONTRACT_MULTIPLIER = 100
 
 
 def get_options_flow(ticker: str) -> Dict:
@@ -347,9 +309,7 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
 
         # Calculate pain at each strike
         # Pain = sum of (intrinsic value * OI) for all options that would be ITM
-        # Get contract multiplier (100 for equities, varies for futures)
-        multiplier = get_contract_multiplier(ticker)
-        futures_info = get_futures_info(ticker)
+        multiplier = CONTRACT_MULTIPLIER
 
         pain_by_strike = []
 
@@ -460,12 +420,10 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
             'total_call_oi': total_call_oi,
             'total_put_oi': total_put_oi,
             'interpretation': interpretation,
-            'is_futures': futures_info.get('is_futures', False),
-            'futures_name': futures_info.get('name'),
             'contract_multiplier': multiplier
         }
 
-        logger.info(f"✅ Max pain for {ticker} ({used_expiration}): ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%, multiplier={multiplier})")
+        logger.info(f"✅ Max pain for {ticker} ({used_expiration}): ${max_pain_price:.2f} (current: ${current_price:.2f}, {direction} by {abs(distance_pct):.1f}%)")
         return result
 
     except Exception as e:
@@ -554,9 +512,7 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
         # GEX = Gamma × OI × Multiplier × Spot Price (in $ terms)
         # Calls: positive contribution (dealers long gamma)
         # Puts: negative contribution (dealers short gamma on puts they sold)
-        # Multiplier: 100 for equities, varies for futures (ES=50, NQ=20, etc.)
-        multiplier = get_contract_multiplier(ticker)
-        futures_info = get_futures_info(ticker)
+        multiplier = CONTRACT_MULTIPLIER
 
         gex_by_strike = []
         total_gex = 0
@@ -609,8 +565,6 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             'total_gex': round(total_gex, 0),
             'gex_by_strike': gex_by_strike,
             'zero_gamma_level': zero_gamma,
-            'is_futures': futures_info.get('is_futures', False),
-            'futures_name': futures_info.get('name'),
             'contract_multiplier': multiplier
         }
 
