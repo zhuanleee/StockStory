@@ -3,6 +3,8 @@ Tastytrade Data Provider
 
 Provides options chain data, Greeks, and market data from Tastytrade API.
 Supports all expirations including 120+ DTE for ratio spread analysis.
+
+Authentication: Uses OAuth2 with client_id, client_secret, and refresh_token.
 """
 
 import os
@@ -17,40 +19,87 @@ logger = logging.getLogger(__name__)
 # Global session cache
 _session = None
 _session_expiry = None
+_tasty_client = None
 
 def get_tastytrade_session():
     """
-    Get or create a Tastytrade session.
+    Get or create a Tastytrade session using OAuth2.
     Sessions are cached and reused until they expire.
+
+    Required environment variables:
+    - TASTYTRADE_CLIENT_ID: OAuth client ID
+    - TASTYTRADE_CLIENT_SECRET: OAuth client secret
+    - TASTYTRADE_REFRESH_TOKEN: OAuth refresh token (long-lived)
     """
-    global _session, _session_expiry
+    global _session, _session_expiry, _tasty_client
 
     # Check if we have a valid cached session
     if _session is not None and _session_expiry and datetime.now() < _session_expiry:
         return _session
 
-    username = os.environ.get('TASTYTRADE_USERNAME')
-    password = os.environ.get('TASTYTRADE_PASSWORD')
+    client_id = os.environ.get('TASTYTRADE_CLIENT_ID')
+    client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+    refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
 
-    if not username or not password:
-        logger.warning("TASTYTRADE_USERNAME or TASTYTRADE_PASSWORD not set")
+    if not client_id or not client_secret:
+        logger.warning("TASTYTRADE_CLIENT_ID or TASTYTRADE_CLIENT_SECRET not set")
+        return None
+
+    if not refresh_token:
+        logger.warning("TASTYTRADE_REFRESH_TOKEN not set - needed for OAuth2")
         return None
 
     try:
-        from tastytrade import Session
+        # Try official SDK first (tastytrade-sdk)
+        try:
+            from tastytrade_sdk import Tastytrade
+            logger.info("Creating Tastytrade session via official SDK (OAuth2)...")
+            _tasty_client = Tastytrade(
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh_token
+            )
+            _session = _tasty_client
+            _session_expiry = datetime.now() + timedelta(minutes=14)  # OAuth tokens last 15 min
+            logger.info("Tastytrade OAuth2 session created successfully (official SDK)")
+            return _session
+        except ImportError:
+            pass
 
-        logger.info("Creating new Tastytrade session...")
-        _session = Session(username, password)
-        # Sessions typically last 24 hours, refresh after 23 hours
-        _session_expiry = datetime.now() + timedelta(hours=23)
-        logger.info("Tastytrade session created successfully")
+        # Fallback to unofficial SDK (tastytrade from tastyware)
+        from tastytrade import Session
+        logger.info("Creating Tastytrade session via unofficial SDK (OAuth2)...")
+        _session = Session(client_secret, refresh_token)
+        _session_expiry = datetime.now() + timedelta(minutes=14)
+        logger.info("Tastytrade OAuth2 session created successfully (unofficial SDK)")
         return _session
 
     except Exception as e:
         logger.error(f"Failed to create Tastytrade session: {e}")
         _session = None
         _session_expiry = None
+        _tasty_client = None
         return None
+
+
+def refresh_tastytrade_session():
+    """Refresh the OAuth session token if needed."""
+    global _session, _session_expiry
+
+    if _session is None:
+        return get_tastytrade_session()
+
+    try:
+        if hasattr(_session, 'refresh'):
+            _session.refresh()
+            _session_expiry = datetime.now() + timedelta(minutes=14)
+            logger.info("Tastytrade session refreshed")
+        return _session
+    except Exception as e:
+        logger.warning(f"Failed to refresh session, creating new one: {e}")
+        _session = None
+        _session_expiry = None
+        return get_tastytrade_session()
 
 
 def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
@@ -621,8 +670,12 @@ def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional
 
 
 def is_tastytrade_available() -> bool:
-    """Check if Tastytrade credentials are configured."""
-    return bool(os.environ.get('TASTYTRADE_USERNAME') and os.environ.get('TASTYTRADE_PASSWORD'))
+    """Check if Tastytrade OAuth2 credentials are configured."""
+    return bool(
+        os.environ.get('TASTYTRADE_CLIENT_ID') and
+        os.environ.get('TASTYTRADE_CLIENT_SECRET') and
+        os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+    )
 
 
 # Export all functions

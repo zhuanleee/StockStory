@@ -2,6 +2,28 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:50 - `6ef4495`
+
+**Add Tastytrade integration for 120 DTE ratio spread analysis**
+
+Files changed: 6
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+requirements.txt
+src/data/options.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:34 - `118e39b`
 
 **Fix term structure validation to require back DTE > front DTE**
