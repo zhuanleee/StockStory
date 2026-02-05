@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 01:52 - `0507a2f`
+
+**Pin Lightweight Charts to v3.8.0 for addCandlestickSeries API**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-06 01:50 - `53271d4`
 
 **Add cache-busting version to force JS reload**

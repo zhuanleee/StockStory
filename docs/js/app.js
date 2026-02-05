@@ -1,5 +1,5 @@
-// Version: 20260206b - Fixed Lightweight Charts API
-console.log('📦 StockStory app.js v20260206b loaded');
+// Version: 20260206c - Added robust error handling
+console.log('📦 StockStory app.js v20260206c loaded');
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'
@@ -6736,6 +6736,17 @@ async function loadOptionsViz(ticker) {
             })
         ]);
 
+        // Validate HTTP responses before parsing JSON
+        if (!gexLevelsRes.ok) {
+            throw new Error(`GEX Levels API error: ${gexLevelsRes.status}`);
+        }
+        if (!gexRes.ok) {
+            throw new Error(`GEX API error: ${gexRes.status}`);
+        }
+        if (!maxPainRes.ok) {
+            throw new Error(`Max Pain API error: ${maxPainRes.status}`);
+        }
+
         const gexLevelsData = await gexLevelsRes.json();
         const gexData = await gexRes.json();
         const maxPainData = await maxPainRes.json();
@@ -6762,7 +6773,7 @@ async function loadOptionsViz(ticker) {
                     high: c.high || c.h,
                     low: c.low || c.l,
                     close: c.close || c.c
-                })).filter(c => c.time && c.open && c.high && c.low && c.close);
+                })).filter(c => c.time && c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0);
             } catch (parseErr) {
                 console.error('Error parsing candle data:', parseErr);
                 optionsVizData.candles = [];
@@ -6779,16 +6790,18 @@ async function loadOptionsViz(ticker) {
         optionsVizData.putWall = levels.put_wall || 0;
         optionsVizData.gammaFlip = levels.gamma_flip || 0;
 
-        // Extract GEX by strike data
+        // Extract GEX by strike data (filter out invalid strikes)
         const gex = gexData.data || {};
-        optionsVizData.gexByStrike = (gex.gex_by_strike || []).map(s => ({
-            strike: s.strike,
-            callGex: s.call_gex || 0,
-            putGex: s.put_gex || 0,
-            netGex: s.net_gex || 0,
-            callOI: s.call_oi || 0,
-            putOI: s.put_oi || 0
-        }));
+        optionsVizData.gexByStrike = (gex.gex_by_strike || [])
+            .filter(s => s.strike != null && !isNaN(s.strike) && s.strike > 0)
+            .map(s => ({
+                strike: s.strike,
+                callGex: s.call_gex || 0,
+                putGex: s.put_gex || 0,
+                netGex: s.net_gex || 0,
+                callOI: s.call_oi || 0,
+                putOI: s.put_oi || 0
+            }));
 
         optionsVizData.totalGex = gex.total_gex || 0;
         const totalCallOI = gex.total_call_oi || 0;
