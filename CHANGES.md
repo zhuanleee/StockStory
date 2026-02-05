@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 17:46 - `880406f`
+
+**Add news endpoints and full Tastytrade futures options integration**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+src/data/options.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 16:19 - `4c28ef1`
 
 **Fix Tastytrade provider for SDK v11 chain structure**
