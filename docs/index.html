@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
         :root {
             /* Base Dark Theme (Enhanced) */
@@ -3602,6 +3603,67 @@
                             <span style="font-size: 0.7rem; color: var(--text-muted);">Signal:</span>
                             <span style="font-size: 0.8rem; font-weight: 600;" id="ql-signal">--</span>
                             <span style="font-size: 0.75rem; color: var(--text-muted);" id="ql-signal-note">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Options Visualization Chart -->
+            <div id="options-viz-container" style="display: none; margin-bottom: 20px;">
+                <div class="card">
+                    <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
+                        <div class="card-title">📊 OPTIONS VISUALIZATION <span id="viz-ticker-label"></span></div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn btn-ghost" onclick="refreshOptionsViz()" title="Refresh">↻</button>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Toggle Panel -->
+                    <div style="padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.75rem;">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" id="viz-toggle-levels" checked onchange="updateOptionsViz()">
+                            <span>Key Levels</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" id="viz-toggle-gex" checked onchange="updateOptionsViz()">
+                            <span>GEX by Strike</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" id="viz-toggle-oi" onchange="updateOptionsViz()">
+                            <span>Open Interest</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" id="viz-toggle-maxpain" checked onchange="updateOptionsViz()">
+                            <span>Max Pain</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                            <input type="checkbox" id="viz-toggle-em" onchange="updateOptionsViz()">
+                            <span>Expected Move</span>
+                        </label>
+                    </div>
+
+                    <!-- Chart Container -->
+                    <div class="card-body" style="padding: 12px;">
+                        <div id="options-viz-chart" style="height: 400px;"></div>
+
+                        <!-- Info bar below chart -->
+                        <div id="viz-info-bar" style="display: flex; justify-content: space-around; padding: 12px; background: var(--bg-hover); border-radius: 8px; margin-top: 12px; font-size: 0.75rem;">
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-muted);">Current Price</div>
+                                <div style="font-weight: 600;" id="viz-current-price">--</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-muted);">Total GEX</div>
+                                <div style="font-weight: 600;" id="viz-total-gex">--</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-muted);">P/C Ratio</div>
+                                <div style="font-weight: 600;" id="viz-pc-ratio">--</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="color: var(--text-muted);">Max Pain</div>
+                                <div style="font-weight: 600;" id="viz-max-pain">--</div>
+                            </div>
                         </div>
                     </div>
                 </div>

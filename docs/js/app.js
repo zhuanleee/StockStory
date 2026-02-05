@@ -5919,6 +5919,9 @@ async function loadOptionsForExpiry() {
         // Load Ratio Spread Conditions after options analysis
         loadRatioSpreadScore();
 
+        // Load Options Visualization chart after other data loads
+        loadOptionsViz(ticker);
+
     } catch (e) {
         console.error('Options analysis error:', e);
         document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
@@ -6879,6 +6882,599 @@ function renderGexChart(gexByStrike, currentPrice) {
             <span style="color: var(--text-muted);">Current Price</span>
         </div>
     `;
+}
+
+// ============================================================================
+// OPTIONS VISUALIZATION (ApexCharts)
+// ============================================================================
+
+// Global state for options visualization chart
+let optionsVizChart = null;
+let optionsVizData = {
+    gexByStrike: [],
+    callOI: [],
+    putOI: [],
+    strikes: [],
+    currentPrice: 0,
+    callWall: 0,
+    putWall: 0,
+    gammaFlip: 0,
+    maxPain: 0,
+    expectedMove: { upper: 0, lower: 0 },
+    totalGex: 0,
+    pcRatio: 0
+};
+
+/**
+ * loadOptionsViz - Main function to fetch all options visualization data
+ * @param {string} ticker - The ticker symbol to load data for
+ */
+async function loadOptionsViz(ticker) {
+    if (!ticker) {
+        ticker = optionsAnalysisTicker;
+    }
+    if (!ticker) {
+        console.warn('loadOptionsViz: No ticker provided');
+        return;
+    }
+
+    const container = document.getElementById('options-viz-container');
+    const chartDiv = document.getElementById('options-viz-chart');
+
+    // Show container
+    container.style.display = 'block';
+
+    // Update ticker label
+    const tickerLabel = document.getElementById('viz-ticker-label');
+    if (tickerLabel) {
+        tickerLabel.textContent = `- ${ticker}`;
+    }
+
+    // Show loading state
+    chartDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);"><span class="loading-spinner" style="margin-right: 8px;"></span>Loading options data...</div>';
+
+    try {
+        const isFutures = ticker.startsWith('/');
+        const tickerParam = encodeURIComponent(ticker);
+        const expiry = document.getElementById('oa-expiry-select')?.value || '';
+        const expiryParam = expiry ? `${isFutures ? '&' : '?'}expiration=${expiry}` : '';
+
+        // Build URLs for all data sources
+        const gexLevelsUrl = isFutures
+            ? `${API_BASE}/options/gex-levels?ticker=${tickerParam}${expiry ? '&expiration=' + expiry : ''}`
+            : `${API_BASE}/options/gex-levels/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+
+        const gexUrl = isFutures
+            ? `${API_BASE}/options/gex?ticker=${tickerParam}${expiry ? '&expiration=' + expiry : ''}`
+            : `${API_BASE}/options/gex/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+
+        const maxPainUrl = isFutures
+            ? `${API_BASE}/options/max-pain?ticker=${tickerParam}${expiry ? '&expiration=' + expiry : ''}`
+            : `${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+
+        // Fetch all data in parallel
+        const [gexLevelsRes, gexRes, maxPainRes] = await Promise.all([
+            fetch(gexLevelsUrl),
+            fetch(gexUrl),
+            fetch(maxPainUrl)
+        ]);
+
+        const gexLevelsData = await gexLevelsRes.json();
+        const gexData = await gexRes.json();
+        const maxPainData = await maxPainRes.json();
+
+        // Extract GEX levels
+        const levels = gexLevelsData.data || {};
+        optionsVizData.currentPrice = levels.current_price || gexData.data?.current_price || 0;
+        optionsVizData.callWall = levels.call_wall || 0;
+        optionsVizData.putWall = levels.put_wall || 0;
+        optionsVizData.gammaFlip = levels.gamma_flip || 0;
+
+        // Extract GEX by strike data
+        const gex = gexData.data || {};
+        optionsVizData.gexByStrike = (gex.gex_by_strike || []).map(s => ({
+            strike: s.strike,
+            callGex: s.call_gex || 0,
+            putGex: s.put_gex || 0,
+            netGex: s.net_gex || 0,
+            callOI: s.call_oi || 0,
+            putOI: s.put_oi || 0
+        }));
+
+        optionsVizData.totalGex = gex.total_gex || 0;
+        const totalCallOI = gex.total_call_oi || 0;
+        const totalPutOI = gex.total_put_oi || 0;
+        optionsVizData.pcRatio = totalCallOI > 0 ? (totalPutOI / totalCallOI) : 0;
+
+        // Extract max pain
+        const maxPain = maxPainData.data || {};
+        optionsVizData.maxPain = maxPain.max_pain || maxPain.maxPain || 0;
+
+        // Calculate expected move if available
+        if (levels.expected_move) {
+            optionsVizData.expectedMove = {
+                upper: levels.expected_move.upper || optionsVizData.currentPrice * 1.02,
+                lower: levels.expected_move.lower || optionsVizData.currentPrice * 0.98
+            };
+        } else {
+            // Default to +/- 2% if no expected move data
+            optionsVizData.expectedMove = {
+                upper: optionsVizData.currentPrice * 1.02,
+                lower: optionsVizData.currentPrice * 0.98
+            };
+        }
+
+        // Extract strikes and OI data
+        optionsVizData.strikes = optionsVizData.gexByStrike.map(s => s.strike);
+        optionsVizData.callOI = optionsVizData.gexByStrike.map(s => s.callOI);
+        optionsVizData.putOI = optionsVizData.gexByStrike.map(s => s.putOI);
+
+        // Update info bar
+        updateVizInfoBar();
+
+        // Render the chart
+        renderOptionsViz();
+
+        console.log('Options Viz loaded for', ticker, optionsVizData);
+
+    } catch (e) {
+        console.error('loadOptionsViz error:', e);
+        chartDiv.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--red);">Error loading options data: ${e.message}</div>`;
+    }
+}
+
+/**
+ * updateVizInfoBar - Update the info bar below the chart
+ */
+function updateVizInfoBar() {
+    const currentPriceEl = document.getElementById('viz-current-price');
+    const totalGexEl = document.getElementById('viz-total-gex');
+    const pcRatioEl = document.getElementById('viz-pc-ratio');
+    const maxPainEl = document.getElementById('viz-max-pain');
+
+    if (currentPriceEl) {
+        currentPriceEl.textContent = optionsVizData.currentPrice > 0
+            ? `$${optionsVizData.currentPrice.toFixed(2)}`
+            : '--';
+    }
+
+    if (totalGexEl) {
+        const gex = optionsVizData.totalGex;
+        const gexDisplay = Math.abs(gex) >= 1e9 ? `$${(gex / 1e9).toFixed(1)}B` :
+                          Math.abs(gex) >= 1e6 ? `$${(gex / 1e6).toFixed(1)}M` :
+                          Math.abs(gex) >= 1e3 ? `$${(gex / 1e3).toFixed(0)}K` :
+                          `$${gex.toFixed(0)}`;
+        totalGexEl.textContent = gexDisplay;
+        totalGexEl.style.color = gex > 0 ? 'var(--green)' : gex < 0 ? 'var(--red)' : 'var(--text)';
+    }
+
+    if (pcRatioEl) {
+        pcRatioEl.textContent = optionsVizData.pcRatio > 0
+            ? optionsVizData.pcRatio.toFixed(2)
+            : '--';
+        const ratio = optionsVizData.pcRatio;
+        pcRatioEl.style.color = ratio < 0.7 ? 'var(--green)' : ratio > 1.0 ? 'var(--red)' : 'var(--text)';
+    }
+
+    if (maxPainEl) {
+        maxPainEl.textContent = optionsVizData.maxPain > 0
+            ? `$${optionsVizData.maxPain.toFixed(0)}`
+            : '--';
+    }
+}
+
+/**
+ * renderOptionsViz - Render the ApexCharts mixed chart
+ */
+function renderOptionsViz() {
+    const chartDiv = document.getElementById('options-viz-chart');
+
+    if (!optionsVizData.gexByStrike || optionsVizData.gexByStrike.length === 0) {
+        chartDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">No GEX data available for visualization</div>';
+        return;
+    }
+
+    // Filter data to reasonable range around current price (+/- 10-15%)
+    let data = optionsVizData.gexByStrike.slice();
+    const currentPrice = optionsVizData.currentPrice;
+
+    if (currentPrice > 0 && data.length > 15) {
+        const minRange = currentPrice * 0.88;
+        const maxRange = currentPrice * 1.12;
+        const filtered = data.filter(d => d.strike >= minRange && d.strike <= maxRange);
+        if (filtered.length >= 5) {
+            data = filtered;
+        }
+    }
+
+    // Limit to 30 strikes centered on current price for readability
+    if (data.length > 30) {
+        const centerIdx = data.findIndex(d => d.strike >= currentPrice) || Math.floor(data.length / 2);
+        const start = Math.max(0, centerIdx - 15);
+        const end = Math.min(data.length, centerIdx + 15);
+        data = data.slice(start, end);
+    }
+
+    if (data.length === 0) {
+        chartDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">No data in visible range</div>';
+        return;
+    }
+
+    // Read checkbox states
+    const showLevels = document.getElementById('viz-toggle-levels')?.checked ?? true;
+    const showGex = document.getElementById('viz-toggle-gex')?.checked ?? true;
+    const showOI = document.getElementById('viz-toggle-oi')?.checked ?? false;
+    const showMaxPain = document.getElementById('viz-toggle-maxpain')?.checked ?? true;
+    const showEM = document.getElementById('viz-toggle-em')?.checked ?? false;
+
+    // Prepare series data
+    const strikes = data.map(d => d.strike);
+    const netGexData = data.map(d => (d.netGex / 1e6)); // Convert to millions
+    const callOIData = data.map(d => d.callOI);
+    const putOIData = data.map(d => -d.putOI); // Negative for visual differentiation
+
+    // Build series array
+    const series = [];
+
+    if (showGex) {
+        series.push({
+            name: 'Net GEX (M)',
+            type: 'bar',
+            data: netGexData
+        });
+    }
+
+    if (showOI) {
+        series.push({
+            name: 'Call OI',
+            type: 'bar',
+            data: callOIData
+        });
+        series.push({
+            name: 'Put OI',
+            type: 'bar',
+            data: putOIData
+        });
+    }
+
+    // Build annotations for key levels
+    const xAxisAnnotations = [];
+    const yAxisAnnotations = [];
+
+    if (showLevels) {
+        // Current Price - white solid line (thicker)
+        if (currentPrice > 0) {
+            xAxisAnnotations.push({
+                x: currentPrice,
+                borderColor: '#ffffff',
+                borderWidth: 3,
+                label: {
+                    text: `Price: $${currentPrice.toFixed(0)}`,
+                    style: {
+                        color: '#ffffff',
+                        background: 'rgba(0,0,0,0.7)',
+                        fontSize: '11px',
+                        fontWeight: 600
+                    },
+                    position: 'top',
+                    offsetY: 0
+                }
+            });
+        }
+
+        // Call Wall - red dashed line
+        if (optionsVizData.callWall > 0 && strikes.includes(optionsVizData.callWall) ||
+            (optionsVizData.callWall >= Math.min(...strikes) && optionsVizData.callWall <= Math.max(...strikes))) {
+            xAxisAnnotations.push({
+                x: optionsVizData.callWall,
+                borderColor: '#ef4444',
+                borderWidth: 2,
+                strokeDashArray: 5,
+                label: {
+                    text: `Call Wall: $${optionsVizData.callWall.toFixed(0)}`,
+                    style: {
+                        color: '#ef4444',
+                        background: 'rgba(239,68,68,0.15)',
+                        fontSize: '10px'
+                    },
+                    position: 'top',
+                    offsetY: 20
+                }
+            });
+        }
+
+        // Put Wall - green dashed line
+        if (optionsVizData.putWall > 0 &&
+            (optionsVizData.putWall >= Math.min(...strikes) && optionsVizData.putWall <= Math.max(...strikes))) {
+            xAxisAnnotations.push({
+                x: optionsVizData.putWall,
+                borderColor: '#22c55e',
+                borderWidth: 2,
+                strokeDashArray: 5,
+                label: {
+                    text: `Put Wall: $${optionsVizData.putWall.toFixed(0)}`,
+                    style: {
+                        color: '#22c55e',
+                        background: 'rgba(34,197,94,0.15)',
+                        fontSize: '10px'
+                    },
+                    position: 'top',
+                    offsetY: 40
+                }
+            });
+        }
+
+        // Gamma Flip - orange dashed line
+        if (optionsVizData.gammaFlip > 0 &&
+            (optionsVizData.gammaFlip >= Math.min(...strikes) && optionsVizData.gammaFlip <= Math.max(...strikes))) {
+            xAxisAnnotations.push({
+                x: optionsVizData.gammaFlip,
+                borderColor: '#f97316',
+                borderWidth: 2,
+                strokeDashArray: 3,
+                label: {
+                    text: `Gamma Flip: $${optionsVizData.gammaFlip.toFixed(0)}`,
+                    style: {
+                        color: '#f97316',
+                        background: 'rgba(249,115,22,0.15)',
+                        fontSize: '10px'
+                    },
+                    position: 'top',
+                    offsetY: 60
+                }
+            });
+        }
+    }
+
+    // Max Pain - purple dotted line
+    if (showMaxPain && optionsVizData.maxPain > 0 &&
+        (optionsVizData.maxPain >= Math.min(...strikes) && optionsVizData.maxPain <= Math.max(...strikes))) {
+        xAxisAnnotations.push({
+            x: optionsVizData.maxPain,
+            borderColor: '#a855f7',
+            borderWidth: 2,
+            strokeDashArray: 2,
+            label: {
+                text: `Max Pain: $${optionsVizData.maxPain.toFixed(0)}`,
+                style: {
+                    color: '#a855f7',
+                    background: 'rgba(168,85,247,0.15)',
+                    fontSize: '10px'
+                },
+                position: 'bottom',
+                offsetY: -10
+            }
+        });
+    }
+
+    // Expected Move - shaded area
+    const shadeAnnotations = [];
+    if (showEM && optionsVizData.expectedMove.upper > 0 && optionsVizData.expectedMove.lower > 0) {
+        shadeAnnotations.push({
+            x: optionsVizData.expectedMove.lower,
+            x2: optionsVizData.expectedMove.upper,
+            fillColor: 'rgba(59, 130, 246, 0.15)',
+            borderColor: 'transparent',
+            label: {
+                text: 'Expected Move',
+                style: {
+                    color: '#3b82f6',
+                    background: 'transparent',
+                    fontSize: '10px'
+                },
+                position: 'top',
+                offsetY: 80
+            }
+        });
+    }
+
+    // Determine colors for GEX bars (green for positive, red for negative)
+    const barColors = showGex ? netGexData.map(val => val >= 0 ? '#22c55e' : '#ef4444') : [];
+
+    // Build chart options
+    const options = {
+        chart: {
+            type: 'bar',
+            height: 400,
+            background: 'transparent',
+            toolbar: {
+                show: true,
+                tools: {
+                    download: true,
+                    selection: false,
+                    zoom: true,
+                    zoomin: true,
+                    zoomout: true,
+                    pan: false,
+                    reset: true
+                }
+            },
+            animations: {
+                enabled: true,
+                easing: 'easeinout',
+                speed: 400
+            }
+        },
+        theme: {
+            mode: 'dark'
+        },
+        series: series,
+        colors: showGex && !showOI ? barColors : ['#22c55e', '#3b82f6', '#ef4444'],
+        plotOptions: {
+            bar: {
+                horizontal: false,
+                columnWidth: '70%',
+                borderRadius: 2,
+                distributed: showGex && !showOI,
+                dataLabels: {
+                    position: 'top'
+                }
+            }
+        },
+        dataLabels: {
+            enabled: false
+        },
+        stroke: {
+            show: true,
+            width: 1,
+            colors: ['transparent']
+        },
+        xaxis: {
+            categories: strikes.map(s => `$${s}`),
+            labels: {
+                rotate: -45,
+                rotateAlways: strikes.length > 15,
+                style: {
+                    colors: 'var(--text-muted)',
+                    fontSize: '10px'
+                },
+                formatter: function(val) {
+                    // Show fewer labels for readability
+                    return val;
+                }
+            },
+            axisBorder: {
+                show: true,
+                color: 'var(--border)'
+            },
+            axisTicks: {
+                show: true,
+                color: 'var(--border)'
+            },
+            title: {
+                text: 'Strike Price',
+                style: {
+                    color: 'var(--text-muted)',
+                    fontSize: '11px'
+                }
+            }
+        },
+        yaxis: showGex ? {
+            title: {
+                text: 'GEX (Millions)',
+                style: {
+                    color: 'var(--text-muted)',
+                    fontSize: '11px'
+                }
+            },
+            labels: {
+                style: {
+                    colors: 'var(--text-muted)',
+                    fontSize: '10px'
+                },
+                formatter: function(val) {
+                    return val.toFixed(1) + 'M';
+                }
+            },
+            axisBorder: {
+                show: true,
+                color: 'var(--border)'
+            }
+        } : {
+            title: {
+                text: 'Open Interest',
+                style: {
+                    color: 'var(--text-muted)',
+                    fontSize: '11px'
+                }
+            },
+            labels: {
+                style: {
+                    colors: 'var(--text-muted)',
+                    fontSize: '10px'
+                },
+                formatter: function(val) {
+                    return Math.abs(val) >= 1000 ? (Math.abs(val) / 1000).toFixed(0) + 'K' : Math.abs(val).toFixed(0);
+                }
+            }
+        },
+        fill: {
+            opacity: 0.85,
+            type: 'solid'
+        },
+        tooltip: {
+            theme: 'dark',
+            shared: true,
+            intersect: false,
+            y: {
+                formatter: function(val, { seriesIndex, dataPointIndex, w }) {
+                    const seriesName = w.config.series[seriesIndex]?.name || '';
+                    if (seriesName.includes('GEX')) {
+                        return `$${(val * 1e6).toLocaleString()} (${val.toFixed(2)}M)`;
+                    } else if (seriesName.includes('OI')) {
+                        return Math.abs(val).toLocaleString() + ' contracts';
+                    }
+                    return val;
+                }
+            },
+            x: {
+                formatter: function(val) {
+                    return `Strike: ${val}`;
+                }
+            }
+        },
+        legend: {
+            show: series.length > 1,
+            position: 'top',
+            horizontalAlign: 'right',
+            labels: {
+                colors: 'var(--text-muted)'
+            }
+        },
+        grid: {
+            borderColor: 'var(--border)',
+            strokeDashArray: 3,
+            xaxis: {
+                lines: {
+                    show: false
+                }
+            },
+            yaxis: {
+                lines: {
+                    show: true
+                }
+            }
+        },
+        annotations: {
+            xaxis: [...xAxisAnnotations, ...shadeAnnotations]
+        }
+    };
+
+    // Destroy existing chart if present
+    if (optionsVizChart) {
+        optionsVizChart.destroy();
+        optionsVizChart = null;
+    }
+
+    // Create new chart
+    optionsVizChart = new ApexCharts(chartDiv, options);
+    optionsVizChart.render();
+}
+
+/**
+ * updateOptionsViz - Called when checkboxes change to update chart
+ */
+function updateOptionsViz() {
+    if (!optionsVizData.gexByStrike || optionsVizData.gexByStrike.length === 0) {
+        return;
+    }
+
+    // Re-render the chart with new options
+    renderOptionsViz();
+}
+
+/**
+ * refreshOptionsViz - Refresh button handler
+ */
+function refreshOptionsViz() {
+    const ticker = optionsAnalysisTicker;
+    if (!ticker) {
+        if (window.toast) {
+            window.toast.warning('Please analyze a ticker first');
+        }
+        return;
+    }
+    loadOptionsViz(ticker);
 }
 
 // Market Options Sentiment loader
