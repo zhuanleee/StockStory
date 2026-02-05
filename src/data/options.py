@@ -1526,16 +1526,34 @@ def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
     """
     try:
         import math
+        import pandas as pd
 
         # Get historical price data (need extra days for return calculation)
         price_data = get_price_data_sync(ticker, days=days + 10)
-        if not price_data or len(price_data) < days:
-            return {"error": "Insufficient price data", "ticker": ticker}
 
-        # Extract closing prices (most recent first, so reverse)
-        closes = [bar.get('close') or bar.get('c') for bar in price_data if bar.get('close') or bar.get('c')]
-        closes = closes[::-1]  # Oldest to newest
+        # Handle DataFrame or list return type
+        if price_data is None:
+            return {"error": "No price data available", "ticker": ticker}
 
+        if isinstance(price_data, pd.DataFrame):
+            if price_data.empty or len(price_data) < days:
+                return {"error": "Insufficient price data", "ticker": ticker}
+            # Extract close prices from DataFrame
+            if 'close' in price_data.columns:
+                closes = price_data['close'].tolist()
+            elif 'c' in price_data.columns:
+                closes = price_data['c'].tolist()
+            else:
+                return {"error": "No close price column found", "ticker": ticker}
+        elif isinstance(price_data, list):
+            if len(price_data) < days:
+                return {"error": "Insufficient price data", "ticker": ticker}
+            closes = [bar.get('close') or bar.get('c') for bar in price_data if bar.get('close') or bar.get('c')]
+        else:
+            return {"error": "Unexpected price data format", "ticker": ticker}
+
+        # Ensure closes are in chronological order (oldest to newest)
+        # Most APIs return newest first, so we may need to reverse
         if len(closes) < days + 1:
             return {"error": "Insufficient price data", "ticker": ticker}
 
@@ -1769,9 +1787,11 @@ def get_skew_analysis(ticker: str, expiration: str = None) -> Dict:
             return {"error": "Could not determine current price", "ticker": ticker}
 
         # Categorize puts by moneyness
-        atm_puts = []  # Within 2% of ATM
-        otm_puts_25d = []  # ~5-10% OTM (approximate 25-delta)
-        otm_puts_10d = []  # ~10-15% OTM (approximate 10-delta)
+        # For 25-delta puts, typical moneyness is ~3-6% OTM (not 5-12%)
+        # For 10-delta puts, typical moneyness is ~6-10% OTM
+        atm_puts = []  # Within 1.5% of ATM
+        otm_puts_25d = []  # 2-5% OTM (approximate 25-delta)
+        otm_puts_10d = []  # 5-8% OTM (approximate 10-delta)
 
         for p in puts:
             strike = p.get('strike', 0)
@@ -1781,13 +1801,17 @@ def get_skew_analysis(ticker: str, expiration: str = None) -> Dict:
             if not iv or not strike:
                 continue
 
+            # Filter out obviously bad IV data (>100% IV is suspicious for near-ATM)
+            if iv > 1.0:  # IV over 100%
+                continue
+
             moneyness = (current_price - strike) / current_price  # Positive = OTM for puts
 
-            if abs(moneyness) < 0.02:  # ATM
+            if abs(moneyness) < 0.015:  # ATM (within 1.5%)
                 atm_puts.append({'strike': strike, 'iv': iv, 'delta': delta})
-            elif 0.05 <= moneyness <= 0.12:  # ~25 delta region
+            elif 0.02 <= moneyness <= 0.05:  # ~25 delta region (2-5% OTM)
                 otm_puts_25d.append({'strike': strike, 'iv': iv, 'delta': delta, 'moneyness': moneyness})
-            elif 0.12 < moneyness <= 0.20:  # ~10 delta region
+            elif 0.05 < moneyness <= 0.08:  # ~10 delta region (5-8% OTM)
                 otm_puts_10d.append({'strike': strike, 'iv': iv, 'delta': delta, 'moneyness': moneyness})
 
         # Also check ATM calls for better ATM IV estimate
@@ -2090,24 +2114,53 @@ def get_iv_term_structure(ticker: str) -> Dict:
                 strike = opt.get('strike', 0)
                 iv = opt.get('implied_volatility') or opt.get('iv')
                 if iv and current_price > 0:
+                    # Filter out unrealistic IVs (must be between 5% and 100%)
+                    if iv < 0.05 or iv > 1.0:
+                        continue
                     moneyness = abs(strike - current_price) / current_price
-                    if moneyness < 0.03:  # Within 3% of ATM
+                    if moneyness < 0.02:  # Within 2% of ATM
                         atm_ivs.append(iv)
 
             return sum(atm_ivs) / len(atm_ivs) if atm_ivs else None
 
-        # Get front month (nearest) and back month (~30 days out)
-        front_exp = exp_data[0]
+        # Get front month (~7-14 DTE) and back month (~30-45 DTE)
+        # Skip 0-3 DTE options as they have distorted IV
+        front_exp = None
+        for exp in exp_data:
+            if 5 <= exp['dte'] <= 14:  # ~1-2 weeks out
+                front_exp = exp
+                break
 
-        # Find expiration around 30 days
+        # If no 7-14 DTE, use first expiration > 3 DTE
+        if not front_exp:
+            for exp in exp_data:
+                if exp['dte'] > 3:
+                    front_exp = exp
+                    break
+
+        if not front_exp:
+            front_exp = exp_data[0]  # Fallback to nearest
+
+        # Find back month (~30-45 DTE)
         back_exp = None
         for exp in exp_data:
-            if exp['dte'] >= 25:
+            if 25 <= exp['dte'] <= 45:
                 back_exp = exp
                 break
 
+        # If no 30-45 DTE, find anything >= 20 DTE
+        if not back_exp:
+            for exp in exp_data:
+                if exp['dte'] >= 20:
+                    back_exp = exp
+                    break
+
         if not back_exp:
             back_exp = exp_data[-1]  # Use furthest available
+
+        # Ensure front and back are different
+        if front_exp['expiration'] == back_exp['expiration'] and len(exp_data) > 1:
+            back_exp = exp_data[-1]
 
         front_iv = get_atm_iv(front_exp['expiration'])
         back_iv = get_atm_iv(back_exp['expiration'])

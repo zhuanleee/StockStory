@@ -2,6 +2,23 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:21 - `e7d4d78`
+
+**Update CHANGES.md with recent GEX and Ratio Spread features**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:19 - `fa1f2f5`
 
 **Add Ratio Spread Conditions dashboard with 6-factor scoring**
