@@ -550,10 +550,11 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
                 oi = p.get('open_interest') or 0
                 put_data[strike] = {'gamma': gamma, 'oi': oi}
 
-        # Calculate GEX per strike
-        # GEX = Gamma × OI × Multiplier × Spot Price (in $ terms)
-        # Calls: positive contribution (dealers long gamma)
-        # Puts: negative contribution (dealers short gamma on puts they sold)
+        # Calculate GEX per strike using INDUSTRY STANDARD formula:
+        # GEX = Gamma × OI × Multiplier × Spot² / 100
+        # This normalizes to "per 1% move" basis (SpotGamma convention)
+        # Calls: positive contribution (dealers sold calls = long gamma exposure)
+        # Puts: negative contribution (dealers sold puts = short gamma exposure)
         # Multiplier: 100 for equities, varies for futures (ES=50, NQ=20, etc.)
         multiplier = get_contract_multiplier(ticker)
         futures_info = get_futures_info(ticker)
@@ -565,10 +566,11 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             call_info = call_data.get(strike, {'gamma': 0, 'oi': 0})
             put_info = put_data.get(strike, {'gamma': 0, 'oi': 0})
 
-            # GEX in dollar terms (gamma × OI × multiplier × spot)
-            call_gex = call_info['gamma'] * call_info['oi'] * multiplier * current_price
-            # Puts: dealers are SHORT gamma, so it's negative
-            put_gex = -put_info['gamma'] * put_info['oi'] * multiplier * current_price
+            # Industry standard GEX formula: Gamma × OI × Multiplier × Spot² / 100
+            # This gives dollar GEX per 1% move in underlying
+            call_gex = call_info['gamma'] * call_info['oi'] * multiplier * (current_price ** 2) / 100
+            # Puts: dealers are SHORT gamma on puts they sold, so negative
+            put_gex = -put_info['gamma'] * put_info['oi'] * multiplier * (current_price ** 2) / 100
             net_gex = call_gex + put_gex
 
             total_gex += net_gex
@@ -945,37 +947,41 @@ def get_gex_regime(ticker: str, expiration: str = None) -> Dict:
         zero_gamma = gex_data.get('zero_gamma_level')
         gex_by_strike = gex_data.get('gex_by_strike', [])
 
-        # Normalize GEX by notional value (price * some proxy for market cap)
-        # For SPY ~$500, total GEX of $1B is significant
-        # Normalization: GEX per $1 of underlying = GEX / (price * 1M shares approx)
+        # Normalize GEX to billions for regime classification
+        # With industry standard formula (Spot² / 100), GEX scales with price²
+        # For SPY at ~$500, typical significant GEX is $2-5B per 1% move
         if current_price > 0:
-            # Use billions as reference point
             gex_normalized = total_gex / 1e9  # GEX in billions
         else:
             gex_normalized = 0
 
-        # Thresholds (calibrated for SPY-like instruments)
-        # These can be ticker-specific in production
-        POSITIVE_GEX_THRESHOLD = 0.5   # $500M+ = strong positive
-        NEGATIVE_GEX_THRESHOLD = -0.3  # -$300M = negative territory
-        TRANSITIONAL_BAND = 0.2        # Within $200M of zero = transitional
+        # Thresholds calibrated for industry standard formula (Spot² / 100)
+        # For SPY ~$500: positive >$2.5B, negative <-$1.5B per 1% move
+        # Scale thresholds by (price/500)² for other tickers
+        price_scale = (current_price / 500) ** 2 if current_price > 0 else 1
+        POSITIVE_GEX_THRESHOLD = 2.5 * price_scale   # Strong positive GEX
+        NEGATIVE_GEX_THRESHOLD = -1.5 * price_scale  # Negative GEX territory
+        TRANSITIONAL_BAND = 1.0 * price_scale        # Near gamma flip zone
 
         # Determine regime
+        # Scale factor for score: normalize to 0-100 range based on thresholds
+        score_scale = 10 / price_scale if price_scale > 0 else 10
+
         if gex_normalized > POSITIVE_GEX_THRESHOLD:
             regime = 'pinned'
-            regime_score = min(100, gex_normalized * 50)  # Scale to 0-100
+            regime_score = min(100, gex_normalized * score_scale)  # Scale to 0-100
             position_sizing = 1.0  # Full size
             strategy_bias = 'mean_reversion'
             recommendation = 'Dealers will dampen moves. Fade breakouts, sell premium, buy dips.'
         elif gex_normalized < NEGATIVE_GEX_THRESHOLD:
             regime = 'volatile'
-            regime_score = max(-100, gex_normalized * 50)  # Scale to -100-0
+            regime_score = max(-100, gex_normalized * score_scale)  # Scale to -100-0
             position_sizing = 0.25  # Quarter size - high risk
             strategy_bias = 'trend_following'
             recommendation = 'Dealers will amplify moves. Follow breakouts, buy premium for protection, reduce size.'
         else:
             regime = 'transitional'
-            regime_score = gex_normalized * 50  # Near zero
+            regime_score = gex_normalized * score_scale  # Near zero
             position_sizing = 0.5  # Half size
             strategy_bias = 'neutral'
             recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
@@ -1001,12 +1007,17 @@ def get_gex_regime(ticker: str, expiration: str = None) -> Dict:
                 max_put_gex = g['put_gex']
                 put_wall = g['strike']
 
+        # Calculate confidence based on how far into the regime we are
+        # Higher absolute regime_score = higher confidence
+        confidence = min(abs(regime_score) / 100, 1.0)
+
         return {
             'ticker': ticker.upper(),
             'expiration': gex_data.get('expiration'),
             'current_price': current_price,
             'regime': regime,
             'regime_score': round(regime_score, 1),
+            'confidence': round(confidence, 2),
             'regime_emoji': '📌' if regime == 'pinned' else '🌊' if regime == 'volatile' else '⚖️',
             'total_gex': total_gex,
             'gex_billions': round(gex_normalized, 3),
