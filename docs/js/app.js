@@ -5945,11 +5945,19 @@ async function loadGexDashboard() {
 
     try {
         // Fetch all GEX data in parallel
-        const expiryParam = expiry ? '?expiration=' + expiry : '';
+        // Use query params for futures (path params don't work with /)
+        const isFutures = ticker.startsWith('/');
+        const expiryParam = expiry ? `&expiration=${expiry}` : '';
         const [regimeRes, levelsRes, combinedRes] = await Promise.all([
-            fetch(`${API_BASE}/options/gex-regime/${ticker}${expiryParam}`),
-            fetch(`${API_BASE}/options/gex-levels/${ticker}${expiryParam}`),
-            fetch(`${API_BASE}/options/combined-regime/${ticker}${expiryParam}`)
+            fetch(isFutures
+                ? `${API_BASE}/options/gex-regime?ticker=${encodeURIComponent(ticker)}${expiryParam}`
+                : `${API_BASE}/options/gex-regime/${ticker}${expiry ? '?expiration=' + expiry : ''}`),
+            fetch(isFutures
+                ? `${API_BASE}/options/gex-levels?ticker=${encodeURIComponent(ticker)}${expiryParam}`
+                : `${API_BASE}/options/gex-levels/${ticker}${expiry ? '?expiration=' + expiry : ''}`),
+            fetch(isFutures
+                ? `${API_BASE}/options/combined-regime?ticker=${encodeURIComponent(ticker)}${expiryParam}`
+                : `${API_BASE}/options/combined-regime/${ticker}${expiry ? '?expiration=' + expiry : ''}`)
         ]);
 
         const regimeData = await regimeRes.json();
@@ -6141,7 +6149,11 @@ async function loadRatioSpreadScore() {
 
     try {
         // Use V2 endpoint with target_dte parameter
-        const response = await fetch(`${API_BASE}/options/ratio-spread-score-v2/${ticker}?target_dte=${targetDTE}`);
+        // Use query params for futures (path params don't work with /)
+        const isFutures = ticker.startsWith('/');
+        const response = await fetch(isFutures
+            ? `${API_BASE}/options/ratio-spread-score-v2?ticker=${encodeURIComponent(ticker)}&target_dte=${targetDTE}`
+            : `${API_BASE}/options/ratio-spread-score-v2/${ticker}?target_dte=${targetDTE}`);
         const data = await response.json();
 
         if (!data.ok || !data.data) {

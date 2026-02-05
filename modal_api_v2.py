@@ -2259,6 +2259,43 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # Query parameter versions for futures support (path params don't work with /)
+    @web_app.get("/options/gex-regime", tags=["Options"])
+    def options_gex_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """GEX Regime (query param version for futures support)"""
+        try:
+            from src.data.options import get_gex_regime
+            result = get_gex_regime(ticker.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-levels", tags=["Options"])
+    def options_gex_levels_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """GEX Levels (query param version for futures support)"""
+        try:
+            from src.data.options import get_gex_levels
+            result = get_gex_levels(ticker.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/combined-regime", tags=["Options"])
+    def options_combined_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """Combined Regime (query param version for futures support)"""
+        try:
+            from src.data.options import get_combined_regime
+            result = get_combined_regime(ticker.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/pc-ratio/{ticker_symbol}", tags=["Options"])
     def options_pc_ratio(ticker_symbol: str = "SPY"):
         """
@@ -2448,6 +2485,21 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             result = get_ratio_spread_score_v2(ticker_symbol.upper(), target_dte)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/ratio-spread-score-v2", tags=["Ratio Spread"])
+    def options_ratio_spread_score_v2_query(
+        ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."),
+        target_dte: int = Query(120, description="Target DTE for your trade (default 120)")
+    ):
+        """Ratio Spread Score V2 (query param version for futures support)"""
+        try:
+            from src.data.options import get_ratio_spread_score_v2
+            result = get_ratio_spread_score_v2(ticker.upper(), target_dte)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
