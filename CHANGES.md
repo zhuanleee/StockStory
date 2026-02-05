@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 16:19 - `4c28ef1`
+
+**Fix Tastytrade provider for SDK v11 chain structure**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+requirements.txt
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 16:02 - `605b41d`
 
 **Fix Tastytrade SDK session creation - use (client_secret, refresh_token)**

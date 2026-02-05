@@ -29,7 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
-    .run_commands("echo 'Build 2026-02-05-v7 - Tastytrade chain fix'")  # Force rebuild
+    .run_commands("echo 'Build 2026-02-05-v34 - Provider comparison with error handling'")
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
@@ -1324,6 +1324,55 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e), "transactions": [], "count": 0}
 
     # =============================================================================
+    # ROUTES - NEWS
+    # =============================================================================
+
+    @web_app.get("/news/{ticker_symbol}", tags=["News"])
+    def get_news(ticker_symbol: str, limit: int = Query(10)):
+        """
+        Get news for a ticker from multiple sources.
+
+        Sources (in priority order):
+        1. Polygon.io (primary)
+        2. Finnhub (professional feed)
+        3. Tiingo (curated news)
+        """
+        try:
+            from src.analysis.news_analyzer import aggregate_news_sources
+            ticker = ticker_symbol.upper()
+            news = aggregate_news_sources(ticker)
+
+            # Limit results
+            news = news[:limit] if news else []
+
+            return {
+                "ok": True,
+                "ticker": ticker,
+                "count": len(news),
+                "news": news
+            }
+        except Exception as e:
+            logger.error(f"News error for {ticker_symbol}: {e}")
+            return {"ok": False, "error": str(e), "news": [], "count": 0}
+
+    @web_app.get("/news", tags=["News"])
+    def get_market_news(limit: int = Query(10)):
+        """
+        Get general market news from multiple sources.
+        """
+        try:
+            from src.data.polygon_provider import get_news_sync
+            news = get_news_sync(ticker=None, limit=limit)
+            return {
+                "ok": True,
+                "count": len(news),
+                "news": news
+            }
+        except Exception as e:
+            logger.error(f"Market news error: {e}")
+            return {"ok": False, "error": str(e), "news": [], "count": 0}
+
+    # =============================================================================
     # ROUTES - OPTIONS (POLYGON)
     # =============================================================================
 
@@ -1348,12 +1397,78 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/chain/{ticker_symbol}")
-    def options_chain(ticker_symbol: str, expiration: str = Query(None)):
-        """Get options chain with Greeks for a ticker"""
+    def options_chain(ticker_symbol: str, expiration: str = Query(None), target_dte: int = Query(None)):
+        """Get options chain with Greeks for a ticker (equities only, use /options/chain for futures)"""
         try:
-            from src.data.options import get_options_chain
-            chain = get_options_chain(ticker_symbol.upper(), expiration)
+            from src.data.options import get_options_chain_sync
+            chain = get_options_chain_sync(ticker_symbol.upper(), expiration, target_dte)
             return {"ok": True, "data": chain}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/chain", tags=["Options"])
+    def options_chain_query(
+        ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, /GC, etc."),
+        expiration: str = Query(None, description="Specific expiration date (YYYY-MM-DD)"),
+        target_dte: int = Query(None, description="Target DTE to find closest expiration")
+    ):
+        """
+        Get options chain with Greeks for equities or futures.
+
+        For futures, use query param: ?ticker=/ES, ?ticker=/NQ, etc.
+
+        Returns options data with Greeks from Tastytrade.
+        """
+        try:
+            from src.data.tastytrade_provider import is_futures_ticker, get_futures_option_chain_tastytrade, get_options_with_greeks_tastytrade
+
+            if is_futures_ticker(ticker):
+                # Use futures options chain
+                chain = get_futures_option_chain_tastytrade(ticker)
+                if chain:
+                    return {"ok": True, "data": chain, "source": "tastytrade_futures"}
+                return {"ok": False, "error": f"No futures options found for {ticker}"}
+            else:
+                # Use equities options chain
+                from src.data.options import get_options_chain_sync
+                chain = get_options_chain_sync(ticker.upper(), expiration, target_dte)
+                return {"ok": True, "data": chain}
+        except Exception as e:
+            logger.error(f"Options chain error for {ticker}: {e}")
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/expirations/{ticker_symbol}")
+    def options_expirations(ticker_symbol: str):
+        """
+        Get all available expirations for a ticker.
+
+        Returns all expiration dates with DTE and strike count.
+        """
+        try:
+            from src.data.tastytrade_provider import get_expirations_tastytrade
+            ticker = ticker_symbol.upper()
+            expirations = get_expirations_tastytrade(ticker)
+            if expirations:
+                return {"ok": True, "data": expirations}
+            return {"ok": False, "error": f"No expirations found for {ticker}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/expirations")
+    def options_expirations_query(ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, etc.")):
+        """
+        Get all available expirations for a ticker (equities or futures).
+
+        For futures, use query param: ?ticker=/ES, ?ticker=/NQ, etc.
+
+        Returns all expiration dates with DTE and strike count.
+        """
+        try:
+            from src.data.tastytrade_provider import get_expirations_tastytrade
+            expirations = get_expirations_tastytrade(ticker)
+            if expirations:
+                return {"ok": True, "data": expirations}
+            return {"ok": False, "error": f"No expirations found for {ticker}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -2406,16 +2521,846 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                 dte = (exp_date - today).days if isinstance(exp_date, date) else "?"
                                 sample.append({"date": str(exp_date), "dte": dte})
                             result["sample_expirations"] = sample
+
+                            # Inspect structure of a valid expiration (at least 7 DTE)
+                            valid_exp = None
+                            for exp_date in sorted(chain.keys()):
+                                dte = (exp_date - today).days
+                                if dte >= 7:
+                                    valid_exp = exp_date
+                                    break
+
+                            if valid_exp:
+                                result["inspected_expiration"] = str(valid_exp)
+                                options_data = chain[valid_exp]
+                                result["options_data_type"] = str(type(options_data))
+                                result["options_count"] = len(options_data) if hasattr(options_data, '__len__') else "unknown"
+
+                                # Chain structure: chain[exp_date] is a LIST of Option objects
+                                if isinstance(options_data, list) and options_data:
+                                    sample_opt = options_data[len(options_data)//2]  # Middle option
+                                    result["option_type_name"] = type(sample_opt).__name__
+                                    result["option_attrs"] = [a for a in dir(sample_opt) if not a.startswith('_')][:25]
+
+                                    # Get key attributes
+                                    if hasattr(sample_opt, 'strike_price'):
+                                        result["sample_strike"] = str(sample_opt.strike_price)
+                                    if hasattr(sample_opt, 'streamer_symbol'):
+                                        result["streamer_symbol"] = sample_opt.streamer_symbol
+                                    if hasattr(sample_opt, 'symbol'):
+                                        result["symbol"] = str(sample_opt.symbol)
+                                    if hasattr(sample_opt, 'option_type'):
+                                        result["option_type"] = sample_opt.option_type
+                                    if hasattr(sample_opt, 'active_symbol'):
+                                        result["active_symbol"] = sample_opt.active_symbol
+
+                                    # Show a few sample options
+                                    samples = []
+                                    for opt in options_data[::50][:5]:  # Every 50th option
+                                        samples.append({
+                                            "strike": str(getattr(opt, 'strike_price', '?')),
+                                            "type": getattr(opt, 'option_type', '?'),
+                                            "streamer": getattr(opt, 'streamer_symbol', '?'),
+                                        })
+                                    result["sample_options"] = samples
                     else:
                         result["chain"] = "empty"
                 except Exception as e:
                     result["chain_error"] = str(e)
+                    result["chain_error_trace"] = tb.format_exc()
 
             except Exception as e:
                 result["unofficial_error"] = str(e)
 
         except ImportError as e:
             result["unofficial_sdk"] = f"import_failed: {e}"
+
+        return result
+
+    @web_app.get("/debug/tastytrade/chain-parse", tags=["Debug"])
+    def debug_tastytrade_chain_parse(ticker: str = Query("SPY"), target_dte: int = Query(30)):
+        """Debug endpoint to test chain parsing without Greeks streaming."""
+        import traceback as tb
+        from datetime import date
+
+        result = {"ticker": ticker, "target_dte": target_dte}
+
+        try:
+            from tastytrade import Session
+            from tastytrade.instruments import get_option_chain
+            import os
+
+            client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+            refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+
+            session = Session(client_secret, refresh_token)
+            result["session"] = "created"
+
+            chain = get_option_chain(session, ticker)
+            result["chain_type"] = str(type(chain))
+            result["expirations"] = len(chain)
+
+            # Find target expiration
+            today = date.today()
+            target_exp = None
+            best_diff = float('inf')
+
+            for exp_date in sorted(chain.keys()):
+                dte = (exp_date - today).days
+                diff = abs(dte - target_dte)
+                if diff < best_diff:
+                    best_diff = diff
+                    target_exp = exp_date
+
+            if target_exp:
+                result["target_exp"] = str(target_exp)
+                result["target_dte_actual"] = (target_exp - today).days
+
+                options_list = chain[target_exp]
+                result["options_list_len"] = len(options_list)
+
+                # Parse options into strikes
+                call_symbols = []
+                put_symbols = []
+                strikes = set()
+
+                for opt in options_list:
+                    strike_price = getattr(opt, 'strike_price', None)
+                    opt_type = getattr(opt, 'option_type', None)
+                    streamer_sym = getattr(opt, 'streamer_symbol', None)
+
+                    if strike_price is not None:
+                        strikes.add(float(strike_price))
+
+                    if opt_type == 'C' and streamer_sym:
+                        call_symbols.append(streamer_sym)
+                    elif opt_type == 'P' and streamer_sym:
+                        put_symbols.append(streamer_sym)
+
+                result["unique_strikes"] = len(strikes)
+                result["call_symbols"] = len(call_symbols)
+                result["put_symbols"] = len(put_symbols)
+                result["sample_calls"] = call_symbols[:3]
+                result["sample_puts"] = put_symbols[:3]
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/tastytrade/stream-test", tags=["Debug"])
+    def debug_tastytrade_stream_test(symbol: str = Query(".SPY260306P600")):
+        """Debug endpoint to test DXLinkStreamer directly."""
+        import traceback as tb
+        import asyncio
+        import os
+
+        result = {"symbol": symbol}
+
+        try:
+            from tastytrade import Session, DXLinkStreamer
+            from tastytrade.dxfeed import Greeks, Quote
+
+            client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+            refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+
+            session = Session(client_secret, refresh_token)
+            result["session"] = "created"
+
+            greeks_received = []
+
+            async def test_stream():
+                import time
+                try:
+                    async with DXLinkStreamer(session) as streamer:
+                        result["streamer"] = "connected"
+
+                        # Subscribe to Greeks for single symbol
+                        await streamer.subscribe(Greeks, [symbol])
+                        result["subscribed"] = True
+
+                        # Try to receive with manual timeout
+                        start_time = time.time()
+                        timeout_sec = 10.0
+
+                        async for greek in streamer.listen(Greeks):
+                            # Inspect the object to see available attributes
+                            result["greek_attrs"] = [a for a in dir(greek) if not a.startswith('_')][:20]
+                            result["greek_type"] = type(greek).__name__
+
+                            # Try different attribute name patterns
+                            event_sym = getattr(greek, 'eventSymbol', None) or getattr(greek, 'event_symbol', None) or getattr(greek, 'symbol', None)
+
+                            greeks_received.append({
+                                "eventSymbol": event_sym,
+                                "volatility": getattr(greek, 'volatility', None),
+                                "delta": getattr(greek, 'delta', None),
+                                "gamma": getattr(greek, 'gamma', None),
+                                "theta": getattr(greek, 'theta', None),
+                                "vega": getattr(greek, 'vega', None),
+                                "price": getattr(greek, 'price', None),
+                                "raw_dict": greek.model_dump() if hasattr(greek, 'model_dump') else str(greek),
+                            })
+                            break  # Just get one
+
+                            if time.time() - start_time > timeout_sec:
+                                result["timeout"] = True
+                                break
+
+                except Exception as e:
+                    result["stream_error"] = str(e)
+                    result["stream_trace"] = tb.format_exc()
+
+            try:
+                asyncio.run(test_stream())
+            except RuntimeError as e:
+                result["asyncio_error"] = str(e)
+
+            result["greeks_received"] = greeks_received
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/tastytrade/greeks", tags=["Debug"])
+    def debug_tastytrade_greeks(ticker: str = Query("SPY"), target_dte: int = Query(30)):
+        """Debug endpoint to test Tastytrade Greeks streaming."""
+        import traceback as tb
+        result = {"ticker": ticker, "target_dte": target_dte}
+
+        try:
+            from src.data.tastytrade_provider import (
+                get_tastytrade_session,
+                get_options_with_greeks_tastytrade,
+                get_iv_by_delta_tastytrade,
+            )
+
+            # Test session
+            session = get_tastytrade_session()
+            result["session"] = "created" if session else "failed"
+
+            # Test Greeks fetching
+            if session:
+                # Enable verbose logging
+                import logging
+                logging.basicConfig(level=logging.DEBUG)
+                logger = logging.getLogger('tastytrade_provider')
+                logger.setLevel(logging.DEBUG)
+
+                try:
+                    greeks_data = get_options_with_greeks_tastytrade(ticker, target_dte=target_dte)
+                except Exception as inner_e:
+                    result["greeks_exception"] = str(inner_e)
+                    result["greeks_exception_trace"] = tb.format_exc()
+                    greeks_data = None
+
+                if greeks_data:
+                    result["greeks_fetch"] = "success"
+                    result["expiration"] = greeks_data.get("expiration")
+                    result["dte"] = greeks_data.get("dte")
+                    result["options_count"] = len(greeks_data.get("options", []))
+
+                    # Count options with actual Greeks data
+                    with_greeks = 0
+                    sample_option = None
+                    sample_raw_options = greeks_data.get("options", [])[:3]  # First 3 options
+
+                    for opt in greeks_data.get("options", []):
+                        if opt.get("put") and opt["put"].get("iv"):
+                            with_greeks += 1
+                            if not sample_option:
+                                sample_option = opt["put"]
+                        if opt.get("call") and opt["call"].get("iv"):
+                            with_greeks += 1
+                            if not sample_option:
+                                sample_option = opt["call"]
+
+                    result["options_with_greeks"] = with_greeks
+                    result["sample_option"] = sample_option
+                    result["sample_raw_options"] = sample_raw_options
+                else:
+                    result["greeks_fetch"] = "failed"
+                    result["greeks_error"] = "No data returned (function returned None)"
+
+                # Test IV by delta
+                iv_data = get_iv_by_delta_tastytrade(ticker, target_dte=target_dte)
+                if iv_data:
+                    result["iv_by_delta"] = {
+                        "atm_iv": iv_data.get("atm_iv_pct"),
+                        "put_25d_iv": iv_data.get("put_25d_iv_pct"),
+                        "skew_25d": iv_data.get("skew_25d"),
+                        "source": iv_data.get("source"),
+                    }
+                else:
+                    result["iv_by_delta"] = "failed"
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/chain-trace", tags=["Debug"])
+    def debug_chain_trace(ticker: str = Query("SPY"), target_dte: int = Query(30)):
+        """Debug endpoint to trace options chain flow."""
+        import traceback as tb
+        result = {"ticker": ticker, "target_dte": target_dte}
+
+        try:
+            # Step 1: Check Tastytrade availability
+            from src.data.options import _is_tastytrade_available, _get_tastytrade_chain
+            result["tastytrade_available"] = _is_tastytrade_available()
+
+            # Step 2: Direct call to tastytrade_provider
+            try:
+                from src.data.tastytrade_provider import get_options_chain_sync_tastytrade
+                direct_chain = get_options_chain_sync_tastytrade(ticker, target_dte=target_dte)
+                if direct_chain:
+                    result["direct_tastytrade"] = {
+                        "success": True,
+                        "source": direct_chain.get("source"),
+                        "expiration": direct_chain.get("expiration"),
+                        "call_count": len(direct_chain.get("calls", [])),
+                        "total_call_oi": direct_chain.get("total_call_oi"),
+                    }
+                else:
+                    result["direct_tastytrade"] = {"success": False, "error": "Returned None"}
+            except Exception as e:
+                result["direct_tastytrade"] = {"success": False, "error": str(e), "trace": tb.format_exc()}
+
+            # Step 3: Try via _get_tastytrade_chain wrapper
+            if result["tastytrade_available"]:
+                try:
+                    tasty_chain = _get_tastytrade_chain(ticker, target_dte=target_dte)
+                    if tasty_chain:
+                        result["tastytrade_chain"] = {
+                            "success": True,
+                            "source": tasty_chain.get("source"),
+                            "expiration": tasty_chain.get("expiration"),
+                            "dte": tasty_chain.get("dte"),
+                            "call_count": len(tasty_chain.get("calls", [])),
+                            "put_count": len(tasty_chain.get("puts", [])),
+                            "total_call_oi": tasty_chain.get("total_call_oi"),
+                            "total_put_oi": tasty_chain.get("total_put_oi"),
+                            "sample_call": tasty_chain.get("calls", [{}])[0] if tasty_chain.get("calls") else None,
+                        }
+                    else:
+                        result["tastytrade_chain"] = {"success": False, "error": "Returned None"}
+                except Exception as e:
+                    result["tastytrade_chain"] = {"success": False, "error": str(e), "trace": tb.format_exc()}
+
+            # Step 3: Test full get_options_chain_sync
+            from src.data.options import get_options_chain_sync
+            try:
+                full_chain = get_options_chain_sync(ticker, target_dte=target_dte)
+                result["full_chain"] = {
+                    "source": full_chain.get("source", "NOT SET"),
+                    "expiration": full_chain.get("expiration"),
+                    "call_count": len(full_chain.get("calls", [])),
+                    "total_call_oi": full_chain.get("total_call_oi", "N/A"),
+                }
+            except Exception as e:
+                result["full_chain"] = {"error": str(e)}
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/tastytrade/capabilities", tags=["Debug"])
+    def debug_tastytrade_capabilities():
+        """Explore all Tastytrade SDK capabilities."""
+        import traceback as tb
+        result = {}
+
+        try:
+            # Check available modules
+            result["modules"] = {}
+
+            # DXFeed event types
+            try:
+                from tastytrade import dxfeed
+                event_types = [name for name in dir(dxfeed) if not name.startswith('_')]
+                result["modules"]["dxfeed_events"] = event_types
+            except Exception as e:
+                result["modules"]["dxfeed_events"] = str(e)
+
+            # Instruments module
+            try:
+                from tastytrade import instruments
+                instrument_funcs = [name for name in dir(instruments) if not name.startswith('_') and callable(getattr(instruments, name, None))]
+                result["modules"]["instruments"] = instrument_funcs
+            except Exception as e:
+                result["modules"]["instruments"] = str(e)
+
+            # Account module
+            try:
+                from tastytrade import Account
+                account_methods = [name for name in dir(Account) if not name.startswith('_')]
+                result["modules"]["account_methods"] = account_methods[:20]  # First 20
+            except Exception as e:
+                result["modules"]["account"] = str(e)
+
+            # Session capabilities
+            try:
+                from tastytrade import Session
+                session_methods = [name for name in dir(Session) if not name.startswith('_')]
+                result["modules"]["session_methods"] = session_methods[:20]
+            except Exception as e:
+                result["modules"]["session"] = str(e)
+
+            # Test live data - Quote streaming
+            try:
+                from src.data.tastytrade_provider import get_tastytrade_session
+                from tastytrade import DXLinkStreamer
+                from tastytrade.dxfeed import Quote, Trade, Summary, Candle
+                import asyncio
+
+                session = get_tastytrade_session()
+                if session:
+                    result["session"] = "active"
+
+                    # Get a quote
+                    quote_data = {}
+                    async def get_quote():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(Quote, ["SPY"])
+                            async for quote in streamer.listen(Quote):
+                                return {
+                                    "symbol": quote.event_symbol,
+                                    "bid": quote.bid_price,
+                                    "ask": quote.ask_price,
+                                    "bid_size": quote.bid_size,
+                                    "ask_size": quote.ask_size,
+                                }
+
+                    try:
+                        import asyncio
+                        quote_data = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_quote(), timeout=5.0)
+                        )
+                    except:
+                        quote_data = asyncio.run(asyncio.wait_for(get_quote(), timeout=5.0))
+
+                    result["live_quote"] = quote_data
+            except Exception as e:
+                result["live_quote_error"] = str(e)
+
+            # Test candle data
+            try:
+                from src.data.tastytrade_provider import get_tastytrade_session
+                from tastytrade import DXLinkStreamer
+                from tastytrade.dxfeed import Candle
+                import asyncio
+
+                session = get_tastytrade_session()
+                if session:
+                    candle_data = {}
+                    async def get_candle():
+                        async with DXLinkStreamer(session) as streamer:
+                            # Candle requires special symbol format
+                            await streamer.subscribe(Candle, ["SPY{=1d}"])
+                            async for candle in streamer.listen(Candle):
+                                return {
+                                    "symbol": candle.event_symbol,
+                                    "open": candle.open,
+                                    "high": candle.high,
+                                    "low": candle.low,
+                                    "close": candle.close,
+                                    "volume": candle.volume,
+                                }
+
+                    try:
+                        candle_data = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_candle(), timeout=5.0)
+                        )
+                    except:
+                        candle_data = asyncio.run(asyncio.wait_for(get_candle(), timeout=5.0))
+
+                    result["live_candle"] = candle_data
+            except Exception as e:
+                result["live_candle_error"] = str(e)
+
+            # Test Trade streaming
+            try:
+                from tastytrade.dxfeed import Trade
+                session = get_tastytrade_session()
+                if session:
+                    async def get_trade():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(Trade, ["SPY"])
+                            async for trade in streamer.listen(Trade):
+                                return {
+                                    "symbol": trade.event_symbol,
+                                    "price": trade.price,
+                                    "size": trade.size,
+                                    "day_volume": getattr(trade, 'day_volume', None),
+                                }
+                    try:
+                        result["live_trade"] = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_trade(), timeout=5.0))
+                    except:
+                        result["live_trade"] = asyncio.run(asyncio.wait_for(get_trade(), timeout=5.0))
+            except Exception as e:
+                result["live_trade_error"] = str(e)
+
+            # Test Profile streaming
+            try:
+                from tastytrade.dxfeed import Profile
+                session = get_tastytrade_session()
+                if session:
+                    async def get_profile():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(Profile, ["SPY"])
+                            async for profile in streamer.listen(Profile):
+                                return {
+                                    "symbol": profile.event_symbol,
+                                    "description": getattr(profile, 'description', None),
+                                    "high_52_week": getattr(profile, 'high_52_week', None),
+                                    "low_52_week": getattr(profile, 'low_52_week', None),
+                                    "beta": getattr(profile, 'beta', None),
+                                    "earnings_per_share": getattr(profile, 'earnings_per_share', None),
+                                    "ex_dividend_amount": getattr(profile, 'ex_dividend_amount', None),
+                                    "short_sale_restriction": getattr(profile, 'short_sale_restriction', None),
+                                }
+                    try:
+                        result["live_profile"] = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_profile(), timeout=5.0))
+                    except:
+                        result["live_profile"] = asyncio.run(asyncio.wait_for(get_profile(), timeout=5.0))
+            except Exception as e:
+                result["live_profile_error"] = str(e)
+
+            # Test Summary streaming (OHLC + OI)
+            try:
+                session = get_tastytrade_session()
+                if session:
+                    async def get_summary():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(Summary, ["SPY"])
+                            async for summary in streamer.listen(Summary):
+                                return {
+                                    "symbol": summary.event_symbol,
+                                    "day_open": getattr(summary, 'day_open_price', None),
+                                    "day_high": getattr(summary, 'day_high_price', None),
+                                    "day_low": getattr(summary, 'day_low_price', None),
+                                    "prev_day_close": getattr(summary, 'prev_day_close_price', None),
+                                    "prev_day_volume": getattr(summary, 'prev_day_volume', None),
+                                    "open_interest": getattr(summary, 'open_interest', None),
+                                }
+                    try:
+                        result["live_summary"] = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_summary(), timeout=5.0))
+                    except:
+                        result["live_summary"] = asyncio.run(asyncio.wait_for(get_summary(), timeout=5.0))
+            except Exception as e:
+                result["live_summary_error"] = str(e)
+
+            # Test Underlying streaming (IV data)
+            try:
+                from tastytrade.dxfeed import Underlying
+                session = get_tastytrade_session()
+                if session:
+                    async def get_underlying():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(Underlying, [".SPY"])
+                            async for underlying in streamer.listen(Underlying):
+                                return {
+                                    "symbol": underlying.event_symbol,
+                                    "volatility": getattr(underlying, 'volatility', None),
+                                    "front_volatility": getattr(underlying, 'front_volatility', None),
+                                    "back_volatility": getattr(underlying, 'back_volatility', None),
+                                    "put_call_ratio": getattr(underlying, 'put_call_ratio', None),
+                                }
+                    try:
+                        result["live_underlying"] = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_underlying(), timeout=5.0))
+                    except:
+                        result["live_underlying"] = asyncio.run(asyncio.wait_for(get_underlying(), timeout=5.0))
+            except Exception as e:
+                result["live_underlying_error"] = str(e)
+
+            # Test TheoPrice streaming (theoretical option price)
+            try:
+                from tastytrade.dxfeed import TheoPrice
+                session = get_tastytrade_session()
+                if session:
+                    async def get_theo():
+                        async with DXLinkStreamer(session) as streamer:
+                            await streamer.subscribe(TheoPrice, [".SPY260220C690"])
+                            async for theo in streamer.listen(TheoPrice):
+                                return {
+                                    "symbol": theo.event_symbol,
+                                    "price": getattr(theo, 'price', None),
+                                    "underlying_price": getattr(theo, 'underlying_price', None),
+                                    "delta": getattr(theo, 'delta', None),
+                                    "gamma": getattr(theo, 'gamma', None),
+                                }
+                    try:
+                        result["live_theoprice"] = asyncio.get_event_loop().run_until_complete(
+                            asyncio.wait_for(get_theo(), timeout=5.0))
+                    except:
+                        result["live_theoprice"] = asyncio.run(asyncio.wait_for(get_theo(), timeout=5.0))
+            except Exception as e:
+                result["live_theoprice_error"] = str(e)
+
+            # List all instrument types supported
+            result["instrument_types"] = [
+                "Equity", "Option", "Future", "FutureOption",
+                "Cryptocurrency", "Warrant", "NestedOptionChain", "NestedFutureOptionChain"
+            ]
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/provider-comparison", tags=["Debug"])
+    def debug_provider_comparison(ticker: str = Query("SPY")):
+        """Compare all data providers side by side for reliability testing."""
+        import traceback as tb
+        import time
+        result = {"ticker": ticker, "tests": {}}
+
+        # 1. TASTYTRADE - Quote
+        try:
+            start = time.time()
+            from src.data.tastytrade_provider import get_tastytrade_session
+            from tastytrade import DXLinkStreamer
+            from tastytrade.dxfeed import Quote, Greeks
+            import asyncio
+
+            session = get_tastytrade_session()
+            if session:
+                async def get_tasty_quote():
+                    async with DXLinkStreamer(session) as streamer:
+                        await streamer.subscribe(Quote, [ticker])
+                        async for quote in streamer.listen(Quote):
+                            return {
+                                "bid": quote.bid_price,
+                                "ask": quote.ask_price,
+                                "mid": (quote.bid_price + quote.ask_price) / 2 if quote.bid_price and quote.ask_price else None,
+                            }
+                try:
+                    tasty_quote = asyncio.get_event_loop().run_until_complete(
+                        asyncio.wait_for(get_tasty_quote(), timeout=5.0))
+                except:
+                    tasty_quote = asyncio.run(asyncio.wait_for(get_tasty_quote(), timeout=5.0))
+
+                result["tests"]["tastytrade_quote"] = {
+                    "status": "success",
+                    "data": tasty_quote,
+                    "latency_ms": int((time.time() - start) * 1000)
+                }
+        except Exception as e:
+            result["tests"]["tastytrade_quote"] = {"status": "error", "error": str(e)}
+
+        # 2. TASTYTRADE - Options Greeks
+        try:
+            start = time.time()
+            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
+            greeks_data = get_options_with_greeks_tastytrade(ticker, target_dte=30)
+            if greeks_data:
+                options = greeks_data.get("options", [])
+                # Find ATM option
+                atm_option = None
+                for opt in options:
+                    if opt.get("call") and opt["call"].get("delta"):
+                        delta = abs(opt["call"]["delta"])
+                        if 0.45 <= delta <= 0.55:
+                            atm_option = opt["call"]
+                            break
+                result["tests"]["tastytrade_greeks"] = {
+                    "status": "success",
+                    "expiration": greeks_data.get("expiration"),
+                    "options_count": len(options),
+                    "atm_sample": atm_option,
+                    "latency_ms": int((time.time() - start) * 1000)
+                }
+            else:
+                result["tests"]["tastytrade_greeks"] = {"status": "error", "error": "No data"}
+        except Exception as e:
+            result["tests"]["tastytrade_greeks"] = {"status": "error", "error": str(e)}
+
+        # 3. POLYGON - Snapshot
+        try:
+            start = time.time()
+            from src.data.polygon_provider import get_snapshot_sync
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                result["tests"]["polygon_snapshot"] = {
+                    "status": "success",
+                    "data": {
+                        "price": snapshot.get("price"),
+                        "change": snapshot.get("change"),
+                        "change_pct": snapshot.get("change_percent"),
+                        "volume": snapshot.get("volume"),
+                        "vwap": snapshot.get("vwap"),
+                    },
+                    "latency_ms": int((time.time() - start) * 1000)
+                }
+            else:
+                result["tests"]["polygon_snapshot"] = {"status": "error", "error": "No data"}
+        except Exception as e:
+            result["tests"]["polygon_snapshot"] = {"status": "error", "error": str(e)}
+
+        # 4. POLYGON - Options Chain
+        try:
+            start = time.time()
+            from src.data.polygon_provider import get_options_chain_sync
+            chain = get_options_chain_sync(ticker)
+            if chain:
+                calls = chain.get("calls", [])
+                puts = chain.get("puts", [])
+                result["tests"]["polygon_options"] = {
+                    "status": "success",
+                    "calls_count": len(calls),
+                    "puts_count": len(puts),
+                    "sample_call": calls[len(calls)//2] if calls else None,
+                    "latency_ms": int((time.time() - start) * 1000)
+                }
+            else:
+                result["tests"]["polygon_options"] = {"status": "error", "error": "No data"}
+        except Exception as e:
+            result["tests"]["polygon_options"] = {"status": "error", "error": str(e)}
+
+        # 5. POLYGON - News
+        try:
+            start = time.time()
+            from src.data.polygon_provider import get_news_sync
+            news = get_news_sync(ticker, limit=3)
+            if news:
+                result["tests"]["polygon_news"] = {
+                    "status": "success",
+                    "count": len(news),
+                    "latest": {
+                        "title": news[0].get("title") if news else None,
+                        "published": news[0].get("published_utc") if news else None,
+                    },
+                    "latency_ms": int((time.time() - start) * 1000)
+                }
+            else:
+                result["tests"]["polygon_news"] = {"status": "error", "error": "No news"}
+        except Exception as e:
+            result["tests"]["polygon_news"] = {"status": "error", "error": str(e)}
+
+        # 6. FINNHUB - Quote
+        try:
+            start = time.time()
+            import requests
+            import os
+            finnhub_key = os.environ.get("FINNHUB_API_KEY")
+            if finnhub_key:
+                resp = requests.get(f"https://finnhub.io/api/v1/quote?symbol={ticker}&token={finnhub_key}", timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    result["tests"]["finnhub_quote"] = {
+                        "status": "success",
+                        "data": {
+                            "current": data.get("c"),
+                            "high": data.get("h"),
+                            "low": data.get("l"),
+                            "open": data.get("o"),
+                            "prev_close": data.get("pc"),
+                        },
+                        "latency_ms": int((time.time() - start) * 1000)
+                    }
+                else:
+                    result["tests"]["finnhub_quote"] = {"status": "error", "error": f"HTTP {resp.status_code}"}
+            else:
+                result["tests"]["finnhub_quote"] = {"status": "error", "error": "No API key"}
+        except Exception as e:
+            result["tests"]["finnhub_quote"] = {"status": "error", "error": str(e)}
+
+        # 7. FINNHUB - News
+        try:
+            start = time.time()
+            import requests
+            import os
+            from datetime import datetime, timedelta
+            finnhub_key = os.environ.get("FINNHUB_API_KEY")
+            if finnhub_key:
+                today = datetime.now().strftime("%Y-%m-%d")
+                week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+                resp = requests.get(
+                    f"https://finnhub.io/api/v1/company-news?symbol={ticker}&from={week_ago}&to={today}&token={finnhub_key}",
+                    timeout=5
+                )
+                if resp.status_code == 200:
+                    news = resp.json()
+                    result["tests"]["finnhub_news"] = {
+                        "status": "success",
+                        "count": len(news),
+                        "latest": {
+                            "headline": news[0].get("headline") if news else None,
+                            "source": news[0].get("source") if news else None,
+                        } if news else None,
+                        "latency_ms": int((time.time() - start) * 1000)
+                    }
+                else:
+                    result["tests"]["finnhub_news"] = {"status": "error", "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            result["tests"]["finnhub_news"] = {"status": "error", "error": str(e)}
+
+        # 8. TIINGO - Price
+        try:
+            start = time.time()
+            import requests
+            import os
+            tiingo_key = os.environ.get("TIINGO_API_KEY")
+            if tiingo_key:
+                resp = requests.get(
+                    f"https://api.tiingo.com/iex/{ticker}",
+                    headers={"Authorization": f"Token {tiingo_key}"},
+                    timeout=5
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data:
+                        d = data[0] if isinstance(data, list) else data
+                        result["tests"]["tiingo_price"] = {
+                            "status": "success",
+                            "data": {
+                                "last": d.get("last"),
+                                "bid": d.get("bidPrice"),
+                                "ask": d.get("askPrice"),
+                                "volume": d.get("volume"),
+                            },
+                            "latency_ms": int((time.time() - start) * 1000)
+                        }
+                    else:
+                        result["tests"]["tiingo_price"] = {"status": "error", "error": "Empty response"}
+                else:
+                    result["tests"]["tiingo_price"] = {"status": "error", "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            result["tests"]["tiingo_price"] = {"status": "error", "error": str(e)}
+
+        # 9. Compare prices
+        prices = {}
+        if result["tests"].get("tastytrade_quote", {}).get("status") == "success":
+            prices["tastytrade"] = result["tests"]["tastytrade_quote"]["data"].get("mid")
+        if result["tests"].get("polygon_snapshot", {}).get("status") == "success":
+            prices["polygon"] = result["tests"]["polygon_snapshot"]["data"].get("price")
+        if result["tests"].get("finnhub_quote", {}).get("status") == "success":
+            prices["finnhub"] = result["tests"]["finnhub_quote"]["data"].get("current")
+        if result["tests"].get("tiingo_price", {}).get("status") == "success":
+            prices["tiingo"] = result["tests"]["tiingo_price"]["data"].get("last")
+
+        if prices:
+            valid_prices = [p for p in prices.values() if p]
+            if valid_prices:
+                avg = sum(valid_prices) / len(valid_prices)
+                result["price_comparison"] = {
+                    "prices": prices,
+                    "average": round(avg, 2),
+                    "max_diff": round(max(valid_prices) - min(valid_prices), 2),
+                    "max_diff_pct": round((max(valid_prices) - min(valid_prices)) / avg * 100, 3)
+                }
 
         return result
 
@@ -3015,6 +3960,128 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                 "status": "healthy" if configured_count >= 5 else "partial" if configured_count >= 3 else "minimal"
             }
         }
+
+    @web_app.get("/debug/news", tags=["Debug"])
+    def debug_news(ticker: str = Query("AAPL")):
+        """
+        Debug news fetching from all providers.
+
+        Tests each news source individually and reports what works.
+        """
+        import os
+        results = {
+            "ticker": ticker,
+            "providers": {}
+        }
+
+        # Test Polygon news
+        polygon_key = os.environ.get('POLYGON_API_KEY', '')
+        if polygon_key:
+            try:
+                from src.data.polygon_provider import get_news_sync
+                news = get_news_sync(ticker=ticker, limit=5)
+                results["providers"]["polygon"] = {
+                    "configured": True,
+                    "count": len(news) if news else 0,
+                    "sample": news[0] if news else None,
+                    "error": None
+                }
+            except Exception as e:
+                results["providers"]["polygon"] = {
+                    "configured": True,
+                    "count": 0,
+                    "sample": None,
+                    "error": str(e)
+                }
+        else:
+            results["providers"]["polygon"] = {"configured": False, "count": 0}
+
+        # Test Finnhub news
+        finnhub_key = os.environ.get('FINNHUB_API_KEY', '')
+        if finnhub_key:
+            try:
+                from utils.data_providers import FinnhubProvider
+                from datetime import datetime, timedelta
+                import requests
+
+                # Direct API call to debug
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=7)
+                url = f"https://finnhub.io/api/v1/company-news?symbol={ticker}&from={start_date.strftime('%Y-%m-%d')}&to={end_date.strftime('%Y-%m-%d')}&token={finnhub_key}"
+
+                raw_resp = requests.get(url, timeout=10)
+                raw_data = raw_resp.json() if raw_resp.status_code == 200 else None
+
+                news = FinnhubProvider.get_company_news(ticker, days_back=7)
+                results["providers"]["finnhub"] = {
+                    "configured": True,
+                    "count": len(news) if news else 0,
+                    "sample": news[0] if news else None,
+                    "raw_api_status": raw_resp.status_code,
+                    "raw_api_count": len(raw_data) if isinstance(raw_data, list) else 0,
+                    "raw_api_sample": raw_data[0] if isinstance(raw_data, list) and raw_data else None,
+                    "error": None
+                }
+            except Exception as e:
+                import traceback
+                results["providers"]["finnhub"] = {
+                    "configured": True,
+                    "count": 0,
+                    "sample": None,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+        else:
+            results["providers"]["finnhub"] = {"configured": False, "count": 0}
+
+        # Test Tiingo news
+        tiingo_key = os.environ.get('TIINGO_API_KEY', '')
+        if tiingo_key:
+            try:
+                from utils.data_providers import TiingoProvider
+                import requests
+
+                # Direct API call to debug
+                headers = {'Authorization': f'Token {tiingo_key}'}
+                url = f"https://api.tiingo.com/tiingo/news?tickers={ticker}&limit=5"
+
+                raw_resp = requests.get(url, headers=headers, timeout=10)
+                raw_data = raw_resp.json() if raw_resp.status_code == 200 else None
+
+                news = TiingoProvider.get_news([ticker], limit=5)
+                results["providers"]["tiingo"] = {
+                    "configured": True,
+                    "count": len(news) if news else 0,
+                    "sample": news[0] if news else None,
+                    "raw_api_status": raw_resp.status_code,
+                    "raw_api_count": len(raw_data) if isinstance(raw_data, list) else 0,
+                    "raw_api_sample": raw_data[0] if isinstance(raw_data, list) and raw_data else None,
+                    "error": None
+                }
+            except Exception as e:
+                import traceback
+                results["providers"]["tiingo"] = {
+                    "configured": True,
+                    "count": 0,
+                    "sample": None,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+        else:
+            results["providers"]["tiingo"] = {"configured": False, "count": 0}
+
+        # Test aggregate function
+        try:
+            from src.analysis.news_analyzer import aggregate_news_sources
+            aggregated = aggregate_news_sources(ticker)
+            results["aggregate"] = {
+                "count": len(aggregated) if aggregated else 0,
+                "providers_used": list(set(n.get('provider', 'unknown') for n in aggregated)) if aggregated else []
+            }
+        except Exception as e:
+            results["aggregate"] = {"error": str(e)}
+
+        return {"ok": True, "debug": results}
 
     @web_app.get("/parameters/status")
     def parameters_status():

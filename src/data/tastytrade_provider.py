@@ -94,6 +94,124 @@ def refresh_tastytrade_session():
         return get_tastytrade_session()
 
 
+def is_futures_ticker(ticker: str) -> bool:
+    """Check if ticker is a futures symbol (starts with /)."""
+    return ticker.startswith('/')
+
+
+def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
+    """
+    Get futures options chain from Tastytrade.
+
+    Args:
+        ticker: Futures symbol starting with / (e.g., /ES, /NQ, /CL, /GC)
+
+    Returns:
+        Dict with futures options chain data
+    """
+    session = get_tastytrade_session()
+    if not session:
+        return None
+
+    try:
+        from tastytrade.instruments import get_future_option_chain
+        from datetime import date
+
+        logger.info(f"Fetching futures options chain for {ticker} from Tastytrade")
+
+        # Get the futures option chain
+        chain = get_future_option_chain(session, ticker)
+
+        if not chain:
+            logger.warning(f"No futures options chain found for {ticker}")
+            return None
+
+        today = date.today()
+        expirations_data = []
+
+        # Chain is keyed by expiration date
+        for exp_date in sorted(chain.keys()):
+            dte = (exp_date - today).days
+            options_list = chain[exp_date]
+
+            # Handle both list and dict structures
+            if isinstance(options_list, dict):
+                # Keyed by strike price
+                strikes_map = {}
+                for strike_price, opt in options_list.items():
+                    strike_float = float(strike_price)
+                    opt_type = getattr(opt, 'option_type', None)
+                    streamer_sym = getattr(opt, 'streamer_symbol', None)
+                    symbol = getattr(opt, 'symbol', None)
+
+                    if strike_float not in strikes_map:
+                        strikes_map[strike_float] = {'call': None, 'put': None}
+
+                    if opt_type == 'C':
+                        strikes_map[strike_float]['call'] = {
+                            'symbol': str(symbol) if symbol else streamer_sym,
+                            'streamer_symbol': streamer_sym,
+                        }
+                    elif opt_type == 'P':
+                        strikes_map[strike_float]['put'] = {
+                            'symbol': str(symbol) if symbol else streamer_sym,
+                            'streamer_symbol': streamer_sym,
+                        }
+            else:
+                # List of options
+                strikes_map = {}
+                for opt in options_list:
+                    strike_price = getattr(opt, 'strike_price', None)
+                    opt_type = getattr(opt, 'option_type', None)
+                    symbol = getattr(opt, 'symbol', None)
+                    streamer_sym = getattr(opt, 'streamer_symbol', None)
+
+                    if strike_price is None:
+                        continue
+
+                    strike_float = float(strike_price)
+                    if strike_float not in strikes_map:
+                        strikes_map[strike_float] = {'call': None, 'put': None}
+
+                    if opt_type == 'C':
+                        strikes_map[strike_float]['call'] = {
+                            'symbol': str(symbol) if symbol else streamer_sym,
+                            'streamer_symbol': streamer_sym,
+                        }
+                    elif opt_type == 'P':
+                        strikes_map[strike_float]['put'] = {
+                            'symbol': str(symbol) if symbol else streamer_sym,
+                            'streamer_symbol': streamer_sym,
+                        }
+
+            strikes_data = [
+                {'strike': strike, 'call': data['call'], 'put': data['put']}
+                for strike, data in sorted(strikes_map.items())
+            ]
+
+            expirations_data.append({
+                'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
+                'dte': dte,
+                'strikes': strikes_data
+            })
+
+        expirations_data.sort(key=lambda x: x['dte'])
+
+        logger.info(f"Found {len(expirations_data)} expirations for futures {ticker}")
+
+        return {
+            'ticker': ticker,
+            'is_futures': True,
+            'expirations': expirations_data
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching Tastytrade futures options chain for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+
+
 def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
     """
     Get full options chain from Tastytrade including all expirations.
@@ -132,39 +250,44 @@ def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
         today = date.today()
         expirations_data = []
 
-        # Chain is a dict keyed by expiration date
+        # SDK v11: chain is a defaultdict keyed by expiration date
+        # chain[exp_date] is a LIST of Option objects
         for exp_date in sorted(chain.keys()):
             dte = (exp_date - today).days
-            strikes_dict = chain[exp_date]  # dict of strike -> options
+            options_list = chain[exp_date]  # LIST of Option objects
 
-            strikes_data = []
-            for strike_price, options in strikes_dict.items():
-                strike_data = {
-                    'strike': float(strike_price),
-                    'call': None,
-                    'put': None
-                }
+            # Group options by strike price
+            strikes_map = {}  # strike -> {'call': Option, 'put': Option}
 
-                # Options is a dict with 'call' and 'put' keys
-                if isinstance(options, dict):
-                    if options.get('call'):
-                        strike_data['call'] = {
-                            'symbol': getattr(options['call'], 'symbol', str(options['call'])),
-                        }
-                    if options.get('put'):
-                        strike_data['put'] = {
-                            'symbol': getattr(options['put'], 'symbol', str(options['put'])),
-                        }
-                else:
-                    # Options might be a list or other structure
-                    for opt in (options if isinstance(options, list) else [options]):
-                        if hasattr(opt, 'option_type'):
-                            if opt.option_type == 'C':
-                                strike_data['call'] = {'symbol': opt.symbol}
-                            elif opt.option_type == 'P':
-                                strike_data['put'] = {'symbol': opt.symbol}
+            for opt in options_list:
+                strike_price = getattr(opt, 'strike_price', None)
+                opt_type = getattr(opt, 'option_type', None)
+                symbol = getattr(opt, 'symbol', None)
+                streamer_sym = getattr(opt, 'streamer_symbol', None)
 
-                strikes_data.append(strike_data)
+                if strike_price is None:
+                    continue
+
+                strike_float = float(strike_price)
+                if strike_float not in strikes_map:
+                    strikes_map[strike_float] = {'call': None, 'put': None}
+
+                if opt_type == 'C':
+                    strikes_map[strike_float]['call'] = {
+                        'symbol': str(symbol) if symbol else streamer_sym,
+                        'streamer_symbol': streamer_sym,
+                    }
+                elif opt_type == 'P':
+                    strikes_map[strike_float]['put'] = {
+                        'symbol': str(symbol) if symbol else streamer_sym,
+                        'streamer_symbol': streamer_sym,
+                    }
+
+            # Convert strikes_map to list
+            strikes_data = [
+                {'strike': strike, 'call': data['call'], 'put': data['put']}
+                for strike, data in sorted(strikes_map.items())
+            ]
 
             expirations_data.append({
                 'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
@@ -204,112 +327,195 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
         return None
 
     try:
-        from tastytrade.instruments import get_option_chain, Option
+        from tastytrade.instruments import get_option_chain
         from tastytrade import DXLinkStreamer
-        from tastytrade.dxfeed import Greeks, Quote
+        from tastytrade.dxfeed import Greeks
+        from datetime import date
 
         logger.info(f"Fetching options with Greeks for {ticker} (target_dte={target_dte})")
 
-        # Get the option chain
+        # Get the option chain - SDK v11 returns defaultdict keyed by expiration date
         chain = get_option_chain(session, ticker)
         if not chain:
             return None
 
-        today = datetime.now().date()
+        today = date.today()
+        exp_dates = sorted(chain.keys())
 
-        # Find the target expiration
-        target_exp = None
+        if not exp_dates:
+            logger.warning(f"No expirations found for {ticker}")
+            return None
+
+        # Find the target expiration date
+        target_exp_date = None
 
         if expiration:
             # Use specified expiration
-            for exp in chain.expirations:
-                if exp.expiration_date.strftime('%Y-%m-%d') == expiration:
-                    target_exp = exp
-                    break
+            from datetime import datetime as dt
+            target_date = dt.strptime(expiration, '%Y-%m-%d').date()
+            if target_date in chain:
+                target_exp_date = target_date
         elif target_dte:
             # Find closest to target DTE
             best_diff = float('inf')
-            for exp in chain.expirations:
-                dte = (exp.expiration_date - today).days
+            for exp_date in exp_dates:
+                dte = (exp_date - today).days
                 diff = abs(dte - target_dte)
                 if diff < best_diff:
                     best_diff = diff
-                    target_exp = exp
+                    target_exp_date = exp_date
         else:
             # Default to first available expiration > 7 DTE
-            for exp in chain.expirations:
-                dte = (exp.expiration_date - today).days
+            for exp_date in exp_dates:
+                dte = (exp_date - today).days
                 if dte >= 7:
-                    target_exp = exp
+                    target_exp_date = exp_date
                     break
 
-        if not target_exp:
+        if not target_exp_date:
+            # Fall back to first available
+            target_exp_date = exp_dates[0] if exp_dates else None
+
+        if not target_exp_date:
             logger.warning(f"No suitable expiration found for {ticker}")
             return None
 
-        exp_date = target_exp.expiration_date
-        dte = (exp_date - today).days
+        dte = (target_exp_date - today).days
+        logger.info(f"Using expiration {target_exp_date} ({dte} DTE)")
 
-        logger.info(f"Using expiration {exp_date} ({dte} DTE)")
+        # Get options for the target expiration
+        # SDK v11: chain[exp_date] is a LIST of Option objects
+        options_list = chain[target_exp_date]
+        logger.info(f"Found {len(options_list)} options for {target_exp_date}")
 
         # Collect all option symbols for streaming
         call_symbols = []
         put_symbols = []
-        strikes = []
+        strike_to_symbols = {}  # Map strike -> {'call': symbol, 'put': symbol}
 
-        for strike in target_exp.strikes:
-            strikes.append(float(strike.strike_price))
-            if strike.call:
-                call_symbols.append(strike.call)
-            if strike.put:
-                put_symbols.append(strike.put)
+        # SDK v11: each item in the list is an Option object with attributes like:
+        # - strike_price: Decimal
+        # - option_type: 'C' or 'P'
+        # - streamer_symbol: string for DXLinkStreamer
+        # - symbol: string ticker symbol
+        for opt in options_list:
+            strike_price = getattr(opt, 'strike_price', None)
+            opt_type = getattr(opt, 'option_type', None)
+            streamer_sym = getattr(opt, 'streamer_symbol', None)
 
-        # Stream Greeks for all options
+            if strike_price is None or opt_type is None or streamer_sym is None:
+                continue
+
+            strike_float = float(strike_price)
+
+            if strike_float not in strike_to_symbols:
+                strike_to_symbols[strike_float] = {'call': None, 'put': None}
+
+            if opt_type == 'C':
+                call_symbols.append(streamer_sym)
+                strike_to_symbols[strike_float]['call'] = streamer_sym
+            elif opt_type == 'P':
+                put_symbols.append(streamer_sym)
+                strike_to_symbols[strike_float]['put'] = streamer_sym
+
+        logger.info(f"Found {len(call_symbols)} calls, {len(put_symbols)} puts")
+
+        # Stream Greeks and Summary (for OI) for all options
         greeks_data = {}
-        quotes_data = {}
+        summary_data = {}
 
-        async def fetch_greeks():
-            async with DXLinkStreamer(session) as streamer:
-                all_symbols = call_symbols + put_symbols
+        async def fetch_greeks_and_summary():
+            import time
+            try:
+                async with DXLinkStreamer(session) as streamer:
+                    all_symbols = call_symbols + put_symbols
+                    if not all_symbols:
+                        return
 
-                # Subscribe to Greeks
-                await streamer.subscribe(Greeks, all_symbols)
+                    logger.info(f"Subscribing to Greeks and Summary for {len(all_symbols)} symbols")
 
-                # Collect data (with timeout)
-                received = 0
-                target = len(all_symbols)
+                    # Import Summary event type
+                    from tastytrade.dxfeed import Summary
 
-                async for greek in streamer.listen(Greeks):
-                    greeks_data[greek.eventSymbol] = {
-                        'iv': greek.volatility,
-                        'delta': greek.delta,
-                        'gamma': greek.gamma,
-                        'theta': greek.theta,
-                        'vega': greek.vega,
-                        'price': greek.price
-                    }
-                    received += 1
-                    if received >= target:
-                        break
+                    # Subscribe to both Greeks and Summary (for OI)
+                    await streamer.subscribe(Greeks, all_symbols)
+                    await streamer.subscribe(Summary, all_symbols)
+
+                    # Collect data with manual timeout
+                    greeks_received = 0
+                    summary_received = 0
+                    target = len(all_symbols)
+                    start_time = time.time()
+                    timeout_sec = 30.0
+
+                    # Listen for Greeks
+                    async for greek in streamer.listen(Greeks):
+                        greeks_data[greek.event_symbol] = {
+                            'iv': greek.volatility,
+                            'delta': greek.delta,
+                            'gamma': greek.gamma,
+                            'theta': greek.theta,
+                            'vega': greek.vega,
+                            'price': greek.price
+                        }
+                        greeks_received += 1
+
+                        if greeks_received >= target:
+                            logger.info(f"Received all {greeks_received} Greeks")
+                            break
+                        if time.time() - start_time > timeout_sec:
+                            logger.warning(f"Greeks streaming timed out after {greeks_received}/{target}")
+                            break
+
+                    # Listen for Summary (OI data)
+                    start_time = time.time()
+                    async for summary in streamer.listen(Summary):
+                        summary_data[summary.event_symbol] = {
+                            'open_interest': summary.open_interest,
+                            'day_volume': getattr(summary, 'prev_day_volume', None),
+                        }
+                        summary_received += 1
+
+                        if summary_received >= target:
+                            logger.info(f"Received all {summary_received} Summary events")
+                            break
+                        if time.time() - start_time > timeout_sec:
+                            logger.warning(f"Summary streaming timed out after {summary_received}/{target}")
+                            break
+
+            except Exception as e:
+                logger.warning(f"Error in Greeks/Summary streaming: {e}")
+                import traceback
+                logger.warning(traceback.format_exc())
 
         # Run async fetch
         try:
-            asyncio.run(fetch_greeks())
+            asyncio.run(fetch_greeks_and_summary())
+        except RuntimeError:
+            # Event loop already running
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(fetch_greeks_and_summary())
         except Exception as e:
-            logger.warning(f"Error streaming Greeks: {e}")
+            logger.warning(f"Error streaming Greeks/Summary: {e}")
+
+        logger.info(f"Received Greeks for {len(greeks_data)} options, Summary for {len(summary_data)} options")
 
         # Build response
         options_data = []
-        for strike in target_exp.strikes:
-            strike_price = float(strike.strike_price)
+        for strike_price in sorted(strike_to_symbols.keys()):
+            symbols = strike_to_symbols[strike_price]
 
             call_data = None
             put_data = None
 
-            if strike.call and strike.call in greeks_data:
-                g = greeks_data[strike.call]
+            call_sym = symbols.get('call')
+            put_sym = symbols.get('put')
+
+            if call_sym and call_sym in greeks_data:
+                g = greeks_data[call_sym]
+                s = summary_data.get(call_sym, {})
                 call_data = {
-                    'symbol': strike.call,
+                    'symbol': call_sym,
                     'strike': strike_price,
                     'type': 'call',
                     'iv': g.get('iv'),
@@ -317,21 +523,26 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
                     'gamma': g.get('gamma'),
                     'theta': g.get('theta'),
                     'vega': g.get('vega'),
-                    'price': g.get('price')
+                    'price': g.get('price'),
+                    'open_interest': s.get('open_interest', 0),
+                    'volume': s.get('day_volume', 0),
                 }
 
-            if strike.put and strike.put in greeks_data:
-                g = greeks_data[strike.put]
+            if put_sym and put_sym in greeks_data:
+                g = greeks_data[put_sym]
+                s = summary_data.get(put_sym, {})
                 put_data = {
-                    'symbol': strike.put,
+                    'symbol': put_sym,
                     'strike': strike_price,
                     'type': 'put',
                     'iv': g.get('iv'),
-                    'delta': abs(g.get('delta', 0)),  # Put delta as positive
+                    'delta': abs(g.get('delta', 0)) if g.get('delta') else None,
                     'gamma': g.get('gamma'),
                     'theta': g.get('theta'),
                     'vega': g.get('vega'),
-                    'price': g.get('price')
+                    'price': g.get('price'),
+                    'open_interest': s.get('open_interest', 0),
+                    'volume': s.get('day_volume', 0),
                 }
 
             options_data.append({
@@ -342,7 +553,7 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
 
         return {
             'ticker': ticker.upper(),
-            'expiration': exp_date.strftime('%Y-%m-%d'),
+            'expiration': target_exp_date.strftime('%Y-%m-%d'),
             'dte': dte,
             'options': options_data,
             'source': 'tastytrade'
@@ -350,25 +561,33 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
 
     except Exception as e:
         logger.error(f"Error fetching Tastytrade Greeks for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
 
-def get_expirations_tastytrade(ticker: str) -> Optional[List[Dict]]:
+def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
     """
-    Get all available expirations for a ticker.
+    Get all available expirations for a ticker (equities or futures).
 
     Returns:
-        List of dicts with 'date' and 'dte' keys
+        Dict with 'ticker', 'is_futures', and 'expirations' list
     """
     session = get_tastytrade_session()
     if not session:
         return None
 
     try:
-        from tastytrade.instruments import get_option_chain
         from datetime import date
 
-        chain = get_option_chain(session, ticker)
+        # Use appropriate chain function for futures vs equities
+        if is_futures_ticker(ticker):
+            from tastytrade.instruments import get_future_option_chain
+            chain = get_future_option_chain(session, ticker)
+        else:
+            from tastytrade.instruments import get_option_chain
+            chain = get_option_chain(session, ticker)
+
         if not chain:
             return None
 
@@ -378,15 +597,28 @@ def get_expirations_tastytrade(ticker: str) -> Optional[List[Dict]]:
         # Chain is a dict keyed by expiration date
         for exp_date in chain.keys():
             dte = (exp_date - today).days
+            # Count strikes at this expiration
+            options_at_exp = chain[exp_date]
+            if isinstance(options_at_exp, dict):
+                strike_count = len(options_at_exp)
+            else:
+                strike_count = len(options_at_exp) // 2  # Calls + puts
+
             expirations.append({
                 'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
-                'dte': dte
+                'dte': dte,
+                'strike_count': strike_count
             })
 
         # Sort by DTE
         expirations.sort(key=lambda x: x['dte'])
 
-        return expirations
+        return {
+            'ticker': ticker,
+            'is_futures': is_futures_ticker(ticker),
+            'expiration_count': len(expirations),
+            'expirations': expirations
+        }
 
     except Exception as e:
         logger.error(f"Error fetching Tastytrade expirations for {ticker}: {e}")
@@ -408,15 +640,26 @@ def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
         quote_data = {}
 
         async def fetch_quote():
-            async with DXLinkStreamer(session) as streamer:
-                await streamer.subscribe(Quote, [ticker])
-                async for quote in streamer.listen(Quote):
-                    quote_data['bid'] = quote.bidPrice
-                    quote_data['ask'] = quote.askPrice
-                    quote_data['last'] = (quote.bidPrice + quote.askPrice) / 2
-                    break
+            try:
+                async with DXLinkStreamer(session) as streamer:
+                    await streamer.subscribe(Quote, [ticker])
+                    import asyncio as aio
+                    try:
+                        async for quote in aio.wait_for(streamer.listen(Quote), timeout=5.0):
+                            quote_data['bid'] = quote.bidPrice
+                            quote_data['ask'] = quote.askPrice
+                            quote_data['last'] = (quote.bidPrice + quote.askPrice) / 2
+                            break
+                    except aio.TimeoutError:
+                        logger.warning(f"Quote streaming timed out for {ticker}")
+            except Exception as e:
+                logger.warning(f"Error in quote streaming: {e}")
 
-        asyncio.run(fetch_quote())
+        try:
+            asyncio.run(fetch_quote())
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(fetch_quote())
 
         return quote_data if quote_data else None
 
@@ -461,8 +704,9 @@ def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: 
         call = opt.get('call')
 
         if put and put.get('delta') and put.get('iv'):
-            delta = put['delta']
-            iv = put['iv']
+            # Convert to float in case of Decimal
+            delta = float(put['delta'])
+            iv = float(put['iv'])
 
             # ATM (~50 delta)
             diff = abs(delta - 0.50)
@@ -483,8 +727,9 @@ def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: 
                 put_10d_iv = iv
 
         if call and call.get('delta') and call.get('iv'):
-            delta = call['delta']
-            iv = call['iv']
+            # Convert to float in case of Decimal
+            delta = float(call['delta'])
+            iv = float(call['iv'])
 
             # 25 delta call
             diff = abs(delta - 0.25)
@@ -541,8 +786,8 @@ def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: in
     if not back_data or not back_data.get('atm_iv'):
         return None
 
-    front_iv = front_data['atm_iv']
-    back_iv = back_data['atm_iv']
+    front_iv = float(front_data['atm_iv'])
+    back_iv = float(back_data['atm_iv'])
 
     # Calculate slope
     slope = (back_iv - front_iv) / back_iv if back_iv > 0 else 0
@@ -596,11 +841,13 @@ def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional
         for opt in data['options']:
             if opt.get('call') and opt.get('put'):
                 # Use put-call parity estimate
-                current_price = opt['strike']
+                current_price = float(opt['strike'])
                 break
 
     if not current_price:
         return None
+
+    current_price = float(current_price)
 
     # Find ATM strike
     atm_strike = None
@@ -609,14 +856,15 @@ def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional
     best_diff = float('inf')
 
     for opt in data['options']:
-        diff = abs(opt['strike'] - current_price)
+        strike = float(opt['strike'])
+        diff = abs(strike - current_price)
         if diff < best_diff:
             best_diff = diff
-            atm_strike = opt['strike']
-            if opt.get('call'):
-                atm_call_price = opt['call'].get('price')
-            if opt.get('put'):
-                atm_put_price = opt['put'].get('price')
+            atm_strike = strike
+            if opt.get('call') and opt['call'].get('price'):
+                atm_call_price = float(opt['call']['price'])
+            if opt.get('put') and opt['put'].get('price'):
+                atm_put_price = float(opt['put']['price'])
 
     if not atm_call_price or not atm_put_price:
         return None
@@ -653,6 +901,408 @@ def is_tastytrade_available() -> bool:
     )
 
 
+# =============================================================================
+# POLYGON-COMPATIBLE WRAPPER FUNCTIONS
+# These functions provide a Polygon-like interface for Tastytrade data
+# =============================================================================
+
+def get_options_chain_sync_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+    """
+    Get options chain in Polygon-compatible format.
+
+    Returns format matching Polygon's options chain response:
+    {
+        'ticker': str,
+        'expiration': str,
+        'calls': [...],
+        'puts': [...],
+        'underlying_price': float,
+        'source': 'tastytrade'
+    }
+    """
+    data = get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
+    if not data:
+        return None
+
+    # Get underlying price - try Polygon snapshot first (more reliable for equities)
+    underlying_price = None
+    try:
+        from src.data.polygon_provider import get_snapshot_sync
+        snapshot = get_snapshot_sync(ticker)
+        if snapshot:
+            underlying_price = snapshot.get('price') or snapshot.get('last_price')
+    except Exception as e:
+        logger.warning(f"Polygon snapshot failed for {ticker}: {e}")
+
+    # Fallback to Tastytrade quote streaming
+    if not underlying_price:
+        quote = get_quote_tastytrade(ticker)
+        underlying_price = quote.get('last') if quote else None
+
+    calls = []
+    puts = []
+
+    for opt in data.get('options', []):
+        strike = float(opt['strike'])
+        if opt.get('call'):
+            c = opt['call']
+            calls.append({
+                'strike': strike,  # Alias for compatibility
+                'strike_price': strike,
+                'expiration_date': data.get('expiration'),
+                'contract_type': 'call',
+                'ticker': c.get('symbol', ''),
+                'implied_volatility': float(c['iv']) if c.get('iv') else None,
+                'iv': float(c['iv']) if c.get('iv') else None,  # Alias
+                'delta': float(c['delta']) if c.get('delta') else None,
+                'gamma': float(c['gamma']) if c.get('gamma') else None,
+                'theta': float(c['theta']) if c.get('theta') else None,
+                'vega': float(c['vega']) if c.get('vega') else None,
+                'open_interest': c.get('open_interest', 0),  # From Summary stream
+                'volume': c.get('volume', 0),  # From Summary stream
+                'last_price': float(c['price']) if c.get('price') else None,
+                'bid': None,
+                'ask': None,
+                'underlying_price': underlying_price,
+            })
+
+        if opt.get('put'):
+            p = opt['put']
+            puts.append({
+                'strike': strike,  # Alias for compatibility
+                'strike_price': strike,
+                'expiration_date': data.get('expiration'),
+                'contract_type': 'put',
+                'ticker': p.get('symbol', ''),
+                'implied_volatility': float(p['iv']) if p.get('iv') else None,
+                'iv': float(p['iv']) if p.get('iv') else None,  # Alias
+                'delta': float(p['delta']) if p.get('delta') else None,
+                'gamma': float(p['gamma']) if p.get('gamma') else None,
+                'theta': float(p['theta']) if p.get('theta') else None,
+                'vega': float(p['vega']) if p.get('vega') else None,
+                'open_interest': p.get('open_interest', 0),  # From Summary stream
+                'volume': p.get('volume', 0),  # From Summary stream
+                'last_price': float(p['price']) if p.get('price') else None,
+                'bid': None,
+                'ask': None,
+                'underlying_price': underlying_price,
+            })
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': data.get('expiration'),
+        'dte': data.get('dte'),
+        'calls': sorted(calls, key=lambda x: x['strike_price']),
+        'puts': sorted(puts, key=lambda x: x['strike_price']),
+        'underlying_price': underlying_price,
+        'total_call_volume': sum(c.get('volume') or 0 for c in calls),
+        'total_put_volume': sum(p.get('volume') or 0 for p in puts),
+        'total_call_oi': sum(c.get('open_interest') or 0 for c in calls),
+        'total_put_oi': sum(p.get('open_interest') or 0 for p in puts),
+        'source': 'tastytrade'
+    }
+
+
+def get_options_flow_sync_tastytrade(ticker: str, target_dte: int = 30) -> Optional[Dict]:
+    """
+    Get options flow summary in Polygon-compatible format.
+
+    Note: Tastytrade doesn't provide real-time flow data like Polygon,
+    so this generates a summary from the current chain state.
+    """
+    chain = get_options_chain_sync_tastytrade(ticker, target_dte=target_dte)
+    if not chain:
+        return None
+
+    calls = chain.get('calls', [])
+    puts = chain.get('puts', [])
+
+    # Calculate aggregate metrics
+    total_call_volume = sum(c.get('volume', 0) for c in calls)
+    total_put_volume = sum(p.get('volume', 0) for p in puts)
+    total_call_oi = sum(c.get('open_interest', 0) for c in calls)
+    total_put_oi = sum(p.get('open_interest', 0) for p in puts)
+
+    # Calculate average IV
+    call_ivs = [c['implied_volatility'] for c in calls if c.get('implied_volatility')]
+    put_ivs = [p['implied_volatility'] for p in puts if p.get('implied_volatility')]
+    avg_call_iv = sum(call_ivs) / len(call_ivs) if call_ivs else None
+    avg_put_iv = sum(put_ivs) / len(put_ivs) if put_ivs else None
+
+    # Put/Call ratio
+    pc_ratio = total_put_volume / total_call_volume if total_call_volume > 0 else 0
+    oi_pc_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+
+    # Sentiment based on put/call ratio
+    if pc_ratio < 0.7:
+        sentiment = 'bullish'
+        sentiment_score = 70
+    elif pc_ratio > 1.3:
+        sentiment = 'bearish'
+        sentiment_score = 30
+    else:
+        sentiment = 'neutral'
+        sentiment_score = 50
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': chain.get('expiration'),
+        'dte': chain.get('dte'),
+        'underlying_price': chain.get('underlying_price'),
+        'total_call_volume': total_call_volume,
+        'total_put_volume': total_put_volume,
+        'total_call_oi': total_call_oi,
+        'total_put_oi': total_put_oi,
+        'put_call_ratio': round(pc_ratio, 3),
+        'oi_put_call_ratio': round(oi_pc_ratio, 3),
+        'avg_call_iv': round(avg_call_iv * 100, 1) if avg_call_iv else None,
+        'avg_put_iv': round(avg_put_iv * 100, 1) if avg_put_iv else None,
+        'sentiment': sentiment,
+        'sentiment_score': sentiment_score,
+        'source': 'tastytrade'
+    }
+
+
+def get_unusual_options_sync_tastytrade(ticker: str, target_dte: int = 30) -> Optional[List[Dict]]:
+    """
+    Detect unusual options activity from Tastytrade chain data.
+
+    Note: Without real-time flow data, this identifies options with
+    high IV relative to ATM or unusual Greeks patterns.
+    """
+    chain = get_options_chain_sync_tastytrade(ticker, target_dte=target_dte)
+    if not chain:
+        return None
+
+    calls = chain.get('calls', [])
+    puts = chain.get('puts', [])
+    underlying_price = chain.get('underlying_price')
+
+    if not underlying_price:
+        return []
+
+    unusual = []
+
+    # Calculate ATM IV for reference
+    atm_call_iv = None
+    atm_put_iv = None
+    best_diff = float('inf')
+
+    for c in calls:
+        diff = abs(c['strike_price'] - underlying_price)
+        if diff < best_diff and c.get('implied_volatility'):
+            best_diff = diff
+            atm_call_iv = c['implied_volatility']
+
+    best_diff = float('inf')
+    for p in puts:
+        diff = abs(p['strike_price'] - underlying_price)
+        if diff < best_diff and p.get('implied_volatility'):
+            best_diff = diff
+            atm_put_iv = p['implied_volatility']
+
+    atm_iv = (atm_call_iv + atm_put_iv) / 2 if atm_call_iv and atm_put_iv else atm_call_iv or atm_put_iv
+
+    if not atm_iv:
+        return []
+
+    # Find options with unusual IV (>1.5x ATM) or high absolute delta OTM
+    for opt in calls + puts:
+        iv = opt.get('implied_volatility')
+        delta = opt.get('delta')
+        strike = opt['strike_price']
+
+        if not iv:
+            continue
+
+        # Check for elevated IV
+        iv_ratio = iv / atm_iv if atm_iv else 1
+        is_otm = (opt['contract_type'] == 'call' and strike > underlying_price) or \
+                 (opt['contract_type'] == 'put' and strike < underlying_price)
+
+        # Flag as unusual if IV is significantly elevated
+        if iv_ratio > 1.3 and is_otm:
+            unusual.append({
+                'ticker': ticker.upper(),
+                'strike': strike,
+                'expiration': opt.get('expiration_date'),
+                'contract_type': opt['contract_type'],
+                'implied_volatility': round(iv * 100, 1),
+                'iv_ratio': round(iv_ratio, 2),
+                'delta': round(delta, 3) if delta else None,
+                'reason': f"IV {round(iv_ratio * 100 - 100)}% above ATM",
+                'sentiment': 'bullish' if opt['contract_type'] == 'call' else 'bearish',
+                'source': 'tastytrade'
+            })
+
+    # Sort by IV ratio
+    unusual.sort(key=lambda x: x.get('iv_ratio', 0), reverse=True)
+
+    return unusual[:20]  # Return top 20
+
+
+def get_gex_data_tastytrade(ticker: str, target_dte: int = None) -> Optional[Dict]:
+    """
+    Calculate Gamma Exposure (GEX) from Tastytrade options data.
+
+    Returns GEX by strike and total market maker gamma exposure.
+    """
+    chain = get_options_chain_sync_tastytrade(ticker, target_dte=target_dte)
+    if not chain:
+        return None
+
+    calls = chain.get('calls', [])
+    puts = chain.get('puts', [])
+    underlying_price = chain.get('underlying_price')
+
+    if not underlying_price:
+        return None
+
+    gex_by_strike = {}
+    total_gex = 0
+
+    # GEX = Gamma × OI × Spot^2 × Contract_Multiplier (100)
+    # Call gamma is positive, put gamma is negative for dealers
+    contract_multiplier = 100
+
+    for c in calls:
+        strike = c['strike_price']
+        gamma = c.get('gamma', 0) or 0
+        oi = c.get('open_interest', 0) or 0
+
+        # Dealers are short calls (customer bought), so positive gamma
+        gex = gamma * oi * (underlying_price ** 2) * contract_multiplier / 1e9
+
+        if strike not in gex_by_strike:
+            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'net_gex': 0}
+        gex_by_strike[strike]['call_gex'] = gex
+        gex_by_strike[strike]['net_gex'] += gex
+        total_gex += gex
+
+    for p in puts:
+        strike = p['strike_price']
+        gamma = p.get('gamma', 0) or 0
+        oi = p.get('open_interest', 0) or 0
+
+        # Dealers are short puts (customer bought), so negative gamma
+        gex = -gamma * oi * (underlying_price ** 2) * contract_multiplier / 1e9
+
+        if strike not in gex_by_strike:
+            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'net_gex': 0}
+        gex_by_strike[strike]['put_gex'] = gex
+        gex_by_strike[strike]['net_gex'] += gex
+        total_gex += gex
+
+    # Find key levels
+    sorted_strikes = sorted(gex_by_strike.items(), key=lambda x: x[1]['net_gex'], reverse=True)
+
+    # Call wall = highest positive GEX strike
+    call_wall = sorted_strikes[0][0] if sorted_strikes and sorted_strikes[0][1]['net_gex'] > 0 else None
+
+    # Put wall = lowest negative GEX strike
+    put_wall_candidates = [(s, d) for s, d in sorted_strikes if d['net_gex'] < 0]
+    put_wall = put_wall_candidates[-1][0] if put_wall_candidates else None
+
+    # Zero gamma level (where GEX flips from positive to negative)
+    zero_gamma = None
+    prev_gex = None
+    for strike in sorted(gex_by_strike.keys()):
+        gex = gex_by_strike[strike]['net_gex']
+        if prev_gex is not None and prev_gex > 0 and gex < 0:
+            zero_gamma = strike
+            break
+        prev_gex = gex
+
+    # Determine regime
+    if total_gex > 0.5:
+        regime = 'positive_gamma'
+        regime_signal = 'supportive'
+    elif total_gex < -0.5:
+        regime = 'negative_gamma'
+        regime_signal = 'volatile'
+    else:
+        regime = 'transitional'
+        regime_signal = 'neutral'
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': chain.get('expiration'),
+        'dte': chain.get('dte'),
+        'underlying_price': underlying_price,
+        'total_gex': round(total_gex, 2),
+        'gex_billions': round(total_gex, 2),
+        'regime': regime,
+        'regime_signal': regime_signal,
+        'call_wall': call_wall,
+        'put_wall': put_wall,
+        'zero_gamma_level': zero_gamma,
+        'gex_by_strike': {str(k): v for k, v in sorted(gex_by_strike.items())},
+        'source': 'tastytrade'
+    }
+
+
+def get_max_pain_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+    """
+    Calculate max pain level from Tastytrade options data.
+
+    Max pain = strike where total option buyer losses are maximized.
+    """
+    chain = get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
+    if not chain:
+        return None
+
+    calls = chain.get('calls', [])
+    puts = chain.get('puts', [])
+    underlying_price = chain.get('underlying_price')
+
+    if not calls or not puts:
+        return None
+
+    # Get all strikes
+    all_strikes = sorted(set([c['strike_price'] for c in calls] + [p['strike_price'] for p in puts]))
+
+    if not all_strikes:
+        return None
+
+    # Calculate pain at each strike
+    pain_by_strike = {}
+
+    for test_price in all_strikes:
+        total_pain = 0
+
+        # Call pain: OI × max(0, test_price - strike) × 100
+        for c in calls:
+            oi = c.get('open_interest', 0) or 0
+            if test_price > c['strike_price']:
+                total_pain += oi * (test_price - c['strike_price']) * 100
+
+        # Put pain: OI × max(0, strike - test_price) × 100
+        for p in puts:
+            oi = p.get('open_interest', 0) or 0
+            if test_price < p['strike_price']:
+                total_pain += oi * (p['strike_price'] - test_price) * 100
+
+        pain_by_strike[test_price] = total_pain
+
+    # Find max pain strike (where pain is minimized for option writers = maximized for buyers)
+    max_pain_strike = min(pain_by_strike.items(), key=lambda x: x[1])[0]
+
+    # Distance from current price
+    distance = ((max_pain_strike - underlying_price) / underlying_price * 100) if underlying_price else 0
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': chain.get('expiration'),
+        'dte': chain.get('dte'),
+        'max_pain': max_pain_strike,
+        'underlying_price': underlying_price,
+        'distance': round(distance, 2),
+        'distance_pct': round(distance, 2),
+        'pain_by_strike': {str(k): round(v, 0) for k, v in sorted(pain_by_strike.items())},
+        'source': 'tastytrade'
+    }
+
+
 # Export all functions
 __all__ = [
     'get_tastytrade_session',
@@ -663,5 +1313,11 @@ __all__ = [
     'get_iv_by_delta_tastytrade',
     'get_term_structure_tastytrade',
     'get_expected_move_tastytrade',
-    'is_tastytrade_available'
+    'is_tastytrade_available',
+    # Polygon-compatible wrappers
+    'get_options_chain_sync_tastytrade',
+    'get_options_flow_sync_tastytrade',
+    'get_unusual_options_sync_tastytrade',
+    'get_gex_data_tastytrade',
+    'get_max_pain_tastytrade',
 ]

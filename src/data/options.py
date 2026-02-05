@@ -2,28 +2,147 @@
 """
 Options Data Aggregator
 
-Centralized wrapper around Polygon options functions for easy API consumption.
-All Polygon functions already exist in polygon_provider.py - this module provides:
-- Clean abstraction layer between Polygon and API endpoints
-- Centralized error handling
-- Data aggregation (overview function)
-- Universe scanning capabilities
+Centralized wrapper around options functions for easy API consumption.
+Uses Tastytrade as primary data source with Polygon as fallback.
+
+Data Source Priority:
+1. Tastytrade - Full options chain with Greeks, IV, all expirations (120+ DTE)
+2. Polygon - Fallback for real-time flow data and when Tastytrade unavailable
 """
 
 from src.data.polygon_provider import (
-    get_options_flow_sync,
-    get_unusual_options_sync,
-    get_options_chain_sync,
+    get_options_flow_sync as get_options_flow_sync_polygon,
+    get_unusual_options_sync as get_unusual_options_sync_polygon,
+    get_options_chain_sync as get_options_chain_sync_polygon,
     get_technical_summary_sync,
     get_options_contracts_sync,
     get_snapshot_sync,
     get_price_data_sync
 )
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# TASTYTRADE INTEGRATION
+# =============================================================================
+
+def _is_tastytrade_available() -> bool:
+    """Check if Tastytrade is available as data source."""
+    try:
+        from src.data.tastytrade_provider import is_tastytrade_available
+        return is_tastytrade_available()
+    except ImportError:
+        return False
+
+
+def _get_tastytrade_chain(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+    """Get options chain from Tastytrade."""
+    try:
+        from src.data.tastytrade_provider import get_options_chain_sync_tastytrade
+        return get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
+    except Exception as e:
+        logger.warning(f"Tastytrade chain fetch failed for {ticker}: {e}")
+        return None
+
+
+def _get_tastytrade_flow(ticker: str, target_dte: int = 30) -> Optional[Dict]:
+    """Get options flow from Tastytrade."""
+    try:
+        from src.data.tastytrade_provider import get_options_flow_sync_tastytrade
+        return get_options_flow_sync_tastytrade(ticker, target_dte)
+    except Exception as e:
+        logger.warning(f"Tastytrade flow fetch failed for {ticker}: {e}")
+        return None
+
+
+def _get_tastytrade_unusual(ticker: str, target_dte: int = 30) -> Optional[List]:
+    """Get unusual options from Tastytrade."""
+    try:
+        from src.data.tastytrade_provider import get_unusual_options_sync_tastytrade
+        return get_unusual_options_sync_tastytrade(ticker, target_dte)
+    except Exception as e:
+        logger.warning(f"Tastytrade unusual fetch failed for {ticker}: {e}")
+        return None
+
+
+def _get_tastytrade_gex(ticker: str, target_dte: int = None) -> Optional[Dict]:
+    """Get GEX data from Tastytrade."""
+    try:
+        from src.data.tastytrade_provider import get_gex_data_tastytrade
+        return get_gex_data_tastytrade(ticker, target_dte)
+    except Exception as e:
+        logger.warning(f"Tastytrade GEX fetch failed for {ticker}: {e}")
+        return None
+
+
+def _get_tastytrade_max_pain(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+    """Get max pain from Tastytrade."""
+    try:
+        from src.data.tastytrade_provider import get_max_pain_tastytrade
+        return get_max_pain_tastytrade(ticker, expiration, target_dte)
+    except Exception as e:
+        logger.warning(f"Tastytrade max pain fetch failed for {ticker}: {e}")
+        return None
+
+
+# =============================================================================
+# UNIFIED OPTIONS DATA FUNCTIONS (Tastytrade first, Polygon fallback)
+# =============================================================================
+
+def get_options_flow_sync(ticker: str, target_dte: int = 30) -> Dict:
+    """Get options flow - Tastytrade first, Polygon fallback."""
+    if _is_tastytrade_available():
+        result = _get_tastytrade_flow(ticker, target_dte)
+        if result:
+            logger.info(f"Options flow for {ticker}: using Tastytrade")
+            return result
+
+    logger.info(f"Options flow for {ticker}: using Polygon fallback")
+    return get_options_flow_sync_polygon(ticker)
+
+
+def get_unusual_options_sync(ticker: str, target_dte: int = 30) -> List:
+    """Get unusual options - Tastytrade first, Polygon fallback."""
+    if _is_tastytrade_available():
+        result = _get_tastytrade_unusual(ticker, target_dte)
+        if result is not None:
+            logger.info(f"Unusual options for {ticker}: using Tastytrade")
+            return result
+
+    logger.info(f"Unusual options for {ticker}: using Polygon fallback")
+    return get_unusual_options_sync_polygon(ticker)
+
+
+def get_options_chain_sync(ticker: str, expiration: str = None, target_dte: int = None) -> Dict:
+    """Get options chain - Tastytrade first, Polygon fallback."""
+    if _is_tastytrade_available():
+        result = _get_tastytrade_chain(ticker, expiration, target_dte)
+        if result:
+            logger.info(f"Options chain for {ticker}: using Tastytrade")
+            return result
+
+    logger.info(f"Options chain for {ticker}: using Polygon fallback")
+    return get_options_chain_sync_polygon(ticker)
+
+
+def get_options_chain_with_oi(ticker: str, expiration: str = None, target_dte: int = None) -> Dict:
+    """
+    Get options chain with open interest - Tastytrade first, Polygon fallback.
+
+    Tastytrade's Summary stream provides OI data via the open_interest field.
+    Falls back to Polygon if Tastytrade is unavailable.
+    """
+    if _is_tastytrade_available():
+        result = _get_tastytrade_chain(ticker, expiration, target_dte)
+        if result and result.get('total_call_oi', 0) > 0:
+            logger.info(f"Options chain with OI for {ticker}: using Tastytrade (OI={result.get('total_call_oi', 0)})")
+            return result
+
+    logger.info(f"Options chain with OI for {ticker}: using Polygon fallback")
+    return get_options_chain_sync_polygon(ticker)
 
 # Futures contract specifications
 # Multiplier = dollar value per point of movement
@@ -95,13 +214,14 @@ def get_options_flow(ticker: str) -> Dict:
         return {"error": str(e)}
 
 
-def get_unusual_activity(ticker: str, threshold: float = 2.0) -> Dict:
+def get_unusual_activity(ticker: str, threshold: float = 2.0, target_dte: int = 30) -> Dict:
     """
     Detect unusual options activity for a ticker.
 
     Args:
         ticker: Stock symbol
-        threshold: Volume/OI ratio threshold (default 2.0x)
+        threshold: Volume/OI ratio threshold (default 2.0x) - used for Polygon
+        target_dte: Target DTE for analysis (default 30)
 
     Returns:
         {
@@ -114,7 +234,18 @@ def get_unusual_activity(ticker: str, threshold: float = 2.0) -> Dict:
     """
     try:
         logger.debug(f"Scanning unusual options activity for {ticker} (threshold: {threshold})")
-        result = get_unusual_options_sync(ticker, threshold)
+        result = get_unusual_options_sync(ticker, target_dte)
+
+        # Handle list result from Tastytrade
+        if isinstance(result, list):
+            return {
+                'unusual_activity': len(result) > 0,
+                'unusual_contracts': result,
+                'signals': [],
+                'summary': {'count': len(result), 'source': 'tastytrade'},
+                'total_unusual_contracts': len(result)
+            }
+
         if result and 'error' not in result:
             count = len(result.get('unusual_contracts', []))
             logger.info(f"✅ Unusual options for {ticker}: {count} contracts, activity={result.get('unusual_activity')}")
@@ -301,8 +432,8 @@ def calculate_max_pain(ticker: str, expiration: str = None) -> Dict:
             except Exception as e:
                 logger.warning(f"Could not fetch expirations for {ticker}: {e}")
 
-        # Get options chain data filtered by expiration
-        chain = get_options_chain_sync(ticker, expiration)
+        # Get options chain data with OI (uses Polygon - OI required for max pain)
+        chain = get_options_chain_with_oi(ticker, expiration)
         if not chain or 'error' in chain:
             return {"error": "Could not fetch options chain", "ticker": ticker}
 
@@ -506,8 +637,8 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             except:
                 pass
 
-        # Get options chain with gamma data
-        chain = get_options_chain_sync(ticker, expiration)
+        # Get options chain with gamma and OI data (uses Polygon - OI required for GEX)
+        chain = get_options_chain_with_oi(ticker, expiration)
         if not chain or 'error' in chain:
             return {"error": "Could not fetch options chain", "ticker": ticker}
 
