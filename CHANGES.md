@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 21:44 - `fb54684`
+
+**Use ETF proxy for futures candle data (ES→SPY, NQ→QQQ, etc.)**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 21:41 - `f36fb57`
 
 **Add Lightweight Charts price visualization with TradingView-style levels**

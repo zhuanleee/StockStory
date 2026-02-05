@@ -6742,14 +6742,15 @@ async function loadOptionsViz(ticker) {
             const candlesData = await candlesRes.json();
             // Convert candle data to Lightweight Charts format
             // Expected format: { time: unix_timestamp or 'YYYY-MM-DD', open, high, low, close }
-            const candles = candlesData.data || candlesData.candles || candlesData || [];
-            optionsVizData.candles = candles.map(c => ({
+            // API returns: {ok: true, data: {ticker, candles: [...]}}
+            const candles = candlesData.data?.candles || candlesData.candles || candlesData || [];
+            optionsVizData.candles = Array.isArray(candles) ? candles.map(c => ({
                 time: c.time || c.date || c.t,
                 open: c.open || c.o,
                 high: c.high || c.h,
                 low: c.low || c.l,
                 close: c.close || c.c
-            })).filter(c => c.time && c.open && c.high && c.low && c.close);
+            })).filter(c => c.time && c.open && c.high && c.low && c.close) : [];
         } else {
             optionsVizData.candles = [];
         }
