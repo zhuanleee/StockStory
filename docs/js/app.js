@@ -6739,19 +6739,33 @@ async function loadOptionsViz(ticker) {
 
         // Parse candle data if available
         if (candlesRes && candlesRes.ok) {
-            const candlesData = await candlesRes.json();
-            // Convert candle data to Lightweight Charts format
-            // Expected format: { time: unix_timestamp or 'YYYY-MM-DD', open, high, low, close }
-            // API returns: {ok: true, data: {ticker, candles: [...]}}
-            const candles = candlesData.data?.candles || candlesData.candles || candlesData || [];
-            optionsVizData.candles = Array.isArray(candles) ? candles.map(c => ({
-                time: c.time || c.date || c.t,
-                open: c.open || c.o,
-                high: c.high || c.h,
-                low: c.low || c.l,
-                close: c.close || c.c
-            })).filter(c => c.time && c.open && c.high && c.low && c.close) : [];
+            try {
+                const candlesData = await candlesRes.json();
+                console.log('Candles API response:', candlesData);
+                // Convert candle data to Lightweight Charts format
+                // API returns: {ok: true, data: {ticker, candles: [...]}}
+                let candles = [];
+                if (candlesData && candlesData.data && Array.isArray(candlesData.data.candles)) {
+                    candles = candlesData.data.candles;
+                } else if (candlesData && Array.isArray(candlesData.candles)) {
+                    candles = candlesData.candles;
+                } else if (Array.isArray(candlesData)) {
+                    candles = candlesData;
+                }
+                console.log('Parsed candles array:', candles.length, 'items');
+                optionsVizData.candles = candles.map(c => ({
+                    time: c.time || c.date || c.t,
+                    open: c.open || c.o,
+                    high: c.high || c.h,
+                    low: c.low || c.l,
+                    close: c.close || c.c
+                })).filter(c => c.time && c.open && c.high && c.low && c.close);
+            } catch (parseErr) {
+                console.error('Error parsing candle data:', parseErr);
+                optionsVizData.candles = [];
+            }
         } else {
+            console.warn('Candles response not ok:', candlesRes?.status);
             optionsVizData.candles = [];
         }
 

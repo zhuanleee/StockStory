@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 01:37 - `305d4aa`
+
+**Fix candles.map error - access nested candles array correctly**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-05 21:44 - `fb54684`
 
 **Use ETF proxy for futures candle data (ES→SPY, NQ→QQQ, etc.)**
