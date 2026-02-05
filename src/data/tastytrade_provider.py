@@ -37,48 +37,40 @@ def get_tastytrade_session():
     if _session is not None and _session_expiry and datetime.now() < _session_expiry:
         return _session
 
-    client_id = os.environ.get('TASTYTRADE_CLIENT_ID')
     client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
     refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
 
-    if not client_id or not client_secret:
-        logger.warning("TASTYTRADE_CLIENT_ID or TASTYTRADE_CLIENT_SECRET not set")
+    if not client_secret:
+        logger.warning("TASTYTRADE_CLIENT_SECRET not set")
         return None
 
     if not refresh_token:
-        logger.warning("TASTYTRADE_REFRESH_TOKEN not set - needed for OAuth2")
+        logger.warning("TASTYTRADE_REFRESH_TOKEN not set")
         return None
 
     try:
-        # Try official SDK first (tastytrade-sdk)
-        try:
-            from tastytrade_sdk import Tastytrade
-            logger.info("Creating Tastytrade session via official SDK (OAuth2)...")
-            _tasty_client = Tastytrade(
-                client_id=client_id,
-                client_secret=client_secret,
-                refresh_token=refresh_token
-            )
-            _session = _tasty_client
-            _session_expiry = datetime.now() + timedelta(minutes=14)  # OAuth tokens last 15 min
-            logger.info("Tastytrade OAuth2 session created successfully (official SDK)")
-            return _session
-        except ImportError:
-            pass
-
-        # Fallback to unofficial SDK (tastytrade from tastyware)
+        # Use unofficial SDK (tastytrade from tastyware) - it's more mature
+        # Session takes (client_secret, refresh_token) directly
         from tastytrade import Session
         logger.info("Creating Tastytrade session via unofficial SDK (OAuth2)...")
+        logger.info(f"Using client_secret: {client_secret[:10]}... refresh_token: {refresh_token[:20]}...")
+
         _session = Session(client_secret, refresh_token)
         _session_expiry = datetime.now() + timedelta(minutes=14)
-        logger.info("Tastytrade OAuth2 session created successfully (unofficial SDK)")
+        logger.info("Tastytrade OAuth2 session created successfully")
         return _session
 
-    except Exception as e:
-        logger.error(f"Failed to create Tastytrade session: {e}")
+    except ImportError as e:
+        logger.error(f"Tastytrade SDK not installed: {e}")
         _session = None
         _session_expiry = None
-        _tasty_client = None
+        return None
+    except Exception as e:
+        logger.error(f"Failed to create Tastytrade session: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        _session = None
+        _session_expiry = None
         return None
 
 
@@ -671,8 +663,8 @@ def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional
 
 def is_tastytrade_available() -> bool:
     """Check if Tastytrade OAuth2 credentials are configured."""
+    # Unofficial SDK only needs client_secret and refresh_token
     return bool(
-        os.environ.get('TASTYTRADE_CLIENT_ID') and
         os.environ.get('TASTYTRADE_CLIENT_SECRET') and
         os.environ.get('TASTYTRADE_REFRESH_TOKEN')
     )

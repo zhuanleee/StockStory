@@ -29,7 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
-    .run_commands("echo 'Build 2026-02-05-v5 - Tastytrade integration'")  # Force rebuild
+    .run_commands("echo 'Build 2026-02-05-v6 - Tastytrade OAuth credentials'")  # Force rebuild
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
@@ -45,7 +45,10 @@ image = (
 @app.function(
     image=image,
     volumes={VOLUME_PATH: volume},
-    secrets=[modal.Secret.from_name("Stock_Story")],
+    secrets=[
+        modal.Secret.from_name("Stock_Story"),
+        modal.Secret.from_name("Tastytrade_API"),
+    ],
     min_containers=1,
     timeout=600
 )

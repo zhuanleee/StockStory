@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:52 - `286d896`
+
+**Update Tastytrade provider to use OAuth2 authentication**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+requirements.txt
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:50 - `6ef4495`
 
 **Add Tastytrade integration for 120 DTE ratio spread analysis**
