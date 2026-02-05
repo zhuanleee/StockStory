@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 21:23 - `58171d1`
+
+**Add ApexCharts interactive options visualization**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-05 21:16 - `f7e7402`
 
 **Add enhanced Key Levels components to GEX Dashboard and Options tab**

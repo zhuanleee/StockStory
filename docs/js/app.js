@@ -5676,7 +5676,6 @@ async function loadOptionsAnalysis() {
         tickerEl.textContent = ticker;
     }
     document.getElementById('oa-interpretation').textContent = 'Loading analysis...';
-    document.getElementById('oa-chart').innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 40px;">Loading...</div>';
 
     // Load expirations first
     const expirySelect = document.getElementById('oa-expiry-select');
@@ -5897,7 +5896,7 @@ async function loadOptionsForExpiry() {
         // Store chart data
         optionsChartData.currentPrice = currentPrice;
 
-        // Use real GEX data from API (calculated with actual gamma values)
+        // Store GEX data
         optionsChartData.gexByStrike = (gex.gex_by_strike || []).map(s => ({
             strike: s.strike,
             callGex: s.call_gex || 0,
@@ -5905,16 +5904,10 @@ async function loadOptionsForExpiry() {
             netGex: s.net_gex || 0
         }));
 
-        // Always render GEX chart
-        renderGexChart(optionsChartData.gexByStrike, currentPrice);
-
         console.log('✅ Options analysis loaded for', ticker, gex.expiration);
 
         // Load GEX Dashboard after options analysis
         loadGexDashboard();
-
-        // Load Quick Levels card after options analysis
-        loadQuickLevels();
 
         // Load Ratio Spread Conditions after options analysis
         loadRatioSpreadScore();
@@ -5925,136 +5918,6 @@ async function loadOptionsForExpiry() {
     } catch (e) {
         console.error('Options analysis error:', e);
         document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
-    }
-}
-
-// Quick Levels Card - Simplified key levels for Options Analysis section
-async function loadQuickLevels(ticker) {
-    // Use provided ticker or fall back to current optionsAnalysisTicker
-    ticker = ticker || optionsAnalysisTicker;
-    if (!ticker) return;
-
-    const container = document.getElementById('quick-levels-container');
-    container.style.display = 'block';
-    document.getElementById('ql-ticker').textContent = ticker;
-
-    // Reset fields
-    ['ql-support', 'ql-resistance', 'ql-range', 'ql-signal'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = '--';
-    });
-    ['ql-support-dist', 'ql-resistance-dist', 'ql-signal-note'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = '';
-    });
-
-    try {
-        const expiry = document.getElementById('oa-expiry-select')?.value || '';
-        const isFutures = ticker.startsWith('/');
-        const expiryParam = expiry ? `&expiration=${expiry}` : '';
-
-        const url = isFutures
-            ? `${API_BASE}/options/gex-levels?ticker=${encodeURIComponent(ticker)}${expiryParam}`
-            : `${API_BASE}/options/gex-levels/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
-
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (!data.ok || !data.data) {
-            document.getElementById('ql-signal').textContent = 'No data available';
-            return;
-        }
-
-        const l = data.data;
-        const currentPrice = l.current_price || 0;
-        const putWall = l.put_wall;   // Support
-        const callWall = l.call_wall; // Resistance
-
-        // Support (put wall)
-        const supportEl = document.getElementById('ql-support');
-        const supportDistEl = document.getElementById('ql-support-dist');
-        if (putWall) {
-            supportEl.textContent = `$${putWall.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-            if (currentPrice) {
-                const dist = ((putWall - currentPrice) / currentPrice * 100).toFixed(1);
-                supportDistEl.textContent = `${dist > 0 ? '+' : ''}${dist}%`;
-                supportDistEl.style.color = dist >= 0 ? 'var(--green)' : 'var(--red)';
-            }
-        } else {
-            supportEl.textContent = '--';
-        }
-
-        // Resistance (call wall)
-        const resistEl = document.getElementById('ql-resistance');
-        const resistDistEl = document.getElementById('ql-resistance-dist');
-        if (callWall) {
-            resistEl.textContent = `$${callWall.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-            if (currentPrice) {
-                const dist = ((callWall - currentPrice) / currentPrice * 100).toFixed(1);
-                resistDistEl.textContent = `${dist > 0 ? '+' : ''}${dist}%`;
-                resistDistEl.style.color = dist >= 0 ? 'var(--green)' : 'var(--red)';
-            }
-        } else {
-            resistEl.textContent = '--';
-        }
-
-        // Range between walls
-        const rangeEl = document.getElementById('ql-range');
-        if (putWall && callWall && putWall > 0) {
-            const range = ((callWall - putWall) / putWall * 100).toFixed(1);
-            rangeEl.textContent = `${range}%`;
-        } else {
-            rangeEl.textContent = '--';
-        }
-
-        // Derive signal based on price position
-        const signalEl = document.getElementById('ql-signal');
-        const signalNoteEl = document.getElementById('ql-signal-note');
-
-        if (callWall && putWall && currentPrice) {
-            const distToCall = ((callWall - currentPrice) / currentPrice) * 100;
-            const distToPut = ((currentPrice - putWall) / currentPrice) * 100;
-            const midpoint = (callWall + putWall) / 2;
-
-            let signal = 'NEUTRAL';
-            let signalColor = 'var(--text)';
-            let note = '';
-
-            if (distToPut < 2) {
-                signal = 'BULLISH';
-                signalColor = 'var(--green)';
-                note = `Near put support`;
-            } else if (distToCall < 2) {
-                signal = 'BEARISH';
-                signalColor = 'var(--red)';
-                note = `Near call resistance`;
-            } else if (currentPrice < midpoint) {
-                signal = 'BULLISH';
-                signalColor = 'var(--green)';
-                note = `Below midpoint, room to upside`;
-            } else if (currentPrice > midpoint) {
-                signal = 'BEARISH';
-                signalColor = 'var(--red)';
-                note = `Above midpoint, near resistance`;
-            } else {
-                note = `At midpoint of range`;
-            }
-
-            signalEl.textContent = signal;
-            signalEl.style.color = signalColor;
-            signalNoteEl.textContent = `- ${note}`;
-        } else {
-            signalEl.textContent = 'N/A';
-            signalEl.style.color = 'var(--text-muted)';
-            signalNoteEl.textContent = '- Insufficient data';
-        }
-
-        console.log('✅ Quick Levels loaded for', ticker);
-
-    } catch (e) {
-        console.error('Quick Levels error:', e);
-        document.getElementById('ql-signal').textContent = 'Error loading';
-        document.getElementById('ql-signal').style.color = 'var(--red)';
     }
 }
 
@@ -6779,117 +6642,15 @@ async function loadRatioSpreadScore() {
     }
 }
 
-function renderGexChart(gexByStrike, currentPrice) {
-    const chartDiv = document.getElementById('oa-chart');
-    const legendDiv = document.getElementById('oa-chart-legend');
-
-    if (!gexByStrike || gexByStrike.length === 0) {
-        chartDiv.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 40px;">No GEX data available</div>';
-        return;
-    }
-
-    // Filter data to reasonable range around current price
-    let data = gexByStrike.slice();
-    if (currentPrice > 0 && data.length > 20) {
-        const minRange = currentPrice * 0.85;
-        const maxRange = currentPrice * 1.15;
-        const filtered = data.filter(d => d.strike >= minRange && d.strike <= maxRange);
-        if (filtered.length >= 5) data = filtered;
-    }
-
-    // Limit to 20 strikes centered on current price
-    if (data.length > 20) {
-        const centerIdx = data.findIndex(d => d.strike >= currentPrice) || Math.floor(data.length / 2);
-        const start = Math.max(0, centerIdx - 10);
-        const end = Math.min(data.length, centerIdx + 10);
-        data = data.slice(start, end);
-    }
-
-    if (data.length === 0) {
-        chartDiv.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 40px;">No data in range</div>';
-        return;
-    }
-
-    // Get max absolute GEX value for scaling
-    const gexValues = data.map(d => d.netGex);
-    const maxAbsGex = Math.max(...gexValues.map(Math.abs)) || 1;
-
-    // Find current price position
-    const strikes = data.map(d => d.strike);
-    const minStrike = Math.min(...strikes);
-    const maxStrike = Math.max(...strikes);
-    const currentPricePos = currentPrice >= minStrike && currentPrice <= maxStrike
-        ? ((currentPrice - minStrike) / (maxStrike - minStrike)) * 100 : -1;
-
-    // Build chart HTML - bidirectional bars (positive up, negative down)
-    const chartHeight = 120;
-    const halfHeight = chartHeight / 2;
-
-    let html = '<div style="display: flex; align-items: center; gap: 1px; height: ' + chartHeight + 'px; position: relative; padding: 0 10px;">';
-
-    // Zero line
-    html += `<div style="position: absolute; left: 10px; right: 10px; top: ${halfHeight}px; height: 1px; background: var(--border); z-index: 5;"></div>`;
-
-    // Current price line
-    if (currentPricePos >= 0) {
-        html += `<div style="position: absolute; left: calc(10px + ${currentPricePos}% * 0.95); top: 0; bottom: 0; width: 2px; background: var(--blue); z-index: 10;"></div>`;
-        html += `<div style="position: absolute; left: calc(${currentPricePos}% * 0.95 - 10px); top: -16px; font-size: 10px; color: var(--blue); width: 50px; text-align: center;">$${currentPrice.toFixed(0)}</div>`;
-    }
-
-    data.forEach(d => {
-        const gexPct = d.netGex / maxAbsGex;
-        const barHeight = Math.abs(gexPct) * halfHeight;
-        const isPositive = d.netGex >= 0;
-        const barColor = isPositive ? 'var(--green)' : 'var(--red)';
-
-        // Position bar above or below center line
-        const barStyle = isPositive
-            ? `height: ${barHeight}px; margin-bottom: ${halfHeight}px;`
-            : `height: ${barHeight}px; margin-top: ${halfHeight}px;`;
-
-        const gexK = (d.netGex / 1000).toFixed(0);
-        html += `<div style="flex: 1; display: flex; align-items: ${isPositive ? 'flex-end' : 'flex-start'}; min-width: 4px;">
-            <div style="width: 100%; ${barStyle} background: ${barColor}; border-radius: ${isPositive ? '2px 2px 0 0' : '0 0 2px 2px'}; opacity: 0.8;" title="$${d.strike}: ${gexK}K GEX"></div>
-        </div>`;
-    });
-    html += '</div>';
-
-    // X-axis labels
-    html += '<div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; color: var(--text-muted);">';
-    const step = Math.max(1, Math.floor(data.length / 5));
-    for (let i = 0; i < data.length; i += step) {
-        html += `<span>$${data[i].strike}</span>`;
-    }
-    if (data.length > 1) {
-        html += `<span>$${data[data.length - 1].strike}</span>`;
-    }
-    html += '</div>';
-
-    chartDiv.innerHTML = html;
-
-    // Update legend for GEX chart
-    legendDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 4px;">
-            <div style="width: 12px; height: 12px; background: var(--green); border-radius: 2px;"></div>
-            <span style="color: var(--text-muted);">Positive GEX (Stabilizing)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 4px;">
-            <div style="width: 12px; height: 12px; background: var(--red); border-radius: 2px;"></div>
-            <span style="color: var(--text-muted);">Negative GEX (Volatile)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 4px;">
-            <div style="width: 12px; height: 2px; background: var(--blue);"></div>
-            <span style="color: var(--text-muted);">Current Price</span>
-        </div>
-    `;
-}
-
 // ============================================================================
 // OPTIONS VISUALIZATION (ApexCharts)
 // ============================================================================
 
-// Global state for options visualization chart
+// Global state for options visualization charts
 let optionsVizChart = null;
+let priceChart = null;
+let priceSeries = null;
+let priceLines = {}; // Store price line references for updates
 let optionsVizData = {
     gexByStrike: [],
     callOI: [],
@@ -6902,7 +6663,8 @@ let optionsVizData = {
     maxPain: 0,
     expectedMove: { upper: 0, lower: 0 },
     totalGex: 0,
-    pcRatio: 0
+    pcRatio: 0,
+    candles: [] // Candle data for price chart
 };
 
 /**
@@ -6919,7 +6681,8 @@ async function loadOptionsViz(ticker) {
     }
 
     const container = document.getElementById('options-viz-container');
-    const chartDiv = document.getElementById('options-viz-chart');
+    const priceChartContainer = document.getElementById('price-chart-container');
+    const gexChartContainer = document.getElementById('gex-chart-container');
 
     // Show container
     container.style.display = 'block';
@@ -6930,14 +6693,19 @@ async function loadOptionsViz(ticker) {
         tickerLabel.textContent = `- ${ticker}`;
     }
 
-    // Show loading state
-    chartDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);"><span class="loading-spinner" style="margin-right: 8px;"></span>Loading options data...</div>';
+    // Show loading state in both chart containers
+    if (priceChartContainer) {
+        priceChartContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);"><span class="loading-spinner" style="margin-right: 8px;"></span>Loading price data...</div>';
+    }
+    if (gexChartContainer) {
+        gexChartContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);"><span class="loading-spinner" style="margin-right: 8px;"></span>Loading GEX data...</div>';
+    }
 
     try {
         const isFutures = ticker.startsWith('/');
         const tickerParam = encodeURIComponent(ticker);
         const expiry = document.getElementById('oa-expiry-select')?.value || '';
-        const expiryParam = expiry ? `${isFutures ? '&' : '?'}expiration=${expiry}` : '';
+        const days = 30; // Default to 30 days of candle data
 
         // Build URLs for all data sources
         const gexLevelsUrl = isFutures
@@ -6952,16 +6720,39 @@ async function loadOptionsViz(ticker) {
             ? `${API_BASE}/options/max-pain?ticker=${tickerParam}${expiry ? '&expiration=' + expiry : ''}`
             : `${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
 
-        // Fetch all data in parallel
-        const [gexLevelsRes, gexRes, maxPainRes] = await Promise.all([
+        const candlesUrl = `${API_BASE}/market/candles?ticker=${tickerParam}&days=${days}`;
+
+        // Fetch all data in parallel (including candles)
+        const [gexLevelsRes, gexRes, maxPainRes, candlesRes] = await Promise.all([
             fetch(gexLevelsUrl),
             fetch(gexUrl),
-            fetch(maxPainUrl)
+            fetch(maxPainUrl),
+            fetch(candlesUrl).catch(e => {
+                console.warn('Failed to fetch candle data:', e);
+                return null;
+            })
         ]);
 
         const gexLevelsData = await gexLevelsRes.json();
         const gexData = await gexRes.json();
         const maxPainData = await maxPainRes.json();
+
+        // Parse candle data if available
+        if (candlesRes && candlesRes.ok) {
+            const candlesData = await candlesRes.json();
+            // Convert candle data to Lightweight Charts format
+            // Expected format: { time: unix_timestamp or 'YYYY-MM-DD', open, high, low, close }
+            const candles = candlesData.data || candlesData.candles || candlesData || [];
+            optionsVizData.candles = candles.map(c => ({
+                time: c.time || c.date || c.t,
+                open: c.open || c.o,
+                high: c.high || c.h,
+                low: c.low || c.l,
+                close: c.close || c.c
+            })).filter(c => c.time && c.open && c.high && c.low && c.close);
+        } else {
+            optionsVizData.candles = [];
+        }
 
         // Extract GEX levels
         const levels = gexLevelsData.data || {};
@@ -7012,14 +6803,17 @@ async function loadOptionsViz(ticker) {
         // Update info bar
         updateVizInfoBar();
 
-        // Render the chart
-        renderOptionsViz();
+        // Render both charts
+        renderPriceChart();
+        renderVizGexChart();
 
         console.log('Options Viz loaded for', ticker, optionsVizData);
 
     } catch (e) {
         console.error('loadOptionsViz error:', e);
-        chartDiv.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--red);">Error loading options data: ${e.message}</div>`;
+        const errorMsg = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--red);">Error loading options data: ${e.message}</div>`;
+        if (priceChartContainer) priceChartContainer.innerHTML = errorMsg;
+        if (gexChartContainer) gexChartContainer.innerHTML = errorMsg;
     }
 }
 
@@ -7031,6 +6825,8 @@ function updateVizInfoBar() {
     const totalGexEl = document.getElementById('viz-total-gex');
     const pcRatioEl = document.getElementById('viz-pc-ratio');
     const maxPainEl = document.getElementById('viz-max-pain');
+    const callWallEl = document.getElementById('viz-call-wall');
+    const putWallEl = document.getElementById('viz-put-wall');
 
     if (currentPriceEl) {
         currentPriceEl.textContent = optionsVizData.currentPrice > 0
@@ -7061,13 +6857,186 @@ function updateVizInfoBar() {
             ? `$${optionsVizData.maxPain.toFixed(0)}`
             : '--';
     }
+
+    // Update Call Wall and Put Wall values
+    if (callWallEl) {
+        callWallEl.textContent = optionsVizData.callWall > 0
+            ? `$${optionsVizData.callWall.toFixed(0)}`
+            : '--';
+        callWallEl.style.color = 'var(--red)';
+    }
+
+    if (putWallEl) {
+        putWallEl.textContent = optionsVizData.putWall > 0
+            ? `$${optionsVizData.putWall.toFixed(0)}`
+            : '--';
+        putWallEl.style.color = 'var(--green)';
+    }
 }
 
 /**
- * renderOptionsViz - Render the ApexCharts mixed chart
+ * renderPriceChart - Render the Lightweight Charts candlestick chart with level lines
  */
-function renderOptionsViz() {
-    const chartDiv = document.getElementById('options-viz-chart');
+function renderPriceChart() {
+    const container = document.getElementById('price-chart-container');
+
+    if (!container) {
+        console.warn('renderPriceChart: price-chart-container not found');
+        return;
+    }
+
+    // Clear existing chart
+    if (priceChart) {
+        priceChart.remove();
+        priceChart = null;
+        priceSeries = null;
+        priceLines = {};
+    }
+
+    // Check if candle data is available
+    if (!optionsVizData.candles || optionsVizData.candles.length === 0) {
+        container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">No price data available</div>';
+        return;
+    }
+
+    // Clear container before creating new chart
+    container.innerHTML = '';
+
+    // Create chart with dark theme
+    priceChart = LightweightCharts.createChart(container, {
+        layout: {
+            background: { type: 'solid', color: 'transparent' },
+            textColor: '#9ca3af',
+        },
+        grid: {
+            vertLines: { color: 'rgba(255,255,255,0.05)' },
+            horzLines: { color: 'rgba(255,255,255,0.05)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
+        timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true },
+        width: container.clientWidth,
+        height: container.clientHeight || 300,
+    });
+
+    // Add candlestick series
+    priceSeries = priceChart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderUpColor: '#22c55e',
+        borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+    });
+
+    // Set candle data
+    priceSeries.setData(optionsVizData.candles);
+
+    // Add price lines for levels
+    updatePriceChartLevels();
+
+    // Fit content
+    priceChart.timeScale().fitContent();
+
+    // Handle resize
+    const resizeObserver = new ResizeObserver(entries => {
+        if (priceChart && container.clientWidth > 0) {
+            priceChart.applyOptions({
+                width: container.clientWidth,
+                height: container.clientHeight || 300
+            });
+        }
+    });
+    resizeObserver.observe(container);
+}
+
+/**
+ * updatePriceChartLevels - Add/remove level lines based on checkbox states
+ */
+function updatePriceChartLevels() {
+    if (!priceSeries) return;
+
+    // Remove existing lines
+    Object.values(priceLines).forEach(line => {
+        if (line) {
+            try {
+                priceSeries.removePriceLine(line);
+            } catch (e) {
+                // Line may already be removed
+            }
+        }
+    });
+    priceLines = {};
+
+    // Call Wall (red)
+    if (document.getElementById('viz-toggle-callwall')?.checked && optionsVizData.callWall > 0) {
+        priceLines.callWall = priceSeries.createPriceLine({
+            price: optionsVizData.callWall,
+            color: '#ef4444',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Call Wall',
+        });
+    }
+
+    // Put Wall (green)
+    if (document.getElementById('viz-toggle-putwall')?.checked && optionsVizData.putWall > 0) {
+        priceLines.putWall = priceSeries.createPriceLine({
+            price: optionsVizData.putWall,
+            color: '#22c55e',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'Put Wall',
+        });
+    }
+
+    // Gamma Flip (orange)
+    if (document.getElementById('viz-toggle-gammaflip')?.checked && optionsVizData.gammaFlip > 0) {
+        priceLines.gammaFlip = priceSeries.createPriceLine({
+            price: optionsVizData.gammaFlip,
+            color: '#f97316',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'Gamma Flip',
+        });
+    }
+
+    // Max Pain (purple)
+    if (document.getElementById('viz-toggle-maxpain')?.checked && optionsVizData.maxPain > 0) {
+        priceLines.maxPain = priceSeries.createPriceLine({
+            price: optionsVizData.maxPain,
+            color: '#a855f7',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: 'Max Pain',
+        });
+    }
+}
+
+/**
+ * renderVizGexChart - Render the ApexCharts GEX by strike bar chart for options visualization
+ */
+function renderVizGexChart() {
+    const chartDiv = document.getElementById('gex-chart-container');
+
+    if (!chartDiv) {
+        console.warn('renderVizGexChart: gex-chart-container not found');
+        return;
+    }
+
+    // Check if GEX chart should be shown
+    const showGexChart = document.getElementById('viz-toggle-gex')?.checked ?? true;
+
+    if (!showGexChart) {
+        chartDiv.style.display = 'none';
+        return;
+    }
+
+    chartDiv.style.display = 'block';
 
     if (!optionsVizData.gexByStrike || optionsVizData.gexByStrike.length === 0) {
         chartDiv.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">No GEX data available for visualization</div>';
@@ -7102,7 +7071,6 @@ function renderOptionsViz() {
 
     // Read checkbox states
     const showLevels = document.getElementById('viz-toggle-levels')?.checked ?? true;
-    const showGex = document.getElementById('viz-toggle-gex')?.checked ?? true;
     const showOI = document.getElementById('viz-toggle-oi')?.checked ?? false;
     const showMaxPain = document.getElementById('viz-toggle-maxpain')?.checked ?? true;
     const showEM = document.getElementById('viz-toggle-em')?.checked ?? false;
@@ -7116,13 +7084,11 @@ function renderOptionsViz() {
     // Build series array
     const series = [];
 
-    if (showGex) {
-        series.push({
-            name: 'Net GEX (M)',
-            type: 'bar',
-            data: netGexData
-        });
-    }
+    series.push({
+        name: 'Net GEX (M)',
+        type: 'bar',
+        data: netGexData
+    });
 
     if (showOI) {
         series.push({
@@ -7139,7 +7105,6 @@ function renderOptionsViz() {
 
     // Build annotations for key levels
     const xAxisAnnotations = [];
-    const yAxisAnnotations = [];
 
     if (showLevels) {
         // Current Price - white solid line (thicker)
@@ -7269,13 +7234,13 @@ function renderOptionsViz() {
     }
 
     // Determine colors for GEX bars (green for positive, red for negative)
-    const barColors = showGex ? netGexData.map(val => val >= 0 ? '#22c55e' : '#ef4444') : [];
+    const barColors = netGexData.map(val => val >= 0 ? '#22c55e' : '#ef4444');
 
     // Build chart options
     const options = {
         chart: {
             type: 'bar',
-            height: 400,
+            height: 300,
             background: 'transparent',
             toolbar: {
                 show: true,
@@ -7299,13 +7264,13 @@ function renderOptionsViz() {
             mode: 'dark'
         },
         series: series,
-        colors: showGex && !showOI ? barColors : ['#22c55e', '#3b82f6', '#ef4444'],
+        colors: !showOI ? barColors : ['#22c55e', '#3b82f6', '#ef4444'],
         plotOptions: {
             bar: {
                 horizontal: false,
                 columnWidth: '70%',
                 borderRadius: 2,
-                distributed: showGex && !showOI,
+                distributed: !showOI,
                 dataLabels: {
                     position: 'top'
                 }
@@ -7329,7 +7294,6 @@ function renderOptionsViz() {
                     fontSize: '10px'
                 },
                 formatter: function(val) {
-                    // Show fewer labels for readability
                     return val;
                 }
             },
@@ -7349,7 +7313,7 @@ function renderOptionsViz() {
                 }
             }
         },
-        yaxis: showGex ? {
+        yaxis: {
             title: {
                 text: 'GEX (Millions)',
                 style: {
@@ -7369,23 +7333,6 @@ function renderOptionsViz() {
             axisBorder: {
                 show: true,
                 color: 'var(--border)'
-            }
-        } : {
-            title: {
-                text: 'Open Interest',
-                style: {
-                    color: 'var(--text-muted)',
-                    fontSize: '11px'
-                }
-            },
-            labels: {
-                style: {
-                    colors: 'var(--text-muted)',
-                    fontSize: '10px'
-                },
-                formatter: function(val) {
-                    return Math.abs(val) >= 1000 ? (Math.abs(val) / 1000).toFixed(0) + 'K' : Math.abs(val).toFixed(0);
-                }
             }
         },
         fill: {
@@ -7452,15 +7399,16 @@ function renderOptionsViz() {
 }
 
 /**
- * updateOptionsViz - Called when checkboxes change to update chart
+ * updateOptionsViz - Called when checkboxes change to update both charts
  */
 function updateOptionsViz() {
-    if (!optionsVizData.gexByStrike || optionsVizData.gexByStrike.length === 0) {
-        return;
-    }
+    // Update price chart level lines (doesn't require re-render)
+    updatePriceChartLevels();
 
-    // Re-render the chart with new options
-    renderOptionsViz();
+    // Re-render the GEX chart with new options
+    if (optionsVizData.gexByStrike && optionsVizData.gexByStrike.length > 0) {
+        renderVizGexChart();
+    }
 }
 
 /**

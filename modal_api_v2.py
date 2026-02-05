@@ -2706,6 +2706,270 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/market/candles", tags=["Options"])
+    def market_candles(
+        ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, /GC"),
+        days: int = Query(30, description="Number of days of historical data (default 30)"),
+        interval: str = Query("1d", description="Candle interval: 1m, 5m, 15m, 1h, 1d (default 1d)")
+    ):
+        """
+        Get OHLC candle data for stocks and futures.
+
+        For stocks (SPY, AAPL, etc.): Uses Polygon API
+        For futures (/ES, /NQ, /CL, /GC): Uses Tastytrade DXLink Candle streaming
+
+        Returns data formatted for Lightweight Charts:
+        - time: Unix timestamp in seconds
+        - open, high, low, close: Price values
+        - volume: Trading volume
+
+        Supported intervals:
+        - 1m, 5m, 15m, 30m: Intraday
+        - 1h, 4h: Hourly
+        - 1d: Daily (default)
+        - 1w, 1M: Weekly/Monthly
+        """
+        try:
+            from datetime import datetime, timedelta
+            import asyncio
+
+            is_futures = ticker.startswith('/')
+
+            # Map interval to Polygon timespan format
+            interval_map = {
+                '1m': ('minute', 1),
+                '5m': ('minute', 5),
+                '15m': ('minute', 15),
+                '30m': ('minute', 30),
+                '1h': ('hour', 1),
+                '4h': ('hour', 4),
+                '1d': ('day', 1),
+                '1w': ('week', 1),
+                '1M': ('month', 1),
+            }
+
+            timespan, multiplier = interval_map.get(interval, ('day', 1))
+
+            if is_futures:
+                # Use Tastytrade DXLink for futures candle data
+                try:
+                    from src.data.tastytrade_provider import (
+                        get_tastytrade_session,
+                        get_futures_streamer_symbol,
+                        is_futures_ticker
+                    )
+                    from tastytrade import DXLinkStreamer
+                    from tastytrade.dxfeed import Candle
+
+                    session = get_tastytrade_session()
+                    if not session:
+                        return {
+                            "ok": False,
+                            "error": "Tastytrade session not available. Check credentials."
+                        }
+
+                    # Get the streamer symbol for the futures contract
+                    streamer_symbol = get_futures_streamer_symbol(session, ticker)
+                    if not streamer_symbol:
+                        return {
+                            "ok": False,
+                            "error": f"Could not resolve streamer symbol for {ticker}"
+                        }
+
+                    # Map interval to DXLink candle period format
+                    # DXLink uses format like "SYMBOL{=period}" e.g., "/ESH6{=1d}"
+                    dxlink_period_map = {
+                        '1m': '1m',
+                        '5m': '5m',
+                        '15m': '15m',
+                        '30m': '30m',
+                        '1h': '1h',
+                        '4h': '4h',
+                        '1d': '1d',
+                        '1w': '1w',
+                        '1M': '1M',
+                    }
+                    dxlink_period = dxlink_period_map.get(interval, '1d')
+
+                    # Calculate from_time for historical data
+                    from_time = datetime.now() - timedelta(days=days)
+                    from_timestamp_ms = int(from_time.timestamp() * 1000)
+
+                    # Build candle symbol with period
+                    candle_symbol = f"{streamer_symbol}{{={dxlink_period}}}"
+                    logger.info(f"Subscribing to candle: {candle_symbol} from {from_time}")
+
+                    candles_data = []
+
+                    async def fetch_candles():
+                        try:
+                            async with DXLinkStreamer(session) as streamer:
+                                # Subscribe to Candle events with from_time for historical data
+                                await streamer.subscribe(Candle, [candle_symbol], from_time=from_timestamp_ms)
+
+                                import time as time_module
+                                start_time = time_module.time()
+                                timeout_sec = 30.0
+                                last_receive_time = start_time
+
+                                async for candle in streamer.listen(Candle):
+                                    # Extract candle data
+                                    candle_time = getattr(candle, 'time', None)
+                                    if candle_time:
+                                        # Convert to Unix timestamp in seconds
+                                        if isinstance(candle_time, (int, float)):
+                                            # Already a timestamp (might be ms)
+                                            ts = int(candle_time / 1000) if candle_time > 10000000000 else int(candle_time)
+                                        else:
+                                            ts = int(candle_time.timestamp())
+
+                                        candles_data.append({
+                                            'time': ts,
+                                            'open': float(getattr(candle, 'open', 0) or 0),
+                                            'high': float(getattr(candle, 'high', 0) or 0),
+                                            'low': float(getattr(candle, 'low', 0) or 0),
+                                            'close': float(getattr(candle, 'close', 0) or 0),
+                                            'volume': int(getattr(candle, 'volume', 0) or 0),
+                                        })
+                                        last_receive_time = time_module.time()
+
+                                    # Check for timeout or data gap (stop if no data for 2 seconds)
+                                    current_time = time_module.time()
+                                    if current_time - start_time > timeout_sec:
+                                        logger.info(f"Candle streaming timeout after {len(candles_data)} candles")
+                                        break
+                                    if current_time - last_receive_time > 2.0 and len(candles_data) > 0:
+                                        logger.info(f"Candle streaming complete: {len(candles_data)} candles")
+                                        break
+
+                        except Exception as e:
+                            logger.error(f"Error streaming candles for {ticker}: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
+
+                    # Run async fetch
+                    try:
+                        asyncio.run(fetch_candles())
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+                        loop.run_until_complete(fetch_candles())
+
+                    if candles_data:
+                        # Sort by time and remove duplicates
+                        candles_data.sort(key=lambda x: x['time'])
+                        seen_times = set()
+                        unique_candles = []
+                        for c in candles_data:
+                            if c['time'] not in seen_times:
+                                seen_times.add(c['time'])
+                                unique_candles.append(c)
+
+                        return {
+                            "ok": True,
+                            "data": {
+                                "ticker": ticker,
+                                "interval": interval,
+                                "days": days,
+                                "source": "tastytrade",
+                                "candles": unique_candles
+                            }
+                        }
+                    else:
+                        return {
+                            "ok": False,
+                            "error": f"No candle data received for {ticker}. Futures historical candles may not be supported via DXLink streaming."
+                        }
+
+                except ImportError as e:
+                    logger.error(f"Tastytrade import error: {e}")
+                    return {
+                        "ok": False,
+                        "error": f"Tastytrade SDK not available: {str(e)}"
+                    }
+                except Exception as e:
+                    logger.error(f"Tastytrade candle error for {ticker}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return {
+                        "ok": False,
+                        "error": f"Failed to fetch futures candles from Tastytrade: {str(e)}"
+                    }
+
+            else:
+                # Use Polygon for stocks
+                try:
+                    from src.data.polygon_provider import PolygonProvider
+
+                    async def fetch_polygon_candles():
+                        provider = PolygonProvider()
+                        try:
+                            to_date = datetime.now().strftime('%Y-%m-%d')
+                            from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+                            df = await provider.get_aggregates(
+                                ticker.upper(),
+                                multiplier=multiplier,
+                                timespan=timespan,
+                                from_date=from_date,
+                                to_date=to_date,
+                                limit=5000
+                            )
+                            return df
+                        finally:
+                            await provider.close()
+
+                    # Run async fetch
+                    try:
+                        df = asyncio.run(fetch_polygon_candles())
+                    except RuntimeError:
+                        loop = asyncio.get_event_loop()
+                        df = loop.run_until_complete(fetch_polygon_candles())
+
+                    if df is not None and not df.empty:
+                        candles = []
+                        for idx, row in df.iterrows():
+                            # Convert datetime index to Unix timestamp in seconds
+                            ts = int(idx.timestamp())
+                            candles.append({
+                                'time': ts,
+                                'open': float(row['Open']),
+                                'high': float(row['High']),
+                                'low': float(row['Low']),
+                                'close': float(row['Close']),
+                                'volume': int(row['Volume']),
+                            })
+
+                        return {
+                            "ok": True,
+                            "data": {
+                                "ticker": ticker.upper(),
+                                "interval": interval,
+                                "days": days,
+                                "source": "polygon",
+                                "candles": candles
+                            }
+                        }
+                    else:
+                        return {
+                            "ok": False,
+                            "error": f"No candle data found for {ticker}"
+                        }
+
+                except Exception as e:
+                    logger.error(f"Polygon candle error for {ticker}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return {
+                        "ok": False,
+                        "error": f"Failed to fetch candles from Polygon: {str(e)}"
+                    }
+
+        except Exception as e:
+            logger.error(f"Market candles error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/market-sentiment", tags=["Options"])
     def options_market_sentiment():
         """
