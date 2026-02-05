@@ -6480,8 +6480,7 @@ function formatExpirationOptions(expirations, selectedIndex = 0) {
 
         const label = daysOut <= 0 ? `${months[d.getMonth()]} ${d.getDate()} (0DTE)` :
                      daysOut === 1 ? `${months[d.getMonth()]} ${d.getDate()} (1d)` :
-                     daysOut < 7 ? `${months[d.getMonth()]} ${d.getDate()} (${daysOut}d)` :
-                     `${months[d.getMonth()]} ${d.getDate()} (${Math.round(daysOut/7)}w)`;
+                     `${months[d.getMonth()]} ${d.getDate()} (${daysOut}d)`;
 
         const option = { value: expDate, label, daysOut, isSelected: i === selectedIndex };
 

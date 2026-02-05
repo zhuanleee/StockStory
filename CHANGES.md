@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 20:59 - `0e96352`
+
+**Fix GEX Dashboard P/C Z-Score and Ratio Spread futures support**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/app.js
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 20:36 - `0e78196`
 
 **Fix futures options support for GEX dashboard and ratio spread**
