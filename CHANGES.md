@@ -2,6 +2,52 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 19:37 - `75fd281`
+
+**Frontend cleanup: remove archive files, unused code, fix CSS conflicts**
+
+Files changed: 146
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/BUNDLE_MAPPING.txt
+docs/GITHUB_SECRETS_COPY_PASTE.txt
+docs/XAI_API_KEY_REQUIRED.txt
+docs/archive/BEFORE_AFTER_COMPARISON.md
+docs/archive/BUGS_FIXED_2026-01-29.md
+docs/archive/COMPREHENSIVE_AGENTIC_BRAIN_SUMMARY.md
+docs/archive/EARNINGS_COMPONENT_38_COMPLETE.md
+docs/archive/EARNINGS_GUIDANCE_ANALYSIS.md
+docs/archive/EVOLUTIONARY_SYSTEM_IMPLEMENTATION.md
+docs/archive/FEATURES_2-9_IMPLEMENTATION_SUMMARY.md
+docs/archive/INTEGRATION_PROGRESS_2026-01-29.md
+docs/archive/INTEGRATION_SESSION_2_COMPLETE.md
+docs/archive/PRICING_CORRECTION_SUMMARY.md
+docs/archive/RAILWAY_DEPLOYMENT_GUIDE.md
+docs/archive/SELF_LEARNING_SYSTEM_COMPLETE.md
+docs/archive/WATCHLIST_BRAIN_INTEGRATION.md
+docs/archive/WATCHLIST_IMPLEMENTATION_COMPLETE.md
+docs/archive/XAI_IMPLEMENTATION_SUMMARY.md
+docs/archive/XAI_OPPORTUNITIES_SUMMARY.md
+docs/archive/XAI_X_INTELLIGENCE_IMPLEMENTATION.md
+docs/archive/consolidated-2026-02-02/AGENTIC_BRAIN_ARCHITECTURE.md
+docs/archive/consolidated-2026-02-02/AI_AB_TEST_CORRECTED_FINAL.md
+docs/archive/consolidated-2026-02-02/AI_AB_TEST_FINAL_RESULTS.md
+docs/archive/consolidated-2026-02-02/AI_ENHANCEMENTS_USAGE_GUIDE.md
+docs/archive/consolidated-2026-02-02/AI_STRESS_TEST_ANALYSIS.md
+docs/archive/consolidated-2026-02-02/BACKEND_ISSUES_REPORT.md
+docs/archive/consolidated-2026-02-02/CHANGELOG.md
+docs/archive/consolidated-2026-02-02/CHANGE_HISTORY.md
+docs/archive/consolidated-2026-02-02/COMPLETE_AI_COMPONENT_INVENTORY.md
+```
+</details>
+
+---
+
+
 ### 2026-02-05 19:33 - `e9247c1`
 
 **Major code cleanup: remove unused functions and debug endpoints**
