@@ -2459,6 +2459,295 @@ def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
+def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
+    """
+    Ratio Spread Score V2 - Uses Tastytrade for accurate 120 DTE analysis.
+
+    Designed for back ratio put spread traders using longer-dated options.
+
+    Factors (0-6 score):
+    - VRP (IV vs RV): +1 if positive (options overpriced)
+    - Skew at target DTE: +1 if steep (OTM puts rich)
+    - Term Structure (30 vs 120 DTE): +1 if backwardated
+    - GEX Regime: +1 if positive (dealers suppress moves)
+    - RV Direction: +1 if falling (vol compressing)
+    - Expected Move: +1 if calculated successfully
+
+    Args:
+        ticker: Stock symbol
+        target_dte: Target DTE for your trade (default 120)
+
+    Returns:
+        Complete analysis with scores and recommendation
+    """
+    from datetime import datetime
+
+    try:
+        # Try to import Tastytrade provider
+        try:
+            from src.data.tastytrade_provider import (
+                is_tastytrade_available,
+                get_iv_by_delta_tastytrade,
+                get_term_structure_tastytrade,
+                get_expected_move_tastytrade
+            )
+            use_tastytrade = is_tastytrade_available()
+        except ImportError:
+            use_tastytrade = False
+
+        scores = {}
+        factors = []
+        total_score = 0
+        data_source = 'tastytrade' if use_tastytrade else 'polygon'
+
+        logger.info(f"Ratio spread score V2 for {ticker} @ {target_dte} DTE (source: {data_source})")
+
+        # 1. VRP Analysis (uses price data, not expiration-dependent)
+        vrp = get_vrp_analysis(ticker, None)
+        if 'error' not in vrp:
+            vrp_pass = vrp.get('vrp', 0) > 0.02  # At least 2% VRP
+            scores['vrp'] = {
+                'value': vrp.get('vrp_pct'),
+                'pass': vrp_pass,
+                'score': 1 if vrp_pass else 0,
+                'label': f"VRP {vrp.get('vrp_pct', 0):.1f}%",
+                'signal': vrp.get('vrp_signal')
+            }
+            if vrp_pass:
+                total_score += 1
+                factors.append('VRP positive')
+        else:
+            scores['vrp'] = {'error': vrp.get('error'), 'score': 0}
+
+        # 2. Skew Analysis at target DTE
+        skew = None
+        if use_tastytrade:
+            skew = get_iv_by_delta_tastytrade(ticker, target_dte=target_dte)
+            if skew:
+                skew_ratio = skew.get('skew_ratio', 1)
+                skew_pass = skew_ratio > 1.05  # At least 5% skew
+                scores['skew'] = {
+                    'value': skew_ratio,
+                    'pass': skew_pass,
+                    'score': 1 if skew_pass else 0,
+                    'label': f"Skew {((skew_ratio or 1) - 1) * 100:.1f}%",
+                    'signal': 'steep' if skew_pass else 'flat',
+                    'dte': skew.get('dte')
+                }
+                if skew_pass:
+                    total_score += 1
+                    factors.append('Skew steep')
+
+        if not skew or 'error' in (skew or {}):
+            # Fallback to Polygon
+            skew_polygon = get_skew_analysis(ticker, None)
+            if 'error' not in skew_polygon:
+                skew_pass = (skew_polygon.get('skew_25d_ratio') or 0) > 1.05
+                scores['skew'] = {
+                    'value': skew_polygon.get('skew_25d_ratio'),
+                    'pass': skew_pass,
+                    'score': 1 if skew_pass else 0,
+                    'label': f"Skew {((skew_polygon.get('skew_25d_ratio') or 1) - 1) * 100:.1f}%",
+                    'signal': skew_polygon.get('skew_signal'),
+                    'note': 'Near-term data (Polygon)'
+                }
+                if skew_pass:
+                    total_score += 1
+                    factors.append('Skew steep')
+                skew = skew_polygon
+            else:
+                scores['skew'] = {'error': skew_polygon.get('error'), 'score': 0}
+                skew = skew_polygon
+
+        # 3. Term Structure (30 DTE vs target DTE)
+        term = None
+        if use_tastytrade:
+            term = get_term_structure_tastytrade(ticker, front_dte=30, back_dte=target_dte)
+            if term and 'error' not in term:
+                term_pass = term.get('slope', 0) < -0.02  # Backwardated
+                scores['term_structure'] = {
+                    'value': term.get('slope_pct'),
+                    'pass': term_pass,
+                    'score': 1 if term_pass else 0,
+                    'label': f"Term {term.get('slope_pct', 0):.1f}%",
+                    'signal': term.get('signal'),
+                    'front_dte': term.get('front_dte'),
+                    'back_dte': term.get('back_dte')
+                }
+                if term_pass:
+                    total_score += 1
+                    factors.append('Backwardated')
+
+        if not term or 'error' in (term or {}):
+            # Fallback to Polygon (likely to fail for long-dated)
+            term_polygon = get_iv_term_structure(ticker)
+            if 'error' not in term_polygon:
+                term_pass = term_polygon.get('slope', 0) < -0.02
+                scores['term_structure'] = {
+                    'value': term_polygon.get('slope_pct'),
+                    'pass': term_pass,
+                    'score': 1 if term_pass else 0,
+                    'label': f"Term {term_polygon.get('slope_pct', 0):.1f}%",
+                    'signal': term_polygon.get('structure_signal'),
+                    'note': 'Near-term data only'
+                }
+                if term_pass:
+                    total_score += 1
+                    factors.append('Backwardated')
+                term = term_polygon
+            else:
+                scores['term_structure'] = {'error': term_polygon.get('error'), 'score': 0}
+                term = term_polygon
+
+        # 4. GEX Regime (not expiration-dependent)
+        gex = get_gex_regime(ticker, None)
+        if 'error' not in gex:
+            gex_pass = gex.get('regime') == 'pinned'  # Positive GEX
+            scores['gex'] = {
+                'value': gex.get('gex_billions'),
+                'pass': gex_pass,
+                'score': 1 if gex_pass else 0,
+                'label': f"GEX ${gex.get('gex_billions', 0):.1f}B",
+                'signal': gex.get('regime')
+            }
+            if gex_pass:
+                total_score += 1
+                factors.append('GEX positive')
+        else:
+            scores['gex'] = {'error': gex.get('error'), 'score': 0}
+
+        # 5. RV Direction (not expiration-dependent)
+        rv = calculate_realized_volatility(ticker)
+        if 'error' not in rv:
+            rv_pass = rv.get('rv_direction') == 'falling'
+            scores['rv_direction'] = {
+                'value': rv.get('rv_5d'),
+                'pass': rv_pass,
+                'score': 1 if rv_pass else 0,
+                'label': f"RV {rv.get('rv_direction', 'unknown')}",
+                'signal': rv.get('rv_regime')
+            }
+            if rv_pass:
+                total_score += 1
+                factors.append('RV falling')
+        else:
+            scores['rv_direction'] = {'error': rv.get('error'), 'score': 0}
+
+        # 6. Expected Move at target DTE
+        em = None
+        if use_tastytrade:
+            em = get_expected_move_tastytrade(ticker, target_dte=target_dte)
+            if em and 'error' not in em:
+                em_pct = em.get('expected_move_pct', 0)
+                em_pass = em_pct > 0
+                scores['expected_move'] = {
+                    'value': em.get('expected_move'),
+                    'pass': em_pass,
+                    'score': 1 if em_pass else 0,
+                    'label': f"EM ±{em_pct:.1f}%",
+                    'dte': em.get('dte'),
+                    'levels': {
+                        'upper': em.get('upper_expected'),
+                        'lower': em.get('lower_expected'),
+                        'lower_1_5x': em.get('lower_1_5x_em'),
+                        'lower_2x': em.get('lower_2x_em')
+                    }
+                }
+                if em_pass:
+                    total_score += 1
+                    factors.append('EM calculated')
+
+        if not em or 'error' in (em or {}):
+            # Fallback to Polygon
+            em_polygon = get_expected_move(ticker, None)
+            if 'error' not in em_polygon:
+                em_pct = em_polygon.get('expected_move_pct', 0)
+                em_pass = em_pct > 0
+                scores['expected_move'] = {
+                    'value': em_polygon.get('expected_move'),
+                    'pass': em_pass,
+                    'score': 1 if em_pass else 0,
+                    'label': f"EM ±{em_pct:.1f}%",
+                    'dte': em_polygon.get('dte'),
+                    'levels': {
+                        'upper': em_polygon.get('upper_expected'),
+                        'lower': em_polygon.get('lower_expected'),
+                        'lower_1_5x': em_polygon.get('lower_1_5x_em'),
+                        'lower_2x': em_polygon.get('lower_2x_em')
+                    },
+                    'note': 'Near-term data (Polygon)'
+                }
+                if em_pass:
+                    total_score += 1
+                    factors.append('EM calculated')
+                em = em_polygon
+            else:
+                scores['expected_move'] = {'error': em_polygon.get('error'), 'score': 0}
+                em = em_polygon
+
+        # Generate verdict
+        if total_score >= 5:
+            verdict = 'HIGH_CONVICTION'
+            recommendation = 'Excellent conditions - full size entry recommended'
+            risk_level = 'low'
+            position_size = '100%'
+        elif total_score >= 4:
+            verdict = 'FAVORABLE'
+            recommendation = 'Good conditions - standard size entry'
+            risk_level = 'moderate'
+            position_size = '75%'
+        elif total_score >= 3:
+            verdict = 'NEUTRAL'
+            recommendation = 'Mixed signals - reduced size or wait for better setup'
+            risk_level = 'elevated'
+            position_size = '50%'
+        elif total_score >= 2:
+            verdict = 'UNFAVORABLE'
+            recommendation = 'Poor conditions - minimal size only if must trade'
+            risk_level = 'high'
+            position_size = '25%'
+        else:
+            verdict = 'AVOID'
+            recommendation = 'Do not enter ratio spread - conditions unfavorable'
+            risk_level = 'extreme'
+            position_size = '0%'
+
+        return {
+            'ticker': ticker.upper(),
+            'timestamp': datetime.now().isoformat(),
+            'target_dte': target_dte,
+            'data_source': data_source,
+
+            # Overall score
+            'total_score': total_score,
+            'max_score': 6,
+            'score_pct': round(total_score / 6 * 100),
+            'verdict': verdict,
+            'recommendation': recommendation,
+            'risk_level': risk_level,
+            'position_size': position_size,
+            'passing_factors': factors,
+
+            # Individual scores
+            'scores': scores,
+
+            # Full data for display
+            'vrp_data': vrp if 'error' not in vrp else None,
+            'skew_data': skew if skew and 'error' not in skew else None,
+            'term_data': term if term and 'error' not in term else None,
+            'gex_data': gex if 'error' not in gex else None,
+            'rv_data': rv if 'error' not in rv else None,
+            'em_data': em if em and 'error' not in em else None,
+
+            # Current price
+            'current_price': vrp.get('current_price') if 'error' not in vrp else None
+        }
+
+    except Exception as e:
+        logger.error(f"Ratio spread score V2 error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
 # Example usage
 if __name__ == '__main__':
     # Test the functions

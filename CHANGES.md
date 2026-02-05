@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:34 - `118e39b`
+
+**Fix term structure validation to require back DTE > front DTE**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:28 - `92af4fc`
 
 **Fix ratio spread calculation bugs: RV column name, expected move DTE, term structure validation**

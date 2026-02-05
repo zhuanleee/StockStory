@@ -29,7 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
-    .run_commands("echo 'Build 2026-02-05-v4 - term structure fix'")  # Force rebuild
+    .run_commands("echo 'Build 2026-02-05-v5 - Tastytrade integration'")  # Force rebuild
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
@@ -2277,6 +2277,42 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         try:
             from src.data.options import get_ratio_spread_score
             result = get_ratio_spread_score(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/ratio-spread-score-v2/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_ratio_spread_score_v2(
+        ticker_symbol: str,
+        target_dte: int = Query(120, description="Target DTE for your trade (default 120)")
+    ):
+        """
+        Ratio Spread Score V2 - Optimized for 120 DTE trading with Tastytrade data.
+
+        Uses Tastytrade API for accurate long-dated options data:
+        - Term structure: 30 DTE vs your target DTE
+        - Skew at your target DTE expiration
+        - Expected move for your target DTE
+
+        Factors (0-6 score):
+        1. VRP (IV vs RV): Options overpriced?
+        2. Skew at target DTE: OTM puts rich?
+        3. Term Structure (30 vs target DTE): Backwardated?
+        4. GEX Regime: Dealers suppress moves?
+        5. RV Direction: Vol compressing?
+        6. Expected Move at target DTE: Strike levels calculated?
+
+        Score interpretation:
+        - 5-6: HIGH CONVICTION - full size
+        - 3-4: FAVORABLE - standard size
+        - 1-2: UNFAVORABLE - reduced size
+        - 0: AVOID - do not enter
+        """
+        try:
+            from src.data.options import get_ratio_spread_score_v2
+            result = get_ratio_spread_score_v2(ticker_symbol.upper(), target_dte)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
