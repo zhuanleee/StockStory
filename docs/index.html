@@ -3470,10 +3470,10 @@
                 <button class="btn btn-ghost ticker-btn" onclick="quickAnalyzeTicker('META')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600;">META</button>
                 <span style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
                 <span style="font-size: 0.75rem; color: var(--orange); padding: 6px 0;">Futures:</span>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 Options">ES</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq Options">NQ</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil Options">CL</button>
-                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold Options">GC</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('/ES')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini S&P 500 Options">/ES</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('/NQ')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="E-mini Nasdaq Options">/NQ</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('/CL')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Crude Oil Options">/CL</button>
+                <button class="btn btn-ghost ticker-btn futures-btn" onclick="quickAnalyzeTicker('/GC')" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 600; border-color: var(--orange);" title="Gold Options">/GC</button>
                 <span style="font-size: 0.6rem; color: var(--text-muted); margin-left: 4px;" title="Futures options data may be limited">ⓘ</span>
             </div>
 
@@ -9703,25 +9703,32 @@
 
         // Futures contract specs (for display)
         const FUTURES_SPECS = {
-            'ES': { name: 'E-mini S&P 500', multiplier: 50 },
-            'NQ': { name: 'E-mini Nasdaq 100', multiplier: 20 },
-            'CL': { name: 'Crude Oil', multiplier: 1000 },
-            'GC': { name: 'Gold', multiplier: 100 },
-            'SI': { name: 'Silver', multiplier: 5000 },
-            'RTY': { name: 'E-mini Russell 2000', multiplier: 50 },
-            'YM': { name: 'E-mini Dow', multiplier: 5 },
-            'MES': { name: 'Micro E-mini S&P', multiplier: 5 },
-            'MNQ': { name: 'Micro E-mini Nasdaq', multiplier: 2 },
+            '/ES': { name: 'E-mini S&P 500', multiplier: 50 },
+            '/NQ': { name: 'E-mini Nasdaq 100', multiplier: 20 },
+            '/CL': { name: 'Crude Oil', multiplier: 1000 },
+            '/GC': { name: 'Gold', multiplier: 100 },
+            '/SI': { name: 'Silver', multiplier: 5000 },
+            '/RTY': { name: 'E-mini Russell 2000', multiplier: 50 },
+            '/YM': { name: 'E-mini Dow', multiplier: 5 },
+            '/MES': { name: 'Micro E-mini S&P', multiplier: 5 },
+            '/MNQ': { name: 'Micro E-mini Nasdaq', multiplier: 2 },
         };
 
         function isFuturesTicker(ticker) {
-            return ticker.toUpperCase() in FUTURES_SPECS;
+            return ticker.startsWith('/') || ticker.toUpperCase() in FUTURES_SPECS;
         }
 
         function getFuturesInfo(ticker) {
             const upper = ticker.toUpperCase();
+            // Check with and without slash
             if (upper in FUTURES_SPECS) {
                 return { isFutures: true, ...FUTURES_SPECS[upper] };
+            }
+            if (('/' + upper) in FUTURES_SPECS) {
+                return { isFutures: true, ...FUTURES_SPECS['/' + upper] };
+            }
+            if (upper.startsWith('/')) {
+                return { isFutures: true, name: upper.slice(1) + ' Futures', multiplier: 50 };
             }
             return { isFutures: false, name: null, multiplier: 100 };
         }
@@ -9849,7 +9856,11 @@
             expirySelect.innerHTML = '<option value="">Loading...</option>';
 
             try {
-                const expRes = await fetch(`${API_BASE}/options/expirations/${ticker}`);
+                // Use query param for futures (path doesn't work with /)
+                const expUrl = ticker.startsWith('/')
+                    ? `${API_BASE}/options/expirations?ticker=${encodeURIComponent(ticker)}`
+                    : `${API_BASE}/options/expirations/${ticker}`;
+                const expRes = await fetch(expUrl);
                 const expData = await expRes.json();
 
                 if (expData.ok && expData.data && expData.data.expirations) {
@@ -9945,12 +9956,22 @@
             }
 
             try {
+                // Build URLs - use query params for futures (path doesn't work with /)
+                const isFutures = ticker.startsWith('/');
+                const tickerParam = encodeURIComponent(ticker);
+                const expiryParam = expiry ? `${isFutures ? '&' : '?'}expiration=${expiry}` : '';
+
+                const sentimentUrl = isFutures ? `${API_BASE}/options/sentiment?ticker=${tickerParam}` : `${API_BASE}/options/sentiment/${ticker}`;
+                const maxPainUrl = isFutures ? `${API_BASE}/options/max-pain?ticker=${tickerParam}${expiryParam}` : `${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+                const flowUrl = isFutures ? `${API_BASE}/options/flow?ticker=${tickerParam}` : `${API_BASE}/options/flow/${ticker}`;
+                const gexUrl = isFutures ? `${API_BASE}/options/gex?ticker=${tickerParam}${expiryParam}` : `${API_BASE}/options/gex/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+
                 // Fetch all data in parallel
                 const [sentimentRes, maxPainRes, flowRes, gexRes] = await Promise.all([
-                    fetch(`${API_BASE}/options/sentiment/${ticker}`),
-                    fetch(`${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`),
-                    fetch(`${API_BASE}/options/flow/${ticker}`),
-                    fetch(`${API_BASE}/options/gex/${ticker}${expiry ? '?expiration=' + expiry : ''}`)
+                    fetch(sentimentUrl),
+                    fetch(maxPainUrl),
+                    fetch(flowUrl),
+                    fetch(gexUrl)
                 ]);
 
                 const sentimentData = await sentimentRes.json();

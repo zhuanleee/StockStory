@@ -161,28 +161,39 @@ FUTURES_SPECS = {
 }
 
 
+def normalize_futures_ticker(ticker: str) -> str:
+    """Normalize futures ticker - strip leading / if present."""
+    return ticker.lstrip('/').upper()
+
+
 def is_futures_ticker(ticker: str) -> bool:
-    """Check if ticker is a futures contract."""
-    return ticker.upper() in FUTURES_SPECS
+    """Check if ticker is a futures contract (with or without / prefix)."""
+    normalized = normalize_futures_ticker(ticker)
+    return normalized in FUTURES_SPECS or ticker.startswith('/')
 
 
 def get_futures_info(ticker: str) -> Dict:
     """Get futures contract info if it's a futures ticker."""
-    ticker_upper = ticker.upper()
-    if ticker_upper in FUTURES_SPECS:
+    normalized = normalize_futures_ticker(ticker)
+    if normalized in FUTURES_SPECS:
         return {
             'is_futures': True,
-            'ticker': ticker_upper,
-            **FUTURES_SPECS[ticker_upper]
+            'ticker': normalized,
+            **FUTURES_SPECS[normalized]
         }
-    return {'is_futures': False, 'ticker': ticker_upper, 'multiplier': 100}  # Default for equities
+    if ticker.startswith('/'):
+        # Unknown futures - use defaults
+        return {'is_futures': True, 'ticker': normalized, 'name': f'{normalized} Futures', 'multiplier': 50, 'tick_size': 0.25}
+    return {'is_futures': False, 'ticker': ticker.upper(), 'multiplier': 100}  # Default for equities
 
 
 def get_contract_multiplier(ticker: str) -> int:
     """Get contract multiplier for a ticker (futures or equity options)."""
-    ticker_upper = ticker.upper()
-    if ticker_upper in FUTURES_SPECS:
-        return FUTURES_SPECS[ticker_upper]['multiplier']
+    normalized = normalize_futures_ticker(ticker)
+    if normalized in FUTURES_SPECS:
+        return FUTURES_SPECS[normalized]['multiplier']
+    if ticker.startswith('/'):
+        return 50  # Default futures multiplier
     return 100  # Standard equity options = 100 shares
 
 

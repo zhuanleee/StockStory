@@ -327,15 +327,20 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
         return None
 
     try:
-        from tastytrade.instruments import get_option_chain
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Greeks
         from datetime import date
 
         logger.info(f"Fetching options with Greeks for {ticker} (target_dte={target_dte})")
 
-        # Get the option chain - SDK v11 returns defaultdict keyed by expiration date
-        chain = get_option_chain(session, ticker)
+        # Use appropriate chain function for futures vs equities
+        if is_futures_ticker(ticker):
+            from tastytrade.instruments import get_future_option_chain
+            chain = get_future_option_chain(session, ticker)
+        else:
+            from tastytrade.instruments import get_option_chain
+            chain = get_option_chain(session, ticker)
+
         if not chain:
             return None
 

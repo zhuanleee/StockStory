@@ -2,6 +2,23 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 17:46 - `d78d2cc`
+
+**Update CHANGES.md**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+```
+</details>
+
+---
+
+
 ### 2026-02-05 17:46 - `880406f`
 
 **Add news endpoints and full Tastytrade futures options integration**

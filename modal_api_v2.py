@@ -1386,6 +1386,16 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/flow", tags=["Options"])
+    def options_flow_query(ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, etc.")):
+        """Get options flow sentiment (supports futures via query param)"""
+        try:
+            from src.data.options import get_options_flow
+            flow = get_options_flow(ticker)
+            return {"ok": True, "data": flow}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/unusual/{ticker_symbol}")
     def options_unusual(ticker_symbol: str, threshold: float = Query(2.0)):
         """Detect unusual options activity for a ticker"""
@@ -2127,6 +2137,18 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/max-pain", tags=["Options"])
+    def options_max_pain_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """Calculate Max Pain (supports futures via query param)"""
+        try:
+            from src.data.options import calculate_max_pain
+            result = calculate_max_pain(ticker, expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/gex/{ticker_symbol}", tags=["Options"])
     def options_gex(ticker_symbol: str, expiration: str = Query(None)):
         """
@@ -2147,6 +2169,18 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             result = calculate_gex_by_strike(ticker_symbol.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex", tags=["Options"])
+    def options_gex_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """Calculate GEX (supports futures via query param)"""
+        try:
+            from src.data.options import calculate_gex_by_strike
+            result = calculate_gex_by_strike(ticker, expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker}
             return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -3507,6 +3541,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         try:
             from src.analysis.options_flow import get_options_sentiment
             sentiment = get_options_sentiment(ticker_symbol.upper())
+            return {"ok": True, "data": sentiment}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/sentiment", tags=["Options"])
+    def options_sentiment_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc.")):
+        """Get options sentiment (supports futures via query param)"""
+        try:
+            from src.analysis.options_flow import get_options_sentiment
+            sentiment = get_options_sentiment(ticker)
             return {"ok": True, "data": sentiment}
         except Exception as e:
             return {"ok": False, "error": str(e)}
