@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 18:24 - `9349a25`
+
+**Remove max pain feature entirely and use GEX for OI/DTE**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 18:11 - `ac4b5fe`
 
 **Fix expiration dropdown parsing for futures - handle object format {date, dte}**

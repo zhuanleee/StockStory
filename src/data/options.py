@@ -667,8 +667,26 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
                 current_price = snapshot.get('price') or snapshot.get('last_price') or 0
         except:
             pass
+
+        # Try underlying_price from options data
         if not current_price and calls:
             current_price = calls[len(calls)//2].get('underlying_price') or 0
+
+        # For futures, estimate from options chain if still no price
+        # Use strike with highest total OI as proxy for current price
+        if not current_price and (calls or puts):
+            oi_by_strike = {}
+            for c in calls:
+                s = c.get('strike', 0)
+                oi_by_strike[s] = oi_by_strike.get(s, 0) + (c.get('open_interest') or 0)
+            for p in puts:
+                s = p.get('strike', 0)
+                oi_by_strike[s] = oi_by_strike.get(s, 0) + (p.get('open_interest') or 0)
+            if oi_by_strike:
+                # Get the strike with highest OI as estimate of current price
+                max_oi_strike = max(oi_by_strike.keys(), key=lambda k: oi_by_strike[k])
+                current_price = max_oi_strike
+                logger.info(f"Estimated {ticker} price from max OI strike: ${current_price}")
 
         # Build GEX by strike
         # Group by strike
