@@ -1,5 +1,5 @@
-// Version: 20260206e - Added VAL/POC/VAH levels + live price updates
-console.log('📦 StockStory app.js v20260206e loaded');
+// Version: 20260206f - Debug logging for price levels
+console.log('📦 StockStory app.js v20260206f loaded');
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'
@@ -7133,7 +7133,30 @@ function stopLivePriceUpdates() {
  * updatePriceChartLevels - Add/remove level lines based on checkbox states
  */
 function updatePriceChartLevels() {
-    if (!priceSeries) return;
+    if (!priceSeries) {
+        console.warn('updatePriceChartLevels: priceSeries not available');
+        return;
+    }
+
+    // Debug: Log all level values
+    console.log('🎯 updatePriceChartLevels called with:', {
+        callWall: optionsVizData.callWall,
+        putWall: optionsVizData.putWall,
+        gammaFlip: optionsVizData.gammaFlip,
+        maxPain: optionsVizData.maxPain,
+        val: optionsVizData.val,
+        poc: optionsVizData.poc,
+        vah: optionsVizData.vah,
+        checkboxes: {
+            callwall: document.getElementById('viz-toggle-callwall')?.checked,
+            putwall: document.getElementById('viz-toggle-putwall')?.checked,
+            gammaflip: document.getElementById('viz-toggle-gammaflip')?.checked,
+            maxpain: document.getElementById('viz-toggle-maxpain')?.checked,
+            val: document.getElementById('viz-toggle-val')?.checked,
+            poc: document.getElementById('viz-toggle-poc')?.checked,
+            vah: document.getElementById('viz-toggle-vah')?.checked
+        }
+    });
 
     // Remove existing lines
     Object.values(priceLines).forEach(line => {

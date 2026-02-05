@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 02:09 - `0436cc6`
+
+**Add VAL/POC/VAH levels + live price updates to chart**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-06 02:03 - `70e9e1a`
 
 **Fix max pain field name - API returns max_pain_price**
