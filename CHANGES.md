@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 18:11 - `ac4b5fe`
+
+**Fix expiration dropdown parsing for futures - handle object format {date, dte}**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+```
+</details>
+
+---
+
+
 ### 2026-02-05 18:03 - `476d525`
 
 **Fix futures options buttons - use /ES, /NQ, /CL, /GC format**

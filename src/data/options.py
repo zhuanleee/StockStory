@@ -744,6 +744,20 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
         if not used_exp and calls:
             used_exp = calls[0].get('expiration')
 
+        # Calculate total call/put OI
+        total_call_oi = sum(call_data.get(s, {}).get('oi', 0) for s in strikes)
+        total_put_oi = sum(put_data.get(s, {}).get('oi', 0) for s in strikes)
+
+        # Calculate DTE
+        days_to_expiry = 0
+        if used_exp:
+            try:
+                from datetime import datetime
+                exp_date = datetime.strptime(used_exp, '%Y-%m-%d').date()
+                days_to_expiry = (exp_date - datetime.now().date()).days
+            except:
+                pass
+
         logger.info(f"✅ GEX calculated for {ticker}: total ${total_gex/1e6:.1f}M (multiplier={multiplier})")
 
         return {
@@ -755,7 +769,10 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
             'zero_gamma_level': zero_gamma,
             'is_futures': futures_info.get('is_futures', False),
             'futures_name': futures_info.get('name'),
-            'contract_multiplier': multiplier
+            'contract_multiplier': multiplier,
+            'total_call_oi': total_call_oi,
+            'total_put_oi': total_put_oi,
+            'days_to_expiry': days_to_expiry
         }
 
     except Exception as e:
