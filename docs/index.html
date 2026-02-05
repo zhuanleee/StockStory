@@ -9595,10 +9595,29 @@
 
         // Quick-select expiration by approximate days out
         function selectExpiryByDays(targetDays) {
-            const expirySelect = document.getElementById('oa-expiry-select');
-            const options = Array.from(expirySelect.options).filter(o => o.value);
+            // Check if a ticker is loaded
+            if (!optionsAnalysisTicker) {
+                if (window.toast) {
+                    window.toast.warning('Please analyze a ticker first');
+                } else {
+                    alert('Please analyze a ticker first');
+                }
+                return;
+            }
 
-            if (options.length === 0) return;
+            const expirySelect = document.getElementById('oa-expiry-select');
+
+            // Get all options including those inside optgroups
+            const options = Array.from(expirySelect.querySelectorAll('option')).filter(o => o.value);
+
+            if (options.length === 0) {
+                if (window.toast) {
+                    window.toast.warning('No expirations available');
+                } else {
+                    alert('No expirations available');
+                }
+                return;
+            }
 
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -9619,6 +9638,12 @@
 
             expirySelect.value = bestOption.value;
             loadOptionsForExpiry();
+
+            // Visual feedback - briefly highlight the selected button
+            const buttons = document.querySelectorAll('[onclick^="selectExpiryByDays"]');
+            buttons.forEach(btn => btn.style.background = '');
+            event.target.style.background = 'var(--blue-bg)';
+            setTimeout(() => { event.target.style.background = ''; }, 500);
         }
 
         async function loadOptionsForExpiry() {
