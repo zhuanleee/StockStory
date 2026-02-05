@@ -10749,8 +10749,10 @@
             };
 
             expirations.forEach((exp, i) => {
-                const d = new Date(exp + 'T00:00:00');
-                const daysOut = Math.round((d - today) / (1000 * 60 * 60 * 24));
+                // Handle both string format and object format {date, dte, strike_count}
+                const expDate = typeof exp === 'string' ? exp : exp.date;
+                const d = new Date(expDate + 'T00:00:00');
+                const daysOut = typeof exp === 'object' && exp.dte !== undefined ? exp.dte : Math.round((d - today) / (1000 * 60 * 60 * 24));
                 const isMonthly = d.getDate() >= 15 && d.getDate() <= 21 && d.getDay() === 5;
                 const isQuarterly = [2, 5, 8, 11].includes(d.getMonth()) && isMonthly;
 
@@ -10759,7 +10761,7 @@
                              daysOut < 7 ? `${months[d.getMonth()]} ${d.getDate()} (${daysOut}d)` :
                              `${months[d.getMonth()]} ${d.getDate()} (${Math.round(daysOut/7)}w)`;
 
-                const option = { value: exp, label, daysOut, isSelected: i === selectedIndex };
+                const option = { value: expDate, label, daysOut, isSelected: i === selectedIndex };
 
                 if (daysOut <= 7) groups.thisWeek.push(option);
                 else if (daysOut <= 14) groups.nextWeek.push(option);

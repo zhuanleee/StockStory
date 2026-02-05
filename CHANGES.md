@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 18:03 - `476d525`
+
+**Fix futures options buttons - use /ES, /NQ, /CL, /GC format**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 17:46 - `d78d2cc`
 
 **Update CHANGES.md**
