@@ -3582,6 +3582,117 @@
                 </div>
             </div>
 
+            <!-- GEX Dashboard Panel -->
+            <div id="gex-dashboard-container" style="display: none; margin-bottom: 20px;">
+                <div class="card" style="border-left: 3px solid var(--orange);">
+                    <div class="card-header">
+                        <div class="card-title">🔥 GEX Dashboard <span id="gex-ticker" style="color: var(--orange); margin-left: 8px;"></span></div>
+                        <button class="btn btn-primary" onclick="loadGexDashboard()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh GEX</button>
+                    </div>
+                    <div class="card-body">
+                        <!-- Regime & Combined Analysis Row -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px;">
+                            <!-- Volatility Regime -->
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    <span>VOLATILITY REGIME</span>
+                                    <span class="info-icon" data-tooltip="GEX regime: Pinned = low volatility, Volatile = high volatility, Transitional = regime change possible">ⓘ</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div id="gex-regime-badge" style="padding: 8px 16px; border-radius: 6px; font-size: 1.1rem; font-weight: 700; background: var(--bg); color: var(--text-muted);">--</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">Confidence</div>
+                                        <div id="gex-regime-confidence" style="font-size: 1rem; font-weight: 600;">--</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">Strategy</div>
+                                        <div id="gex-regime-strategy" style="font-size: 0.85rem; font-weight: 500;">--</div>
+                                    </div>
+                                </div>
+                                <div id="gex-regime-recommendation" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">--</div>
+                            </div>
+
+                            <!-- Combined GEX + P/C Regime -->
+                            <div style="background: var(--bg-hover); padding: 16px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                                    <span>COMBINED REGIME (GEX + P/C)</span>
+                                    <span class="info-icon" data-tooltip="2x2 matrix: GEX (stabilizing/volatile) + P/C sentiment (fear/complacency). Best buy = Fear + Positive GEX. Most dangerous = Complacency + Negative GEX.">ⓘ</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div id="combined-regime-badge" style="padding: 8px 16px; border-radius: 6px; font-size: 1.1rem; font-weight: 700; background: var(--bg); color: var(--text-muted);">--</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">Risk Level</div>
+                                        <div id="combined-risk-level" style="font-size: 1rem; font-weight: 600;">--</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 0.7rem; color: var(--text-muted);">Position Size</div>
+                                        <div id="combined-position-size" style="font-size: 0.85rem; font-weight: 500;">--</div>
+                                    </div>
+                                </div>
+                                <div id="combined-recommendation" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">--</div>
+                            </div>
+                        </div>
+
+                        <!-- Key Levels Row -->
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center; border-left: 3px solid var(--red);">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">CALL WALL (RESIST)</div>
+                                <div style="font-size: 1.3rem; font-weight: 700; color: var(--red);" id="gex-call-wall">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="gex-call-wall-dist">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center; border-left: 3px solid var(--green);">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">PUT WALL (SUPPORT)</div>
+                                <div style="font-size: 1.3rem; font-weight: 700; color: var(--green);" id="gex-put-wall">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="gex-put-wall-dist">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center; border-left: 3px solid var(--orange);">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">GAMMA FLIP</div>
+                                <div style="font-size: 1.3rem; font-weight: 700; color: var(--orange);" id="gex-gamma-flip">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="gex-gamma-flip-note">Sign change zone</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px; text-align: center; border-left: 3px solid var(--purple);">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">P/C RATIO Z-SCORE</div>
+                                <div style="font-size: 1.3rem; font-weight: 700;" id="gex-pc-zscore">--</div>
+                                <div style="font-size: 0.65rem; margin-top: 2px;" id="gex-pc-sentiment">--</div>
+                            </div>
+                        </div>
+
+                        <!-- Zones & Signals -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <!-- Magnet & Acceleration Zones -->
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; font-weight: 600; margin-bottom: 8px; color: var(--blue);">Key Zones</div>
+                                <div style="display: flex; gap: 16px;">
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">Magnet Zones (High Gamma)</div>
+                                        <div id="gex-magnet-zones" style="font-size: 0.8rem; font-weight: 500;">--</div>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">Acceleration Zones</div>
+                                        <div id="gex-accel-zones" style="font-size: 0.8rem; font-weight: 500;">--</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Trading Signal -->
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; font-weight: 600; margin-bottom: 8px; color: var(--purple);">Trading Signal</div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div id="gex-signal-badge" style="padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; background: var(--bg); color: var(--text-muted);">--</div>
+                                    <div style="flex: 1; font-size: 0.75rem; color: var(--text-muted);" id="gex-signal-note">--</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Interpretation -->
+                        <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg) 100%); border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-bottom: 6px;">📊 GEX Analysis Summary</div>
+                            <div style="font-size: 0.8rem;" id="gex-interpretation">Load a ticker to see comprehensive GEX analysis with regime classification, support/resistance levels, and trading signals.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Ticker Summary Stats (shown when ticker loaded) -->
             <div class="stats-bar" id="options-summary" style="display: none; margin-bottom: 20px;">
                 <div class="stat-item">
@@ -9823,9 +9934,212 @@
 
                 console.log('✅ Options analysis loaded for', ticker, mp.expiration);
 
+                // Load GEX Dashboard after options analysis
+                loadGexDashboard();
+
             } catch (e) {
                 console.error('Options analysis error:', e);
                 document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        // GEX Dashboard - Advanced gamma exposure analysis
+        async function loadGexDashboard() {
+            const ticker = optionsAnalysisTicker;
+            if (!ticker) return;
+
+            const expiry = document.getElementById('oa-expiry-select').value;
+            const container = document.getElementById('gex-dashboard-container');
+            container.style.display = 'block';
+            document.getElementById('gex-ticker').textContent = ticker;
+
+            // Reset all fields
+            const resetFields = ['gex-regime-badge', 'gex-regime-confidence', 'gex-regime-strategy',
+                'gex-regime-recommendation', 'combined-regime-badge', 'combined-risk-level',
+                'combined-position-size', 'combined-recommendation', 'gex-call-wall', 'gex-put-wall',
+                'gex-gamma-flip', 'gex-pc-zscore', 'gex-pc-sentiment', 'gex-magnet-zones',
+                'gex-accel-zones', 'gex-signal-badge', 'gex-signal-note', 'gex-interpretation'];
+            resetFields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = 'Loading...';
+            });
+
+            try {
+                // Fetch all GEX data in parallel
+                const expiryParam = expiry ? '?expiration=' + expiry : '';
+                const [regimeRes, levelsRes, combinedRes] = await Promise.all([
+                    fetch(`${API_BASE}/options/gex-regime/${ticker}${expiryParam}`),
+                    fetch(`${API_BASE}/options/gex-levels/${ticker}${expiryParam}`),
+                    fetch(`${API_BASE}/options/combined-regime/${ticker}${expiryParam}`)
+                ]);
+
+                const regimeData = await regimeRes.json();
+                const levelsData = await levelsRes.json();
+                const combinedData = await combinedRes.json();
+
+                // Update Volatility Regime
+                if (regimeData.ok && regimeData.data) {
+                    const r = regimeData.data;
+                    const regimeBadge = document.getElementById('gex-regime-badge');
+                    regimeBadge.textContent = (r.regime || '--').toUpperCase();
+
+                    // Color based on regime
+                    if (r.regime === 'pinned') {
+                        regimeBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+                        regimeBadge.style.color = 'var(--green)';
+                    } else if (r.regime === 'volatile') {
+                        regimeBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+                        regimeBadge.style.color = 'var(--red)';
+                    } else {
+                        regimeBadge.style.background = 'rgba(251, 191, 36, 0.2)';
+                        regimeBadge.style.color = 'var(--orange)';
+                    }
+
+                    document.getElementById('gex-regime-confidence').textContent =
+                        r.confidence ? `${(r.confidence * 100).toFixed(0)}%` : '--';
+                    document.getElementById('gex-regime-strategy').textContent =
+                        r.strategy_bias === 'mean_revert' ? 'Mean Revert' :
+                        r.strategy_bias === 'trend_follow' ? 'Trend Follow' : r.strategy_bias || '--';
+                    document.getElementById('gex-regime-recommendation').textContent =
+                        r.recommendation || '--';
+                }
+
+                // Update Combined Regime
+                if (combinedData.ok && combinedData.data) {
+                    const c = combinedData.data;
+                    const combinedBadge = document.getElementById('combined-regime-badge');
+                    combinedBadge.textContent = (c.combined_regime || '--').toUpperCase().replace('_', ' ');
+
+                    // Color based on regime
+                    const regimeColors = {
+                        'opportunity': { bg: 'rgba(34, 197, 94, 0.2)', color: 'var(--green)' },
+                        'melt_up': { bg: 'rgba(59, 130, 246, 0.2)', color: 'var(--blue)' },
+                        'high_risk': { bg: 'rgba(251, 191, 36, 0.2)', color: 'var(--orange)' },
+                        'danger': { bg: 'rgba(239, 68, 68, 0.2)', color: 'var(--red)' }
+                    };
+                    const colors = regimeColors[c.combined_regime] || { bg: 'var(--bg)', color: 'var(--text-muted)' };
+                    combinedBadge.style.background = colors.bg;
+                    combinedBadge.style.color = colors.color;
+
+                    // Risk level with color
+                    const riskEl = document.getElementById('combined-risk-level');
+                    riskEl.textContent = c.risk_level || '--';
+                    if (c.risk_level === 'low') riskEl.style.color = 'var(--green)';
+                    else if (c.risk_level === 'medium') riskEl.style.color = 'var(--orange)';
+                    else if (c.risk_level === 'high' || c.risk_level === 'extreme') riskEl.style.color = 'var(--red)';
+                    else riskEl.style.color = 'var(--text)';
+
+                    document.getElementById('combined-position-size').textContent =
+                        c.position_sizing ? `${(c.position_sizing * 100).toFixed(0)}%` : '--';
+                    document.getElementById('combined-recommendation').textContent =
+                        c.recommendation || '--';
+
+                    // P/C Z-score from combined data
+                    if (c.pc_ratio) {
+                        const zscore = c.pc_ratio.zscore;
+                        const zscoreEl = document.getElementById('gex-pc-zscore');
+                        zscoreEl.textContent = zscore !== undefined ? zscore.toFixed(2) : '--';
+                        if (zscore > 1) zscoreEl.style.color = 'var(--red)';
+                        else if (zscore < -1) zscoreEl.style.color = 'var(--green)';
+                        else zscoreEl.style.color = 'var(--text)';
+
+                        const sentimentEl = document.getElementById('gex-pc-sentiment');
+                        sentimentEl.textContent = c.pc_ratio.sentiment || '--';
+                        if (c.pc_ratio.sentiment === 'fear') {
+                            sentimentEl.style.color = 'var(--red)';
+                        } else if (c.pc_ratio.sentiment === 'complacency') {
+                            sentimentEl.style.color = 'var(--green)';
+                        } else {
+                            sentimentEl.style.color = 'var(--text-muted)';
+                        }
+                    }
+                }
+
+                // Update GEX Levels
+                if (levelsData.ok && levelsData.data) {
+                    const l = levelsData.data;
+                    const currentPrice = l.current_price || 0;
+
+                    // Call Wall
+                    const callWall = l.call_wall;
+                    document.getElementById('gex-call-wall').textContent =
+                        callWall ? `$${callWall.toFixed(2)}` : '--';
+                    if (callWall && currentPrice) {
+                        const dist = ((callWall - currentPrice) / currentPrice * 100).toFixed(1);
+                        document.getElementById('gex-call-wall-dist').textContent = `${dist > 0 ? '+' : ''}${dist}% from price`;
+                    }
+
+                    // Put Wall
+                    const putWall = l.put_wall;
+                    document.getElementById('gex-put-wall').textContent =
+                        putWall ? `$${putWall.toFixed(2)}` : '--';
+                    if (putWall && currentPrice) {
+                        const dist = ((putWall - currentPrice) / currentPrice * 100).toFixed(1);
+                        document.getElementById('gex-put-wall-dist').textContent = `${dist > 0 ? '+' : ''}${dist}% from price`;
+                    }
+
+                    // Gamma Flip
+                    const gammaFlip = l.gamma_flip;
+                    document.getElementById('gex-gamma-flip').textContent =
+                        gammaFlip ? `$${gammaFlip.toFixed(2)}` : '--';
+
+                    // Magnet zones
+                    const magnets = l.magnet_zones || [];
+                    document.getElementById('gex-magnet-zones').textContent =
+                        magnets.length > 0 ? magnets.map(z => `$${z.toFixed(0)}`).join(', ') : 'None';
+
+                    // Acceleration zones
+                    const accels = l.acceleration_zones || [];
+                    document.getElementById('gex-accel-zones').textContent =
+                        accels.length > 0 ? accels.map(z => `$${z.toFixed(0)}`).join(', ') : 'None';
+
+                    // Trading signal from interpretation
+                    if (l.interpretation) {
+                        const signalBadge = document.getElementById('gex-signal-badge');
+                        const signal = l.interpretation.signal || 'neutral';
+                        signalBadge.textContent = signal.toUpperCase();
+
+                        if (signal === 'bullish') {
+                            signalBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+                            signalBadge.style.color = 'var(--green)';
+                        } else if (signal === 'bearish') {
+                            signalBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+                            signalBadge.style.color = 'var(--red)';
+                        } else {
+                            signalBadge.style.background = 'var(--bg)';
+                            signalBadge.style.color = 'var(--text-muted)';
+                        }
+
+                        document.getElementById('gex-signal-note').textContent =
+                            l.interpretation.note || '--';
+                    }
+                }
+
+                // Build interpretation
+                let interpretation = [];
+                if (regimeData.ok && regimeData.data) {
+                    const r = regimeData.data;
+                    interpretation.push(`Regime: ${r.regime} (${r.strategy_bias === 'mean_revert' ? 'fade moves' : 'ride trends'}).`);
+                }
+                if (combinedData.ok && combinedData.data) {
+                    const c = combinedData.data;
+                    interpretation.push(`Combined: ${c.combined_regime?.replace('_', ' ')} - ${c.recommendation || ''}`);
+                }
+                if (levelsData.ok && levelsData.data) {
+                    const l = levelsData.data;
+                    if (l.call_wall && l.put_wall) {
+                        interpretation.push(`Range: $${l.put_wall.toFixed(0)} support to $${l.call_wall.toFixed(0)} resistance.`);
+                    }
+                }
+
+                document.getElementById('gex-interpretation').textContent =
+                    interpretation.length > 0 ? interpretation.join(' ') : 'GEX analysis loaded.';
+
+                console.log('✅ GEX Dashboard loaded for', ticker);
+
+            } catch (e) {
+                console.error('GEX Dashboard error:', e);
+                document.getElementById('gex-interpretation').textContent = 'Error loading GEX data: ' + e.message;
             }
         }
 

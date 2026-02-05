@@ -910,6 +910,588 @@ def calculate_volume_profile(ticker: str, days: int = 30, num_bins: int = 50) ->
         return {"error": str(e), "ticker": ticker}
 
 
+# =============================================================================
+# GEX-BASED MODELS
+# =============================================================================
+
+def get_gex_regime(ticker: str, expiration: str = None) -> Dict:
+    """
+    GEX Volatility Regime Classifier
+
+    Classifies the current market regime based on GEX:
+    - PINNED (high positive GEX): Mean-reversion strategies win, fade breakouts, sell premium
+    - VOLATILE (negative GEX): Trend-following wins, buy breakouts, reduce size or buy premium
+    - TRANSITIONAL (near zero/gamma flip): Highest uncertainty, reduce exposure
+
+    Returns:
+        {
+            'regime': str ('pinned', 'volatile', 'transitional'),
+            'regime_score': float (-100 to +100),
+            'gex_normalized': float (GEX / market cap proxy),
+            'recommendation': str,
+            'position_sizing': float (0.25, 0.5, 1.0),
+            'strategy_bias': str,
+            ...
+        }
+    """
+    try:
+        # Get GEX data
+        gex_data = calculate_gex_by_strike(ticker, expiration)
+        if 'error' in gex_data:
+            return gex_data
+
+        total_gex = gex_data.get('total_gex', 0)
+        current_price = gex_data.get('current_price', 0)
+        zero_gamma = gex_data.get('zero_gamma_level')
+        gex_by_strike = gex_data.get('gex_by_strike', [])
+
+        # Normalize GEX by notional value (price * some proxy for market cap)
+        # For SPY ~$500, total GEX of $1B is significant
+        # Normalization: GEX per $1 of underlying = GEX / (price * 1M shares approx)
+        if current_price > 0:
+            # Use billions as reference point
+            gex_normalized = total_gex / 1e9  # GEX in billions
+        else:
+            gex_normalized = 0
+
+        # Thresholds (calibrated for SPY-like instruments)
+        # These can be ticker-specific in production
+        POSITIVE_GEX_THRESHOLD = 0.5   # $500M+ = strong positive
+        NEGATIVE_GEX_THRESHOLD = -0.3  # -$300M = negative territory
+        TRANSITIONAL_BAND = 0.2        # Within $200M of zero = transitional
+
+        # Determine regime
+        if gex_normalized > POSITIVE_GEX_THRESHOLD:
+            regime = 'pinned'
+            regime_score = min(100, gex_normalized * 50)  # Scale to 0-100
+            position_sizing = 1.0  # Full size
+            strategy_bias = 'mean_reversion'
+            recommendation = 'Dealers will dampen moves. Fade breakouts, sell premium, buy dips.'
+        elif gex_normalized < NEGATIVE_GEX_THRESHOLD:
+            regime = 'volatile'
+            regime_score = max(-100, gex_normalized * 50)  # Scale to -100-0
+            position_sizing = 0.25  # Quarter size - high risk
+            strategy_bias = 'trend_following'
+            recommendation = 'Dealers will amplify moves. Follow breakouts, buy premium for protection, reduce size.'
+        else:
+            regime = 'transitional'
+            regime_score = gex_normalized * 50  # Near zero
+            position_sizing = 0.5  # Half size
+            strategy_bias = 'neutral'
+            recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
+
+        # Calculate distance to gamma flip
+        flip_distance = None
+        flip_distance_pct = None
+        if zero_gamma and current_price > 0:
+            flip_distance = zero_gamma - current_price
+            flip_distance_pct = (flip_distance / current_price) * 100
+
+        # Find key GEX levels (walls)
+        call_wall = None
+        put_wall = None
+        max_call_gex = 0
+        max_put_gex = 0
+
+        for g in gex_by_strike:
+            if g['call_gex'] > max_call_gex:
+                max_call_gex = g['call_gex']
+                call_wall = g['strike']
+            if g['put_gex'] < max_put_gex:  # Most negative = strongest put wall
+                max_put_gex = g['put_gex']
+                put_wall = g['strike']
+
+        return {
+            'ticker': ticker.upper(),
+            'expiration': gex_data.get('expiration'),
+            'current_price': current_price,
+            'regime': regime,
+            'regime_score': round(regime_score, 1),
+            'regime_emoji': '📌' if regime == 'pinned' else '🌊' if regime == 'volatile' else '⚖️',
+            'total_gex': total_gex,
+            'gex_billions': round(gex_normalized, 3),
+            'zero_gamma_level': zero_gamma,
+            'flip_distance': round(flip_distance, 2) if flip_distance else None,
+            'flip_distance_pct': round(flip_distance_pct, 2) if flip_distance_pct else None,
+            'position_sizing': position_sizing,
+            'position_sizing_label': f'{int(position_sizing * 100)}% size',
+            'strategy_bias': strategy_bias,
+            'recommendation': recommendation,
+            'call_wall': call_wall,
+            'put_wall': put_wall,
+            'is_futures': gex_data.get('is_futures', False)
+        }
+
+    except Exception as e:
+        logger.error(f"GEX regime error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_gex_levels(ticker: str, expiration: str = None) -> Dict:
+    """
+    GEX Support/Resistance Wall Mapper
+
+    Maps GEX by strike to identify dealer hedging walls:
+    - Call Wall: Strike with highest call GEX (likely resistance/ceiling)
+    - Put Wall: Strike with most negative put GEX (likely support/floor)
+    - High GEX Zones: Strikes with large positive GEX (magnets/sticky levels)
+    - Low GEX Zones: Strikes with negative GEX (acceleration zones)
+
+    Returns:
+        {
+            'call_wall': float (resistance level),
+            'put_wall': float (support level),
+            'gamma_flip': float (where dealers flip from long to short gamma),
+            'key_levels': List[Dict],  # Sorted by importance
+            'magnet_zones': List[float],  # High positive GEX - sticky
+            'acceleration_zones': List[float],  # Negative GEX - fast moves
+        }
+    """
+    try:
+        gex_data = calculate_gex_by_strike(ticker, expiration)
+        if 'error' in gex_data:
+            return gex_data
+
+        current_price = gex_data.get('current_price', 0)
+        gex_by_strike = gex_data.get('gex_by_strike', [])
+        zero_gamma = gex_data.get('zero_gamma_level')
+
+        if not gex_by_strike:
+            return {"error": "No GEX data available", "ticker": ticker}
+
+        # Find walls (strikes with highest absolute GEX)
+        call_wall = None
+        put_wall = None
+        max_call_gex = 0
+        min_put_gex = 0  # Most negative
+
+        # Categorize zones
+        magnet_zones = []      # High positive GEX - price sticks here
+        acceleration_zones = []  # Negative GEX - price moves fast through here
+        key_levels = []
+
+        # Calculate total absolute GEX for significance threshold
+        total_abs_gex = sum(abs(g['net_gex']) for g in gex_by_strike)
+        significance_threshold = total_abs_gex * 0.05  # 5% of total = significant
+
+        for g in gex_by_strike:
+            strike = g['strike']
+            net_gex = g['net_gex']
+            call_gex = g['call_gex']
+            put_gex = g['put_gex']
+
+            # Find call wall (highest call GEX)
+            if call_gex > max_call_gex:
+                max_call_gex = call_gex
+                call_wall = strike
+
+            # Find put wall (most negative put GEX)
+            if put_gex < min_put_gex:
+                min_put_gex = put_gex
+                put_wall = strike
+
+            # Categorize by GEX sign
+            if net_gex > significance_threshold:
+                magnet_zones.append(strike)
+                level_type = 'magnet'
+            elif net_gex < -significance_threshold:
+                acceleration_zones.append(strike)
+                level_type = 'acceleration'
+            else:
+                level_type = 'neutral'
+
+            # Build key levels list
+            if abs(net_gex) > significance_threshold:
+                distance_pct = ((strike - current_price) / current_price * 100) if current_price > 0 else 0
+                key_levels.append({
+                    'strike': strike,
+                    'net_gex': net_gex,
+                    'gex_millions': round(net_gex / 1e6, 1),
+                    'type': level_type,
+                    'role': 'resistance' if strike > current_price else 'support',
+                    'distance_pct': round(distance_pct, 2),
+                    'call_oi': g['call_oi'],
+                    'put_oi': g['put_oi']
+                })
+
+        # Sort key levels by absolute GEX (most important first)
+        key_levels.sort(key=lambda x: abs(x['net_gex']), reverse=True)
+
+        # Get nearest support and resistance
+        supports = [l for l in key_levels if l['strike'] < current_price and l['type'] == 'magnet']
+        resistances = [l for l in key_levels if l['strike'] > current_price and l['type'] == 'magnet']
+
+        nearest_support = max(supports, key=lambda x: x['strike']) if supports else None
+        nearest_resistance = min(resistances, key=lambda x: x['strike']) if resistances else None
+
+        return {
+            'ticker': ticker.upper(),
+            'expiration': gex_data.get('expiration'),
+            'current_price': current_price,
+            'call_wall': call_wall,
+            'call_wall_gex_millions': round(max_call_gex / 1e6, 1) if max_call_gex else 0,
+            'put_wall': put_wall,
+            'put_wall_gex_millions': round(min_put_gex / 1e6, 1) if min_put_gex else 0,
+            'gamma_flip': zero_gamma,
+            'nearest_support': nearest_support['strike'] if nearest_support else put_wall,
+            'nearest_resistance': nearest_resistance['strike'] if nearest_resistance else call_wall,
+            'key_levels': key_levels[:10],  # Top 10 most significant
+            'magnet_zones': sorted(magnet_zones),
+            'acceleration_zones': sorted(acceleration_zones),
+            'total_gex': gex_data.get('total_gex', 0),
+            'interpretation': _interpret_gex_levels(current_price, call_wall, put_wall, zero_gamma, magnet_zones)
+        }
+
+    except Exception as e:
+        logger.error(f"GEX levels error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def _interpret_gex_levels(price: float, call_wall: float, put_wall: float,
+                          gamma_flip: float, magnet_zones: List[float]) -> str:
+    """Generate human-readable interpretation of GEX levels."""
+    parts = []
+
+    if call_wall and price > 0:
+        dist = ((call_wall - price) / price) * 100
+        parts.append(f"Call wall at ${call_wall:.0f} ({dist:+.1f}%) - likely resistance")
+
+    if put_wall and price > 0:
+        dist = ((put_wall - price) / price) * 100
+        parts.append(f"Put wall at ${put_wall:.0f} ({dist:+.1f}%) - likely support")
+
+    if gamma_flip and price > 0:
+        dist = ((gamma_flip - price) / price) * 100
+        direction = "above" if gamma_flip > price else "below"
+        parts.append(f"Gamma flip at ${gamma_flip:.0f} ({direction}, {abs(dist):.1f}% away)")
+
+    if len(magnet_zones) > 2:
+        parts.append(f"{len(magnet_zones)} high-GEX magnet zones identified")
+
+    return " | ".join(parts) if parts else "Insufficient data for interpretation"
+
+
+def get_gex_analysis(ticker: str, expiration: str = None) -> Dict:
+    """
+    Complete GEX Analysis combining regime + levels + trading signals.
+
+    Returns comprehensive analysis for trading decisions.
+    """
+    try:
+        # Get both regime and levels
+        regime = get_gex_regime(ticker, expiration)
+        if 'error' in regime:
+            return regime
+
+        levels = get_gex_levels(ticker, expiration)
+        if 'error' in levels:
+            levels = {}  # Continue with regime data
+
+        # Generate trading signals
+        signals = []
+
+        # Regime-based signals
+        if regime['regime'] == 'pinned':
+            signals.append({
+                'signal': 'SELL_PREMIUM',
+                'strength': 'strong',
+                'reason': 'High positive GEX - volatility suppressed'
+            })
+            signals.append({
+                'signal': 'FADE_BREAKOUTS',
+                'strength': 'strong',
+                'reason': 'Dealers will buy dips and sell rips'
+            })
+        elif regime['regime'] == 'volatile':
+            signals.append({
+                'signal': 'BUY_PREMIUM',
+                'strength': 'strong',
+                'reason': 'Negative GEX - realized vol likely to overshoot implied'
+            })
+            signals.append({
+                'signal': 'FOLLOW_BREAKOUTS',
+                'strength': 'strong',
+                'reason': 'Dealers will amplify directional moves'
+            })
+            signals.append({
+                'signal': 'REDUCE_SIZE',
+                'strength': 'strong',
+                'reason': 'Tail risk elevated in negative GEX environment'
+            })
+        else:  # transitional
+            signals.append({
+                'signal': 'WAIT',
+                'strength': 'moderate',
+                'reason': 'Near gamma flip - wait for regime clarity'
+            })
+
+        # Level-based signals
+        current_price = regime.get('current_price', 0)
+        call_wall = levels.get('call_wall')
+        put_wall = levels.get('put_wall')
+
+        if call_wall and current_price > 0:
+            dist_to_call = ((call_wall - current_price) / current_price) * 100
+            if 0 < dist_to_call < 2:  # Within 2% of call wall
+                signals.append({
+                    'signal': 'NEAR_RESISTANCE',
+                    'strength': 'strong',
+                    'reason': f'Price near call wall at ${call_wall:.0f} - expect resistance'
+                })
+
+        if put_wall and current_price > 0:
+            dist_to_put = ((put_wall - current_price) / current_price) * 100
+            if -2 < dist_to_put < 0:  # Within 2% of put wall
+                signals.append({
+                    'signal': 'NEAR_SUPPORT',
+                    'strength': 'strong',
+                    'reason': f'Price near put wall at ${put_wall:.0f} - expect support'
+                })
+
+        return {
+            'ticker': ticker.upper(),
+            'timestamp': datetime.now().isoformat(),
+            'expiration': regime.get('expiration'),
+            'current_price': current_price,
+
+            # Regime
+            'regime': regime['regime'],
+            'regime_score': regime['regime_score'],
+            'regime_emoji': regime['regime_emoji'],
+            'gex_billions': regime['gex_billions'],
+
+            # Position sizing
+            'position_sizing': regime['position_sizing'],
+            'position_sizing_label': regime['position_sizing_label'],
+            'strategy_bias': regime['strategy_bias'],
+
+            # Levels
+            'call_wall': call_wall,
+            'put_wall': put_wall,
+            'gamma_flip': levels.get('gamma_flip'),
+            'nearest_support': levels.get('nearest_support'),
+            'nearest_resistance': levels.get('nearest_resistance'),
+            'key_levels': levels.get('key_levels', [])[:5],  # Top 5
+
+            # Signals
+            'signals': signals,
+            'recommendation': regime['recommendation'],
+
+            # Raw data reference
+            'total_gex': regime.get('total_gex'),
+            'is_futures': regime.get('is_futures', False)
+        }
+
+    except Exception as e:
+        logger.error(f"GEX analysis error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+# =============================================================================
+# PUT/CALL RATIO MODELS
+# =============================================================================
+
+def get_pc_ratio_analysis(ticker: str = 'SPY') -> Dict:
+    """
+    Put/Call Ratio Analysis with Z-Score normalization.
+
+    Instead of fixed thresholds, uses rolling Z-score to identify
+    extreme sentiment conditions regardless of regime shifts.
+
+    Returns:
+        {
+            'pc_ratio': float,
+            'pc_zscore': float (normalized),
+            'sentiment': str,
+            'signal': str,
+            ...
+        }
+    """
+    try:
+        # Get current options flow
+        flow = get_options_flow(ticker)
+        if 'error' in flow:
+            return flow
+
+        pc_ratio = flow.get('put_call_ratio', 0)
+
+        # For real Z-score, we'd need historical data
+        # Using heuristic thresholds calibrated for SPY
+        # SPY typical P/C: 0.8-1.2, extremes: <0.6 or >1.5
+
+        # Historical mean and std approximations for SPY
+        HISTORICAL_MEAN = 0.95
+        HISTORICAL_STD = 0.25
+
+        zscore = (pc_ratio - HISTORICAL_MEAN) / HISTORICAL_STD if HISTORICAL_STD > 0 else 0
+
+        # Interpret Z-score
+        if zscore > 2:
+            sentiment = 'extreme_fear'
+            signal = 'contrarian_bullish'
+            recommendation = 'Extreme put buying - contrarian bullish setup'
+        elif zscore > 1:
+            sentiment = 'elevated_fear'
+            signal = 'moderately_bullish'
+            recommendation = 'Elevated fear - watch for reversal signals'
+        elif zscore < -2:
+            sentiment = 'extreme_complacency'
+            signal = 'contrarian_bearish'
+            recommendation = 'Extreme call buying/complacency - contrarian bearish'
+        elif zscore < -1:
+            sentiment = 'elevated_complacency'
+            signal = 'moderately_bearish'
+            recommendation = 'Low fear - consider reducing exposure'
+        else:
+            sentiment = 'neutral'
+            signal = 'neutral'
+            recommendation = 'P/C ratio in normal range - no extreme sentiment'
+
+        return {
+            'ticker': ticker.upper(),
+            'pc_ratio': round(pc_ratio, 3),
+            'pc_zscore': round(zscore, 2),
+            'sentiment': sentiment,
+            'sentiment_emoji': '😱' if 'fear' in sentiment else '😎' if 'complacency' in sentiment else '😐',
+            'signal': signal,
+            'recommendation': recommendation,
+            'call_volume': flow.get('total_call_volume', 0),
+            'put_volume': flow.get('total_put_volume', 0),
+            'call_oi': flow.get('total_call_oi', 0),
+            'put_oi': flow.get('total_put_oi', 0),
+            'historical_mean': HISTORICAL_MEAN,
+            'historical_std': HISTORICAL_STD
+        }
+
+    except Exception as e:
+        logger.error(f"P/C ratio analysis error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_combined_regime(ticker: str, expiration: str = None) -> Dict:
+    """
+    Combined GEX + P/C Ratio Regime Matrix
+
+    Creates a 2x2 regime classification:
+    - Fear + Positive GEX: Best buying opportunity
+    - Fear + Negative GEX: Danger zone (crash risk)
+    - Complacency + Positive GEX: Quiet melt-up
+    - Complacency + Negative GEX: Most dangerous
+
+    Returns comprehensive regime classification for strategy selection.
+    """
+    try:
+        # Get GEX regime
+        gex_regime = get_gex_regime(ticker, expiration)
+        if 'error' in gex_regime:
+            return gex_regime
+
+        # Get P/C analysis
+        pc_analysis = get_pc_ratio_analysis(ticker)
+        if 'error' in pc_analysis:
+            # Continue with just GEX
+            pc_analysis = {'pc_zscore': 0, 'sentiment': 'neutral'}
+
+        # Extract key metrics
+        gex_regime_type = gex_regime['regime']
+        gex_score = gex_regime['regime_score']
+        pc_zscore = pc_analysis.get('pc_zscore', 0)
+
+        # Determine combined regime
+        is_positive_gex = gex_regime_type == 'pinned'
+        is_negative_gex = gex_regime_type == 'volatile'
+        is_fear = pc_zscore > 1  # Elevated or extreme fear
+        is_complacency = pc_zscore < -1  # Elevated or extreme complacency
+
+        # 2x2 Matrix classification
+        if is_fear and is_positive_gex:
+            combined_regime = 'opportunity'
+            regime_emoji = '🎯'
+            regime_color = 'green'
+            recommendation = 'BEST SETUP: Fear + dealer support. Aggressive PCS, full size ORB, TQQQ entries.'
+            risk_level = 'low'
+            position_multiplier = 1.25  # Can go slightly above normal
+        elif is_fear and is_negative_gex:
+            combined_regime = 'danger'
+            regime_emoji = '⚠️'
+            regime_color = 'red'
+            recommendation = 'DANGER ZONE: Fear + dealer amplification = crash risk. Sit on hands or buy puts.'
+            risk_level = 'extreme'
+            position_multiplier = 0.0  # No new positions
+        elif is_complacency and is_positive_gex:
+            combined_regime = 'melt_up'
+            regime_emoji = '📈'
+            regime_color = 'yellow'
+            recommendation = 'Quiet melt-up. Normal trading, start tightening stops.'
+            risk_level = 'moderate'
+            position_multiplier = 0.75
+        elif is_complacency and is_negative_gex:
+            combined_regime = 'high_risk'
+            regime_emoji = '🔴'
+            regime_color = 'orange'
+            recommendation = 'MOST DANGEROUS: Complacency + no dealer cushion. Reduce exposure, hedge, no new longs.'
+            risk_level = 'high'
+            position_multiplier = 0.25
+        else:
+            # Neutral P/C, use GEX regime primarily
+            combined_regime = f'neutral_{gex_regime_type}'
+            regime_emoji = gex_regime['regime_emoji']
+            regime_color = 'gray'
+            recommendation = gex_regime['recommendation']
+            risk_level = 'moderate' if gex_regime_type != 'volatile' else 'elevated'
+            position_multiplier = gex_regime['position_sizing']
+
+        # Strategy recommendations based on regime
+        strategies = {
+            'opportunity': ['aggressive_pcs', 'full_size_orb', 'tqqq_entry', 'buy_dips'],
+            'danger': ['cash', 'buy_puts', 'no_new_longs'],
+            'melt_up': ['normal_trading', 'tighten_stops', 'trim_winners'],
+            'high_risk': ['reduce_exposure', 'hedge', 'no_new_longs', 'raise_cash'],
+        }
+
+        return {
+            'ticker': ticker.upper(),
+            'timestamp': datetime.now().isoformat(),
+            'expiration': gex_regime.get('expiration'),
+            'current_price': gex_regime.get('current_price'),
+
+            # Combined regime
+            'combined_regime': combined_regime,
+            'regime_emoji': regime_emoji,
+            'regime_color': regime_color,
+            'risk_level': risk_level,
+
+            # Position sizing
+            'position_multiplier': position_multiplier,
+            'position_label': f'{int(position_multiplier * 100)}% of normal size',
+
+            # Recommended strategies
+            'recommended_strategies': strategies.get(combined_regime, ['normal_trading']),
+            'recommendation': recommendation,
+
+            # Component data
+            'gex_regime': gex_regime_type,
+            'gex_score': gex_score,
+            'gex_billions': gex_regime['gex_billions'],
+            'pc_zscore': pc_zscore,
+            'pc_sentiment': pc_analysis.get('sentiment', 'neutral'),
+            'pc_ratio': pc_analysis.get('pc_ratio', 0),
+
+            # Key levels from GEX
+            'call_wall': gex_regime.get('call_wall'),
+            'put_wall': gex_regime.get('put_wall'),
+            'gamma_flip': gex_regime.get('zero_gamma_level'),
+
+            # Detailed breakdown
+            'gex_data': gex_regime,
+            'pc_data': pc_analysis
+        }
+
+    except Exception as e:
+        logger.error(f"Combined regime error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
 # Example usage
 if __name__ == '__main__':
     # Test the functions

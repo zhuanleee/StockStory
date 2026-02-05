@@ -2030,6 +2030,122 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/gex-regime/{ticker_symbol}", tags=["Options"])
+    def options_gex_regime(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        GEX Volatility Regime Classifier.
+
+        Classifies market regime based on aggregate GEX:
+        - Pinned (positive GEX): Price stabilized, low volatility expected
+        - Volatile (negative GEX): Amplified moves, high volatility
+        - Transitional: Near gamma flip, regime change possible
+
+        Returns regime classification, confidence, position sizing factor,
+        strategy bias (mean_revert/trend_follow), and actionable recommendation.
+        """
+        try:
+            from src.data.options import get_gex_regime
+            result = get_gex_regime(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-levels/{ticker_symbol}", tags=["Options"])
+    def options_gex_levels(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        GEX Support/Resistance Wall Mapper.
+
+        Identifies key levels from gamma exposure:
+        - Call Wall: Highest positive call GEX (resistance)
+        - Put Wall: Highest positive put GEX (support)
+        - Gamma Flip: Price where GEX changes sign
+        - Magnet Zones: High gamma areas that attract price
+        - Acceleration Zones: Areas where moves accelerate
+
+        Use for defining trade entries, stops, and targets.
+        """
+        try:
+            from src.data.options import get_gex_levels
+            result = get_gex_levels(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-analysis/{ticker_symbol}", tags=["Options"])
+    def options_gex_analysis(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Complete GEX Analysis combining regime + levels + signals.
+
+        Returns comprehensive gamma exposure analysis including:
+        - Regime classification (pinned/volatile/transitional)
+        - Key levels (call wall, put wall, gamma flip)
+        - Trading signals with position sizing
+        - Actionable recommendations
+
+        Best for complete picture of options flow dynamics.
+        """
+        try:
+            from src.data.options import get_gex_analysis
+            result = get_gex_analysis(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/combined-regime/{ticker_symbol}", tags=["Options"])
+    def options_combined_regime(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Combined GEX + Put/Call Ratio Regime Matrix.
+
+        Creates 2x2 regime matrix combining:
+        - GEX (positive=stabilizing, negative=volatile)
+        - P/C Ratio Z-Score (fear vs complacency)
+
+        Regimes:
+        - Opportunity: Fear + Positive GEX (best buying)
+        - Danger: Fear + Negative GEX (crash risk)
+        - Melt-up: Complacency + Positive GEX (quiet uptrend)
+        - High-risk: Complacency + Negative GEX (most dangerous)
+
+        Returns combined regime, trading recommendation, and risk level.
+        """
+        try:
+            from src.data.options import get_combined_regime
+            result = get_combined_regime(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/pc-ratio/{ticker_symbol}", tags=["Options"])
+    def options_pc_ratio(ticker_symbol: str = "SPY"):
+        """
+        Put/Call Ratio Analysis with Z-Score Normalization.
+
+        Analyzes put/call ratio to gauge market sentiment:
+        - Raw P/C ratio
+        - Z-score normalized (how extreme vs history)
+        - Sentiment classification (fear/neutral/complacency)
+
+        Z-score interpretation:
+        - > 1.5: Extreme fear (contrarian bullish)
+        - < -1.5: Extreme complacency (contrarian bearish)
+        """
+        try:
+            from src.data.options import get_pc_ratio_analysis
+            result = get_pc_ratio_analysis(ticker_symbol.upper())
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):
         """Scan all tracked stocks for unusual options activity"""
