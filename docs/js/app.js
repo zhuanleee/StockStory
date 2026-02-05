@@ -1,5 +1,5 @@
-// Version: 20260206a - Fixed candles.map error
-console.log('📦 StockStory app.js v20260206a loaded');
+// Version: 20260206b - Fixed Lightweight Charts API
+console.log('📦 StockStory app.js v20260206b loaded');
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'

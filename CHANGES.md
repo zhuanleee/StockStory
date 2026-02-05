@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 01:50 - `53271d4`
+
+**Add cache-busting version to force JS reload**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-06 01:42 - `85122d2`
 
 **Add robust candle data parsing with better error handling**
