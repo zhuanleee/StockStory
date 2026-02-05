@@ -2146,6 +2146,140 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # =========================================================================
+    # RATIO SPREAD CONDITION ENDPOINTS
+    # =========================================================================
+
+    @web_app.get("/options/vrp/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_vrp(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Variance Risk Premium (VRP) Analysis.
+
+        VRP = Implied Volatility - Realized Volatility
+        - Positive VRP: Options overpriced, edge for sellers
+        - Negative VRP: Options underpriced, avoid selling
+
+        For ratio put spreads, want HIGH positive VRP.
+        """
+        try:
+            from src.data.options import get_vrp_analysis
+            result = get_vrp_analysis(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/skew/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_skew(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Put Skew Analysis.
+
+        Measures how much richer OTM puts are vs ATM options.
+        - Steep skew: OTM puts expensive, good for ratio spreads (sell rich puts)
+        - Flat skew: OTM puts cheap, less edge for ratio spreads
+
+        Returns 25-delta put skew and scoring.
+        """
+        try:
+            from src.data.options import get_skew_analysis
+            result = get_skew_analysis(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/expected-move/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_expected_move(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Expected Move Calculation.
+
+        Expected Move = ATM Straddle Price × 0.85
+
+        Returns:
+        - Expected move in $ and %
+        - Upper/lower expected range
+        - 1.5x and 2x expected move levels (for ratio spread breakeven planning)
+        """
+        try:
+            from src.data.options import get_expected_move
+            result = get_expected_move(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/term-structure/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_term_structure(ticker_symbol: str):
+        """
+        IV Term Structure Analysis.
+
+        Compares front-month IV vs back-month IV:
+        - Contango (normal): Front IV < Back IV - calm market
+        - Backwardation: Front IV > Back IV - near-term stress
+
+        For ratio spreads, backwardation is FAVORABLE (IV likely to drop).
+        """
+        try:
+            from src.data.options import get_iv_term_structure
+            result = get_iv_term_structure(ticker_symbol.upper())
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/realized-vol/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_realized_vol(ticker_symbol: str, days: int = Query(20)):
+        """
+        Realized Volatility Analysis.
+
+        Calculates historical volatility from price data:
+        - 5-day, 10-day, 20-day, 30-day RV
+        - RV direction (rising/falling)
+        - RV regime (expanding/compressing/stable)
+
+        For ratio spreads, want FALLING RV (vol compressing).
+        """
+        try:
+            from src.data.options import calculate_realized_volatility
+            result = calculate_realized_volatility(ticker_symbol.upper(), days)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/ratio-spread-score/{ticker_symbol}", tags=["Ratio Spread"])
+    def options_ratio_spread_score(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Combined Ratio Spread Scoring Dashboard.
+
+        Aggregates all condition models into a single score (0-6):
+        1. VRP (IV vs RV): Options overpriced?
+        2. Skew: OTM puts rich?
+        3. Term Structure: Backwardated?
+        4. GEX Regime: Dealers suppress moves?
+        5. RV Direction: Vol compressing?
+        6. Expected Move: Calculated?
+
+        Score interpretation:
+        - 5-6: HIGH CONVICTION - full size
+        - 3-4: FAVORABLE - standard size
+        - 1-2: UNFAVORABLE - reduced size
+        - 0: AVOID - do not enter
+        """
+        try:
+            from src.data.options import get_ratio_spread_score
+            result = get_ratio_spread_score(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):
         """Scan all tracked stocks for unusual options activity"""

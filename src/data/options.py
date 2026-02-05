@@ -1503,6 +1503,861 @@ def get_combined_regime(ticker: str, expiration: str = None) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
+# =============================================================================
+# RATIO SPREAD CONDITION MODELS
+# =============================================================================
+
+def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
+    """
+    Calculate historical realized volatility using close-to-close returns.
+
+    Args:
+        ticker: Stock symbol
+        days: Lookback period (default 20 trading days)
+
+    Returns:
+        {
+            'rv': float (annualized realized vol as decimal, e.g., 0.25 = 25%),
+            'rv_5d': float (5-day RV for regime detection),
+            'rv_20d': float (20-day RV),
+            'rv_direction': str ('rising' or 'falling'),
+            ...
+        }
+    """
+    try:
+        import math
+
+        # Get historical price data (need extra days for return calculation)
+        price_data = get_price_data_sync(ticker, days=days + 10)
+        if not price_data or len(price_data) < days:
+            return {"error": "Insufficient price data", "ticker": ticker}
+
+        # Extract closing prices (most recent first, so reverse)
+        closes = [bar.get('close') or bar.get('c') for bar in price_data if bar.get('close') or bar.get('c')]
+        closes = closes[::-1]  # Oldest to newest
+
+        if len(closes) < days + 1:
+            return {"error": "Insufficient price data", "ticker": ticker}
+
+        # Calculate log returns
+        returns = []
+        for i in range(1, len(closes)):
+            if closes[i-1] > 0 and closes[i] > 0:
+                returns.append(math.log(closes[i] / closes[i-1]))
+
+        if len(returns) < 5:
+            return {"error": "Insufficient returns data", "ticker": ticker}
+
+        # Calculate RV for different periods
+        def calc_rv(ret_list, period):
+            if len(ret_list) < period:
+                return None
+            subset = ret_list[-period:]
+            variance = sum(r**2 for r in subset) / len(subset)
+            # Annualize: sqrt(252) for daily data
+            return math.sqrt(variance * 252)
+
+        rv_5d = calc_rv(returns, 5)
+        rv_10d = calc_rv(returns, 10)
+        rv_20d = calc_rv(returns, 20)
+        rv_30d = calc_rv(returns, min(30, len(returns)))
+
+        # Determine RV direction (regime)
+        if rv_5d and rv_20d:
+            if rv_5d > rv_20d * 1.1:
+                rv_direction = 'rising'
+                rv_regime = 'expanding'
+            elif rv_5d < rv_20d * 0.9:
+                rv_direction = 'falling'
+                rv_regime = 'compressing'
+            else:
+                rv_direction = 'stable'
+                rv_regime = 'stable'
+        else:
+            rv_direction = 'unknown'
+            rv_regime = 'unknown'
+
+        return {
+            'ticker': ticker.upper(),
+            'rv_5d': round(rv_5d, 4) if rv_5d else None,
+            'rv_10d': round(rv_10d, 4) if rv_10d else None,
+            'rv_20d': round(rv_20d, 4) if rv_20d else None,
+            'rv_30d': round(rv_30d, 4) if rv_30d else None,
+            'rv_direction': rv_direction,
+            'rv_regime': rv_regime,
+            'current_price': closes[-1] if closes else None
+        }
+
+    except Exception as e:
+        logger.error(f"RV calculation error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
+    """
+    Variance Risk Premium (VRP) Analysis.
+
+    VRP = IV - RV
+    Positive VRP = options overpriced = edge for sellers
+    Negative VRP = options underpriced = edge for buyers
+
+    For ratio put spreads (net short vol), want HIGH positive VRP.
+
+    Returns:
+        {
+            'vrp': float (IV - RV),
+            'vrp_percentile': float (how extreme is current VRP),
+            'iv_30d': float,
+            'rv_20d': float,
+            'signal': str,
+            'recommendation': str
+        }
+    """
+    try:
+        # Get realized volatility
+        rv_data = calculate_realized_volatility(ticker, days=30)
+        if 'error' in rv_data:
+            return rv_data
+
+        rv_20d = rv_data.get('rv_20d', 0)
+
+        # Get implied volatility from options chain
+        chain = get_options_chain_sync(ticker, expiration)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options chain", "ticker": ticker}
+
+        calls = chain.get('calls', [])
+        puts = chain.get('puts', [])
+
+        # Get current price
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+
+        if not current_price and calls:
+            current_price = calls[len(calls)//2].get('underlying_price') or 0
+
+        # Find ATM options and extract IV
+        atm_iv_calls = []
+        atm_iv_puts = []
+
+        for c in calls:
+            strike = c.get('strike', 0)
+            iv = c.get('implied_volatility') or c.get('iv')
+            if iv and current_price > 0:
+                moneyness = abs(strike - current_price) / current_price
+                if moneyness < 0.05:  # Within 5% of ATM
+                    atm_iv_calls.append(iv)
+
+        for p in puts:
+            strike = p.get('strike', 0)
+            iv = p.get('implied_volatility') or p.get('iv')
+            if iv and current_price > 0:
+                moneyness = abs(strike - current_price) / current_price
+                if moneyness < 0.05:
+                    atm_iv_puts.append(iv)
+
+        # Average ATM IV
+        all_atm_iv = atm_iv_calls + atm_iv_puts
+        if not all_atm_iv:
+            # Fallback: use all available IVs
+            all_atm_iv = [c.get('implied_volatility') or c.get('iv') for c in calls + puts
+                         if c.get('implied_volatility') or c.get('iv')]
+
+        if not all_atm_iv:
+            return {"error": "No IV data available", "ticker": ticker}
+
+        iv_30d = sum(all_atm_iv) / len(all_atm_iv)
+
+        # Calculate VRP
+        vrp = iv_30d - rv_20d if rv_20d else 0
+        vrp_pct = (vrp / rv_20d * 100) if rv_20d > 0 else 0
+
+        # Historical VRP context (heuristic thresholds)
+        # Typical VRP for SPY: 2-5% positive
+        # These thresholds are calibrated for equity indices
+        if vrp > 0.08:  # 8%+ spread
+            vrp_signal = 'very_high'
+            vrp_score = 100
+            recommendation = 'Excellent conditions for ratio spreads - options significantly overpriced'
+        elif vrp > 0.04:  # 4-8% spread
+            vrp_signal = 'high'
+            vrp_score = 75
+            recommendation = 'Good conditions for ratio spreads - options overpriced'
+        elif vrp > 0.02:  # 2-4% spread
+            vrp_signal = 'moderate'
+            vrp_score = 50
+            recommendation = 'Acceptable for ratio spreads - slight premium edge'
+        elif vrp > 0:  # 0-2% spread
+            vrp_signal = 'low'
+            vrp_score = 25
+            recommendation = 'Marginal edge - consider smaller size'
+        else:  # Negative VRP
+            vrp_signal = 'negative'
+            vrp_score = 0
+            recommendation = 'AVOID ratio spreads - options underpriced, realized vol exceeds implied'
+
+        return {
+            'ticker': ticker.upper(),
+            'iv_30d': round(iv_30d, 4),
+            'iv_30d_pct': round(iv_30d * 100, 1),
+            'rv_20d': round(rv_20d, 4) if rv_20d else None,
+            'rv_20d_pct': round(rv_20d * 100, 1) if rv_20d else None,
+            'vrp': round(vrp, 4),
+            'vrp_pct': round(vrp_pct, 1),
+            'vrp_signal': vrp_signal,
+            'vrp_score': vrp_score,
+            'recommendation': recommendation,
+            'rv_direction': rv_data.get('rv_direction'),
+            'rv_regime': rv_data.get('rv_regime'),
+            'current_price': current_price
+        }
+
+    except Exception as e:
+        logger.error(f"VRP analysis error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_skew_analysis(ticker: str, expiration: str = None) -> Dict:
+    """
+    Put Skew Analysis for ratio spread entry timing.
+
+    Skew = OTM Put IV / ATM IV (or 25-delta put IV - ATM IV)
+
+    For ratio put spreads:
+    - Steep skew = OTM puts are rich = better credit received = good entry
+    - Flat skew = OTM puts are cheap = less credit = skip
+
+    Returns:
+        {
+            'skew': float,
+            'skew_percentile': float,
+            'atm_iv': float,
+            'otm_put_iv': float (25-delta equivalent),
+            'signal': str,
+            ...
+        }
+    """
+    try:
+        chain = get_options_chain_sync(ticker, expiration)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options chain", "ticker": ticker}
+
+        puts = chain.get('puts', [])
+        calls = chain.get('calls', [])
+
+        if not puts:
+            return {"error": "No put options data", "ticker": ticker}
+
+        # Get current price
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+
+        if not current_price and puts:
+            current_price = puts[len(puts)//2].get('underlying_price') or 0
+
+        if current_price <= 0:
+            return {"error": "Could not determine current price", "ticker": ticker}
+
+        # Categorize puts by moneyness
+        atm_puts = []  # Within 2% of ATM
+        otm_puts_25d = []  # ~5-10% OTM (approximate 25-delta)
+        otm_puts_10d = []  # ~10-15% OTM (approximate 10-delta)
+
+        for p in puts:
+            strike = p.get('strike', 0)
+            iv = p.get('implied_volatility') or p.get('iv')
+            delta = p.get('delta', 0)
+
+            if not iv or not strike:
+                continue
+
+            moneyness = (current_price - strike) / current_price  # Positive = OTM for puts
+
+            if abs(moneyness) < 0.02:  # ATM
+                atm_puts.append({'strike': strike, 'iv': iv, 'delta': delta})
+            elif 0.05 <= moneyness <= 0.12:  # ~25 delta region
+                otm_puts_25d.append({'strike': strike, 'iv': iv, 'delta': delta, 'moneyness': moneyness})
+            elif 0.12 < moneyness <= 0.20:  # ~10 delta region
+                otm_puts_10d.append({'strike': strike, 'iv': iv, 'delta': delta, 'moneyness': moneyness})
+
+        # Also check ATM calls for better ATM IV estimate
+        for c in calls:
+            strike = c.get('strike', 0)
+            iv = c.get('implied_volatility') or c.get('iv')
+            if iv and strike:
+                moneyness = abs(strike - current_price) / current_price
+                if moneyness < 0.02:
+                    atm_puts.append({'strike': strike, 'iv': iv, 'delta': c.get('delta', 0)})
+
+        if not atm_puts:
+            return {"error": "No ATM options found", "ticker": ticker}
+
+        # Calculate average IVs
+        atm_iv = sum(p['iv'] for p in atm_puts) / len(atm_puts)
+
+        otm_25d_iv = None
+        if otm_puts_25d:
+            otm_25d_iv = sum(p['iv'] for p in otm_puts_25d) / len(otm_puts_25d)
+
+        otm_10d_iv = None
+        if otm_puts_10d:
+            otm_10d_iv = sum(p['iv'] for p in otm_puts_10d) / len(otm_puts_10d)
+
+        # Calculate skew metrics
+        # Primary: 25-delta skew
+        if otm_25d_iv and atm_iv > 0:
+            skew_25d = otm_25d_iv - atm_iv  # Absolute difference
+            skew_25d_ratio = otm_25d_iv / atm_iv  # Ratio
+        else:
+            skew_25d = None
+            skew_25d_ratio = None
+
+        # Secondary: 10-delta skew (wing)
+        if otm_10d_iv and atm_iv > 0:
+            skew_10d = otm_10d_iv - atm_iv
+            skew_10d_ratio = otm_10d_iv / atm_iv
+        else:
+            skew_10d = None
+            skew_10d_ratio = None
+
+        # Score the skew (for ratio spreads, higher is better)
+        # Typical equity skew: 25d puts are 2-8% higher IV than ATM
+        skew_score = 0
+        skew_signal = 'flat'
+
+        if skew_25d_ratio:
+            if skew_25d_ratio > 1.15:  # 15%+ skew
+                skew_signal = 'very_steep'
+                skew_score = 100
+                recommendation = 'Excellent skew - OTM puts richly priced for ratio spreads'
+            elif skew_25d_ratio > 1.08:  # 8-15% skew
+                skew_signal = 'steep'
+                skew_score = 75
+                recommendation = 'Good skew - favorable for ratio spread entry'
+            elif skew_25d_ratio > 1.03:  # 3-8% skew
+                skew_signal = 'moderate'
+                skew_score = 50
+                recommendation = 'Normal skew - acceptable for ratio spreads'
+            elif skew_25d_ratio > 1.0:  # 0-3% skew
+                skew_signal = 'flat'
+                skew_score = 25
+                recommendation = 'Flat skew - reduced edge, consider smaller size'
+            else:  # Inverted skew
+                skew_signal = 'inverted'
+                skew_score = 0
+                recommendation = 'AVOID - skew inverted, OTM puts are cheap'
+        else:
+            recommendation = 'Insufficient data for skew analysis'
+
+        return {
+            'ticker': ticker.upper(),
+            'current_price': current_price,
+            'atm_iv': round(atm_iv, 4),
+            'atm_iv_pct': round(atm_iv * 100, 1),
+            'otm_25d_iv': round(otm_25d_iv, 4) if otm_25d_iv else None,
+            'otm_25d_iv_pct': round(otm_25d_iv * 100, 1) if otm_25d_iv else None,
+            'otm_10d_iv': round(otm_10d_iv, 4) if otm_10d_iv else None,
+            'skew_25d': round(skew_25d, 4) if skew_25d else None,
+            'skew_25d_pct': round(skew_25d * 100, 1) if skew_25d else None,
+            'skew_25d_ratio': round(skew_25d_ratio, 3) if skew_25d_ratio else None,
+            'skew_10d_ratio': round(skew_10d_ratio, 3) if skew_10d_ratio else None,
+            'skew_signal': skew_signal,
+            'skew_score': skew_score,
+            'recommendation': recommendation
+        }
+
+    except Exception as e:
+        logger.error(f"Skew analysis error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_expected_move(ticker: str, expiration: str = None) -> Dict:
+    """
+    Calculate Expected Move from ATM straddle price.
+
+    Expected Move = ATM Straddle Price × 0.85
+    (0.85 factor accounts for typical straddle overpricing)
+
+    For ratio spreads: ensure breakeven is beyond 1.5x expected move.
+
+    Returns:
+        {
+            'expected_move': float (dollar amount),
+            'expected_move_pct': float,
+            'straddle_price': float,
+            'atm_strike': float,
+            'dte': int,
+            ...
+        }
+    """
+    try:
+        chain = get_options_chain_sync(ticker, expiration)
+        if not chain or 'error' in chain:
+            return {"error": "Could not fetch options chain", "ticker": ticker}
+
+        calls = chain.get('calls', [])
+        puts = chain.get('puts', [])
+
+        if not calls or not puts:
+            return {"error": "Incomplete options chain", "ticker": ticker}
+
+        # Get current price
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+
+        if not current_price:
+            current_price = calls[len(calls)//2].get('underlying_price') or 0
+
+        if current_price <= 0:
+            return {"error": "Could not determine current price", "ticker": ticker}
+
+        # Find ATM strike
+        strikes = set(c.get('strike') for c in calls if c.get('strike'))
+        strikes.update(p.get('strike') for p in puts if p.get('strike'))
+
+        atm_strike = min(strikes, key=lambda x: abs(x - current_price))
+
+        # Get ATM call and put prices
+        atm_call = None
+        atm_put = None
+
+        for c in calls:
+            if c.get('strike') == atm_strike:
+                atm_call = c
+                break
+
+        for p in puts:
+            if p.get('strike') == atm_strike:
+                atm_put = p
+                break
+
+        if not atm_call or not atm_put:
+            return {"error": "Could not find ATM options", "ticker": ticker}
+
+        # Use mid price for straddle
+        call_mid = ((atm_call.get('bid') or 0) + (atm_call.get('ask') or 0)) / 2
+        put_mid = ((atm_put.get('bid') or 0) + (atm_put.get('ask') or 0)) / 2
+
+        # Fallback to last price if no bid/ask
+        if call_mid == 0:
+            call_mid = atm_call.get('last_price') or atm_call.get('close') or 0
+        if put_mid == 0:
+            put_mid = atm_put.get('last_price') or atm_put.get('close') or 0
+
+        straddle_price = call_mid + put_mid
+
+        if straddle_price <= 0:
+            return {"error": "Could not calculate straddle price", "ticker": ticker}
+
+        # Expected move calculation
+        expected_move = straddle_price * 0.85
+        expected_move_pct = (expected_move / current_price) * 100
+
+        # Calculate key levels
+        upper_expected = current_price + expected_move
+        lower_expected = current_price - expected_move
+
+        # 1.5x and 2x expected move (for ratio spread breakeven planning)
+        lower_1_5x = current_price - (expected_move * 1.5)
+        lower_2x = current_price - (expected_move * 2)
+
+        # Get DTE
+        dte = None
+        exp_date = atm_call.get('expiration') or expiration
+        if exp_date:
+            try:
+                exp_dt = datetime.strptime(exp_date, '%Y-%m-%d')
+                dte = (exp_dt - datetime.now()).days
+            except:
+                pass
+
+        # Calculate implied volatility from straddle
+        # Straddle ≈ 0.8 × S × σ × √(T/365) for ATM
+        # σ ≈ Straddle / (0.8 × S × √(T/365))
+        implied_vol_from_straddle = None
+        if dte and dte > 0:
+            import math
+            implied_vol_from_straddle = straddle_price / (0.8 * current_price * math.sqrt(dte / 365))
+
+        return {
+            'ticker': ticker.upper(),
+            'current_price': round(current_price, 2),
+            'atm_strike': atm_strike,
+            'straddle_price': round(straddle_price, 2),
+            'expected_move': round(expected_move, 2),
+            'expected_move_pct': round(expected_move_pct, 2),
+            'upper_expected': round(upper_expected, 2),
+            'lower_expected': round(lower_expected, 2),
+            'lower_1_5x_em': round(lower_1_5x, 2),
+            'lower_2x_em': round(lower_2x, 2),
+            'dte': dte,
+            'expiration': exp_date,
+            'implied_vol_straddle': round(implied_vol_from_straddle, 4) if implied_vol_from_straddle else None,
+            'call_price': round(call_mid, 2),
+            'put_price': round(put_mid, 2)
+        }
+
+    except Exception as e:
+        logger.error(f"Expected move error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_iv_term_structure(ticker: str) -> Dict:
+    """
+    IV Term Structure Analysis.
+
+    Compares IV across different expirations to detect:
+    - Contango (normal): near-term IV < far-term IV
+    - Backwardation (stress): near-term IV > far-term IV
+
+    For ratio spreads (short vol), backwardation is GOOD:
+    - IV is spiked from near-term event
+    - Likely to mean-revert lower = your short vol profits
+
+    Returns:
+        {
+            'term_structure': str ('contango', 'backwardation', 'flat'),
+            'slope': float,
+            'front_iv': float,
+            'back_iv': float,
+            ...
+        }
+    """
+    try:
+        # Get available expirations
+        expirations = get_options_expirations(ticker)
+        if not expirations or 'error' in expirations:
+            return {"error": "Could not fetch expirations", "ticker": ticker}
+
+        exp_list = expirations.get('expirations', [])
+        if len(exp_list) < 2:
+            return {"error": "Need at least 2 expirations", "ticker": ticker}
+
+        # Get current price
+        current_price = 0
+        try:
+            snapshot = get_snapshot_sync(ticker)
+            if snapshot:
+                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+        except:
+            pass
+
+        # Categorize expirations by DTE
+        today = datetime.now()
+        exp_data = []
+
+        for exp in exp_list[:8]:  # Check up to 8 expirations
+            try:
+                exp_dt = datetime.strptime(exp, '%Y-%m-%d')
+                dte = (exp_dt - today).days
+                if dte > 0:
+                    exp_data.append({'expiration': exp, 'dte': dte})
+            except:
+                continue
+
+        if len(exp_data) < 2:
+            return {"error": "Insufficient valid expirations", "ticker": ticker}
+
+        # Sort by DTE
+        exp_data.sort(key=lambda x: x['dte'])
+
+        # Get ATM IV for front and back months
+        def get_atm_iv(expiration):
+            chain = get_options_chain_sync(ticker, expiration)
+            if not chain:
+                return None
+
+            calls = chain.get('calls', [])
+            puts = chain.get('puts', [])
+
+            atm_ivs = []
+            for opt in calls + puts:
+                strike = opt.get('strike', 0)
+                iv = opt.get('implied_volatility') or opt.get('iv')
+                if iv and current_price > 0:
+                    moneyness = abs(strike - current_price) / current_price
+                    if moneyness < 0.03:  # Within 3% of ATM
+                        atm_ivs.append(iv)
+
+            return sum(atm_ivs) / len(atm_ivs) if atm_ivs else None
+
+        # Get front month (nearest) and back month (~30 days out)
+        front_exp = exp_data[0]
+
+        # Find expiration around 30 days
+        back_exp = None
+        for exp in exp_data:
+            if exp['dte'] >= 25:
+                back_exp = exp
+                break
+
+        if not back_exp:
+            back_exp = exp_data[-1]  # Use furthest available
+
+        front_iv = get_atm_iv(front_exp['expiration'])
+        back_iv = get_atm_iv(back_exp['expiration'])
+
+        if not front_iv or not back_iv:
+            return {"error": "Could not calculate term structure IVs", "ticker": ticker}
+
+        # Calculate slope
+        # Positive slope = contango (normal)
+        # Negative slope = backwardation (inverted)
+        slope = (back_iv - front_iv) / back_iv if back_iv > 0 else 0
+        slope_pct = slope * 100
+
+        # Determine structure
+        if slope > 0.05:  # Back IV >5% higher than front
+            structure = 'contango'
+            structure_signal = 'normal'
+            score = 25  # Less favorable for short vol
+            recommendation = 'Normal term structure - IV already low/calm, less room for contraction'
+        elif slope < -0.05:  # Front IV >5% higher than back
+            structure = 'backwardation'
+            structure_signal = 'inverted'
+            score = 100  # Favorable for short vol
+            recommendation = 'Backwardated! Near-term IV elevated - expect mean reversion, good for ratio spreads'
+        else:
+            structure = 'flat'
+            structure_signal = 'neutral'
+            score = 50
+            recommendation = 'Flat term structure - neutral signal'
+
+        return {
+            'ticker': ticker.upper(),
+            'current_price': current_price,
+            'term_structure': structure,
+            'structure_signal': structure_signal,
+            'slope': round(slope, 4),
+            'slope_pct': round(slope_pct, 1),
+            'structure_score': score,
+            'front_expiration': front_exp['expiration'],
+            'front_dte': front_exp['dte'],
+            'front_iv': round(front_iv, 4),
+            'front_iv_pct': round(front_iv * 100, 1),
+            'back_expiration': back_exp['expiration'],
+            'back_dte': back_exp['dte'],
+            'back_iv': round(back_iv, 4),
+            'back_iv_pct': round(back_iv * 100, 1),
+            'recommendation': recommendation
+        }
+
+    except Exception as e:
+        logger.error(f"Term structure error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
+def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
+    """
+    Combined Ratio Spread Scoring System.
+
+    Aggregates all condition models into a single score (0-6):
+    - VRP (IV vs RV): +1 if positive and above median
+    - Skew: +1 if steep (OTM puts rich)
+    - Term Structure: +1 if backwardated
+    - GEX Regime: +1 if positive (dealers suppress moves)
+    - RV Direction: +1 if falling (vol compressing)
+    - Expected Move Buffer: +1 if breakeven > 1.5x EM
+
+    Score interpretation:
+    - 5-6: High conviction, full size
+    - 3-4: Normal conditions, standard size
+    - 1-2: Marginal, reduced size or skip
+    - 0: Do not enter
+
+    Returns complete analysis with individual scores and combined recommendation.
+    """
+    try:
+        scores = {}
+        factors = []
+        total_score = 0
+
+        # 1. VRP Analysis
+        vrp = get_vrp_analysis(ticker, expiration)
+        if 'error' not in vrp:
+            vrp_pass = vrp.get('vrp', 0) > 0.02  # At least 2% VRP
+            scores['vrp'] = {
+                'value': vrp.get('vrp_pct'),
+                'pass': vrp_pass,
+                'score': 1 if vrp_pass else 0,
+                'label': f"VRP {vrp.get('vrp_pct', 0):.1f}%",
+                'signal': vrp.get('vrp_signal')
+            }
+            if vrp_pass:
+                total_score += 1
+                factors.append('VRP positive')
+        else:
+            scores['vrp'] = {'error': vrp.get('error'), 'score': 0}
+
+        # 2. Skew Analysis
+        skew = get_skew_analysis(ticker, expiration)
+        if 'error' not in skew:
+            skew_pass = (skew.get('skew_25d_ratio') or 0) > 1.05  # At least 5% skew
+            scores['skew'] = {
+                'value': skew.get('skew_25d_ratio'),
+                'pass': skew_pass,
+                'score': 1 if skew_pass else 0,
+                'label': f"Skew {((skew.get('skew_25d_ratio') or 1) - 1) * 100:.1f}%",
+                'signal': skew.get('skew_signal')
+            }
+            if skew_pass:
+                total_score += 1
+                factors.append('Skew steep')
+        else:
+            scores['skew'] = {'error': skew.get('error'), 'score': 0}
+
+        # 3. Term Structure
+        term = get_iv_term_structure(ticker)
+        if 'error' not in term:
+            term_pass = term.get('slope', 0) < -0.02  # Backwardated
+            scores['term_structure'] = {
+                'value': term.get('slope_pct'),
+                'pass': term_pass,
+                'score': 1 if term_pass else 0,
+                'label': f"Term {term.get('slope_pct', 0):.1f}%",
+                'signal': term.get('structure_signal')
+            }
+            if term_pass:
+                total_score += 1
+                factors.append('Backwardated')
+        else:
+            scores['term_structure'] = {'error': term.get('error'), 'score': 0}
+
+        # 4. GEX Regime
+        gex = get_gex_regime(ticker, expiration)
+        if 'error' not in gex:
+            gex_pass = gex.get('regime') == 'pinned'  # Positive GEX
+            scores['gex'] = {
+                'value': gex.get('gex_billions'),
+                'pass': gex_pass,
+                'score': 1 if gex_pass else 0,
+                'label': f"GEX ${gex.get('gex_billions', 0):.1f}B",
+                'signal': gex.get('regime')
+            }
+            if gex_pass:
+                total_score += 1
+                factors.append('GEX positive')
+        else:
+            scores['gex'] = {'error': gex.get('error'), 'score': 0}
+
+        # 5. RV Direction
+        rv = calculate_realized_volatility(ticker)
+        if 'error' not in rv:
+            rv_pass = rv.get('rv_direction') == 'falling'
+            scores['rv_direction'] = {
+                'value': rv.get('rv_5d'),
+                'pass': rv_pass,
+                'score': 1 if rv_pass else 0,
+                'label': f"RV {rv.get('rv_direction', 'unknown')}",
+                'signal': rv.get('rv_regime')
+            }
+            if rv_pass:
+                total_score += 1
+                factors.append('RV falling')
+        else:
+            scores['rv_direction'] = {'error': rv.get('error'), 'score': 0}
+
+        # 6. Expected Move (placeholder - needs breakeven input for full calc)
+        em = get_expected_move(ticker, expiration)
+        if 'error' not in em:
+            # For scoring, we check if expected move is reasonable (>2% for weekly)
+            em_pct = em.get('expected_move_pct', 0)
+            em_pass = em_pct > 0  # Basic check that we have data
+            scores['expected_move'] = {
+                'value': em.get('expected_move'),
+                'pass': em_pass,
+                'score': 1 if em_pass else 0,
+                'label': f"EM ±{em_pct:.1f}%",
+                'levels': {
+                    'upper': em.get('upper_expected'),
+                    'lower': em.get('lower_expected'),
+                    'lower_1_5x': em.get('lower_1_5x_em'),
+                    'lower_2x': em.get('lower_2x_em')
+                }
+            }
+            if em_pass:
+                total_score += 1
+                factors.append('EM calculated')
+        else:
+            scores['expected_move'] = {'error': em.get('error'), 'score': 0}
+
+        # Generate overall recommendation
+        if total_score >= 5:
+            verdict = 'HIGH_CONVICTION'
+            recommendation = 'Excellent conditions - full size entry recommended'
+            risk_level = 'low'
+            position_size = '100%'
+        elif total_score >= 4:
+            verdict = 'FAVORABLE'
+            recommendation = 'Good conditions - standard size entry'
+            risk_level = 'moderate'
+            position_size = '75%'
+        elif total_score >= 3:
+            verdict = 'NEUTRAL'
+            recommendation = 'Mixed signals - reduced size or wait for better setup'
+            risk_level = 'elevated'
+            position_size = '50%'
+        elif total_score >= 2:
+            verdict = 'UNFAVORABLE'
+            recommendation = 'Poor conditions - minimal size only if must trade'
+            risk_level = 'high'
+            position_size = '25%'
+        else:
+            verdict = 'AVOID'
+            recommendation = 'Do not enter ratio spread - conditions unfavorable'
+            risk_level = 'extreme'
+            position_size = '0%'
+
+        return {
+            'ticker': ticker.upper(),
+            'timestamp': datetime.now().isoformat(),
+            'expiration': expiration,
+
+            # Overall score
+            'total_score': total_score,
+            'max_score': 6,
+            'score_pct': round(total_score / 6 * 100),
+            'verdict': verdict,
+            'recommendation': recommendation,
+            'risk_level': risk_level,
+            'position_size': position_size,
+            'passing_factors': factors,
+
+            # Individual scores
+            'scores': scores,
+
+            # Full data for display
+            'vrp_data': vrp if 'error' not in vrp else None,
+            'skew_data': skew if 'error' not in skew else None,
+            'term_data': term if 'error' not in term else None,
+            'gex_data': gex if 'error' not in gex else None,
+            'rv_data': rv if 'error' not in rv else None,
+            'em_data': em if 'error' not in em else None,
+
+            # Current price
+            'current_price': vrp.get('current_price') if 'error' not in vrp else None
+        }
+
+    except Exception as e:
+        logger.error(f"Ratio spread score error for {ticker}: {e}")
+        return {"error": str(e), "ticker": ticker}
+
+
 # Example usage
 if __name__ == '__main__':
     # Test the functions

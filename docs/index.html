@@ -3693,6 +3693,156 @@
                 </div>
             </div>
 
+            <!-- Ratio Spread Conditions Dashboard -->
+            <div id="ratio-spread-container" style="display: none; margin-bottom: 20px;">
+                <div class="card" style="border-left: 3px solid var(--purple);">
+                    <div class="card-header">
+                        <div class="card-title">📐 Ratio Spread Conditions <span id="ratio-ticker" style="color: var(--purple); margin-left: 8px;"></span></div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div id="ratio-score-badge" style="padding: 6px 16px; border-radius: 6px; font-size: 1rem; font-weight: 700; background: var(--bg-hover);">
+                                Score: <span id="ratio-total-score">-</span>/6
+                            </div>
+                            <button class="btn btn-primary" onclick="loadRatioSpreadScore()" style="padding: 6px 12px; font-size: 0.75rem;">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Verdict Banner -->
+                        <div id="ratio-verdict-banner" style="padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 16px; background: var(--bg-hover);">
+                            <div style="font-size: 1.2rem; font-weight: 700;" id="ratio-verdict">--</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;" id="ratio-recommendation">Load a ticker to analyze ratio spread conditions</div>
+                            <div style="display: flex; justify-content: center; gap: 24px; margin-top: 12px;">
+                                <div>
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">Risk Level:</span>
+                                    <span style="font-size: 0.85rem; font-weight: 600; margin-left: 4px;" id="ratio-risk-level">--</span>
+                                </div>
+                                <div>
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">Position Size:</span>
+                                    <span style="font-size: 0.85rem; font-weight: 600; margin-left: 4px;" id="ratio-position-size">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 6 Factor Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
+                            <!-- VRP -->
+                            <div id="ratio-vrp-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">VRP (IV - RV)</span>
+                                    <span id="ratio-vrp-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-vrp-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-vrp-label">Options pricing vs realized</div>
+                            </div>
+
+                            <!-- Skew -->
+                            <div id="ratio-skew-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">PUT SKEW</span>
+                                    <span id="ratio-skew-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-skew-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-skew-label">OTM put richness</div>
+                            </div>
+
+                            <!-- Term Structure -->
+                            <div id="ratio-term-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">TERM STRUCTURE</span>
+                                    <span id="ratio-term-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-term-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-term-label">IV curve shape</div>
+                            </div>
+
+                            <!-- GEX -->
+                            <div id="ratio-gex-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">GEX REGIME</span>
+                                    <span id="ratio-gex-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-gex-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-gex-label">Dealer positioning</div>
+                            </div>
+
+                            <!-- RV Direction -->
+                            <div id="ratio-rv-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">RV DIRECTION</span>
+                                    <span id="ratio-rv-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-rv-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-rv-label">Vol trend</div>
+                            </div>
+
+                            <!-- Expected Move -->
+                            <div id="ratio-em-card" class="ratio-factor-card" style="background: var(--bg-hover); padding: 12px; border-radius: 8px; border-left: 3px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 0.7rem; color: var(--text-muted);">EXPECTED MOVE</span>
+                                    <span id="ratio-em-check" style="font-size: 0.9rem;">⬜</span>
+                                </div>
+                                <div style="font-size: 1.1rem; font-weight: 700;" id="ratio-em-value">--</div>
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;" id="ratio-em-label">Implied range</div>
+                            </div>
+                        </div>
+
+                        <!-- Detail Rows -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                            <!-- VRP & Skew Details -->
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; font-weight: 600; color: var(--blue); margin-bottom: 8px;">Volatility Premium</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem;">
+                                    <div>
+                                        <span style="color: var(--text-muted);">IV (30d):</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-iv-30d">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">RV (20d):</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-rv-20d">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">ATM IV:</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-atm-iv">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">25Δ Put IV:</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-25d-iv">--</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Expected Move Levels -->
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.75rem; font-weight: 600; color: var(--purple); margin-bottom: 8px;">Strike Planning Levels</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem;">
+                                    <div>
+                                        <span style="color: var(--text-muted);">-1x EM:</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-em-lower">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">-1.5x EM:</span>
+                                        <span style="font-weight: 600; margin-left: 4px; color: var(--orange);" id="ratio-em-1-5x">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">-2x EM:</span>
+                                        <span style="font-weight: 600; margin-left: 4px; color: var(--red);" id="ratio-em-2x">--</span>
+                                    </div>
+                                    <div>
+                                        <span style="color: var(--text-muted);">DTE:</span>
+                                        <span style="font-weight: 600; margin-left: 4px;" id="ratio-dte">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Passing Factors -->
+                        <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg) 100%); border-radius: 8px; border: 1px solid var(--border);">
+                            <div style="font-size: 0.75rem; font-weight: 600; color: var(--purple); margin-bottom: 6px;">✅ Passing Factors</div>
+                            <div style="font-size: 0.8rem;" id="ratio-passing-factors">None yet - load a ticker to analyze</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Ticker Summary Stats (shown when ticker loaded) -->
             <div class="stats-bar" id="options-summary" style="display: none; margin-bottom: 20px;">
                 <div class="stat-item">
@@ -9937,6 +10087,9 @@
                 // Load GEX Dashboard after options analysis
                 loadGexDashboard();
 
+                // Load Ratio Spread Conditions after options analysis
+                loadRatioSpreadScore();
+
             } catch (e) {
                 console.error('Options analysis error:', e);
                 document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
@@ -10140,6 +10293,147 @@
             } catch (e) {
                 console.error('GEX Dashboard error:', e);
                 document.getElementById('gex-interpretation').textContent = 'Error loading GEX data: ' + e.message;
+            }
+        }
+
+        // Ratio Spread Conditions Dashboard
+        async function loadRatioSpreadScore() {
+            const ticker = optionsAnalysisTicker;
+            if (!ticker) return;
+
+            const expiry = document.getElementById('oa-expiry-select').value;
+            const container = document.getElementById('ratio-spread-container');
+            container.style.display = 'block';
+            document.getElementById('ratio-ticker').textContent = ticker;
+
+            // Reset fields
+            document.getElementById('ratio-total-score').textContent = '-';
+            document.getElementById('ratio-verdict').textContent = 'Loading...';
+            document.getElementById('ratio-recommendation').textContent = 'Analyzing conditions...';
+
+            try {
+                const expiryParam = expiry ? '?expiration=' + expiry : '';
+                const response = await fetch(`${API_BASE}/options/ratio-spread-score/${ticker}${expiryParam}`);
+                const data = await response.json();
+
+                if (!data.ok || !data.data) {
+                    throw new Error(data.error || 'Failed to load ratio spread score');
+                }
+
+                const d = data.data;
+                const scores = d.scores || {};
+
+                // Update total score and verdict
+                document.getElementById('ratio-total-score').textContent = d.total_score;
+
+                const verdictEl = document.getElementById('ratio-verdict');
+                const bannerEl = document.getElementById('ratio-verdict-banner');
+                verdictEl.textContent = d.verdict;
+
+                // Color verdict banner based on score
+                const verdictColors = {
+                    'HIGH_CONVICTION': { bg: 'rgba(34, 197, 94, 0.15)', border: 'var(--green)', text: 'var(--green)' },
+                    'FAVORABLE': { bg: 'rgba(59, 130, 246, 0.15)', border: 'var(--blue)', text: 'var(--blue)' },
+                    'NEUTRAL': { bg: 'rgba(251, 191, 36, 0.15)', border: 'var(--orange)', text: 'var(--orange)' },
+                    'UNFAVORABLE': { bg: 'rgba(239, 68, 68, 0.1)', border: 'var(--red)', text: 'var(--red)' },
+                    'AVOID': { bg: 'rgba(239, 68, 68, 0.2)', border: 'var(--red)', text: 'var(--red)' }
+                };
+                const colors = verdictColors[d.verdict] || verdictColors['NEUTRAL'];
+                bannerEl.style.background = colors.bg;
+                bannerEl.style.borderLeft = `4px solid ${colors.border}`;
+                verdictEl.style.color = colors.text;
+
+                document.getElementById('ratio-recommendation').textContent = d.recommendation;
+                document.getElementById('ratio-risk-level').textContent = d.risk_level;
+                document.getElementById('ratio-position-size').textContent = d.position_size;
+
+                // Risk level color
+                const riskEl = document.getElementById('ratio-risk-level');
+                if (d.risk_level === 'low') riskEl.style.color = 'var(--green)';
+                else if (d.risk_level === 'moderate') riskEl.style.color = 'var(--blue)';
+                else if (d.risk_level === 'elevated') riskEl.style.color = 'var(--orange)';
+                else riskEl.style.color = 'var(--red)';
+
+                // Update individual factor cards
+                const updateFactorCard = (id, scoreData, valueFormatter) => {
+                    const card = document.getElementById(`ratio-${id}-card`);
+                    const checkEl = document.getElementById(`ratio-${id}-check`);
+                    const valueEl = document.getElementById(`ratio-${id}-value`);
+                    const labelEl = document.getElementById(`ratio-${id}-label`);
+
+                    if (scoreData.error) {
+                        checkEl.textContent = '❌';
+                        valueEl.textContent = 'Error';
+                        labelEl.textContent = scoreData.error;
+                        card.style.borderLeftColor = 'var(--red)';
+                        return;
+                    }
+
+                    checkEl.textContent = scoreData.pass ? '✅' : '⬜';
+                    valueEl.textContent = valueFormatter(scoreData);
+                    labelEl.textContent = scoreData.label || '';
+                    card.style.borderLeftColor = scoreData.pass ? 'var(--green)' : 'var(--border)';
+                };
+
+                // VRP
+                if (scores.vrp) {
+                    updateFactorCard('vrp', scores.vrp, s => s.value !== undefined ? `${s.value > 0 ? '+' : ''}${s.value.toFixed(1)}%` : '--');
+                }
+
+                // Skew
+                if (scores.skew) {
+                    updateFactorCard('skew', scores.skew, s => s.value ? `${((s.value - 1) * 100).toFixed(1)}%` : '--');
+                }
+
+                // Term Structure
+                if (scores.term_structure) {
+                    updateFactorCard('term', scores.term_structure, s => s.signal || '--');
+                }
+
+                // GEX
+                if (scores.gex) {
+                    updateFactorCard('gex', scores.gex, s => s.signal ? s.signal.toUpperCase() : '--');
+                }
+
+                // RV Direction
+                if (scores.rv_direction) {
+                    updateFactorCard('rv', scores.rv_direction, s => s.signal || '--');
+                }
+
+                // Expected Move
+                if (scores.expected_move) {
+                    updateFactorCard('em', scores.expected_move, s => s.label || '--');
+                }
+
+                // Detail values from full data
+                if (d.vrp_data) {
+                    document.getElementById('ratio-iv-30d').textContent = `${d.vrp_data.iv_30d_pct}%`;
+                    document.getElementById('ratio-rv-20d').textContent = d.vrp_data.rv_20d_pct ? `${d.vrp_data.rv_20d_pct}%` : '--';
+                }
+
+                if (d.skew_data) {
+                    document.getElementById('ratio-atm-iv').textContent = `${d.skew_data.atm_iv_pct}%`;
+                    document.getElementById('ratio-25d-iv').textContent = d.skew_data.otm_25d_iv_pct ? `${d.skew_data.otm_25d_iv_pct}%` : '--';
+                }
+
+                if (d.em_data) {
+                    document.getElementById('ratio-em-lower').textContent = `$${d.em_data.lower_expected}`;
+                    document.getElementById('ratio-em-1-5x').textContent = `$${d.em_data.lower_1_5x_em}`;
+                    document.getElementById('ratio-em-2x').textContent = `$${d.em_data.lower_2x_em}`;
+                    document.getElementById('ratio-dte').textContent = d.em_data.dte ? `${d.em_data.dte}d` : '--';
+                }
+
+                // Passing factors
+                const factors = d.passing_factors || [];
+                document.getElementById('ratio-passing-factors').textContent =
+                    factors.length > 0 ? factors.join(' • ') : 'No factors passing - unfavorable conditions';
+
+                console.log('✅ Ratio Spread Score loaded for', ticker, '- Score:', d.total_score);
+
+            } catch (e) {
+                console.error('Ratio Spread Score error:', e);
+                document.getElementById('ratio-verdict').textContent = 'ERROR';
+                document.getElementById('ratio-recommendation').textContent = 'Error: ' + e.message;
             }
         }
 
