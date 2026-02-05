@@ -2,6 +2,8 @@
 """
 Modal API v2 - Single ASGI endpoint with FastAPI routing
 
+Version: 2.1.0 (2026-02-05) - Fixed ratio spread calculations
+
 Solves:
 - Modal free plan 8 endpoint limit
 - FastAPI import issues during deployment
@@ -27,6 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
+    .run_commands("echo 'Build 2026-02-05-v4 - term structure fix'")  # Force rebuild
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:28 - `92af4fc`
+
+**Fix ratio spread calculation bugs: RV column name, expected move DTE, term structure validation**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:25 - `4e545b3`
 
 **Fix ratio spread calculation bugs**

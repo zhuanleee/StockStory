@@ -2186,21 +2186,28 @@ def get_iv_term_structure(ticker: str) -> Dict:
         if not back_exp:
             back_exp = exp_data[-1]  # Use furthest available
 
-        # Ensure front and back are different
-        if front_exp['expiration'] == back_exp['expiration']:
+        # Ensure front and back are different and back has greater DTE than front
+        if front_exp['expiration'] == back_exp['expiration'] or back_exp['dte'] <= front_exp['dte']:
             if len(exp_data) > 1:
-                # Find any expiration different from front
-                for exp in reversed(exp_data):
-                    if exp['expiration'] != front_exp['expiration']:
+                # Find expiration with higher DTE than front
+                for exp in exp_data:
+                    if exp['dte'] > front_exp['dte']:
                         back_exp = exp
                         break
+                # If no higher DTE found, search in reverse for the furthest expiration
+                if back_exp['dte'] <= front_exp['dte']:
+                    for exp in reversed(exp_data):
+                        if exp['expiration'] != front_exp['expiration'] and exp['dte'] > front_exp['dte']:
+                            back_exp = exp
+                            break
 
-        # If still same (only one valid expiration), return error
-        if front_exp['expiration'] == back_exp['expiration']:
+        # If still same or invalid (back DTE <= front DTE), return error
+        if front_exp['expiration'] == back_exp['expiration'] or back_exp['dte'] <= front_exp['dte']:
             return {
-                "error": "Insufficient expiration data for term structure (need different front/back months)",
+                "error": "Insufficient expiration data for term structure (need different front/back months with back > front DTE)",
                 "ticker": ticker,
-                "available_expirations": [e['expiration'] for e in exp_data]
+                "front_dte": front_exp['dte'],
+                "available_expirations": [(e['expiration'], e['dte']) for e in exp_data]
             }
 
         front_iv = get_atm_iv(front_exp['expiration'])
