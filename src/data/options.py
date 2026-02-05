@@ -1538,13 +1538,15 @@ def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
         if isinstance(price_data, pd.DataFrame):
             if price_data.empty or len(price_data) < days:
                 return {"error": "Insufficient price data", "ticker": ticker}
-            # Extract close prices from DataFrame
-            if 'close' in price_data.columns:
+            # Extract close prices from DataFrame (Polygon uses 'Close' with capital C)
+            if 'Close' in price_data.columns:
+                closes = price_data['Close'].tolist()
+            elif 'close' in price_data.columns:
                 closes = price_data['close'].tolist()
             elif 'c' in price_data.columns:
                 closes = price_data['c'].tolist()
             else:
-                return {"error": "No close price column found", "ticker": ticker}
+                return {"error": f"No close price column found. Columns: {list(price_data.columns)}", "ticker": ticker}
         elif isinstance(price_data, list):
             if len(price_data) < days:
                 return {"error": "Insufficient price data", "ticker": ticker}
@@ -1925,6 +1927,32 @@ def get_expected_move(ticker: str, expiration: str = None) -> Dict:
         }
     """
     try:
+        # If no expiration provided, find one with reasonable DTE (7-14 days ideal)
+        if not expiration:
+            expirations = get_options_expirations(ticker)
+            if expirations and expirations.get('expirations'):
+                today = datetime.now()
+                for exp in expirations['expirations']:
+                    try:
+                        exp_dt = datetime.strptime(exp, '%Y-%m-%d')
+                        dte = (exp_dt - today).days
+                        if 5 <= dte <= 14:  # Prefer weekly options
+                            expiration = exp
+                            break
+                    except:
+                        continue
+                # If no 5-14 DTE, use first with positive DTE
+                if not expiration:
+                    for exp in expirations['expirations']:
+                        try:
+                            exp_dt = datetime.strptime(exp, '%Y-%m-%d')
+                            dte = (exp_dt - today).days
+                            if dte > 0:
+                                expiration = exp
+                                break
+                        except:
+                            continue
+
         chain = get_options_chain_sync(ticker, expiration)
         if not chain or 'error' in chain:
             return {"error": "Could not fetch options chain", "ticker": ticker}
@@ -2159,8 +2187,21 @@ def get_iv_term_structure(ticker: str) -> Dict:
             back_exp = exp_data[-1]  # Use furthest available
 
         # Ensure front and back are different
-        if front_exp['expiration'] == back_exp['expiration'] and len(exp_data) > 1:
-            back_exp = exp_data[-1]
+        if front_exp['expiration'] == back_exp['expiration']:
+            if len(exp_data) > 1:
+                # Find any expiration different from front
+                for exp in reversed(exp_data):
+                    if exp['expiration'] != front_exp['expiration']:
+                        back_exp = exp
+                        break
+
+        # If still same (only one valid expiration), return error
+        if front_exp['expiration'] == back_exp['expiration']:
+            return {
+                "error": "Insufficient expiration data for term structure (need different front/back months)",
+                "ticker": ticker,
+                "available_expirations": [e['expiration'] for e in exp_data]
+            }
 
         front_iv = get_atm_iv(front_exp['expiration'])
         back_iv = get_atm_iv(back_exp['expiration'])

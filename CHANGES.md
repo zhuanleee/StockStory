@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:25 - `4e545b3`
+
+**Fix ratio spread calculation bugs**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:21 - `e7d4d78`
 
 **Update CHANGES.md with recent GEX and Ratio Spread features**
