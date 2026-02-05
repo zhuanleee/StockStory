@@ -1841,7 +1841,7 @@ def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
     Calculate historical realized volatility using close-to-close returns.
 
     Args:
-        ticker: Stock symbol
+        ticker: Stock symbol (equities only - futures not supported via Polygon)
         days: Lookback period (default 20 trading days)
 
     Returns:
@@ -1856,6 +1856,19 @@ def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
     try:
         import math
         import pandas as pd
+
+        # Check if ticker is a futures symbol (starts with '/')
+        # Polygon doesn't support futures symbols, so we need to handle this case
+        if ticker.startswith('/'):
+            # Futures tickers like /ES, /NQ, /CL, /GC are not supported by Polygon
+            # The Tastytrade SDK provides real-time streaming data but not historical
+            # OHLCV bars needed for realized volatility calculation
+            logger.warning(f"Futures RV calculation not supported for {ticker} - Polygon doesn't support futures")
+            return {
+                "error": "Futures RV calculation not supported. Polygon doesn't provide historical data for futures symbols like /ES, /NQ, /CL, /GC. Consider using the equity proxy (ES=F, NQ=F) or a futures data provider.",
+                "ticker": ticker,
+                "suggestion": "For futures volatility analysis, use IV from options chain instead of historical RV."
+            }
 
         # Get historical price data (need extra days for return calculation)
         price_data = get_price_data_sync(ticker, days=days + 10)
@@ -1952,6 +1965,8 @@ def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
 
     For ratio put spreads (net short vol), want HIGH positive VRP.
 
+    Supports futures tickers (/ES, /NQ, /CL, /GC) via Tastytrade.
+
     Returns:
         {
             'vrp': float (IV - RV),
@@ -1963,32 +1978,97 @@ def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
         }
     """
     try:
-        # Get realized volatility
-        rv_data = calculate_realized_volatility(ticker, days=30)
-        if 'error' in rv_data:
-            return rv_data
+        # Futures-to-ETF mapping for RV calculation (Polygon doesn't support futures)
+        FUTURES_TO_ETF_PROXY = {
+            'ES': 'SPY',   # E-mini S&P 500 -> SPY
+            'MES': 'SPY',  # Micro E-mini S&P -> SPY
+            'NQ': 'QQQ',   # E-mini Nasdaq -> QQQ
+            'MNQ': 'QQQ',  # Micro E-mini Nasdaq -> QQQ
+            'RTY': 'IWM',  # E-mini Russell 2000 -> IWM
+            'YM': 'DIA',   # E-mini Dow -> DIA
+            'CL': 'USO',   # Crude Oil -> USO (oil ETF)
+            'GC': 'GLD',   # Gold -> GLD
+            'SI': 'SLV',   # Silver -> SLV
+            'ZB': 'TLT',   # 30-Year Treasury -> TLT
+            'ZN': 'IEF',   # 10-Year Treasury -> IEF
+        }
 
-        rv_20d = rv_data.get('rv_20d', 0)
+        # Check if this is a futures ticker
+        is_futures = is_futures_ticker(ticker)
+        normalized_ticker = normalize_futures_ticker(ticker)
 
-        # Get implied volatility from options chain
-        chain = get_options_chain_sync(ticker, expiration)
-        if not chain or 'error' in chain:
-            return {"error": "Could not fetch options chain", "ticker": ticker}
+        if is_futures:
+            logger.info(f"VRP analysis for futures ticker {ticker} - using Tastytrade path")
 
-        calls = chain.get('calls', [])
-        puts = chain.get('puts', [])
+            # For futures, use ETF proxy for realized volatility calculation
+            rv_proxy = FUTURES_TO_ETF_PROXY.get(normalized_ticker)
+            if not rv_proxy:
+                return {"error": f"No RV proxy available for futures ticker {ticker}. Supported: {list(FUTURES_TO_ETF_PROXY.keys())}", "ticker": ticker}
 
-        # Get current price
-        current_price = 0
-        try:
-            snapshot = get_snapshot_sync(ticker)
-            if snapshot:
-                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
-        except:
-            pass
+            logger.info(f"Using {rv_proxy} as RV proxy for {ticker}")
+            rv_data = calculate_realized_volatility(rv_proxy, days=30)
+            if 'error' in rv_data:
+                return {"error": f"Could not calculate RV using proxy {rv_proxy}: {rv_data.get('error')}", "ticker": ticker}
 
-        if not current_price and calls:
-            current_price = calls[len(calls)//2].get('underlying_price') or 0
+            rv_20d = rv_data.get('rv_20d', 0)
+
+            # For futures, use Tastytrade for options chain (IV data)
+            chain = _get_tastytrade_chain(ticker, expiration)
+            if not chain or not chain.get('calls'):
+                return {"error": f"Could not fetch futures options chain from Tastytrade for {ticker}", "ticker": ticker}
+
+            calls = chain.get('calls', [])
+            puts = chain.get('puts', [])
+
+            # Get current price from Tastytrade quote
+            current_price = 0
+            quote = _get_tastytrade_quote(ticker)
+            if quote and quote.get('last'):
+                current_price = quote.get('last')
+                logger.info(f"Got {ticker} price from Tastytrade: ${current_price}")
+
+            # Fallback: use underlying_price from chain or estimate from ATM strike
+            if not current_price:
+                if calls:
+                    current_price = calls[len(calls)//2].get('underlying_price') or 0
+                if not current_price and calls:
+                    # Estimate from strike with highest gamma (ATM proxy)
+                    atm_candidates = sorted(calls, key=lambda c: abs(c.get('gamma') or 0), reverse=True)
+                    if atm_candidates:
+                        current_price = atm_candidates[0].get('strike', 0)
+                        logger.info(f"Estimated {ticker} price from ATM strike: ${current_price}")
+
+            if not current_price:
+                return {"error": f"Could not determine current price for {ticker}", "ticker": ticker}
+
+        else:
+            # Standard equity path
+            # Get realized volatility
+            rv_data = calculate_realized_volatility(ticker, days=30)
+            if 'error' in rv_data:
+                return rv_data
+
+            rv_20d = rv_data.get('rv_20d', 0)
+
+            # Get implied volatility from options chain
+            chain = get_options_chain_sync(ticker, expiration)
+            if not chain or 'error' in chain:
+                return {"error": "Could not fetch options chain", "ticker": ticker}
+
+            calls = chain.get('calls', [])
+            puts = chain.get('puts', [])
+
+            # Get current price
+            current_price = 0
+            try:
+                snapshot = get_snapshot_sync(ticker)
+                if snapshot:
+                    current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+            except:
+                pass
+
+            if not current_price and calls:
+                current_price = calls[len(calls)//2].get('underlying_price') or 0
 
         # Find ATM options and extract IV
         atm_iv_calls = []
@@ -2050,7 +2130,7 @@ def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
             vrp_score = 0
             recommendation = 'AVOID ratio spreads - options underpriced, realized vol exceeds implied'
 
-        return {
+        result = {
             'ticker': ticker.upper(),
             'iv_30d': round(iv_30d, 4),
             'iv_30d_pct': round(iv_30d * 100, 1),
@@ -2063,8 +2143,16 @@ def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
             'recommendation': recommendation,
             'rv_direction': rv_data.get('rv_direction'),
             'rv_regime': rv_data.get('rv_regime'),
-            'current_price': current_price
+            'current_price': current_price,
+            'is_futures': is_futures
         }
+
+        # Add futures-specific info
+        if is_futures:
+            result['rv_proxy'] = FUTURES_TO_ETF_PROXY.get(normalized_ticker)
+            result['data_source'] = 'tastytrade'
+
+        return result
 
     except Exception as e:
         logger.error(f"VRP analysis error for {ticker}: {e}")
@@ -2685,8 +2773,14 @@ def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
         else:
             scores['gex'] = {'error': gex.get('error'), 'score': 0}
 
-        # 5. RV Direction
-        rv = calculate_realized_volatility(ticker)
+        # 5. RV Direction (use ETF proxy for futures)
+        FUTURES_TO_ETF = {'ES': 'SPY', 'MES': 'SPY', 'NQ': 'QQQ', 'MNQ': 'QQQ', 'RTY': 'IWM', 'YM': 'DIA', 'CL': 'USO', 'GC': 'GLD', 'SI': 'SLV', 'ZB': 'TLT', 'ZN': 'IEF'}
+        rv_ticker = ticker
+        if is_futures_ticker(ticker):
+            normalized = normalize_futures_ticker(ticker)
+            rv_ticker = FUTURES_TO_ETF.get(normalized, ticker)
+            logger.info(f"Using {rv_ticker} as RV proxy for {ticker}")
+        rv = calculate_realized_volatility(rv_ticker)
         if 'error' not in rv:
             rv_pass = rv.get('rv_direction') == 'falling'
             scores['rv_direction'] = {
@@ -2945,8 +3039,14 @@ def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
         else:
             scores['gex'] = {'error': gex.get('error'), 'score': 0}
 
-        # 5. RV Direction (not expiration-dependent)
-        rv = calculate_realized_volatility(ticker)
+        # 5. RV Direction (use ETF proxy for futures)
+        FUTURES_TO_ETF = {'ES': 'SPY', 'MES': 'SPY', 'NQ': 'QQQ', 'MNQ': 'QQQ', 'RTY': 'IWM', 'YM': 'DIA', 'CL': 'USO', 'GC': 'GLD', 'SI': 'SLV', 'ZB': 'TLT', 'ZN': 'IEF'}
+        rv_ticker = ticker
+        if is_futures_ticker(ticker):
+            normalized = normalize_futures_ticker(ticker)
+            rv_ticker = FUTURES_TO_ETF.get(normalized, ticker)
+            logger.info(f"Using {rv_ticker} as RV proxy for {ticker}")
+        rv = calculate_realized_volatility(rv_ticker)
         if 'error' not in rv:
             rv_pass = rv.get('rv_direction') == 'falling'
             scores['rv_direction'] = {

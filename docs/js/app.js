@@ -6021,24 +6021,23 @@ async function loadGexDashboard() {
             document.getElementById('combined-recommendation').textContent =
                 c.recommendation || '--';
 
-            // P/C Z-score from combined data
-            if (c.pc_ratio) {
-                const zscore = c.pc_ratio.zscore;
-                const zscoreEl = document.getElementById('gex-pc-zscore');
-                zscoreEl.textContent = zscore !== undefined ? zscore.toFixed(2) : '--';
-                if (zscore > 1) zscoreEl.style.color = 'var(--red)';
-                else if (zscore < -1) zscoreEl.style.color = 'var(--green)';
-                else zscoreEl.style.color = 'var(--text)';
+            // P/C Z-score from combined data (flat fields: pc_zscore, pc_sentiment)
+            const zscore = c.pc_zscore;
+            const zscoreEl = document.getElementById('gex-pc-zscore');
+            zscoreEl.textContent = zscore !== undefined ? zscore.toFixed(2) : '--';
+            if (zscore > 1) zscoreEl.style.color = 'var(--red)';
+            else if (zscore < -1) zscoreEl.style.color = 'var(--green)';
+            else zscoreEl.style.color = 'var(--text)';
 
-                const sentimentEl = document.getElementById('gex-pc-sentiment');
-                sentimentEl.textContent = c.pc_ratio.sentiment || '--';
-                if (c.pc_ratio.sentiment === 'fear') {
-                    sentimentEl.style.color = 'var(--red)';
-                } else if (c.pc_ratio.sentiment === 'complacency') {
-                    sentimentEl.style.color = 'var(--green)';
-                } else {
-                    sentimentEl.style.color = 'var(--text-muted)';
-                }
+            const sentiment = c.pc_sentiment;
+            const sentimentEl = document.getElementById('gex-pc-sentiment');
+            sentimentEl.textContent = sentiment || '--';
+            if (sentiment === 'fear' || (sentiment && sentiment.includes('fear'))) {
+                sentimentEl.style.color = 'var(--red)';
+            } else if (sentiment === 'complacency' || (sentiment && sentiment.includes('complacency'))) {
+                sentimentEl.style.color = 'var(--green)';
+            } else {
+                sentimentEl.style.color = 'var(--text-muted)';
             }
         }
 
@@ -6080,26 +6079,44 @@ async function loadGexDashboard() {
             document.getElementById('gex-accel-zones').textContent =
                 accels.length > 0 ? accels.map(z => `$${z.toFixed(0)}`).join(', ') : 'None';
 
-            // Trading signal from interpretation
-            if (l.interpretation) {
-                const signalBadge = document.getElementById('gex-signal-badge');
-                const signal = l.interpretation.signal || 'neutral';
-                signalBadge.textContent = signal.toUpperCase();
+            // Trading signal derived from GEX levels
+            const signalBadge = document.getElementById('gex-signal-badge');
+            let signal = 'neutral';
+            let signalNote = l.interpretation || '--';
 
-                if (signal === 'bullish') {
-                    signalBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-                    signalBadge.style.color = 'var(--green)';
-                } else if (signal === 'bearish') {
-                    signalBadge.style.background = 'rgba(239, 68, 68, 0.2)';
-                    signalBadge.style.color = 'var(--red)';
+            // Derive signal from price position relative to walls
+            if (callWall && putWall && currentPrice) {
+                const distToCall = ((callWall - currentPrice) / currentPrice) * 100;
+                const distToPut = ((currentPrice - putWall) / currentPrice) * 100;
+
+                if (distToPut < 2) {
+                    signal = 'bullish';
+                    signalNote = `Price near put wall support at $${putWall.toFixed(0)}`;
+                } else if (distToCall < 2) {
+                    signal = 'bearish';
+                    signalNote = `Price near call wall resistance at $${callWall.toFixed(0)}`;
+                } else if (distToCall < distToPut) {
+                    signal = 'bearish';
+                    signalNote = `Closer to call wall resistance ($${callWall.toFixed(0)})`;
                 } else {
-                    signalBadge.style.background = 'var(--bg)';
-                    signalBadge.style.color = 'var(--text-muted)';
+                    signal = 'bullish';
+                    signalNote = `Closer to put wall support ($${putWall.toFixed(0)})`;
                 }
-
-                document.getElementById('gex-signal-note').textContent =
-                    l.interpretation.note || '--';
             }
+
+            signalBadge.textContent = signal.toUpperCase();
+            if (signal === 'bullish') {
+                signalBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+                signalBadge.style.color = 'var(--green)';
+            } else if (signal === 'bearish') {
+                signalBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+                signalBadge.style.color = 'var(--red)';
+            } else {
+                signalBadge.style.background = 'var(--bg)';
+                signalBadge.style.color = 'var(--text-muted)';
+            }
+
+            document.getElementById('gex-signal-note').textContent = signalNote;
         }
 
         // Build interpretation

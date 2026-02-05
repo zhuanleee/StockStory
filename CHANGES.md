@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 20:36 - `0e78196`
+
+**Fix futures options support for GEX dashboard and ratio spread**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/app.js
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 20:27 - `75ea6dd`
 
 **Add UX improvements: shimmer animation, retry logic, loading indicators**
