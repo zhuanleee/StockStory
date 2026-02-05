@@ -2,6 +2,49 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
     ? 'http://localhost:5000/api'
     : 'https://zhuanleee--stockstory-api-create-fastapi-app.modal.run';
 
+// Add loading spinner CSS
+const style = document.createElement('style');
+style.textContent = `
+    .loading-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid var(--text-muted);
+        border-top-color: var(--green);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    .is-loading .card { opacity: 0.7; }
+`;
+document.head.appendChild(style);
+
+// =============================================================================
+// FETCH WITH RETRY - Exponential backoff for resilient API calls
+// =============================================================================
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const res = await fetch(url, options);
+            if (!res.ok && res.status >= 500) {
+                throw new Error(`Server error: ${res.status}`);
+            }
+            return res;
+        } catch (error) {
+            lastError = error;
+            if (i < maxRetries - 1) {
+                const delay = Math.pow(2, i) * 1000; // 1s, 2s, 4s
+                console.log(`Retry ${i + 1}/${maxRetries} for ${url} in ${delay}ms`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+    throw lastError;
+}
+
 // =============================================================================
 // TIMEZONE UTILITY - Uses user's local timezone
 // =============================================================================
@@ -708,7 +751,7 @@ function formatVolume(vol) {
 async function fetchHealth() {
     console.log('🔄 fetchHealth() called');
     try {
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await fetchWithRetry(`${API_BASE}/health`);
         const data = await res.json();
         console.log('📦 Health API response:', data);
 
@@ -772,7 +815,14 @@ async function fetchHealth() {
             console.warn('⚠️ fetchHealth: API returned non-ok status', data);
         }
     } catch (e) {
-        console.error('❌ fetchHealth failed:', e);
+        console.error('fetchHealth error:', e);
+        // Show error state in UI
+        const el = document.getElementById('fear-greed-score');
+        if (el) el.textContent = 'Error';
+        const fgValueEl = document.getElementById('fg-value');
+        if (fgValueEl) fgValueEl.textContent = '--';
+        const fgLabelEl = document.getElementById('fg-label');
+        if (fgLabelEl) fgLabelEl.textContent = 'Error loading data';
     }
 }
 
@@ -784,7 +834,7 @@ async function fetchScan() {
         const url = `${API_BASE}/scan`;
         console.log('📍 Fetching:', url);
 
-        const res = await fetch(url);
+        const res = await fetchWithRetry(url);
         console.log('✅ Response status:', res.status, res.statusText);
 
         const data = await res.json();
@@ -848,8 +898,17 @@ async function fetchScan() {
             renderTopPicks([]);
         }
     } catch (e) {
-        console.error('❌ Scan fetch failed:', e);
+        console.error('fetchScan error:', e);
         console.error('   Error details:', e.message, e.stack);
+        // Show error state in UI
+        const statScanned = document.getElementById('stat-scanned');
+        if (statScanned) statScanned.textContent = 'Error';
+        const statHot = document.getElementById('stat-hot');
+        if (statHot) statHot.textContent = '--';
+        const statDev = document.getElementById('stat-developing');
+        if (statDev) statDev.textContent = '--';
+        const statWatch = document.getElementById('stat-watchlist');
+        if (statWatch) statWatch.textContent = '--';
     }
 }
 
@@ -6864,29 +6923,41 @@ const CACHE_TTL = 60000; // 1 minute
 
 async function refreshAll() {
     console.log('🔄 refreshAll() called - loading dashboard data');
-    document.getElementById('last-update').textContent = 'Refreshing...';
 
-    // Stage 1: Load fast data first (user sees results quickly)
-    await Promise.all([
-        fetchHealth(),
-        fetchScan(),
-        fetchThemes(),
-        fetchConvictionAlerts(),
-    ]);
+    // Show loading state in header
+    const lastUpdateEl = document.getElementById('last-update');
+    if (lastUpdateEl) {
+        lastUpdateEl.innerHTML = '<span class="loading-spinner"></span> Loading...';
+    }
 
-    // Update time after fast data loads
-    document.getElementById('last-update').textContent = formatLocalTime();
+    // Add loading class to body for global styling
+    document.body.classList.add('is-loading');
 
-    tabLoadedAt['dashboard'] = Date.now();
+    try {
+        // Stage 1: Load fast data first (user sees results quickly)
+        await Promise.all([
+            fetchHealth(),
+            fetchScan(),
+            fetchThemes(),
+            fetchConvictionAlerts(),
+        ]);
 
-    // Stage 2: Load slower AI data in background (don't block UI)
-    Promise.all([
-        fetchAIIntelligence(),
-        fetchUnusualOptions(),
-        fetchVolumeProfile(),
-        fetchAgenticStatus(),
-        fetchAgenticPicks(),
-    ]).catch(e => console.warn('Background AI fetch error:', e));
+        // Update time after fast data loads
+        if (lastUpdateEl) lastUpdateEl.textContent = formatLocalTime();
+
+        tabLoadedAt['dashboard'] = Date.now();
+
+        // Stage 2: Load slower AI data in background (don't block UI)
+        Promise.all([
+            fetchAIIntelligence(),
+            fetchUnusualOptions(),
+            fetchVolumeProfile(),
+            fetchAgenticStatus(),
+            fetchAgenticPicks(),
+        ]).catch(e => console.warn('Background AI fetch error:', e));
+    } finally {
+        document.body.classList.remove('is-loading');
+    }
 }
 
 // Refresh only the current active tab
