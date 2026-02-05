@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 01:42 - `85122d2`
+
+**Add robust candle data parsing with better error handling**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-06 01:37 - `305d4aa`
 
 **Fix candles.map error - access nested candles array correctly**
