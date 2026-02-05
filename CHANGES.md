@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 16:02 - `605b41d`
+
+**Fix Tastytrade SDK session creation - use (client_secret, refresh_token)**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+requirements.txt
+scripts/get_tastytrade_token.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 15:52 - `286d896`
 
 **Update Tastytrade provider to use OAuth2 authentication**

@@ -29,7 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
-    .run_commands("echo 'Build 2026-02-05-v6 - Tastytrade OAuth credentials'")  # Force rebuild
+    .run_commands("echo 'Build 2026-02-05-v7 - Tastytrade chain fix'")  # Force rebuild
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
@@ -2321,6 +2321,103 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    @web_app.get("/debug/tastytrade", tags=["Debug"])
+    def debug_tastytrade():
+        """Debug endpoint to test Tastytrade connection."""
+        import os
+        import traceback as tb
+
+        client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET', '')
+        refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN', '')
+
+        result = {
+            "credentials_present": {
+                "TASTYTRADE_CLIENT_SECRET": bool(client_secret),
+                "TASTYTRADE_REFRESH_TOKEN": bool(refresh_token),
+            },
+            "credentials_preview": {
+                "client_secret": client_secret[:15] + "..." if client_secret else None,
+                "refresh_token": refresh_token[:30] + "..." if refresh_token else None,
+            },
+            "session": None,
+            "session_error": None,
+        }
+
+        # Try official SDK (tastytrade-sdk)
+        client_id = os.environ.get('TASTYTRADE_CLIENT_ID', '')
+
+        try:
+            from tastytrade_sdk import Tastytrade
+            result["official_sdk"] = "imported"
+
+            try:
+                tasty = Tastytrade(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    refresh_token=refresh_token
+                )
+                result["session"] = "created_official"
+
+                # Try API call
+                try:
+                    chains = tasty.instruments.option_chains("SPY")
+                    result["chain"] = "success"
+                    result["chain_type"] = str(type(chains))
+                except Exception as e:
+                    result["chain_error"] = str(e)
+
+            except Exception as e:
+                result["official_error"] = str(e)
+
+        except ImportError as e:
+            result["official_sdk"] = f"import_failed: {e}"
+
+        # Try unofficial SDK
+        try:
+            import tastytrade
+            result["unofficial_sdk"] = getattr(tastytrade, '__version__', 'imported')
+
+            # Check what Session expects
+            import inspect
+            from tastytrade import Session
+            sig = inspect.signature(Session.__init__)
+            result["session_signature"] = str(sig)
+
+            try:
+                session = Session(client_secret, refresh_token)
+                result["session"] = "created_unofficial"
+
+                # Test option chain fetch
+                try:
+                    from tastytrade.instruments import get_option_chain
+                    from datetime import date
+                    chain = get_option_chain(session, "SPY")
+                    if chain:
+                        result["chain"] = "success"
+                        result["chain_type"] = str(type(chain))
+
+                        # Chain is a dict keyed by expiration date
+                        if isinstance(chain, dict):
+                            result["expirations_count"] = len(chain)
+                            today = date.today()
+                            sample = []
+                            for exp_date in sorted(chain.keys())[:5]:
+                                dte = (exp_date - today).days if isinstance(exp_date, date) else "?"
+                                sample.append({"date": str(exp_date), "dte": dte})
+                            result["sample_expirations"] = sample
+                    else:
+                        result["chain"] = "empty"
+                except Exception as e:
+                    result["chain_error"] = str(e)
+
+            except Exception as e:
+                result["unofficial_error"] = str(e)
+
+        except ImportError as e:
+            result["unofficial_sdk"] = f"import_failed: {e}"
+
+        return result
 
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):

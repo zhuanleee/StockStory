@@ -106,14 +106,7 @@ def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
                 {
                     'date': '2026-06-19',
                     'dte': 134,
-                    'strikes': [
-                        {
-                            'strike': 500.0,
-                            'call': { symbol, bid, ask, iv, delta, gamma, theta, vega, oi, volume },
-                            'put': { symbol, bid, ask, iv, delta, gamma, theta, vega, oi, volume }
-                        },
-                        ...
-                    ]
+                    'strikes': [...]
                 },
                 ...
             ]
@@ -124,68 +117,57 @@ def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
         return None
 
     try:
-        from tastytrade.instruments import get_option_chain, NestedOptionChain
-        from tastytrade import DXLinkStreamer
-        from tastytrade.dxfeed import Greeks, Quote
+        from tastytrade.instruments import get_option_chain
+        from datetime import date
 
         logger.info(f"Fetching options chain for {ticker} from Tastytrade")
 
-        # Get the nested option chain structure
+        # Get the option chain - returns defaultdict keyed by expiration date
         chain = get_option_chain(session, ticker)
 
         if not chain:
             logger.warning(f"No options chain found for {ticker}")
             return None
 
-        today = datetime.now().date()
+        today = date.today()
         expirations_data = []
 
-        for expiration in chain.expirations:
-            exp_date = expiration.expiration_date
+        # Chain is a dict keyed by expiration date
+        for exp_date in sorted(chain.keys()):
             dte = (exp_date - today).days
+            strikes_dict = chain[exp_date]  # dict of strike -> options
 
             strikes_data = []
-            for strike in expiration.strikes:
+            for strike_price, options in strikes_dict.items():
                 strike_data = {
-                    'strike': float(strike.strike_price),
+                    'strike': float(strike_price),
                     'call': None,
                     'put': None
                 }
 
-                # Get call data
-                if strike.call:
-                    strike_data['call'] = {
-                        'symbol': strike.call,
-                        'bid': None,
-                        'ask': None,
-                        'iv': None,
-                        'delta': None,
-                        'gamma': None,
-                        'theta': None,
-                        'vega': None,
-                        'oi': None,
-                        'volume': None
-                    }
-
-                # Get put data
-                if strike.put:
-                    strike_data['put'] = {
-                        'symbol': strike.put,
-                        'bid': None,
-                        'ask': None,
-                        'iv': None,
-                        'delta': None,
-                        'gamma': None,
-                        'theta': None,
-                        'vega': None,
-                        'oi': None,
-                        'volume': None
-                    }
+                # Options is a dict with 'call' and 'put' keys
+                if isinstance(options, dict):
+                    if options.get('call'):
+                        strike_data['call'] = {
+                            'symbol': getattr(options['call'], 'symbol', str(options['call'])),
+                        }
+                    if options.get('put'):
+                        strike_data['put'] = {
+                            'symbol': getattr(options['put'], 'symbol', str(options['put'])),
+                        }
+                else:
+                    # Options might be a list or other structure
+                    for opt in (options if isinstance(options, list) else [options]):
+                        if hasattr(opt, 'option_type'):
+                            if opt.option_type == 'C':
+                                strike_data['call'] = {'symbol': opt.symbol}
+                            elif opt.option_type == 'P':
+                                strike_data['put'] = {'symbol': opt.symbol}
 
                 strikes_data.append(strike_data)
 
             expirations_data.append({
-                'date': exp_date.strftime('%Y-%m-%d'),
+                'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
                 'dte': dte,
                 'strikes': strikes_data
             })
@@ -384,19 +366,20 @@ def get_expirations_tastytrade(ticker: str) -> Optional[List[Dict]]:
 
     try:
         from tastytrade.instruments import get_option_chain
+        from datetime import date
 
         chain = get_option_chain(session, ticker)
         if not chain:
             return None
 
-        today = datetime.now().date()
+        today = date.today()
         expirations = []
 
-        for exp in chain.expirations:
-            exp_date = exp.expiration_date
+        # Chain is a dict keyed by expiration date
+        for exp_date in chain.keys():
             dte = (exp_date - today).days
             expirations.append({
-                'date': exp_date.strftime('%Y-%m-%d'),
+                'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
                 'dte': dte
             })
 
