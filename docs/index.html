@@ -3571,6 +3571,42 @@
                 </div>
             </div>
 
+            <!-- Quick Levels Card -->
+            <div id="quick-levels-container" style="display: none; margin-bottom: 20px;">
+                <div class="card" style="border-left: 3px solid var(--purple);">
+                    <div class="card-header">
+                        <div class="card-title">📍 KEY LEVELS <span id="ql-ticker" style="color: var(--purple); margin-left: 8px;"></span></div>
+                        <button class="btn btn-ghost" onclick="loadQuickLevels()" style="padding: 6px 10px; font-size: 0.75rem;" title="Refresh Levels">↻</button>
+                    </div>
+                    <div class="card-body" style="padding: 12px 16px;">
+                        <!-- Levels Row -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center;">
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">SUPPORT</div>
+                                <div style="font-size: 1.3rem; font-weight: 700; color: var(--green);" id="ql-support">--</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;" id="ql-support-dist">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">RESISTANCE</div>
+                                <div style="font-size: 1.3rem; font-weight: 700; color: var(--red);" id="ql-resistance">--</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;" id="ql-resistance-dist">--</div>
+                            </div>
+                            <div style="background: var(--bg-hover); padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px;">RANGE</div>
+                                <div style="font-size: 1.3rem; font-weight: 700;" id="ql-range">--</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;" id="ql-range-label">Between walls</div>
+                            </div>
+                        </div>
+                        <!-- Signal Row -->
+                        <div style="margin-top: 12px; padding: 10px; background: var(--bg-hover); border-radius: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted);">Signal:</span>
+                            <span style="font-size: 0.8rem; font-weight: 600;" id="ql-signal">--</span>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);" id="ql-signal-note">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- GEX Dashboard Panel -->
             <div id="gex-dashboard-container" style="display: none; margin-bottom: 20px;">
                 <div class="card" style="border-left: 3px solid var(--orange);">
@@ -3646,6 +3682,11 @@
                             </div>
                         </div>
 
+                        <!-- GEX Price Ladder -->
+                        <div id="gex-price-ladder-container" style="margin-bottom: 16px;">
+                            <!-- Price ladder will be rendered by JavaScript -->
+                        </div>
+
                         <!-- Zones & Signals -->
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                             <!-- Magnet & Acceleration Zones -->
@@ -3677,6 +3718,24 @@
                         <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, var(--bg-hover) 0%, var(--bg) 100%); border-radius: 8px; border: 1px solid var(--border);">
                             <div style="font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-bottom: 6px;">📊 GEX Analysis Summary</div>
                             <div style="font-size: 0.8rem;" id="gex-interpretation">Load a ticker to see comprehensive GEX analysis with regime classification, support/resistance levels, and trading signals.</div>
+                        </div>
+
+                        <!-- Key GEX Levels Table (Collapsible) -->
+                        <div id="gex-levels-table-container" style="margin-top: 12px; display: none;">
+                            <div
+                                id="gex-levels-table-header"
+                                onclick="toggleGexLevelsTable()"
+                                style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-hover); border-radius: 6px 6px 0 0; cursor: pointer; border: 1px solid var(--border); border-bottom: none;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span id="gex-levels-toggle-icon" style="font-size: 0.7rem; color: var(--text-muted); transition: transform 0.2s;">&#9654;</span>
+                                    <span style="font-size: 0.7rem; font-weight: 600; color: var(--text-muted);">DETAILED KEY LEVELS</span>
+                                    <span id="gex-levels-count" style="font-size: 0.65rem; color: var(--text-muted); padding: 2px 6px; background: var(--bg); border-radius: 4px;">0 levels</span>
+                                </div>
+                                <span style="font-size: 0.65rem; color: var(--text-muted);">Click to expand</span>
+                            </div>
+                            <div id="gex-levels-table-body" style="display: none; border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; overflow: hidden;">
+                                <!-- Table will be rendered here by JS -->
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -5913,12 +5913,453 @@ async function loadOptionsForExpiry() {
         // Load GEX Dashboard after options analysis
         loadGexDashboard();
 
+        // Load Quick Levels card after options analysis
+        loadQuickLevels();
+
         // Load Ratio Spread Conditions after options analysis
         loadRatioSpreadScore();
 
     } catch (e) {
         console.error('Options analysis error:', e);
         document.getElementById('oa-interpretation').textContent = 'Error: ' + e.message;
+    }
+}
+
+// Quick Levels Card - Simplified key levels for Options Analysis section
+async function loadQuickLevels(ticker) {
+    // Use provided ticker or fall back to current optionsAnalysisTicker
+    ticker = ticker || optionsAnalysisTicker;
+    if (!ticker) return;
+
+    const container = document.getElementById('quick-levels-container');
+    container.style.display = 'block';
+    document.getElementById('ql-ticker').textContent = ticker;
+
+    // Reset fields
+    ['ql-support', 'ql-resistance', 'ql-range', 'ql-signal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '--';
+    });
+    ['ql-support-dist', 'ql-resistance-dist', 'ql-signal-note'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+    });
+
+    try {
+        const expiry = document.getElementById('oa-expiry-select')?.value || '';
+        const isFutures = ticker.startsWith('/');
+        const expiryParam = expiry ? `&expiration=${expiry}` : '';
+
+        const url = isFutures
+            ? `${API_BASE}/options/gex-levels?ticker=${encodeURIComponent(ticker)}${expiryParam}`
+            : `${API_BASE}/options/gex-levels/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.ok || !data.data) {
+            document.getElementById('ql-signal').textContent = 'No data available';
+            return;
+        }
+
+        const l = data.data;
+        const currentPrice = l.current_price || 0;
+        const putWall = l.put_wall;   // Support
+        const callWall = l.call_wall; // Resistance
+
+        // Support (put wall)
+        const supportEl = document.getElementById('ql-support');
+        const supportDistEl = document.getElementById('ql-support-dist');
+        if (putWall) {
+            supportEl.textContent = `$${putWall.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+            if (currentPrice) {
+                const dist = ((putWall - currentPrice) / currentPrice * 100).toFixed(1);
+                supportDistEl.textContent = `${dist > 0 ? '+' : ''}${dist}%`;
+                supportDistEl.style.color = dist >= 0 ? 'var(--green)' : 'var(--red)';
+            }
+        } else {
+            supportEl.textContent = '--';
+        }
+
+        // Resistance (call wall)
+        const resistEl = document.getElementById('ql-resistance');
+        const resistDistEl = document.getElementById('ql-resistance-dist');
+        if (callWall) {
+            resistEl.textContent = `$${callWall.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+            if (currentPrice) {
+                const dist = ((callWall - currentPrice) / currentPrice * 100).toFixed(1);
+                resistDistEl.textContent = `${dist > 0 ? '+' : ''}${dist}%`;
+                resistDistEl.style.color = dist >= 0 ? 'var(--green)' : 'var(--red)';
+            }
+        } else {
+            resistEl.textContent = '--';
+        }
+
+        // Range between walls
+        const rangeEl = document.getElementById('ql-range');
+        if (putWall && callWall && putWall > 0) {
+            const range = ((callWall - putWall) / putWall * 100).toFixed(1);
+            rangeEl.textContent = `${range}%`;
+        } else {
+            rangeEl.textContent = '--';
+        }
+
+        // Derive signal based on price position
+        const signalEl = document.getElementById('ql-signal');
+        const signalNoteEl = document.getElementById('ql-signal-note');
+
+        if (callWall && putWall && currentPrice) {
+            const distToCall = ((callWall - currentPrice) / currentPrice) * 100;
+            const distToPut = ((currentPrice - putWall) / currentPrice) * 100;
+            const midpoint = (callWall + putWall) / 2;
+
+            let signal = 'NEUTRAL';
+            let signalColor = 'var(--text)';
+            let note = '';
+
+            if (distToPut < 2) {
+                signal = 'BULLISH';
+                signalColor = 'var(--green)';
+                note = `Near put support`;
+            } else if (distToCall < 2) {
+                signal = 'BEARISH';
+                signalColor = 'var(--red)';
+                note = `Near call resistance`;
+            } else if (currentPrice < midpoint) {
+                signal = 'BULLISH';
+                signalColor = 'var(--green)';
+                note = `Below midpoint, room to upside`;
+            } else if (currentPrice > midpoint) {
+                signal = 'BEARISH';
+                signalColor = 'var(--red)';
+                note = `Above midpoint, near resistance`;
+            } else {
+                note = `At midpoint of range`;
+            }
+
+            signalEl.textContent = signal;
+            signalEl.style.color = signalColor;
+            signalNoteEl.textContent = `- ${note}`;
+        } else {
+            signalEl.textContent = 'N/A';
+            signalEl.style.color = 'var(--text-muted)';
+            signalNoteEl.textContent = '- Insufficient data';
+        }
+
+        console.log('✅ Quick Levels loaded for', ticker);
+
+    } catch (e) {
+        console.error('Quick Levels error:', e);
+        document.getElementById('ql-signal').textContent = 'Error loading';
+        document.getElementById('ql-signal').style.color = 'var(--red)';
+    }
+}
+
+// GEX Price Ladder - Visual representation of key GEX levels
+function renderGexPriceLadder(levelsData, currentPrice) {
+    if (!levelsData || !currentPrice) {
+        return '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No price ladder data available</div>';
+    }
+
+    const callWall = levelsData.call_wall;
+    const putWall = levelsData.put_wall;
+    const callWallGex = levelsData.call_wall_gex_millions || 0;
+    const putWallGex = levelsData.put_wall_gex_millions || 0;
+    const gammaFlip = levelsData.gamma_flip;
+    const magnetZones = levelsData.magnet_zones || [];
+    const accelZones = levelsData.acceleration_zones || [];
+
+    // Calculate distance percentages
+    const calcDist = (price) => {
+        if (!price || !currentPrice) return '';
+        const dist = ((price - currentPrice) / currentPrice * 100).toFixed(1);
+        return dist > 0 ? `+${dist}%` : `${dist}%`;
+    };
+
+    // Calculate bar width (max 100%)
+    const maxGex = Math.max(Math.abs(callWallGex), Math.abs(putWallGex), 1);
+    const calcBarWidth = (gex) => Math.min(Math.abs(gex) / maxGex * 100, 100);
+
+    // Build levels array for sorting
+    const levels = [];
+
+    if (callWall) {
+        levels.push({
+            type: 'call_wall',
+            label: 'CALL WALL',
+            price: callWall,
+            gex: callWallGex,
+            color: 'var(--red)',
+            icon: 'resistance'
+        });
+    }
+
+    if (gammaFlip && gammaFlip !== callWall && gammaFlip !== putWall) {
+        levels.push({
+            type: 'gamma_flip',
+            label: 'GAMMA FLIP',
+            price: gammaFlip,
+            gex: 0,
+            color: 'var(--orange)',
+            icon: 'flip'
+        });
+    }
+
+    // Add magnet zones
+    magnetZones.forEach((zone, idx) => {
+        if (zone !== callWall && zone !== putWall && zone !== gammaFlip) {
+            levels.push({
+                type: 'magnet',
+                label: `MAGNET ${idx + 1}`,
+                price: zone,
+                gex: null,
+                color: 'var(--blue)',
+                icon: 'magnet'
+            });
+        }
+    });
+
+    // Add acceleration zones
+    accelZones.forEach((zone, idx) => {
+        if (zone !== callWall && zone !== putWall && zone !== gammaFlip) {
+            levels.push({
+                type: 'accel',
+                label: `ACCEL ${idx + 1}`,
+                price: zone,
+                gex: null,
+                color: 'var(--purple)',
+                icon: 'accel'
+            });
+        }
+    });
+
+    if (putWall) {
+        levels.push({
+            type: 'put_wall',
+            label: 'PUT WALL',
+            price: putWall,
+            gex: putWallGex,
+            color: 'var(--green)',
+            icon: 'support'
+        });
+    }
+
+    // Sort levels by price descending (highest at top)
+    levels.sort((a, b) => b.price - a.price);
+
+    // Find where current price fits
+    let currentInserted = false;
+    const sortedWithCurrent = [];
+
+    for (const level of levels) {
+        if (!currentInserted && level.price < currentPrice) {
+            sortedWithCurrent.push({ type: 'current', price: currentPrice });
+            currentInserted = true;
+        }
+        sortedWithCurrent.push(level);
+    }
+    if (!currentInserted) {
+        sortedWithCurrent.push({ type: 'current', price: currentPrice });
+    }
+
+    // Build HTML
+    let html = `
+        <div style="background: var(--bg-hover); border-radius: 8px; padding: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>GEX PRICE LADDER</span>
+                <span class="info-icon" data-tooltip="Visual price ladder showing key GEX levels. Call Wall = resistance (red), Put Wall = support (green), Gamma Flip = volatility transition zone.">i</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0;">
+    `;
+
+    sortedWithCurrent.forEach((level, idx) => {
+        const isFirst = idx === 0;
+        const isLast = idx === sortedWithCurrent.length - 1;
+
+        if (level.type === 'current') {
+            // Current price marker
+            html += `
+                <div style="display: flex; align-items: center; padding: 10px 0; position: relative;">
+                    <div style="width: 120px; text-align: right; padding-right: 12px;">
+                        <span style="font-size: 0.7rem; font-weight: 600; color: var(--text);">CURRENT</span>
+                    </div>
+                    <div style="flex: 0 0 20px; display: flex; justify-content: center; position: relative;">
+                        <div style="width: 12px; height: 12px; background: var(--text); border-radius: 50%; border: 2px solid var(--bg); z-index: 2;"></div>
+                        ${!isFirst ? '<div style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); width: 2px; height: 10px; background: var(--border);"></div>' : ''}
+                        ${!isLast ? '<div style="position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); width: 2px; height: 10px; background: var(--border);"></div>' : ''}
+                    </div>
+                    <div style="flex: 1; padding-left: 12px; display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 1.1rem; font-weight: 700; color: var(--text);">$${currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                        <span style="font-size: 0.75rem; padding: 2px 8px; background: rgba(255,255,255,0.1); border-radius: 4px; color: var(--text-muted);">NOW</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Level row
+            const dist = calcDist(level.price);
+            const barWidth = level.gex !== null ? calcBarWidth(level.gex) : 0;
+            const barColor = level.gex >= 0 ? 'var(--green)' : 'var(--red)';
+            const gexText = level.gex !== null ? `${level.gex >= 0 ? '+' : ''}${level.gex.toFixed(1)}M GEX` : '';
+
+            // Determine connector lines
+            const showTopLine = !isFirst;
+            const showBottomLine = !isLast;
+
+            html += `
+                <div style="display: flex; align-items: center; padding: 8px 0; position: relative;">
+                    <div style="width: 120px; text-align: right; padding-right: 12px;">
+                        <span style="font-size: 0.65rem; font-weight: 600; color: ${level.color}; letter-spacing: 0.5px;">${level.label}</span>
+                    </div>
+                    <div style="flex: 0 0 20px; display: flex; justify-content: center; position: relative;">
+                        <div style="width: 8px; height: 8px; background: ${level.color}; border-radius: 2px;"></div>
+                        ${showTopLine ? '<div style="position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: var(--border);"></div>' : ''}
+                        ${showBottomLine ? '<div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 2px; height: 8px; background: var(--border);"></div>' : ''}
+                    </div>
+                    <div style="flex: 1; padding-left: 12px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                            <span style="font-size: 0.95rem; font-weight: 600; color: ${level.color};">$${level.price.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</span>
+                            <span style="font-size: 0.7rem; color: var(--text-muted);">${dist}</span>
+                        </div>
+                        ${level.gex !== null ? `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="flex: 1; max-width: 150px; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden;">
+                                <div style="width: ${barWidth}%; height: 100%; background: ${barColor}; border-radius: 3px;"></div>
+                            </div>
+                            <span style="font-size: 0.65rem; color: var(--text-muted);">${gexText}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+    });
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    return html;
+}
+
+// GEX Key Levels Table - Detailed view of all key GEX strikes
+function renderGexLevelsTable(keyLevels, currentPrice) {
+    if (!keyLevels || !Array.isArray(keyLevels) || keyLevels.length === 0 || !currentPrice) {
+        return '<div style="text-align: center; color: var(--text-muted); padding: 12px; font-size: 0.7rem;">No key levels data available</div>';
+    }
+
+    // Sort levels by absolute distance from current price (nearest first)
+    const sortedLevels = [...keyLevels].sort((a, b) => {
+        const distA = Math.abs(a.distance_pct || ((a.strike - currentPrice) / currentPrice * 100));
+        const distB = Math.abs(b.distance_pct || ((b.strike - currentPrice) / currentPrice * 100));
+        return distA - distB;
+    });
+
+    // Limit to 10 levels
+    const displayLevels = sortedLevels.slice(0, 10);
+
+    // Build table HTML with compact styling
+    let html = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.7rem;">
+            <thead>
+                <tr style="background: var(--bg); border-bottom: 1px solid var(--border);">
+                    <th style="padding: 6px 8px; text-align: left; font-weight: 600; color: var(--text-muted);">Strike</th>
+                    <th style="padding: 6px 8px; text-align: right; font-weight: 600; color: var(--text-muted);">GEX ($M)</th>
+                    <th style="padding: 6px 8px; text-align: center; font-weight: 600; color: var(--text-muted);">Type</th>
+                    <th style="padding: 6px 8px; text-align: center; font-weight: 600; color: var(--text-muted);">Role</th>
+                    <th style="padding: 6px 8px; text-align: right; font-weight: 600; color: var(--text-muted);">Distance</th>
+                    <th style="padding: 6px 8px; text-align: right; font-weight: 600; color: var(--text-muted);">Call OI</th>
+                    <th style="padding: 6px 8px; text-align: right; font-weight: 600; color: var(--text-muted);">Put OI</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    displayLevels.forEach((level, idx) => {
+        const strike = level.strike || 0;
+        const netGex = level.net_gex || 0;
+        const gexMillions = level.gex_millions !== undefined ? level.gex_millions : (netGex / 1000000);
+        const type = (level.type || 'unknown').toLowerCase();
+        const role = (level.role || 'neutral').toLowerCase();
+        const distancePct = level.distance_pct !== undefined ? level.distance_pct : ((strike - currentPrice) / currentPrice * 100);
+        const callOi = level.call_oi || 0;
+        const putOi = level.put_oi || 0;
+
+        // GEX color: positive = green, negative = red
+        const gexColor = gexMillions >= 0 ? 'var(--green)' : 'var(--red)';
+        const gexSign = gexMillions >= 0 ? '+' : '';
+
+        // Type badge: magnet = blue, acceleration = orange/yellow
+        let typeBadgeBg, typeBadgeColor, typeLabel;
+        if (type === 'magnet' || type === 'high_gamma') {
+            typeBadgeBg = 'var(--blue-bg)';
+            typeBadgeColor = 'var(--blue)';
+            typeLabel = 'Magnet';
+        } else if (type === 'acceleration' || type === 'accel' || type === 'low_gamma') {
+            typeBadgeBg = 'var(--yellow-bg)';
+            typeBadgeColor = 'var(--yellow)';
+            typeLabel = 'Accel';
+        } else {
+            typeBadgeBg = 'var(--bg)';
+            typeBadgeColor = 'var(--text-muted)';
+            typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+        }
+
+        // Role color: support = green, resistance = red
+        let roleColor;
+        if (role === 'support') {
+            roleColor = 'var(--green)';
+        } else if (role === 'resistance') {
+            roleColor = 'var(--red)';
+        } else {
+            roleColor = 'var(--text-muted)';
+        }
+        const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+
+        // Distance formatting
+        const distSign = distancePct >= 0 ? '+' : '';
+        const distColor = distancePct >= 0 ? 'var(--text-muted)' : 'var(--text-muted)';
+
+        // Alternating row background
+        const rowBg = idx % 2 === 0 ? 'var(--bg-hover)' : 'transparent';
+
+        html += `
+            <tr style="background: ${rowBg}; border-bottom: 1px solid var(--border);">
+                <td style="padding: 6px 8px; font-weight: 600; color: var(--text);">$${strike.toLocaleString()}</td>
+                <td style="padding: 6px 8px; text-align: right; font-weight: 600; color: ${gexColor};">${gexSign}${gexMillions.toFixed(1)}M</td>
+                <td style="padding: 6px 8px; text-align: center;">
+                    <span style="padding: 2px 6px; border-radius: 4px; background: ${typeBadgeBg}; color: ${typeBadgeColor}; font-weight: 500; font-size: 0.65rem;">${typeLabel}</span>
+                </td>
+                <td style="padding: 6px 8px; text-align: center; color: ${roleColor}; font-weight: 500;">${roleLabel}</td>
+                <td style="padding: 6px 8px; text-align: right; color: ${distColor};">${distSign}${distancePct.toFixed(1)}%</td>
+                <td style="padding: 6px 8px; text-align: right; color: var(--text-muted);">${callOi.toLocaleString()}</td>
+                <td style="padding: 6px 8px; text-align: right; color: var(--text-muted);">${putOi.toLocaleString()}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+            </tbody>
+        </table>
+    `;
+
+    return html;
+}
+
+// Toggle GEX Levels Table visibility
+function toggleGexLevelsTable() {
+    const tableBody = document.getElementById('gex-levels-table-body');
+    const toggleIcon = document.getElementById('gex-levels-toggle-icon');
+    const header = document.getElementById('gex-levels-table-header');
+
+    if (tableBody.style.display === 'none') {
+        tableBody.style.display = 'block';
+        toggleIcon.style.transform = 'rotate(90deg)';
+        header.style.borderRadius = '6px 6px 0 0';
+    } else {
+        tableBody.style.display = 'none';
+        toggleIcon.style.transform = 'rotate(0deg)';
+        header.style.borderRadius = '6px';
     }
 }
 
@@ -6117,6 +6558,30 @@ async function loadGexDashboard() {
             }
 
             document.getElementById('gex-signal-note').textContent = signalNote;
+
+            // Render GEX Price Ladder
+            const priceLadderContainer = document.getElementById('gex-price-ladder-container');
+            if (priceLadderContainer) {
+                priceLadderContainer.innerHTML = renderGexPriceLadder(l, currentPrice);
+            }
+
+            // Render GEX Key Levels Table
+            const keyLevels = l.key_levels || [];
+            const levelsTableContainer = document.getElementById('gex-levels-table-container');
+            const levelsTableBody = document.getElementById('gex-levels-table-body');
+            const levelsCount = document.getElementById('gex-levels-count');
+
+            if (levelsTableContainer && levelsTableBody) {
+                if (keyLevels.length > 0) {
+                    levelsTableContainer.style.display = 'block';
+                    levelsTableBody.innerHTML = renderGexLevelsTable(keyLevels, currentPrice);
+                    if (levelsCount) {
+                        levelsCount.textContent = `${Math.min(keyLevels.length, 10)} levels`;
+                    }
+                } else {
+                    levelsTableContainer.style.display = 'none';
+                }
+            }
         }
 
         // Build interpretation

@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 21:02 - `f0c1be9`
+
+**Show DTE in days instead of weeks in expiration dropdown**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-05 20:59 - `0e96352`
 
 **Fix GEX Dashboard P/C Z-Score and Ratio Spread futures support**
