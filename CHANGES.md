@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-06 02:03 - `70e9e1a`
+
+**Fix max pain field name - API returns max_pain_price**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+```
+</details>
+
+---
+
+
 ### 2026-02-06 01:55 - `8c472a2`
 
 **Add robust error handling for Options Visualization**

@@ -1,5 +1,5 @@
-// Version: 20260206d - Fixed max pain field name
-console.log('📦 StockStory app.js v20260206d loaded');
+// Version: 20260206e - Added VAL/POC/VAH levels + live price updates
+console.log('📦 StockStory app.js v20260206e loaded');
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'
@@ -6667,8 +6667,17 @@ let optionsVizData = {
     expectedMove: { upper: 0, lower: 0 },
     totalGex: 0,
     pcRatio: 0,
-    candles: [] // Candle data for price chart
+    candles: [], // Candle data for price chart
+    // Volume Profile levels
+    val: 0,      // Value Area Low
+    poc: 0,      // Point of Control
+    vah: 0,      // Value Area High
+    vpPosition: 'In Range' // Price position vs value area
 };
+
+// Live price update interval
+let livePriceInterval = null;
+let lastLivePrice = null;
 
 /**
  * loadOptionsViz - Main function to fetch all options visualization data
@@ -6724,14 +6733,19 @@ async function loadOptionsViz(ticker) {
             : `${API_BASE}/options/max-pain/${ticker}${expiry ? '?expiration=' + expiry : ''}`;
 
         const candlesUrl = `${API_BASE}/market/candles?ticker=${tickerParam}&days=${days}`;
+        const volumeProfileUrl = `${API_BASE}/volume-profile/${isFutures ? 'SPY' : ticker}?days=30`;
 
-        // Fetch all data in parallel (including candles)
-        const [gexLevelsRes, gexRes, maxPainRes, candlesRes] = await Promise.all([
+        // Fetch all data in parallel (including candles and volume profile)
+        const [gexLevelsRes, gexRes, maxPainRes, candlesRes, vpRes] = await Promise.all([
             fetch(gexLevelsUrl),
             fetch(gexUrl),
             fetch(maxPainUrl),
             fetch(candlesUrl).catch(e => {
                 console.warn('Failed to fetch candle data:', e);
+                return null;
+            }),
+            fetch(volumeProfileUrl).catch(e => {
+                console.warn('Failed to fetch volume profile:', e);
                 return null;
             })
         ]);
@@ -6781,6 +6795,27 @@ async function loadOptionsViz(ticker) {
         } else {
             console.warn('Candles response not ok:', candlesRes?.status);
             optionsVizData.candles = [];
+        }
+
+        // Parse volume profile data (VAL, POC, VAH)
+        if (vpRes && vpRes.ok) {
+            try {
+                const vpData = await vpRes.json();
+                if (vpData.ok && vpData.data) {
+                    optionsVizData.val = vpData.data.val || 0;
+                    optionsVizData.poc = vpData.data.poc || 0;
+                    optionsVizData.vah = vpData.data.vah || 0;
+                    // Determine position
+                    const cp = vpData.data.current_price || 0;
+                    if (cp > optionsVizData.vah) optionsVizData.vpPosition = 'Above VAH';
+                    else if (cp < optionsVizData.val) optionsVizData.vpPosition = 'Below VAL';
+                    else if (Math.abs(cp - optionsVizData.poc) < (optionsVizData.vah - optionsVizData.val) * 0.1) optionsVizData.vpPosition = 'At POC';
+                    else optionsVizData.vpPosition = 'In Range';
+                    console.log('📊 Volume Profile loaded:', { val: optionsVizData.val, poc: optionsVizData.poc, vah: optionsVizData.vah });
+                }
+            } catch (e) {
+                console.warn('Error parsing volume profile:', e);
+            }
         }
 
         // Extract GEX levels
@@ -6987,6 +7022,111 @@ function renderPriceChart() {
         }
     });
     resizeObserver.observe(container);
+
+    // Start live price updates
+    startLivePriceUpdates();
+}
+
+/**
+ * startLivePriceUpdates - Start polling for live price updates
+ */
+function startLivePriceUpdates() {
+    // Clear any existing interval
+    if (livePriceInterval) {
+        clearInterval(livePriceInterval);
+    }
+
+    const ticker = optionsAnalysisTicker;
+    if (!ticker) return;
+
+    // Update every 5 seconds
+    livePriceInterval = setInterval(async () => {
+        try {
+            const isFutures = ticker.startsWith('/');
+            const tickerParam = encodeURIComponent(ticker);
+            const url = isFutures
+                ? `${API_BASE}/quote?ticker=${tickerParam}`
+                : `${API_BASE}/quote/${ticker}`;
+
+            const res = await fetch(url);
+            if (!res.ok) return;
+
+            const data = await res.json();
+            if (!data.ok || !data.data) return;
+
+            const price = data.data.last || data.data.price || data.data.mid ||
+                         ((data.data.bid + data.data.ask) / 2);
+
+            if (price && price > 0 && priceSeries) {
+                updateLivePrice(price);
+            }
+        } catch (e) {
+            // Silently fail on live updates
+        }
+    }, 5000);
+
+    // Also update immediately
+    updateLivePrice(optionsVizData.currentPrice);
+}
+
+/**
+ * updateLivePrice - Update the chart with live price
+ */
+function updateLivePrice(price) {
+    if (!priceSeries || !price || price <= 0) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTimestamp = Math.floor(today.getTime() / 1000);
+
+    // Find or create today's candle
+    const lastCandle = optionsVizData.candles[optionsVizData.candles.length - 1];
+
+    if (lastCandle && lastCandle.time >= todayTimestamp) {
+        // Update today's candle
+        const updatedCandle = {
+            time: lastCandle.time,
+            open: lastCandle.open,
+            high: Math.max(lastCandle.high, price),
+            low: Math.min(lastCandle.low, price),
+            close: price
+        };
+        priceSeries.update(updatedCandle);
+        optionsVizData.candles[optionsVizData.candles.length - 1] = updatedCandle;
+    } else {
+        // Create new candle for today (real-time tick)
+        const newCandle = {
+            time: todayTimestamp,
+            open: price,
+            high: price,
+            low: price,
+            close: price
+        };
+        priceSeries.update(newCandle);
+    }
+
+    // Update current price display
+    optionsVizData.currentPrice = price;
+    const priceEl = document.getElementById('viz-current-price');
+    if (priceEl) {
+        priceEl.textContent = `$${price.toFixed(2)}`;
+    }
+
+    // Update info bar
+    updateVizInfoBar();
+
+    lastLivePrice = price;
+}
+
+/**
+ * stopLivePriceUpdates - Stop the live price polling
+ */
+function stopLivePriceUpdates() {
+    if (livePriceInterval) {
+        clearInterval(livePriceInterval);
+        livePriceInterval = null;
+    }
 }
 
 /**
@@ -7052,6 +7192,42 @@ function updatePriceChartLevels() {
             lineStyle: LightweightCharts.LineStyle.Dotted,
             axisLabelVisible: true,
             title: 'Max Pain',
+        });
+    }
+
+    // VAL - Value Area Low (cyan dashed)
+    if (document.getElementById('viz-toggle-val')?.checked && optionsVizData.val > 0) {
+        priceLines.val = priceSeries.createPriceLine({
+            price: optionsVizData.val,
+            color: '#06b6d4',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'VAL',
+        });
+    }
+
+    // POC - Point of Control (magenta solid)
+    if (document.getElementById('viz-toggle-poc')?.checked && optionsVizData.poc > 0) {
+        priceLines.poc = priceSeries.createPriceLine({
+            price: optionsVizData.poc,
+            color: '#d946ef',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: 'POC',
+        });
+    }
+
+    // VAH - Value Area High (cyan dashed)
+    if (document.getElementById('viz-toggle-vah')?.checked && optionsVizData.vah > 0) {
+        priceLines.vah = priceSeries.createPriceLine({
+            price: optionsVizData.vah,
+            color: '#06b6d4',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'VAH',
         });
     }
 }

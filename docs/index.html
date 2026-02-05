@@ -3583,6 +3583,20 @@
                 <input type="checkbox" id="viz-toggle-maxpain" checked onchange="updatePriceChartLevels()">
                 <span style="color: var(--purple);">Max Pain</span>
             </label>
+            <span style="color: var(--border);">|</span>
+            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                <input type="checkbox" id="viz-toggle-val" checked onchange="updatePriceChartLevels()">
+                <span style="color: #06b6d4;">VAL</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                <input type="checkbox" id="viz-toggle-poc" checked onchange="updatePriceChartLevels()">
+                <span style="color: #d946ef;">POC</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                <input type="checkbox" id="viz-toggle-vah" checked onchange="updatePriceChartLevels()">
+                <span style="color: #06b6d4;">VAH</span>
+            </label>
+            <span style="color: var(--border);">|</span>
             <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
                 <input type="checkbox" id="viz-toggle-gex" checked onchange="updateOptionsViz()">
                 <span>GEX Chart</span>
@@ -4244,6 +4258,6 @@
     <script type="module" src="js/main.js" defer></script>
     
     <!-- Main application logic (extracted from inline for better caching & parallel loading) -->
-    <script src="js/app.js?v=20260206d" defer></script>
+    <script src="js/app.js?v=20260206e" defer></script>
 </body>
 </html>
