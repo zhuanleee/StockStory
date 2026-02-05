@@ -630,9 +630,58 @@ def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
         return None
 
 
+def get_futures_front_month_symbol(root_symbol: str) -> str:
+    """
+    Get the front month contract symbol for a futures root.
+    E.g., /ES -> /ESH6 (March 2026)
+
+    Month codes: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun,
+                 N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
+    """
+    from datetime import date
+    today = date.today()
+
+    # ES, NQ, RTY, YM have quarterly expirations (H, M, U, Z = Mar, Jun, Sep, Dec)
+    quarterly_futures = ['ES', 'NQ', 'RTY', 'YM', 'MES', 'MNQ']
+    # CL, GC have monthly expirations
+    monthly_codes = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z']
+    quarterly_codes = ['H', 'M', 'U', 'Z']  # Mar, Jun, Sep, Dec
+
+    # Extract root without /
+    root = root_symbol.lstrip('/')
+
+    # Determine which month codes to use
+    if root in quarterly_futures:
+        codes = quarterly_codes
+    else:
+        codes = monthly_codes
+
+    # Find next expiration month
+    current_month = today.month
+    current_year = today.year % 10  # Last digit of year
+
+    # For quarterly, find next quarter
+    if root in quarterly_futures:
+        quarter_months = [3, 6, 9, 12]
+        for qm in quarter_months:
+            if current_month <= qm:
+                month_code = quarterly_codes[quarter_months.index(qm)]
+                year_digit = current_year if current_month <= qm else (current_year + 1) % 10
+                return f"/{root}{month_code}{year_digit}"
+        # Wrap to next year's March
+        return f"/{root}H{(current_year + 1) % 10}"
+    else:
+        # Monthly - use next month
+        next_month = current_month if today.day < 15 else (current_month % 12) + 1
+        year_digit = current_year if next_month >= current_month else (current_year + 1) % 10
+        month_code = monthly_codes[next_month - 1]
+        return f"/{root}{month_code}{year_digit}"
+
+
 def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
     """
     Get current quote for a ticker.
+    For futures like /ES, automatically uses the front month contract.
     """
     session = get_tastytrade_session()
     if not session:
@@ -642,21 +691,28 @@ def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Quote
 
+        # For root futures symbols, get the front month contract
+        quote_ticker = ticker
+        if is_futures_ticker(ticker) and len(ticker) <= 4:  # /ES, /NQ, /CL, /GC
+            quote_ticker = get_futures_front_month_symbol(ticker)
+            logger.info(f"Using front month contract {quote_ticker} for {ticker}")
+
         quote_data = {}
 
         async def fetch_quote():
             try:
                 async with DXLinkStreamer(session) as streamer:
-                    await streamer.subscribe(Quote, [ticker])
+                    await streamer.subscribe(Quote, [quote_ticker])
                     import asyncio as aio
                     try:
                         async for quote in aio.wait_for(streamer.listen(Quote), timeout=5.0):
                             quote_data['bid'] = quote.bidPrice
                             quote_data['ask'] = quote.askPrice
                             quote_data['last'] = (quote.bidPrice + quote.askPrice) / 2
+                            quote_data['symbol'] = quote_ticker
                             break
                     except aio.TimeoutError:
-                        logger.warning(f"Quote streaming timed out for {ticker}")
+                        logger.warning(f"Quote streaming timed out for {quote_ticker}")
             except Exception as e:
                 logger.warning(f"Error in quote streaming: {e}")
 

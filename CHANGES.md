@@ -2,6 +2,24 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 18:28 - `37045ee`
+
+**Fix futures current price estimation for GEX calculation**
+
+Files changed: 2
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 18:24 - `9349a25`
 
 **Remove max pain feature entirely and use GEX for OI/DTE**

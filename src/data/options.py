@@ -88,6 +88,16 @@ def _get_tastytrade_max_pain(ticker: str, expiration: str = None, target_dte: in
         return None
 
 
+def _get_tastytrade_quote(ticker: str) -> Optional[Dict]:
+    """Get real-time quote from Tastytrade (works for futures like /ES)."""
+    try:
+        from src.data.tastytrade_provider import get_quote_tastytrade
+        return get_quote_tastytrade(ticker)
+    except Exception as e:
+        logger.warning(f"Tastytrade quote fetch failed for {ticker}: {e}")
+        return None
+
+
 # =============================================================================
 # UNIFIED OPTIONS DATA FUNCTIONS (Tastytrade first, Polygon fallback)
 # =============================================================================
@@ -661,32 +671,96 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
 
         # Get current price
         current_price = 0
-        try:
-            snapshot = get_snapshot_sync(ticker)
-            if snapshot:
-                current_price = snapshot.get('price') or snapshot.get('last_price') or 0
-        except:
-            pass
+        futures_info = get_futures_info(ticker)
+
+        # For futures, try Tastytrade quote first (most accurate)
+        if futures_info.get('is_futures'):
+            try:
+                quote = _get_tastytrade_quote(ticker)
+                if quote and quote.get('last') and quote.get('last') > 100:
+                    current_price = quote.get('last')
+                    logger.info(f"Got {ticker} price from Tastytrade: ${current_price}")
+            except Exception as e:
+                logger.warning(f"Tastytrade quote failed for {ticker}: {e}")
+
+            # Fallback: Use SPY/QQQ price as reference for index futures
+            if not current_price or current_price < 1000:
+                normalized = ticker.lstrip('/').upper()
+                logger.info(f"Trying ETF reference price for {ticker} (normalized: {normalized})")
+                if normalized in ['ES', 'MES']:
+                    try:
+                        spy_snapshot = get_snapshot_sync('SPY')
+                        logger.info(f"SPY snapshot: {spy_snapshot}")
+                        if spy_snapshot and spy_snapshot.get('price'):
+                            spy_price = spy_snapshot.get('price')
+                            current_price = spy_price * 10  # ES ≈ SPY * 10
+                            logger.info(f"Estimated {ticker} price from SPY: ${current_price:.2f}")
+                    except Exception as e:
+                        logger.error(f"Error getting SPY snapshot for {ticker}: {e}")
+                elif normalized in ['NQ', 'MNQ']:
+                    try:
+                        qqq_snapshot = get_snapshot_sync('QQQ')
+                        logger.info(f"QQQ snapshot: {qqq_snapshot}")
+                        if qqq_snapshot and qqq_snapshot.get('price'):
+                            qqq_price = qqq_snapshot.get('price')
+                            current_price = qqq_price * 40  # NQ ≈ QQQ * 40
+                            logger.info(f"Estimated {ticker} price from QQQ: ${current_price:.2f}")
+                    except Exception as e:
+                        logger.error(f"Error getting QQQ snapshot for {ticker}: {e}")
+
+        # Try Polygon snapshot for equities (or as fallback)
+        if not current_price:
+            try:
+                snapshot = get_snapshot_sync(ticker)
+                if snapshot:
+                    current_price = snapshot.get('price') or snapshot.get('last_price') or 0
+            except:
+                pass
 
         # Try underlying_price from options data
         if not current_price and calls:
             current_price = calls[len(calls)//2].get('underlying_price') or 0
 
-        # For futures, estimate from options chain if still no price
-        # Use strike with highest total OI as proxy for current price
+        # For futures without live quote, estimate from options chain
+        # Method 1: Find strike where call/put OI are most balanced (ATM indicator)
+        # Method 2: Fall back to strike with highest gamma (ATM has highest gamma)
         if not current_price and (calls or puts):
-            oi_by_strike = {}
+            call_oi_by_strike = {}
+            put_oi_by_strike = {}
+            gamma_by_strike = {}
+
             for c in calls:
                 s = c.get('strike', 0)
-                oi_by_strike[s] = oi_by_strike.get(s, 0) + (c.get('open_interest') or 0)
+                if s > 0:
+                    call_oi_by_strike[s] = c.get('open_interest') or 0
+                    gamma_by_strike[s] = gamma_by_strike.get(s, 0) + (c.get('gamma') or 0)
             for p in puts:
                 s = p.get('strike', 0)
-                oi_by_strike[s] = oi_by_strike.get(s, 0) + (p.get('open_interest') or 0)
-            if oi_by_strike:
-                # Get the strike with highest OI as estimate of current price
-                max_oi_strike = max(oi_by_strike.keys(), key=lambda k: oi_by_strike[k])
-                current_price = max_oi_strike
-                logger.info(f"Estimated {ticker} price from max OI strike: ${current_price}")
+                if s > 0:
+                    put_oi_by_strike[s] = p.get('open_interest') or 0
+                    gamma_by_strike[s] = gamma_by_strike.get(s, 0) + (p.get('gamma') or 0)
+
+            # Find strike with most balanced call/put OI ratio (closest to 1.0)
+            best_strike = None
+            best_balance = float('inf')
+            for strike in set(call_oi_by_strike.keys()) & set(put_oi_by_strike.keys()):
+                call_oi = call_oi_by_strike.get(strike, 0)
+                put_oi = put_oi_by_strike.get(strike, 0)
+                if call_oi > 10 and put_oi > 10:  # Need meaningful OI on both sides
+                    ratio = call_oi / put_oi if put_oi > 0 else float('inf')
+                    balance = abs(1.0 - ratio)  # How close to 1:1 ratio
+                    if balance < best_balance:
+                        best_balance = balance
+                        best_strike = strike
+
+            if best_strike and best_balance < 2.0:  # Reasonable balance found
+                current_price = best_strike
+                logger.info(f"Estimated {ticker} price from balanced OI strike: ${current_price}")
+            elif gamma_by_strike:
+                # Fall back to highest gamma strike (ATM)
+                max_gamma_strike = max(gamma_by_strike.keys(), key=lambda k: gamma_by_strike[k])
+                current_price = max_gamma_strike
+                logger.info(f"Estimated {ticker} price from max gamma strike: ${current_price}")
 
         # Build GEX by strike
         # Group by strike
