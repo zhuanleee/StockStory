@@ -74,26 +74,6 @@ def get_tastytrade_session():
         return None
 
 
-def refresh_tastytrade_session():
-    """Refresh the OAuth session token if needed."""
-    global _session, _session_expiry
-
-    if _session is None:
-        return get_tastytrade_session()
-
-    try:
-        if hasattr(_session, 'refresh'):
-            _session.refresh()
-            _session_expiry = datetime.now() + timedelta(minutes=14)
-            logger.info("Tastytrade session refreshed")
-        return _session
-    except Exception as e:
-        logger.warning(f"Failed to refresh session, creating new one: {e}")
-        _session = None
-        _session_expiry = None
-        return get_tastytrade_session()
-
-
 def is_futures_ticker(ticker: str) -> bool:
     """Check if ticker is a futures symbol (starts with /)."""
     return ticker.startswith('/')
@@ -209,104 +189,6 @@ def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
         logger.error(f"Error fetching Tastytrade futures options chain for {ticker}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return None
-
-
-def get_options_chain_tastytrade(ticker: str) -> Optional[Dict]:
-    """
-    Get full options chain from Tastytrade including all expirations.
-
-    Returns:
-        Dict with structure:
-        {
-            'ticker': str,
-            'expirations': [
-                {
-                    'date': '2026-06-19',
-                    'dte': 134,
-                    'strikes': [...]
-                },
-                ...
-            ]
-        }
-    """
-    session = get_tastytrade_session()
-    if not session:
-        return None
-
-    try:
-        from tastytrade.instruments import get_option_chain
-        from datetime import date
-
-        logger.info(f"Fetching options chain for {ticker} from Tastytrade")
-
-        # Get the option chain - returns defaultdict keyed by expiration date
-        chain = get_option_chain(session, ticker)
-
-        if not chain:
-            logger.warning(f"No options chain found for {ticker}")
-            return None
-
-        today = date.today()
-        expirations_data = []
-
-        # SDK v11: chain is a defaultdict keyed by expiration date
-        # chain[exp_date] is a LIST of Option objects
-        for exp_date in sorted(chain.keys()):
-            dte = (exp_date - today).days
-            options_list = chain[exp_date]  # LIST of Option objects
-
-            # Group options by strike price
-            strikes_map = {}  # strike -> {'call': Option, 'put': Option}
-
-            for opt in options_list:
-                strike_price = getattr(opt, 'strike_price', None)
-                opt_type = getattr(opt, 'option_type', None)
-                symbol = getattr(opt, 'symbol', None)
-                streamer_sym = getattr(opt, 'streamer_symbol', None)
-
-                if strike_price is None:
-                    continue
-
-                strike_float = float(strike_price)
-                if strike_float not in strikes_map:
-                    strikes_map[strike_float] = {'call': None, 'put': None}
-
-                if opt_type == 'C':
-                    strikes_map[strike_float]['call'] = {
-                        'symbol': str(symbol) if symbol else streamer_sym,
-                        'streamer_symbol': streamer_sym,
-                    }
-                elif opt_type == 'P':
-                    strikes_map[strike_float]['put'] = {
-                        'symbol': str(symbol) if symbol else streamer_sym,
-                        'streamer_symbol': streamer_sym,
-                    }
-
-            # Convert strikes_map to list
-            strikes_data = [
-                {'strike': strike, 'call': data['call'], 'put': data['put']}
-                for strike, data in sorted(strikes_map.items())
-            ]
-
-            expirations_data.append({
-                'date': exp_date.strftime('%Y-%m-%d') if hasattr(exp_date, 'strftime') else str(exp_date),
-                'dte': dte,
-                'strikes': strikes_data
-            })
-
-        # Sort by DTE
-        expirations_data.sort(key=lambda x: x['dte'])
-
-        logger.info(f"Found {len(expirations_data)} expirations for {ticker}")
-
-        return {
-            'ticker': ticker.upper(),
-            'expirations': expirations_data
-        }
-
-    except Exception as e:
-        logger.error(f"Error fetching Tastytrade options chain for {ticker}: {e}")
         return None
 
 
@@ -1239,172 +1121,9 @@ def get_unusual_options_sync_tastytrade(ticker: str, target_dte: int = 30) -> Op
     return unusual[:20]  # Return top 20
 
 
-def get_gex_data_tastytrade(ticker: str, target_dte: int = None) -> Optional[Dict]:
-    """
-    Calculate Gamma Exposure (GEX) from Tastytrade options data.
-
-    Returns GEX by strike and total market maker gamma exposure.
-    """
-    chain = get_options_chain_sync_tastytrade(ticker, target_dte=target_dte)
-    if not chain:
-        return None
-
-    calls = chain.get('calls', [])
-    puts = chain.get('puts', [])
-    underlying_price = chain.get('underlying_price')
-
-    if not underlying_price:
-        return None
-
-    gex_by_strike = {}
-    total_gex = 0
-
-    # GEX = Gamma × OI × Spot^2 × Contract_Multiplier (100)
-    # Call gamma is positive, put gamma is negative for dealers
-    contract_multiplier = 100
-
-    for c in calls:
-        strike = c['strike_price']
-        gamma = c.get('gamma', 0) or 0
-        oi = c.get('open_interest', 0) or 0
-
-        # Dealers are short calls (customer bought), so positive gamma
-        gex = gamma * oi * (underlying_price ** 2) * contract_multiplier / 1e9
-
-        if strike not in gex_by_strike:
-            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'net_gex': 0}
-        gex_by_strike[strike]['call_gex'] = gex
-        gex_by_strike[strike]['net_gex'] += gex
-        total_gex += gex
-
-    for p in puts:
-        strike = p['strike_price']
-        gamma = p.get('gamma', 0) or 0
-        oi = p.get('open_interest', 0) or 0
-
-        # Dealers are short puts (customer bought), so negative gamma
-        gex = -gamma * oi * (underlying_price ** 2) * contract_multiplier / 1e9
-
-        if strike not in gex_by_strike:
-            gex_by_strike[strike] = {'call_gex': 0, 'put_gex': 0, 'net_gex': 0}
-        gex_by_strike[strike]['put_gex'] = gex
-        gex_by_strike[strike]['net_gex'] += gex
-        total_gex += gex
-
-    # Find key levels
-    sorted_strikes = sorted(gex_by_strike.items(), key=lambda x: x[1]['net_gex'], reverse=True)
-
-    # Call wall = highest positive GEX strike
-    call_wall = sorted_strikes[0][0] if sorted_strikes and sorted_strikes[0][1]['net_gex'] > 0 else None
-
-    # Put wall = lowest negative GEX strike
-    put_wall_candidates = [(s, d) for s, d in sorted_strikes if d['net_gex'] < 0]
-    put_wall = put_wall_candidates[-1][0] if put_wall_candidates else None
-
-    # Zero gamma level (where GEX flips from positive to negative)
-    zero_gamma = None
-    prev_gex = None
-    for strike in sorted(gex_by_strike.keys()):
-        gex = gex_by_strike[strike]['net_gex']
-        if prev_gex is not None and prev_gex > 0 and gex < 0:
-            zero_gamma = strike
-            break
-        prev_gex = gex
-
-    # Determine regime
-    if total_gex > 0.5:
-        regime = 'positive_gamma'
-        regime_signal = 'supportive'
-    elif total_gex < -0.5:
-        regime = 'negative_gamma'
-        regime_signal = 'volatile'
-    else:
-        regime = 'transitional'
-        regime_signal = 'neutral'
-
-    return {
-        'ticker': ticker.upper(),
-        'expiration': chain.get('expiration'),
-        'dte': chain.get('dte'),
-        'underlying_price': underlying_price,
-        'total_gex': round(total_gex, 2),
-        'gex_billions': round(total_gex, 2),
-        'regime': regime,
-        'regime_signal': regime_signal,
-        'call_wall': call_wall,
-        'put_wall': put_wall,
-        'zero_gamma_level': zero_gamma,
-        'gex_by_strike': {str(k): v for k, v in sorted(gex_by_strike.items())},
-        'source': 'tastytrade'
-    }
-
-
-def get_max_pain_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
-    """
-    Calculate max pain level from Tastytrade options data.
-
-    Max pain = strike where total option buyer losses are maximized.
-    """
-    chain = get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
-    if not chain:
-        return None
-
-    calls = chain.get('calls', [])
-    puts = chain.get('puts', [])
-    underlying_price = chain.get('underlying_price')
-
-    if not calls or not puts:
-        return None
-
-    # Get all strikes
-    all_strikes = sorted(set([c['strike_price'] for c in calls] + [p['strike_price'] for p in puts]))
-
-    if not all_strikes:
-        return None
-
-    # Calculate pain at each strike
-    pain_by_strike = {}
-
-    for test_price in all_strikes:
-        total_pain = 0
-
-        # Call pain: OI × max(0, test_price - strike) × 100
-        for c in calls:
-            oi = c.get('open_interest', 0) or 0
-            if test_price > c['strike_price']:
-                total_pain += oi * (test_price - c['strike_price']) * 100
-
-        # Put pain: OI × max(0, strike - test_price) × 100
-        for p in puts:
-            oi = p.get('open_interest', 0) or 0
-            if test_price < p['strike_price']:
-                total_pain += oi * (p['strike_price'] - test_price) * 100
-
-        pain_by_strike[test_price] = total_pain
-
-    # Find max pain strike (where pain is minimized for option writers = maximized for buyers)
-    max_pain_strike = min(pain_by_strike.items(), key=lambda x: x[1])[0]
-
-    # Distance from current price
-    distance = ((max_pain_strike - underlying_price) / underlying_price * 100) if underlying_price else 0
-
-    return {
-        'ticker': ticker.upper(),
-        'expiration': chain.get('expiration'),
-        'dte': chain.get('dte'),
-        'max_pain': max_pain_strike,
-        'underlying_price': underlying_price,
-        'distance': round(distance, 2),
-        'distance_pct': round(distance, 2),
-        'pain_by_strike': {str(k): round(v, 0) for k, v in sorted(pain_by_strike.items())},
-        'source': 'tastytrade'
-    }
-
-
 # Export all functions
 __all__ = [
     'get_tastytrade_session',
-    'get_options_chain_tastytrade',
     'get_options_with_greeks_tastytrade',
     'get_expirations_tastytrade',
     'get_quote_tastytrade',
@@ -1416,6 +1135,8 @@ __all__ = [
     'get_options_chain_sync_tastytrade',
     'get_options_flow_sync_tastytrade',
     'get_unusual_options_sync_tastytrade',
-    'get_gex_data_tastytrade',
-    'get_max_pain_tastytrade',
+    # Futures support
+    'is_futures_ticker',
+    'get_futures_option_chain_tastytrade',
+    'get_futures_front_month_symbol',
 ]

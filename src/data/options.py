@@ -68,26 +68,6 @@ def _get_tastytrade_unusual(ticker: str, target_dte: int = 30) -> Optional[List]
         return None
 
 
-def _get_tastytrade_gex(ticker: str, target_dte: int = None) -> Optional[Dict]:
-    """Get GEX data from Tastytrade."""
-    try:
-        from src.data.tastytrade_provider import get_gex_data_tastytrade
-        return get_gex_data_tastytrade(ticker, target_dte)
-    except Exception as e:
-        logger.warning(f"Tastytrade GEX fetch failed for {ticker}: {e}")
-        return None
-
-
-def _get_tastytrade_max_pain(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
-    """Get max pain from Tastytrade."""
-    try:
-        from src.data.tastytrade_provider import get_max_pain_tastytrade
-        return get_max_pain_tastytrade(ticker, expiration, target_dte)
-    except Exception as e:
-        logger.warning(f"Tastytrade max pain fetch failed for {ticker}: {e}")
-        return None
-
-
 def _get_tastytrade_quote(ticker: str) -> Optional[Dict]:
     """Get real-time quote from Tastytrade (works for futures like /ES).
 

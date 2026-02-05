@@ -1697,26 +1697,6 @@ def get_snapshot_sync(ticker: str) -> Optional[Dict]:
     return _run_async(fetch())
 
 
-def get_index_snapshot_sync(index_ticker: str = "I:VIX") -> Optional[Dict]:
-    """
-    Synchronous wrapper to get index snapshot (VIX, SPX, etc.).
-
-    Args:
-        index_ticker: Index ticker (e.g., 'VIX', 'I:VIX', 'SPX')
-
-    Returns:
-        Dict with value, change, change_percent
-    """
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_index_snapshot(index_ticker)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
 # =============================================================================
 # OPTIONS SYNCHRONOUS WRAPPERS
 # =============================================================================
@@ -1857,30 +1837,6 @@ def get_dividends_sync(ticker: str = None, limit: int = 50) -> List[Dict]:
     return _run_async(fetch())
 
 
-def get_upcoming_dividends_sync(days_ahead: int = 14) -> List[Dict]:
-    """Synchronous wrapper to get upcoming dividends."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_upcoming_dividends(days_ahead)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_dividend_yield_sync(ticker: str) -> Dict:
-    """Synchronous wrapper to get dividend yield."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_dividend_yield(ticker)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
 # =============================================================================
 # STOCK SPLITS SYNC WRAPPERS
 # =============================================================================
@@ -1897,81 +1853,9 @@ def get_stock_splits_sync(ticker: str = None, limit: int = 50) -> List[Dict]:
     return _run_async(fetch())
 
 
-def get_upcoming_splits_sync(days_ahead: int = 30) -> List[Dict]:
-    """Synchronous wrapper to get upcoming stock splits."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_upcoming_splits(days_ahead)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_recent_splits_sync(days_back: int = 30) -> List[Dict]:
-    """Synchronous wrapper to get recent stock splits."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_recent_splits(days_back)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
 # =============================================================================
 # TECHNICAL INDICATORS SYNC WRAPPERS
 # =============================================================================
-
-def get_sma_sync(ticker: str, window: int = 50) -> Optional[pd.DataFrame]:
-    """Synchronous wrapper to get SMA."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_sma(ticker, window)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_ema_sync(ticker: str, window: int = 20) -> Optional[pd.DataFrame]:
-    """Synchronous wrapper to get EMA."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_ema(ticker, window)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_rsi_sync(ticker: str, window: int = 14) -> Optional[pd.DataFrame]:
-    """Synchronous wrapper to get RSI."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_rsi(ticker, window)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_macd_sync(ticker: str) -> Optional[pd.DataFrame]:
-    """Synchronous wrapper to get MACD."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_macd(ticker)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
 
 def get_technical_summary_sync(ticker: str) -> Dict:
     """Synchronous wrapper to get technical analysis summary."""
@@ -2036,30 +1920,6 @@ def get_nyse_stocks_sync(limit: int = 1000) -> List[str]:
         provider = PolygonProvider()
         try:
             return await provider.get_nyse_stocks(limit)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def get_etfs_sync(limit: int = 500) -> List[Dict]:
-    """Synchronous wrapper to get ETFs."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.get_etfs(limit)
-        finally:
-            await provider.close()
-
-    return _run_async(fetch())
-
-
-def search_tickers_sync(query: str, limit: int = 20) -> List[Dict]:
-    """Synchronous wrapper to search tickers."""
-    async def fetch():
-        provider = PolygonProvider()
-        try:
-            return await provider.search_tickers(query, limit)
         finally:
             await provider.close()
 
