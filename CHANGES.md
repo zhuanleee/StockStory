@@ -2,6 +2,26 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 21:41 - `f36fb57`
+
+**Add Lightweight Charts price visualization with TradingView-style levels**
+
+Files changed: 4
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+docs/index.html
+docs/js/app.js
+modal_api_v2.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 21:23 - `58171d1`
 
 **Add ApexCharts interactive options visualization**

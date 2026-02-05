@@ -2750,8 +2750,34 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
             timespan, multiplier = interval_map.get(interval, ('day', 1))
 
+            # ETF proxy mapping for futures price data fallback
+            FUTURES_TO_ETF = {
+                'ES': 'SPY', 'MES': 'SPY',
+                'NQ': 'QQQ', 'MNQ': 'QQQ',
+                'RTY': 'IWM', 'YM': 'DIA',
+                'CL': 'USO', 'GC': 'GLD',
+                'SI': 'SLV', 'ZB': 'TLT', 'ZN': 'IEF'
+            }
+
             if is_futures:
-                # Use Tastytrade DXLink for futures candle data
+                # For futures, use ETF proxy for price data (DXLink historical candles not reliable)
+                from src.data.options import normalize_futures_ticker
+                normalized = normalize_futures_ticker(ticker)
+                proxy_ticker = FUTURES_TO_ETF.get(normalized)
+
+                if proxy_ticker:
+                    logger.info(f"Using {proxy_ticker} as price proxy for {ticker}")
+                    # Fall through to use Polygon with proxy ticker
+                    ticker = proxy_ticker
+                    is_futures = False  # Treat as stock for Polygon
+                else:
+                    return {
+                        "ok": False,
+                        "error": f"No price proxy available for futures ticker {ticker}"
+                    }
+
+            if is_futures:
+                # This branch won't be reached now, but kept for future direct futures support
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
