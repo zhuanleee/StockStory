@@ -2,6 +2,92 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 15:19 - `fa1f2f5`
+
+**Add Ratio Spread Conditions dashboard with 6-factor scoring**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+**Backend models (options.py):**
+- `calculate_realized_volatility()`: 5d/10d/20d/30d RV with direction
+- `get_vrp_analysis()`: Variance Risk Premium (IV - RV) with scoring
+- `get_skew_analysis()`: 25-delta put skew analysis
+- `get_expected_move()`: ATM straddle expected move with 1.5x/2x levels
+- `get_iv_term_structure()`: Contango/backwardation detection
+- `get_ratio_spread_score()`: Combined 6-factor scoring system
+
+**API endpoints:**
+- `/options/vrp/{ticker}`
+- `/options/skew/{ticker}`
+- `/options/expected-move/{ticker}`
+- `/options/term-structure/{ticker}`
+- `/options/realized-vol/{ticker}`
+- `/options/ratio-spread-score/{ticker}`
+
+**Frontend:** Ratio Spread Conditions dashboard with verdict banner, 6-factor grid, pass/fail indicators, strike planning levels
+
+---
+
+### 2026-02-05 14:55 - `b743c72`
+
+**Update GEX to industry standard formula (Spot²/100)**
+
+Files changed: 1
+
+<details>
+<summary>Show files</summary>
+
+```
+src/data/options.py
+```
+</details>
+
+- Changed GEX formula from `(Gamma × OI × Multiplier × Spot)` to `(Gamma × OI × Multiplier × Spot² / 100)` per SpotGamma convention
+- This normalizes GEX to 'per 1% move' basis for cross-ticker comparison
+- Updated regime thresholds with price-scaling for accuracy
+- Added confidence field to regime response
+
+---
+
+### 2026-02-05 14:30 - `4f947de`
+
+**Add comprehensive GEX analysis models and dashboard**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+docs/index.html
+modal_api_v2.py
+src/data/options.py
+```
+</details>
+
+**Backend:**
+- `get_gex_regime()`: Volatility regime classifier (pinned/volatile/transitional)
+- `get_gex_levels()`: S/R wall mapper (call wall, put wall, gamma flip)
+- `get_gex_analysis()`: Complete GEX analysis combining regime + levels
+- `get_pc_ratio_analysis()`: P/C ratio with Z-score normalization
+- `get_combined_regime()`: 2x2 GEX + P/C ratio matrix
+
+**API:** 5 new endpoints for GEX regime, levels, analysis, combined regime, P/C ratio
+
+**Frontend:** GEX Dashboard with regime, levels, signals, position sizing
+
+---
+
 ### 2026-02-05 00:30 - Futures Options Support
 
 **Add futures options support (ES, NQ, CL, GC)**
