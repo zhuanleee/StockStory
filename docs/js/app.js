@@ -1,5 +1,5 @@
-// Version: 20260206c - Added robust error handling
-console.log('📦 StockStory app.js v20260206c loaded');
+// Version: 20260206d - Fixed max pain field name
+console.log('📦 StockStory app.js v20260206d loaded');
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000/api'
@@ -6808,9 +6808,17 @@ async function loadOptionsViz(ticker) {
         const totalPutOI = gex.total_put_oi || 0;
         optionsVizData.pcRatio = totalCallOI > 0 ? (totalPutOI / totalCallOI) : 0;
 
-        // Extract max pain
+        // Extract max pain (API returns max_pain_price)
         const maxPain = maxPainData.data || {};
-        optionsVizData.maxPain = maxPain.max_pain || maxPain.maxPain || 0;
+        optionsVizData.maxPain = maxPain.max_pain_price || maxPain.max_pain || maxPain.maxPain || 0;
+
+        console.log('📊 Levels loaded:', {
+            currentPrice: optionsVizData.currentPrice,
+            callWall: optionsVizData.callWall,
+            putWall: optionsVizData.putWall,
+            gammaFlip: optionsVizData.gammaFlip,
+            maxPain: optionsVizData.maxPain
+        });
 
         // Calculate expected move if available
         if (levels.expected_move) {
