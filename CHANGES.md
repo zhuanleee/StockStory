@@ -2,6 +2,27 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 19:33 - `e9247c1`
+
+**Major code cleanup: remove unused functions and debug endpoints**
+
+Files changed: 5
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+modal_api_v2.py
+src/data/options.py
+src/data/polygon_provider.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 19:26 - `9b98147`
 
 **Fix live Tastytrade futures quote fetching for GEX endpoint**
