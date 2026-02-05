@@ -678,10 +678,37 @@ def get_futures_front_month_symbol(root_symbol: str) -> str:
         return f"/{root}{month_code}{year_digit}"
 
 
+def get_futures_streamer_symbol(session, root_symbol: str) -> Optional[str]:
+    """
+    Get the streamer symbol for a futures contract using Tastytrade API.
+    This gets the active/front month contract's streamer symbol.
+    """
+    try:
+        from tastytrade.instruments import Future
+
+        # Get the front month contract symbol
+        contract_symbol = get_futures_front_month_symbol(root_symbol)
+        logger.info(f"Looking up futures contract: {contract_symbol}")
+
+        # Get the futures instrument from Tastytrade
+        futures = Future.get(session, [contract_symbol])
+        if futures and len(futures) > 0:
+            future = futures[0]
+            streamer_sym = getattr(future, 'streamer_symbol', None)
+            logger.info(f"Got futures streamer symbol: {streamer_sym} for {contract_symbol}")
+            return streamer_sym
+        else:
+            logger.warning(f"No futures found for {contract_symbol}")
+            return None
+    except Exception as e:
+        logger.error(f"Error getting futures streamer symbol for {root_symbol}: {e}")
+        return None
+
+
 def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
     """
     Get current quote for a ticker.
-    For futures like /ES, automatically uses the front month contract.
+    For futures like /ES, uses Future.get() to find the active contract's streamer symbol.
     """
     session = get_tastytrade_session()
     if not session:
@@ -691,11 +718,17 @@ def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Quote
 
-        # For root futures symbols, get the front month contract
+        # For root futures symbols, get the proper streamer symbol from Tastytrade API
         quote_ticker = ticker
         if is_futures_ticker(ticker) and len(ticker) <= 4:  # /ES, /NQ, /CL, /GC
-            quote_ticker = get_futures_front_month_symbol(ticker)
-            logger.info(f"Using front month contract {quote_ticker} for {ticker}")
+            streamer_sym = get_futures_streamer_symbol(session, ticker)
+            if streamer_sym:
+                quote_ticker = streamer_sym
+                logger.info(f"Using streamer symbol {quote_ticker} for {ticker}")
+            else:
+                # Fallback to calculated front month
+                quote_ticker = get_futures_front_month_symbol(ticker)
+                logger.info(f"Fallback to front month {quote_ticker} for {ticker}")
 
         quote_data = {}
 
@@ -706,15 +739,19 @@ def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
                     import asyncio as aio
                     try:
                         async for quote in aio.wait_for(streamer.listen(Quote), timeout=5.0):
-                            quote_data['bid'] = quote.bidPrice
-                            quote_data['ask'] = quote.askPrice
-                            quote_data['last'] = (quote.bidPrice + quote.askPrice) / 2
+                            # Quote uses snake_case: bid_price, ask_price
+                            bid = getattr(quote, 'bid_price', None) or getattr(quote, 'bidPrice', None)
+                            ask = getattr(quote, 'ask_price', None) or getattr(quote, 'askPrice', None)
+                            quote_data['bid'] = bid
+                            quote_data['ask'] = ask
+                            quote_data['last'] = (bid + ask) / 2 if bid and ask else None
                             quote_data['symbol'] = quote_ticker
+                            logger.info(f"Got quote for {quote_ticker}: bid={bid}, ask={ask}")
                             break
                     except aio.TimeoutError:
                         logger.warning(f"Quote streaming timed out for {quote_ticker}")
             except Exception as e:
-                logger.warning(f"Error in quote streaming: {e}")
+                logger.warning(f"Error in quote streaming for {quote_ticker}: {e}")
 
         try:
             asyncio.run(fetch_quote())

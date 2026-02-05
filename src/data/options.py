@@ -89,12 +89,104 @@ def _get_tastytrade_max_pain(ticker: str, expiration: str = None, target_dte: in
 
 
 def _get_tastytrade_quote(ticker: str) -> Optional[Dict]:
-    """Get real-time quote from Tastytrade (works for futures like /ES)."""
+    """Get real-time quote from Tastytrade (works for futures like /ES).
+
+    Uses inline session creation and async execution matching the working
+    debug endpoint pattern for reliability.
+    """
+    import os
+    import asyncio
+
     try:
-        from src.data.tastytrade_provider import get_quote_tastytrade
-        return get_quote_tastytrade(ticker)
+        from tastytrade import Session, DXLinkStreamer
+        from tastytrade.dxfeed import Quote
+        from tastytrade.instruments import Future
+        from src.data.tastytrade_provider import get_futures_front_month_symbol, is_futures_ticker
+
+        client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+        refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+
+        if not client_secret or not refresh_token:
+            logger.warning("Tastytrade credentials not available")
+            return None
+
+        # Create fresh session (like debug endpoint)
+        session = Session(client_secret, refresh_token)
+        logger.info(f"Created fresh Tastytrade session for {ticker}")
+
+        # For futures, get the streamer symbol
+        quote_ticker = ticker
+        if is_futures_ticker(ticker) and len(ticker) <= 4:  # /ES, /NQ, /CL, /GC
+            front_month = get_futures_front_month_symbol(ticker)
+            logger.info(f"Front month for {ticker}: {front_month}")
+
+            try:
+                futures = Future.get(session, [front_month])
+                if futures and len(futures) > 0:
+                    streamer_sym = getattr(futures[0], 'streamer_symbol', None)
+                    if streamer_sym:
+                        quote_ticker = streamer_sym
+                        logger.info(f"Using streamer symbol {quote_ticker} for {ticker}")
+            except Exception as e:
+                logger.warning(f"Could not get futures instrument for {front_month}: {e}")
+                quote_ticker = front_month
+
+        quote_data = {}
+
+        async def fetch_quote():
+            import time
+            try:
+                async with DXLinkStreamer(session) as streamer:
+                    await streamer.subscribe(Quote, [quote_ticker])
+                    logger.info(f"Subscribed to quote for {quote_ticker}")
+
+                    start = time.time()
+                    async for quote in streamer.listen(Quote):
+                        # Quote uses snake_case: bid_price, ask_price
+                        # Convert to float to avoid Decimal type issues
+                        bid = getattr(quote, 'bid_price', None)
+                        ask = getattr(quote, 'ask_price', None)
+                        bid = float(bid) if bid is not None else None
+                        ask = float(ask) if ask is not None else None
+                        quote_data['bid'] = bid
+                        quote_data['ask'] = ask
+                        quote_data['last'] = (bid + ask) / 2 if bid and ask else None
+                        quote_data['symbol'] = quote_ticker
+                        logger.info(f"Got quote for {quote_ticker}: bid={bid}, ask={ask}, last={quote_data['last']}")
+                        break  # Got first quote, exit
+
+                        # Timeout check (shouldn't reach here but just in case)
+                        if time.time() - start > 8:
+                            logger.warning(f"Quote streaming timed out for {quote_ticker}")
+                            break
+            except Exception as e:
+                import traceback
+                logger.warning(f"Error in quote streaming for {quote_ticker}: {e}")
+                logger.warning(f"Traceback: {traceback.format_exc()}")
+
+        # Run async code - try asyncio.run first, fallback to loop.run_until_complete
+        try:
+            asyncio.run(fetch_quote())
+        except RuntimeError as e:
+            logger.info(f"asyncio.run failed ({e}), trying loop.run_until_complete")
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(fetch_quote())
+                loop.close()
+            except Exception as e2:
+                logger.warning(f"loop.run_until_complete also failed: {e2}")
+
+        if quote_data and quote_data.get('last'):
+            return quote_data
+        else:
+            logger.warning(f"Quote data empty or invalid for {ticker}: {quote_data}")
+            return None
+
     except Exception as e:
+        import traceback
         logger.warning(f"Tastytrade quote fetch failed for {ticker}: {e}")
+        logger.warning(f"Traceback: {traceback.format_exc()}")
         return None
 
 
@@ -676,12 +768,18 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
         # For futures, try Tastytrade quote first (most accurate)
         if futures_info.get('is_futures'):
             try:
+                logger.info(f"Attempting Tastytrade quote for {ticker}")
                 quote = _get_tastytrade_quote(ticker)
+                logger.info(f"Tastytrade quote result for {ticker}: {quote}")
                 if quote and quote.get('last') and quote.get('last') > 100:
                     current_price = quote.get('last')
-                    logger.info(f"Got {ticker} price from Tastytrade: ${current_price}")
+                    logger.info(f"✅ Got {ticker} LIVE price from Tastytrade: ${current_price}")
+                else:
+                    logger.warning(f"Tastytrade quote empty or invalid for {ticker}: {quote}")
             except Exception as e:
+                import traceback
                 logger.warning(f"Tastytrade quote failed for {ticker}: {e}")
+                logger.warning(f"Traceback: {traceback.format_exc()}")
 
             # Fallback: Use SPY/QQQ price as reference for index futures
             if not current_price or current_price < 1000:

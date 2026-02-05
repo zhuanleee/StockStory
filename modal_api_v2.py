@@ -2759,6 +2759,193 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
         return result
 
+    @web_app.get("/debug/tastytrade/futures-quote", tags=["Debug"])
+    def debug_tastytrade_futures_quote(ticker: str = Query("/ES")):
+        """Debug endpoint to test Tastytrade futures quote fetching."""
+        import traceback as tb
+        import asyncio
+        import os
+
+        result = {"ticker": ticker}
+
+        try:
+            from tastytrade import Session, DXLinkStreamer
+            from tastytrade.dxfeed import Quote
+            from tastytrade.instruments import Future
+
+            client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+            refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+
+            session = Session(client_secret, refresh_token)
+            result["session"] = "created"
+
+            # Step 1: Get futures contract info
+            from src.data.tastytrade_provider import get_futures_front_month_symbol
+            front_month = get_futures_front_month_symbol(ticker)
+            result["front_month_calculated"] = front_month
+
+            # Step 2: Try to get the futures instrument from Tastytrade
+            try:
+                futures = Future.get(session, [front_month])
+                if futures:
+                    future = futures[0]
+                    result["future_found"] = True
+                    result["future_symbol"] = getattr(future, 'symbol', None)
+                    result["future_streamer_symbol"] = getattr(future, 'streamer_symbol', None)
+                    result["future_attrs"] = [a for a in dir(future) if not a.startswith('_')][:30]
+                else:
+                    result["future_found"] = False
+            except Exception as e:
+                result["future_error"] = str(e)
+
+            # Step 3: Try to stream quote
+            streamer_symbol = result.get("future_streamer_symbol") or front_month
+            result["quote_symbol_used"] = streamer_symbol
+
+            quote_data = {}
+
+            async def fetch_quote():
+                try:
+                    async with DXLinkStreamer(session) as streamer:
+                        result["streamer_connected"] = True
+                        await streamer.subscribe(Quote, [streamer_symbol])
+                        result["subscribed"] = True
+
+                        import time
+                        start = time.time()
+                        async for quote in streamer.listen(Quote):
+                            # Quote uses snake_case: bid_price, ask_price
+                            bid = getattr(quote, 'bid_price', None) or getattr(quote, 'bidPrice', None)
+                            ask = getattr(quote, 'ask_price', None) or getattr(quote, 'askPrice', None)
+                            quote_data['bid'] = bid
+                            quote_data['ask'] = ask
+                            quote_data['last'] = (bid + ask) / 2 if bid and ask else None
+                            quote_data['eventSymbol'] = getattr(quote, 'event_symbol', None) or getattr(quote, 'eventSymbol', None)
+                            quote_data['raw'] = quote.model_dump() if hasattr(quote, 'model_dump') else str(quote)
+                            break
+
+                            if time.time() - start > 10:
+                                result["quote_timeout"] = True
+                                break
+                except Exception as e:
+                    result["quote_stream_error"] = str(e)
+                    result["quote_stream_trace"] = tb.format_exc()
+
+            try:
+                asyncio.run(fetch_quote())
+            except RuntimeError as e:
+                result["asyncio_error"] = str(e)
+
+            result["quote_data"] = quote_data
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
+    @web_app.get("/debug/options-quote", tags=["Debug"])
+    def debug_options_quote(ticker: str = Query("/ES")):
+        """Debug endpoint to test _get_tastytrade_quote from options.py - verbose version."""
+        import traceback as tb
+        import os
+        import asyncio
+        import logging
+
+        # Enable verbose logging
+        logging.basicConfig(level=logging.DEBUG)
+        logger = logging.getLogger('src.data.options')
+        logger.setLevel(logging.DEBUG)
+
+        result = {"ticker": ticker}
+
+        try:
+            # Check environment variables
+            result["has_client_secret"] = bool(os.environ.get('TASTYTRADE_CLIENT_SECRET'))
+            result["has_refresh_token"] = bool(os.environ.get('TASTYTRADE_REFRESH_TOKEN'))
+
+            # Test step by step (same logic as _get_tastytrade_quote)
+            from tastytrade import Session, DXLinkStreamer
+            from tastytrade.dxfeed import Quote
+            from tastytrade.instruments import Future
+            from src.data.tastytrade_provider import get_futures_front_month_symbol, is_futures_ticker
+
+            client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+            refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+
+            session = Session(client_secret, refresh_token)
+            result["session_created"] = True
+
+            # Get quote ticker
+            quote_ticker = ticker
+            if is_futures_ticker(ticker) and len(ticker) <= 4:
+                front_month = get_futures_front_month_symbol(ticker)
+                result["front_month"] = front_month
+
+                try:
+                    futures = Future.get(session, [front_month])
+                    if futures and len(futures) > 0:
+                        streamer_sym = getattr(futures[0], 'streamer_symbol', None)
+                        if streamer_sym:
+                            quote_ticker = streamer_sym
+                            result["streamer_symbol"] = quote_ticker
+                except Exception as e:
+                    result["future_error"] = str(e)
+
+            result["quote_ticker"] = quote_ticker
+            quote_data = {}
+
+            async def fetch_quote():
+                import time
+                try:
+                    async with DXLinkStreamer(session) as streamer:
+                        result["streamer_connected"] = True
+                        await streamer.subscribe(Quote, [quote_ticker])
+                        result["subscribed"] = True
+
+                        start = time.time()
+                        async for quote in streamer.listen(Quote):
+                            # Convert to float to avoid Decimal type issues
+                            bid = getattr(quote, 'bid_price', None)
+                            ask = getattr(quote, 'ask_price', None)
+                            bid = float(bid) if bid is not None else None
+                            ask = float(ask) if ask is not None else None
+                            quote_data['bid'] = bid
+                            quote_data['ask'] = ask
+                            quote_data['last'] = (bid + ask) / 2 if bid and ask else None
+                            break  # Got first quote, exit
+
+                            if time.time() - start > 8:
+                                result["timeout"] = True
+                                break
+                except Exception as e:
+                    result["stream_error"] = str(e)
+                    result["stream_trace"] = tb.format_exc()
+
+            # Try asyncio.run
+            try:
+                asyncio.run(fetch_quote())
+                result["asyncio_method"] = "asyncio.run"
+            except RuntimeError as e:
+                result["asyncio_run_error"] = str(e)
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(fetch_quote())
+                    loop.close()
+                    result["asyncio_method"] = "new_event_loop"
+                except Exception as e2:
+                    result["loop_error"] = str(e2)
+
+            result["quote_data"] = quote_data
+            result["quote_success"] = bool(quote_data and quote_data.get('last'))
+
+        except Exception as e:
+            result["error"] = str(e)
+            result["traceback"] = tb.format_exc()
+
+        return result
+
     @web_app.get("/debug/tastytrade/greeks", tags=["Debug"])
     def debug_tastytrade_greeks(ticker: str = Query("SPY"), target_dte: int = Query(30)):
         """Debug endpoint to test Tastytrade Greeks streaming."""

@@ -2,6 +2,25 @@
 
 <!-- AUTO-GENERATED BELOW -->
 
+### 2026-02-05 18:59 - `4731f9b`
+
+**Fix futures price fetching using SPY/QQQ reference prices**
+
+Files changed: 3
+
+<details>
+<summary>Show files</summary>
+
+```
+CHANGES.md
+src/data/options.py
+src/data/tastytrade_provider.py
+```
+</details>
+
+---
+
+
 ### 2026-02-05 18:28 - `37045ee`
 
 **Fix futures current price estimation for GEX calculation**
