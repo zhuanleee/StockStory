@@ -870,10 +870,16 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
             total_gex += net_gex
 
         # Find zero-gamma level (negative-to-positive transition = gamma flip)
+        # Only search near current price (within 10%) to avoid far-OTM noise
         zero_gamma = 0
+        lower_bound = current_price * 0.90 if current_price > 0 else 0
+        upper_bound = current_price * 1.10 if current_price > 0 else float('inf')
         for i in range(1, len(gex_by_strike)):
+            strike = gex_by_strike[i]['strike']
+            if strike < lower_bound or strike > upper_bound:
+                continue
             if gex_by_strike[i-1]['net_gex'] < 0 and gex_by_strike[i]['net_gex'] >= 0:
-                zero_gamma = gex_by_strike[i]['strike']
+                zero_gamma = strike
                 break
 
         # Sum total OI

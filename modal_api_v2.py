@@ -2719,7 +2719,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/market/candles", tags=["Options"])
-    def market_candles(
+    async def market_candles(
         ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, /GC"),
         days: int = Query(30, description="Number of days of historical data (default 30)"),
         interval: str = Query("1d", description="Candle interval: 1m, 5m, 15m, 1h, 1d (default 1d)")
@@ -2772,21 +2772,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             }
 
             if is_futures:
-                # Futures candles not available via Polygon - return empty
-                # Frontend will use current price from GEX data as reference
-                return {
-                    "ok": True,
-                    "data": {
-                        "ticker": ticker,
-                        "candles": [],
-                        "interval": interval,
-                        "source": "none",
-                        "note": "Historical candles not available for futures. Price chart uses live quote data."
-                    }
-                }
-
-            if is_futures:
-                # This branch won't be reached now, but kept for future direct futures support
+                # Use Tastytrade DXLink Candle streaming for futures
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
@@ -2883,11 +2869,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             logger.error(traceback.format_exc())
 
                     # Run async fetch
-                    try:
-                        asyncio.run(fetch_candles())
-                    except RuntimeError:
-                        loop = asyncio.get_event_loop()
-                        loop.run_until_complete(fetch_candles())
+                    await fetch_candles()
 
                     if candles_data:
                         # Sort by time and remove duplicates
