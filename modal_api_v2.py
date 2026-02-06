@@ -5914,12 +5914,36 @@ Provide brief JSON interpretation:
             await _send_polygon_snapshot(websocket, ticker)
             await asyncio.sleep(3)
 
+    # dxFeed exchange namespace mapping for futures
+    FUTURES_EXCHANGE = {
+        '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
+        '/CL': ':XNYM', '/NG': ':XNYM',
+        '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
+        '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
+    }
+
+    def _to_streamer_symbol(ticker: str) -> str:
+        """Convert ticker to dxFeed streamer symbol. Futures need :EXCHANGE suffix."""
+        t = ticker.upper()
+        if t.startswith('/'):
+            # Try exact match first (e.g., /ES → /ES:XCME)
+            if t in FUTURES_EXCHANGE:
+                return t + FUTURES_EXCHANGE[t]
+            # Try root symbol match for full contracts (e.g., /ESH25 → root /ES)
+            for root, exchange in FUTURES_EXCHANGE.items():
+                if t.startswith(root) and len(t) > len(root):
+                    return t + exchange
+            # Default CME for unknown futures
+            return t + ':XCME'
+        return t
+
     async def _ws_tastytrade_stream(websocket: WebSocket, ticker: str, session):
         """Stream real-time quotes from Tastytrade DXLinkStreamer."""
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Quote
+        streamer_sym = _to_streamer_symbol(ticker)
         async with DXLinkStreamer(session) as streamer:
-            await streamer.subscribe(Quote, [ticker.upper()])
+            await streamer.subscribe(Quote, [streamer_sym])
             first = True
             while True:
                 timeout = 10 if first else 30
@@ -6034,8 +6058,9 @@ Provide brief JSON interpretation:
             from tastytrade.dxfeed import Quote
             async with DXLinkStreamer(session) as streamer:
                 result["steps"].append("streamer_connected")
-                await streamer.subscribe(Quote, [ticker.upper()])
-                result["steps"].append("subscribed")
+                streamer_sym = _to_streamer_symbol(ticker)
+                await streamer.subscribe(Quote, [streamer_sym])
+                result["steps"].append(f"subscribed:{streamer_sym}")
                 quote = await asyncio.wait_for(
                     streamer.get_event(Quote), timeout=10
                 )
