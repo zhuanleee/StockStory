@@ -669,15 +669,22 @@ async def calculate_max_pain_tastytrade(ticker: str, expiration: str = None) -> 
         min_pain = float('inf')
         max_pain_strike = strikes[len(strikes) // 2]
 
+        # Use correct futures multiplier
+        root = ticker.lstrip('/').upper()
+        mp_multiplier_map = {'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2, 'YM': 5, 'RTY': 50,
+                             'CL': 1000, 'NG': 10000, 'GC': 100, 'SI': 5000, 'HG': 25000,
+                             'ZB': 1000, 'ZN': 1000, 'ZC': 50, 'ZS': 50, 'ZW': 50}
+        contract_multiplier = mp_multiplier_map.get(root, 50)
+
         for test_strike in strikes:
             total_pain = 0
             for s in strikes:
                 # Call pain: calls are worthless below strike, lose money above
                 if test_strike > s:
-                    total_pain += (test_strike - s) * call_oi_map.get(s, 0) * 100
+                    total_pain += (test_strike - s) * call_oi_map.get(s, 0) * contract_multiplier
                 # Put pain: puts are worthless above strike, lose money below
                 if test_strike < s:
-                    total_pain += (s - test_strike) * put_oi_map.get(s, 0) * 100
+                    total_pain += (s - test_strike) * put_oi_map.get(s, 0) * contract_multiplier
 
             pain_by_strike.append({
                 'strike': test_strike,
@@ -834,7 +841,8 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
         multiplier = 50  # ES = $50 per point
         root = ticker.lstrip('/').upper()
         multiplier_map = {'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2, 'YM': 5, 'RTY': 50,
-                         'CL': 1000, 'GC': 100, 'SI': 5000, 'ZB': 1000, 'ZN': 1000}
+                         'CL': 1000, 'NG': 10000, 'GC': 100, 'SI': 5000, 'HG': 25000,
+                         'ZB': 1000, 'ZN': 1000, 'ZC': 50, 'ZS': 50, 'ZW': 50}
         multiplier = multiplier_map.get(root, 50)
 
         gex_by_strike = []
@@ -847,8 +855,8 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
             call_oi = oi_map.get(sd['call_sym'], 0) if sd['call_sym'] else 0
             put_oi = oi_map.get(sd['put_sym'], 0) if sd['put_sym'] else 0
 
-            call_gex = call_gamma * call_oi * multiplier
-            put_gex = -put_gamma * put_oi * multiplier
+            call_gex = call_gamma * call_oi * multiplier * (current_price ** 2) / 100
+            put_gex = -put_gamma * put_oi * multiplier * (current_price ** 2) / 100
             net_gex = call_gex + put_gex
 
             gex_by_strike.append({
@@ -861,11 +869,11 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
             })
             total_gex += net_gex
 
-        # Find zero-gamma level
+        # Find zero-gamma level (negative-to-positive transition = gamma flip)
         zero_gamma = 0
-        for i in range(len(gex_by_strike) - 1):
-            if gex_by_strike[i]['net_gex'] * gex_by_strike[i+1]['net_gex'] < 0:
-                zero_gamma = (gex_by_strike[i]['strike'] + gex_by_strike[i+1]['strike']) / 2
+        for i in range(1, len(gex_by_strike)):
+            if gex_by_strike[i-1]['net_gex'] < 0 and gex_by_strike[i]['net_gex'] >= 0:
+                zero_gamma = gex_by_strike[i]['strike']
                 break
 
         # Sum total OI
@@ -1148,10 +1156,19 @@ async def get_combined_regime_tastytrade(ticker: str, expiration: str = None) ->
         risk_level = 'high'
         position_multiplier = 0.25
     else:
-        combined_regime = 'neutral'
-        recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
-        risk_level = 'moderate'
-        position_multiplier = 0.75
+        combined_regime = f'neutral_{gex_regime_type}'
+        # Preserve GEX-based position sizing when P/C is neutral
+        gex_position_map = {'pinned': 1.0, 'volatile': 0.5, 'transitional': 0.75}
+        position_multiplier = gex_position_map.get(gex_regime_type, 0.75)
+        if gex_regime_type == 'volatile':
+            recommendation = 'Negative GEX with neutral P/C. Reduce size, favor trend-following.'
+            risk_level = 'high'
+        elif gex_regime_type == 'pinned':
+            recommendation = 'Positive GEX with neutral P/C. Normal trading, mean-reversion setups.'
+            risk_level = 'low'
+        else:
+            recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
+            risk_level = 'moderate'
 
     return {
         'ticker': ticker.upper(),
