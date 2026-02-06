@@ -892,6 +892,285 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
         return {"error": str(e)}
 
 
+async def get_gex_levels_tastytrade(ticker: str, expiration: str = None) -> Dict:
+    """
+    GEX Support/Resistance Wall Mapper for futures.
+    Uses calculate_gex_tastytrade() then derives levels from the GEX data.
+    """
+    gex_data = await calculate_gex_tastytrade(ticker, expiration)
+    if 'error' in gex_data:
+        return gex_data
+
+    current_price = gex_data.get('current_price', 0)
+    gex_by_strike = gex_data.get('gex_by_strike', [])
+    zero_gamma = gex_data.get('zero_gamma_level')
+
+    if not gex_by_strike:
+        return {"error": "No GEX data available", "ticker": ticker}
+
+    call_wall = None
+    put_wall = None
+    max_call_gex = 0
+    min_put_gex = 0
+    magnet_zones = []
+    acceleration_zones = []
+    key_levels = []
+
+    total_abs_gex = sum(abs(g['net_gex']) for g in gex_by_strike)
+    significance_threshold = total_abs_gex * 0.05 if total_abs_gex > 0 else 0
+
+    for g in gex_by_strike:
+        strike = g['strike']
+        net_gex = g['net_gex']
+        call_gex = g['call_gex']
+        put_gex = g['put_gex']
+
+        if call_gex > max_call_gex:
+            max_call_gex = call_gex
+            call_wall = strike
+        if put_gex < min_put_gex:
+            min_put_gex = put_gex
+            put_wall = strike
+
+        if significance_threshold > 0:
+            if net_gex > significance_threshold:
+                magnet_zones.append(strike)
+                level_type = 'magnet'
+            elif net_gex < -significance_threshold:
+                acceleration_zones.append(strike)
+                level_type = 'acceleration'
+            else:
+                level_type = 'neutral'
+
+            if abs(net_gex) > significance_threshold:
+                distance_pct = ((strike - current_price) / current_price * 100) if current_price > 0 else 0
+                key_levels.append({
+                    'strike': strike,
+                    'net_gex': net_gex,
+                    'gex_millions': round(net_gex / 1e6, 1),
+                    'type': level_type,
+                    'role': 'resistance' if strike > current_price else 'support',
+                    'distance_pct': round(distance_pct, 2),
+                    'call_oi': g['call_oi'],
+                    'put_oi': g['put_oi']
+                })
+
+    key_levels.sort(key=lambda x: abs(x['net_gex']), reverse=True)
+
+    supports = [l for l in key_levels if l['strike'] < current_price and l['type'] == 'magnet']
+    resistances = [l for l in key_levels if l['strike'] > current_price and l['type'] == 'magnet']
+    nearest_support = max(supports, key=lambda x: x['strike']) if supports else None
+    nearest_resistance = min(resistances, key=lambda x: x['strike']) if resistances else None
+
+    # Interpretation
+    parts = []
+    if call_wall and current_price > 0:
+        dist = ((call_wall - current_price) / current_price) * 100
+        parts.append(f"Call wall at ${call_wall:.0f} ({dist:+.1f}%) - likely resistance")
+    if put_wall and current_price > 0:
+        dist = ((put_wall - current_price) / current_price) * 100
+        parts.append(f"Put wall at ${put_wall:.0f} ({dist:+.1f}%) - likely support")
+    if zero_gamma and current_price > 0:
+        dist = ((zero_gamma - current_price) / current_price) * 100
+        direction = "above" if zero_gamma > current_price else "below"
+        parts.append(f"Gamma flip at ${zero_gamma:.0f} ({direction}, {abs(dist):.1f}% away)")
+    interpretation = " | ".join(parts) if parts else "Insufficient data for interpretation"
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': gex_data.get('expiration'),
+        'current_price': current_price,
+        'call_wall': call_wall,
+        'call_wall_gex_millions': round(max_call_gex / 1e6, 1) if max_call_gex else 0,
+        'put_wall': put_wall,
+        'put_wall_gex_millions': round(min_put_gex / 1e6, 1) if min_put_gex else 0,
+        'gamma_flip': zero_gamma,
+        'nearest_support': nearest_support['strike'] if nearest_support else put_wall,
+        'nearest_resistance': nearest_resistance['strike'] if nearest_resistance else call_wall,
+        'key_levels': key_levels[:10],
+        'magnet_zones': sorted(magnet_zones),
+        'acceleration_zones': sorted(acceleration_zones),
+        'total_gex': gex_data.get('total_gex', 0),
+        'interpretation': interpretation
+    }
+
+
+async def get_gex_regime_tastytrade(ticker: str, expiration: str = None) -> Dict:
+    """
+    GEX Volatility Regime Classifier for futures.
+    Uses calculate_gex_tastytrade() then derives regime from the GEX data.
+    """
+    gex_data = await calculate_gex_tastytrade(ticker, expiration)
+    if 'error' in gex_data:
+        return gex_data
+
+    total_gex = gex_data.get('total_gex', 0)
+    current_price = gex_data.get('current_price', 0)
+    zero_gamma = gex_data.get('zero_gamma_level')
+    gex_by_strike = gex_data.get('gex_by_strike', [])
+
+    if current_price > 0:
+        gex_normalized = total_gex / 1e9
+    else:
+        gex_normalized = 0
+
+    # Thresholds scaled by price
+    price_scale = (current_price / 500) ** 2 if current_price > 0 else 1
+    POSITIVE_GEX_THRESHOLD = 2.5 * price_scale
+    NEGATIVE_GEX_THRESHOLD = -1.5 * price_scale
+    score_scale = 10 / price_scale if price_scale > 0 else 10
+
+    if gex_normalized > POSITIVE_GEX_THRESHOLD:
+        regime = 'pinned'
+        regime_score = min(100, gex_normalized * score_scale)
+        position_sizing = 1.0
+        strategy_bias = 'mean_reversion'
+        recommendation = 'Dealers will dampen moves. Fade breakouts, sell premium, buy dips.'
+    elif gex_normalized < NEGATIVE_GEX_THRESHOLD:
+        regime = 'volatile'
+        regime_score = max(-100, gex_normalized * score_scale)
+        position_sizing = 0.25
+        strategy_bias = 'trend_following'
+        recommendation = 'Dealers will amplify moves. Follow breakouts, buy premium for protection, reduce size.'
+    else:
+        regime = 'transitional'
+        regime_score = gex_normalized * score_scale
+        position_sizing = 0.5
+        strategy_bias = 'neutral'
+        recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
+
+    flip_distance = None
+    flip_distance_pct = None
+    if zero_gamma and current_price > 0:
+        flip_distance = zero_gamma - current_price
+        flip_distance_pct = (flip_distance / current_price) * 100
+
+    call_wall = None
+    put_wall = None
+    max_call_gex = 0
+    max_put_gex = 0
+    for g in gex_by_strike:
+        if g['call_gex'] > max_call_gex:
+            max_call_gex = g['call_gex']
+            call_wall = g['strike']
+        if g['put_gex'] < max_put_gex:
+            max_put_gex = g['put_gex']
+            put_wall = g['strike']
+
+    confidence = min(abs(regime_score) / 100, 1.0)
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': gex_data.get('expiration'),
+        'current_price': current_price,
+        'regime': regime,
+        'regime_score': round(regime_score, 1),
+        'confidence': round(confidence, 2),
+        'total_gex': total_gex,
+        'gex_billions': round(gex_normalized, 3),
+        'zero_gamma_level': zero_gamma,
+        'flip_distance': round(flip_distance, 2) if flip_distance else None,
+        'flip_distance_pct': round(flip_distance_pct, 2) if flip_distance_pct else None,
+        'position_sizing': position_sizing,
+        'position_sizing_label': f'{int(position_sizing * 100)}% size',
+        'strategy_bias': strategy_bias,
+        'recommendation': recommendation,
+        'call_wall': call_wall,
+        'put_wall': put_wall,
+        'is_futures': True
+    }
+
+
+async def get_combined_regime_tastytrade(ticker: str, expiration: str = None) -> Dict:
+    """
+    Combined GEX + P/C Ratio Regime for futures.
+    Computes GEX data once and derives both regime and P/C from it.
+    """
+    # Get raw GEX data once (single streamer connection)
+    gex_data = await calculate_gex_tastytrade(ticker, expiration)
+    if 'error' in gex_data:
+        return gex_data
+
+    # Derive regime from the GEX data
+    total_gex = gex_data.get('total_gex', 0)
+    current_price = gex_data.get('current_price', 0)
+    gex_normalized = total_gex / 1e9 if current_price > 0 else 0
+    price_scale = (current_price / 500) ** 2 if current_price > 0 else 1
+    POSITIVE_GEX_THRESHOLD = 2.5 * price_scale
+    NEGATIVE_GEX_THRESHOLD = -1.5 * price_scale
+    score_scale = 10 / price_scale if price_scale > 0 else 10
+
+    if gex_normalized > POSITIVE_GEX_THRESHOLD:
+        gex_regime_type = 'pinned'
+        gex_score = min(100, gex_normalized * score_scale)
+        strategy_bias = 'mean_reversion'
+    elif gex_normalized < NEGATIVE_GEX_THRESHOLD:
+        gex_regime_type = 'volatile'
+        gex_score = max(-100, gex_normalized * score_scale)
+        strategy_bias = 'trend_following'
+    else:
+        gex_regime_type = 'transitional'
+        gex_score = gex_normalized * score_scale
+        strategy_bias = 'neutral'
+
+    # Derive P/C from OI
+    total_call_oi = gex_data.get('total_call_oi', 0)
+    total_put_oi = gex_data.get('total_put_oi', 0)
+    pc_ratio = total_put_oi / total_call_oi if total_call_oi > 0 else 1.0
+
+    HISTORICAL_MEAN = 0.95
+    HISTORICAL_STD = 0.25
+    pc_zscore = (pc_ratio - HISTORICAL_MEAN) / HISTORICAL_STD if HISTORICAL_STD > 0 else 0
+
+    is_positive_gex = gex_regime_type == 'pinned'
+    is_negative_gex = gex_regime_type == 'volatile'
+    is_fear = pc_zscore > 1
+    is_complacency = pc_zscore < -1
+
+    if is_fear and is_positive_gex:
+        combined_regime = 'opportunity'
+        recommendation = 'BEST SETUP: Fear + dealer support. Aggressive entries, full size.'
+        risk_level = 'low'
+        position_multiplier = 1.25
+    elif is_fear and is_negative_gex:
+        combined_regime = 'danger'
+        recommendation = 'DANGER ZONE: Fear + dealer amplification = crash risk. Reduce exposure.'
+        risk_level = 'extreme'
+        position_multiplier = 0.0
+    elif is_complacency and is_positive_gex:
+        combined_regime = 'melt_up'
+        recommendation = 'Quiet melt-up. Normal trading, tighten stops.'
+        risk_level = 'moderate'
+        position_multiplier = 0.75
+    elif is_complacency and is_negative_gex:
+        combined_regime = 'high_risk'
+        recommendation = 'MOST DANGEROUS: Complacency + negative GEX. Hedge or reduce.'
+        risk_level = 'high'
+        position_multiplier = 0.25
+    else:
+        combined_regime = 'neutral'
+        recommendation = 'Gamma flip zone - highest uncertainty. Wait for clarity or reduce exposure.'
+        risk_level = 'moderate'
+        position_multiplier = 0.75
+
+    return {
+        'ticker': ticker.upper(),
+        'expiration': gex_data.get('expiration'),
+        'current_price': current_price,
+        'combined_regime': combined_regime,
+        'gex_regime': gex_regime_type,
+        'gex_score': round(gex_score, 1),
+        'pc_ratio': round(pc_ratio, 3),
+        'pc_zscore': round(pc_zscore, 2),
+        'recommendation': recommendation,
+        'risk_level': risk_level,
+        'position_multiplier': position_multiplier,
+        'position_sizing_label': f'{int(position_multiplier * 100)}% size',
+        'strategy_bias': strategy_bias,
+        'is_futures': True
+    }
+
+
 def get_futures_front_month_symbol(root_symbol: str) -> str:
     """
     Get the front month contract symbol for a futures root.

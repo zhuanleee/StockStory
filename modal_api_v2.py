@@ -2258,11 +2258,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
     # Query parameter versions for futures support (path params don't work with /)
     @web_app.get("/options/gex-regime", tags=["Options"])
-    def options_gex_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+    async def options_gex_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
         """GEX Regime (query param version for futures support)"""
         try:
-            from src.data.options import get_gex_regime
-            result = get_gex_regime(ticker.upper(), expiration)
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import get_gex_regime_tastytrade
+                result = await get_gex_regime_tastytrade(ticker, expiration)
+            else:
+                from src.data.options import get_gex_regime
+                result = get_gex_regime(ticker.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
@@ -2270,11 +2275,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/gex-levels", tags=["Options"])
-    def options_gex_levels_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+    async def options_gex_levels_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
         """GEX Levels (query param version for futures support)"""
         try:
-            from src.data.options import get_gex_levels
-            result = get_gex_levels(ticker.upper(), expiration)
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import get_gex_levels_tastytrade
+                result = await get_gex_levels_tastytrade(ticker, expiration)
+            else:
+                from src.data.options import get_gex_levels
+                result = get_gex_levels(ticker.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
@@ -2282,11 +2292,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/combined-regime", tags=["Options"])
-    def options_combined_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+    async def options_combined_regime_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
         """Combined Regime (query param version for futures support)"""
         try:
-            from src.data.options import get_combined_regime
-            result = get_combined_regime(ticker.upper(), expiration)
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import get_combined_regime_tastytrade
+                result = await get_combined_regime_tastytrade(ticker, expiration)
+            else:
+                from src.data.options import get_combined_regime
+                result = get_combined_regime(ticker.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
@@ -2757,21 +2772,18 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             }
 
             if is_futures:
-                # For futures, use ETF proxy for price data (DXLink historical candles not reliable)
-                from src.data.options import normalize_futures_ticker
-                normalized = normalize_futures_ticker(ticker)
-                proxy_ticker = FUTURES_TO_ETF.get(normalized)
-
-                if proxy_ticker:
-                    logger.info(f"Using {proxy_ticker} as price proxy for {ticker}")
-                    # Fall through to use Polygon with proxy ticker
-                    ticker = proxy_ticker
-                    is_futures = False  # Treat as stock for Polygon
-                else:
-                    return {
-                        "ok": False,
-                        "error": f"No price proxy available for futures ticker {ticker}"
+                # Futures candles not available via Polygon - return empty
+                # Frontend will use current price from GEX data as reference
+                return {
+                    "ok": True,
+                    "data": {
+                        "ticker": ticker,
+                        "candles": [],
+                        "interval": interval,
+                        "source": "none",
+                        "note": "Historical candles not available for futures. Price chart uses live quote data."
                     }
+                }
 
             if is_futures:
                 # This branch won't be reached now, but kept for future direct futures support
