@@ -2776,7 +2776,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
-                        get_futures_streamer_symbol,
+                        get_futures_front_month_symbol,
                         is_futures_ticker
                     )
                     from tastytrade import DXLinkStreamer
@@ -2789,13 +2789,22 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             "error": "Tastytrade session not available. Check credentials."
                         }
 
-                    # Get the streamer symbol for the futures contract
-                    streamer_symbol = get_futures_streamer_symbol(session, ticker)
-                    if not streamer_symbol:
-                        return {
-                            "ok": False,
-                            "error": f"Could not resolve streamer symbol for {ticker}"
-                        }
+                    # Build streamer symbol directly: /ESH6:XCME
+                    FUTURES_EXCHANGE = {
+                        '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
+                        '/CL': ':XNYM', '/NG': ':XNYM',
+                        '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
+                        '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
+                    }
+                    front_month = get_futures_front_month_symbol(ticker)
+                    t_upper = ticker.upper()
+                    suffix = FUTURES_EXCHANGE.get(t_upper, ':XCME')
+                    for root, exch in FUTURES_EXCHANGE.items():
+                        if t_upper.startswith(root) and len(t_upper) > len(root):
+                            suffix = exch
+                            break
+                    streamer_symbol = front_month + suffix
+                    logger.info(f"Built candle streamer symbol: {streamer_symbol} for {ticker}")
 
                     # Map interval to DXLink candle period format
                     # DXLink uses format like "SYMBOL{=period}" e.g., "/ESH6{=1d}"
