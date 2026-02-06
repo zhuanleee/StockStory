@@ -2806,79 +2806,58 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                     streamer_symbol = front_month + suffix
                     logger.info(f"Built candle streamer symbol: {streamer_symbol} for {ticker}")
 
-                    # Map interval to DXLink candle period format
-                    # DXLink uses format like "SYMBOL{=period}" e.g., "/ESH6{=1d}"
-                    dxlink_period_map = {
-                        '1m': '1m',
-                        '5m': '5m',
-                        '15m': '15m',
-                        '30m': '30m',
-                        '1h': '1h',
-                        '4h': '4h',
-                        '1d': '1d',
-                        '1w': '1w',
-                        '1M': '1M',
-                    }
-                    dxlink_period = dxlink_period_map.get(interval, '1d')
+                    # Map interval to DXLink candle period
+                    dxlink_period = interval if interval in ('1m','5m','15m','30m','1h','4h','1d','1w','1M') else '1d'
 
-                    # Calculate from_time for historical data
+                    # Calculate from_time as datetime object
                     from_time = datetime.now() - timedelta(days=days)
-                    from_timestamp_ms = int(from_time.timestamp() * 1000)
 
-                    # Build candle symbol with period
+                    # Build candle symbol: "SYMBOL{=period}"
                     candle_symbol = f"{streamer_symbol}{{={dxlink_period}}}"
                     logger.info(f"Subscribing to candle: {candle_symbol} from {from_time}")
 
                     candles_data = []
 
-                    async def fetch_candles():
-                        try:
-                            async with DXLinkStreamer(session) as streamer:
-                                # Subscribe to Candle events with from_time for historical data
-                                await streamer.subscribe(Candle, [candle_symbol], from_time=from_timestamp_ms)
+                    try:
+                        async with DXLinkStreamer(session) as streamer:
+                            # Use subscribe_candle with datetime for historical data
+                            await streamer.subscribe_candle(candle_symbol, from_time, dxlink_period)
 
-                                import time as time_module
-                                start_time = time_module.time()
-                                timeout_sec = 30.0
-                                last_receive_time = start_time
+                            import time as time_module
+                            start_time = time_module.time()
+                            timeout_sec = 30.0
+                            last_receive_time = start_time
 
-                                async for candle in streamer.listen(Candle):
-                                    # Extract candle data
-                                    candle_time = getattr(candle, 'time', None)
-                                    if candle_time:
-                                        # Convert to Unix timestamp in seconds
-                                        if isinstance(candle_time, (int, float)):
-                                            # Already a timestamp (might be ms)
-                                            ts = int(candle_time / 1000) if candle_time > 10000000000 else int(candle_time)
-                                        else:
-                                            ts = int(candle_time.timestamp())
+                            async for candle in streamer.listen(Candle):
+                                candle_time = getattr(candle, 'time', None)
+                                if candle_time:
+                                    if isinstance(candle_time, (int, float)):
+                                        ts = int(candle_time / 1000) if candle_time > 10000000000 else int(candle_time)
+                                    else:
+                                        ts = int(candle_time.timestamp())
 
+                                    o = float(getattr(candle, 'open', 0) or 0)
+                                    h = float(getattr(candle, 'high', 0) or 0)
+                                    l = float(getattr(candle, 'low', 0) or 0)
+                                    c = float(getattr(candle, 'close', 0) or 0)
+                                    # Skip zero-price candles
+                                    if o > 0 and h > 0 and c > 0:
                                         candles_data.append({
-                                            'time': ts,
-                                            'open': float(getattr(candle, 'open', 0) or 0),
-                                            'high': float(getattr(candle, 'high', 0) or 0),
-                                            'low': float(getattr(candle, 'low', 0) or 0),
-                                            'close': float(getattr(candle, 'close', 0) or 0),
+                                            'time': ts, 'open': o, 'high': h, 'low': l, 'close': c,
                                             'volume': int(getattr(candle, 'volume', 0) or 0),
                                         })
-                                        last_receive_time = time_module.time()
+                                    last_receive_time = time_module.time()
 
-                                    # Check for timeout or data gap (stop if no data for 2 seconds)
-                                    current_time = time_module.time()
-                                    if current_time - start_time > timeout_sec:
-                                        logger.info(f"Candle streaming timeout after {len(candles_data)} candles")
-                                        break
-                                    if current_time - last_receive_time > 2.0 and len(candles_data) > 0:
-                                        logger.info(f"Candle streaming complete: {len(candles_data)} candles")
-                                        break
+                                current_time = time_module.time()
+                                if current_time - start_time > timeout_sec:
+                                    break
+                                if current_time - last_receive_time > 2.0 and len(candles_data) > 0:
+                                    break
 
-                        except Exception as e:
-                            logger.error(f"Error streaming candles for {ticker}: {e}")
-                            import traceback
-                            logger.error(traceback.format_exc())
-
-                    # Run async fetch
-                    await fetch_candles()
+                    except Exception as e:
+                        logger.error(f"Error streaming candles for {ticker}: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
 
                     if candles_data:
                         # Sort by time and remove duplicates
@@ -2954,11 +2933,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             await provider.close()
 
                     # Run async fetch
-                    try:
-                        df = asyncio.run(fetch_polygon_candles())
-                    except RuntimeError:
-                        loop = asyncio.get_event_loop()
-                        df = loop.run_until_complete(fetch_polygon_candles())
+                    df = await fetch_polygon_candles()
 
                     if df is not None and not df.empty:
                         candles = []
