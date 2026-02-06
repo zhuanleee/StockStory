@@ -1399,7 +1399,7 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/chain", tags=["Options"])
-    def options_chain_query(
+    async def options_chain_query(
         ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, /GC, etc."),
         expiration: str = Query(None, description="Specific expiration date (YYYY-MM-DD)"),
         target_dte: int = Query(None, description="Target DTE to find closest expiration")
@@ -1415,8 +1415,8 @@ Get an API key at `/api-keys/request`
             from src.data.tastytrade_provider import is_futures_ticker, get_futures_option_chain_tastytrade, get_options_with_greeks_tastytrade
 
             if is_futures_ticker(ticker):
-                # Use futures options chain
-                chain = get_futures_option_chain_tastytrade(ticker)
+                # Use futures options chain (async)
+                chain = await get_futures_option_chain_tastytrade(ticker)
                 if chain:
                     return {"ok": True, "data": chain, "source": "tastytrade_futures"}
                 return {"ok": False, "error": f"No futures options found for {ticker}"}
@@ -1430,16 +1430,16 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/expirations/{ticker_symbol}")
-    def options_expirations(ticker_symbol: str):
+    async def options_expirations(ticker_symbol: str):
         """
         Get all available expirations for a ticker.
 
         Returns all expiration dates with DTE and strike count.
         """
         try:
-            from src.data.tastytrade_provider import get_expirations_tastytrade
+            from src.data.tastytrade_provider import get_expirations_tastytrade_async
             ticker = ticker_symbol.upper()
-            expirations = get_expirations_tastytrade(ticker)
+            expirations = await get_expirations_tastytrade_async(ticker)
             if expirations:
                 return {"ok": True, "data": expirations}
             return {"ok": False, "error": f"No expirations found for {ticker}"}
@@ -1447,7 +1447,7 @@ Get an API key at `/api-keys/request`
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/expirations")
-    def options_expirations_query(ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, etc.")):
+    async def options_expirations_query(ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, etc.")):
         """
         Get all available expirations for a ticker (equities or futures).
 
@@ -1456,8 +1456,8 @@ Get an API key at `/api-keys/request`
         Returns all expiration dates with DTE and strike count.
         """
         try:
-            from src.data.tastytrade_provider import get_expirations_tastytrade
-            expirations = get_expirations_tastytrade(ticker)
+            from src.data.tastytrade_provider import get_expirations_tastytrade_async
+            expirations = await get_expirations_tastytrade_async(ticker)
             if expirations:
                 return {"ok": True, "data": expirations}
             return {"ok": False, "error": f"No expirations found for {ticker}"}
@@ -2080,21 +2080,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             import traceback
             return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
 
-    @web_app.get("/options/expirations/{ticker_symbol}")
-    def options_expirations(ticker_symbol: str):
-        """
-        Get available options expiration dates for a ticker.
-
-        Returns list of expiration dates (YYYY-MM-DD format) sorted chronologically.
-        """
-        try:
-            from src.data.options import get_options_expirations
-            result = get_options_expirations(ticker_symbol.upper())
-            if 'error' in result:
-                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
-            return {"ok": True, "data": result}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+    # NOTE: /options/expirations/{ticker_symbol} is defined earlier (line ~1432) using Tastytrade async
 
     @web_app.get("/options/max-pain/{ticker_symbol}")
     def options_max_pain(ticker_symbol: str, expiration: str = Query(None)):
@@ -2120,11 +2106,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/max-pain", tags=["Options"])
-    def options_max_pain_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+    async def options_max_pain_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
         """Calculate Max Pain (supports futures via query param)"""
         try:
-            from src.data.options import calculate_max_pain
-            result = calculate_max_pain(ticker, expiration)
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import calculate_max_pain_tastytrade
+                result = await calculate_max_pain_tastytrade(ticker, expiration)
+            else:
+                from src.data.options import calculate_max_pain
+                result = calculate_max_pain(ticker, expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker}
             return {"ok": True, "data": result}
@@ -2156,11 +2147,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/gex", tags=["Options"])
-    def options_gex_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+    async def options_gex_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
         """Calculate GEX (supports futures via query param)"""
         try:
-            from src.data.options import calculate_gex_by_strike
-            result = calculate_gex_by_strike(ticker, expiration)
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import calculate_gex_tastytrade
+                result = await calculate_gex_tastytrade(ticker, expiration)
+            else:
+                from src.data.options import calculate_gex_by_strike
+                result = calculate_gex_by_strike(ticker, expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker}
             return {"ok": True, "data": result}
@@ -6080,6 +6076,55 @@ Provide brief JSON interpretation:
     async def debug_stream_test_query(ticker: str = Query(...)):
         """Test DXLinkStreamer with query param (for futures like /ES)."""
         return await debug_stream_test(ticker)
+
+    @web_app.get("/debug/futures-chain")
+    async def debug_futures_chain(ticker: str = Query("/ES")):
+        """Debug futures option chain - test what get_future_option_chain returns."""
+        import traceback
+        results = {}
+        try:
+            from src.data.tastytrade_provider import get_tastytrade_session, is_futures_ticker
+            session = get_tastytrade_session()
+            results["session_ok"] = session is not None
+            results["is_futures"] = is_futures_ticker(ticker)
+
+            if session:
+                from tastytrade.instruments import get_future_option_chain, get_option_chain
+                import inspect
+
+                # Check if function is async
+                results["is_async"] = inspect.iscoroutinefunction(get_future_option_chain)
+                results["equity_is_async"] = inspect.iscoroutinefunction(get_option_chain)
+
+                # Try calling it properly
+                raw = get_future_option_chain(session, ticker)
+                results["raw_type"] = str(type(raw))
+
+                # If it's a coroutine, await it
+                if inspect.iscoroutine(raw):
+                    results["awaiting"] = True
+                    chain = await raw
+                else:
+                    chain = raw
+
+                results["chain_type"] = str(type(chain))
+                results["chain_is_none"] = chain is None
+
+                if chain:
+                    results["num_expirations"] = len(chain)
+                    results["expiration_dates"] = sorted([str(k) for k in chain.keys()])[:10]
+                    # Show first expiration's data
+                    first_key = sorted(chain.keys())[0]
+                    first_val = chain[first_key]
+                    results["first_exp_type"] = str(type(first_val))
+                    results["first_exp_len"] = len(first_val) if first_val else 0
+                else:
+                    results["chain_empty"] = True
+        except Exception as e:
+            results["error"] = str(e)
+            results["traceback"] = traceback.format_exc()
+
+        return results
 
     # =============================================================================
     # REST QUOTE FALLBACK

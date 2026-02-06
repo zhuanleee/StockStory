@@ -79,7 +79,7 @@ def is_futures_ticker(ticker: str) -> bool:
     return ticker.startswith('/')
 
 
-def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
+async def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
     """
     Get futures options chain from Tastytrade.
 
@@ -96,11 +96,13 @@ def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
     try:
         from tastytrade.instruments import get_future_option_chain
         from datetime import date
+        import inspect
 
         logger.info(f"Fetching futures options chain for {ticker} from Tastytrade")
 
-        # Get the futures option chain
-        chain = get_future_option_chain(session, ticker)
+        # Get the futures option chain (SDK function may be async)
+        result = get_future_option_chain(session, ticker)
+        chain = await result if inspect.iscoroutine(result) else result
 
         if not chain:
             logger.warning(f"No futures options chain found for {ticker}")
@@ -192,7 +194,7 @@ def get_futures_option_chain_tastytrade(ticker: str) -> Optional[Dict]:
         return None
 
 
-def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+async def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
     """
     Get options chain with live Greeks from Tastytrade.
 
@@ -212,16 +214,19 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Greeks
         from datetime import date
+        import inspect
 
         logger.info(f"Fetching options with Greeks for {ticker} (target_dte={target_dte})")
 
         # Use appropriate chain function for futures vs equities
         if is_futures_ticker(ticker):
             from tastytrade.instruments import get_future_option_chain
-            chain = get_future_option_chain(session, ticker)
+            result = get_future_option_chain(session, ticker)
         else:
             from tastytrade.instruments import get_option_chain
-            chain = get_option_chain(session, ticker)
+            result = get_option_chain(session, ticker)
+
+        chain = await result if inspect.iscoroutine(result) else result
 
         if not chain:
             return None
@@ -375,15 +380,8 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
                 import traceback
                 logger.warning(traceback.format_exc())
 
-        # Run async fetch
-        try:
-            asyncio.run(fetch_greeks_and_summary())
-        except RuntimeError:
-            # Event loop already running
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(fetch_greeks_and_summary())
-        except Exception as e:
-            logger.warning(f"Error streaming Greeks/Summary: {e}")
+        # Run async fetch (we're already in async context)
+        await fetch_greeks_and_summary()
 
         logger.info(f"Received Greeks for {len(greeks_data)} options, Summary for {len(summary_data)} options")
 
@@ -453,9 +451,10 @@ def get_options_with_greeks_tastytrade(ticker: str, expiration: str = None, targ
         return None
 
 
-def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
+async def get_expirations_tastytrade_async(ticker: str) -> Optional[Dict]:
     """
     Get all available expirations for a ticker (equities or futures).
+    Async version that properly awaits SDK calls.
 
     Returns:
         Dict with 'ticker', 'is_futures', and 'expirations' list
@@ -466,14 +465,21 @@ def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
 
     try:
         from datetime import date
+        import inspect
 
         # Use appropriate chain function for futures vs equities
         if is_futures_ticker(ticker):
             from tastytrade.instruments import get_future_option_chain
-            chain = get_future_option_chain(session, ticker)
+            result = get_future_option_chain(session, ticker)
         else:
             from tastytrade.instruments import get_option_chain
-            chain = get_option_chain(session, ticker)
+            result = get_option_chain(session, ticker)
+
+        # Await if async
+        if inspect.iscoroutine(result):
+            chain = await result
+        else:
+            chain = result
 
         if not chain:
             return None
@@ -509,7 +515,381 @@ def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
 
     except Exception as e:
         logger.error(f"Error fetching Tastytrade expirations for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
+
+
+def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
+    """Sync wrapper for get_expirations_tastytrade_async."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # We're already in an async context, can't use run_until_complete
+            # Create a new thread to run the async function
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, get_expirations_tastytrade_async(ticker))
+                return future.result(timeout=30)
+        else:
+            return loop.run_until_complete(get_expirations_tastytrade_async(ticker))
+    except Exception as e:
+        logger.error(f"Error in sync wrapper for expirations: {e}")
+        return None
+
+
+async def calculate_max_pain_tastytrade(ticker: str, expiration: str = None) -> Dict:
+    """
+    Calculate Max Pain for futures using Tastytrade chain data + OI from DXLinkStreamer.
+    """
+    session = get_tastytrade_session()
+    if not session:
+        return {"error": "Tastytrade session not available"}
+
+    try:
+        from tastytrade.instruments import get_future_option_chain
+        from tastytrade import DXLinkStreamer
+        from tastytrade.dxfeed import Summary
+        from datetime import date
+        import inspect, time
+
+        result = get_future_option_chain(session, ticker)
+        chain = await result if inspect.iscoroutine(result) else result
+        if not chain:
+            return {"error": f"No futures options chain for {ticker}"}
+
+        today = date.today()
+        exp_dates = sorted(chain.keys())
+
+        # Pick expiration
+        target_exp = None
+        if expiration:
+            from datetime import datetime as dt
+            target_date = dt.strptime(expiration, '%Y-%m-%d').date()
+            if target_date in chain:
+                target_exp = target_date
+        if not target_exp:
+            # Pick first expiration with DTE >= 1
+            for ed in exp_dates:
+                if (ed - today).days >= 1:
+                    target_exp = ed
+                    break
+        if not target_exp and exp_dates:
+            target_exp = exp_dates[0]
+        if not target_exp:
+            return {"error": "No valid expiration found"}
+
+        dte = (target_exp - today).days
+        options_list = chain[target_exp]
+
+        # Collect strikes and streamer symbols
+        strike_data = {}  # strike -> {call_sym, put_sym}
+        all_symbols = []
+        for opt in options_list:
+            strike = float(getattr(opt, 'strike_price', 0))
+            opt_type = getattr(opt, 'option_type', None)
+            sym = getattr(opt, 'streamer_symbol', None)
+            if not strike or not opt_type or not sym:
+                continue
+            if strike not in strike_data:
+                strike_data[strike] = {'call_sym': None, 'put_sym': None}
+            if opt_type == 'C':
+                strike_data[strike]['call_sym'] = sym
+            elif opt_type == 'P':
+                strike_data[strike]['put_sym'] = sym
+            all_symbols.append(sym)
+
+        if not all_symbols:
+            return {"error": "No option symbols found"}
+
+        # Stream OI data + underlying quote for current price
+        oi_data = {}
+        current_price = 0.0
+        from tastytrade.dxfeed import Quote
+
+        # Build streamer symbol for underlying futures
+        FUTURES_EXCHANGE = {
+            '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
+            '/CL': ':XNYM', '/NG': ':XNYM',
+            '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
+            '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
+        }
+        t = ticker.upper()
+        suffix = FUTURES_EXCHANGE.get(t, ':XCME')
+        for root, exch in FUTURES_EXCHANGE.items():
+            if t.startswith(root) and len(t) > len(root):
+                suffix = exch
+                break
+        underlying_sym = t + suffix
+
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Summary, all_symbols)
+            await streamer.subscribe(Quote, [underlying_sym])
+
+            # Get underlying quote first (fast)
+            try:
+                import asyncio as _asyncio
+                quote = await _asyncio.wait_for(streamer.get_event(Quote), timeout=5)
+                bid = float(quote.bid_price) if quote.bid_price else 0.0
+                ask = float(quote.ask_price) if quote.ask_price else 0.0
+                current_price = (bid + ask) / 2 if bid and ask else bid or ask
+            except Exception:
+                pass
+
+            # Collect OI
+            start = time.time()
+            received = 0
+            async for summary in streamer.listen(Summary):
+                oi_data[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
+                received += 1
+                if received >= len(all_symbols) or time.time() - start > 15:
+                    break
+
+        # Calculate max pain
+        strikes = sorted(strike_data.keys())
+        total_call_oi = 0
+        total_put_oi = 0
+        call_oi_map = {}
+        put_oi_map = {}
+
+        for strike in strikes:
+            sd = strike_data[strike]
+            c_oi = oi_data.get(sd['call_sym'], 0) if sd['call_sym'] else 0
+            p_oi = oi_data.get(sd['put_sym'], 0) if sd['put_sym'] else 0
+            call_oi_map[strike] = c_oi
+            put_oi_map[strike] = p_oi
+            total_call_oi += c_oi
+            total_put_oi += p_oi
+
+        if total_call_oi == 0 and total_put_oi == 0:
+            return {"error": "No open interest data available", "ticker": ticker}
+
+        # Max pain = strike where total pain (for all option holders) is minimized
+        pain_by_strike = []
+        min_pain = float('inf')
+        max_pain_strike = strikes[len(strikes) // 2]
+
+        for test_strike in strikes:
+            total_pain = 0
+            for s in strikes:
+                # Call pain: calls are worthless below strike, lose money above
+                if test_strike > s:
+                    total_pain += (test_strike - s) * call_oi_map.get(s, 0) * 100
+                # Put pain: puts are worthless above strike, lose money below
+                if test_strike < s:
+                    total_pain += (s - test_strike) * put_oi_map.get(s, 0) * 100
+
+            pain_by_strike.append({
+                'strike': test_strike,
+                'total_pain': total_pain,
+                'call_oi': call_oi_map.get(test_strike, 0),
+                'put_oi': put_oi_map.get(test_strike, 0),
+            })
+
+            if total_pain < min_pain:
+                min_pain = total_pain
+                max_pain_strike = test_strike
+
+        return {
+            'ticker': ticker,
+            'expiration': target_exp.strftime('%Y-%m-%d'),
+            'max_pain_price': max_pain_strike,
+            'current_price': current_price,
+            'pain_by_strike': pain_by_strike,
+            'total_call_oi': total_call_oi,
+            'total_put_oi': total_put_oi,
+            'days_to_expiry': dte,
+            'source': 'tastytrade',
+        }
+
+    except Exception as e:
+        logger.error(f"Error calculating max pain for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {"error": str(e)}
+
+
+async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
+    """
+    Calculate GEX for futures using Tastytrade chain data + Greeks/OI from DXLinkStreamer.
+    """
+    session = get_tastytrade_session()
+    if not session:
+        return {"error": "Tastytrade session not available"}
+
+    try:
+        from tastytrade.instruments import get_future_option_chain
+        from tastytrade import DXLinkStreamer
+        from tastytrade.dxfeed import Greeks, Summary
+        from datetime import date
+        import inspect, time
+
+        result = get_future_option_chain(session, ticker)
+        chain = await result if inspect.iscoroutine(result) else result
+        if not chain:
+            return {"error": f"No futures options chain for {ticker}"}
+
+        today = date.today()
+        exp_dates = sorted(chain.keys())
+
+        # Pick expiration
+        target_exp = None
+        if expiration:
+            from datetime import datetime as dt
+            target_date = dt.strptime(expiration, '%Y-%m-%d').date()
+            if target_date in chain:
+                target_exp = target_date
+        if not target_exp:
+            for ed in exp_dates:
+                if (ed - today).days >= 1:
+                    target_exp = ed
+                    break
+        if not target_exp and exp_dates:
+            target_exp = exp_dates[0]
+        if not target_exp:
+            return {"error": "No valid expiration found"}
+
+        dte = (target_exp - today).days
+        options_list = chain[target_exp]
+
+        # Collect strikes and symbols
+        strike_data = {}
+        all_symbols = []
+        for opt in options_list:
+            strike = float(getattr(opt, 'strike_price', 0))
+            opt_type = getattr(opt, 'option_type', None)
+            sym = getattr(opt, 'streamer_symbol', None)
+            if not strike or not opt_type or not sym:
+                continue
+            if strike not in strike_data:
+                strike_data[strike] = {'call_sym': None, 'put_sym': None}
+            if opt_type == 'C':
+                strike_data[strike]['call_sym'] = sym
+            elif opt_type == 'P':
+                strike_data[strike]['put_sym'] = sym
+            all_symbols.append(sym)
+
+        if not all_symbols:
+            return {"error": "No option symbols found"}
+
+        # Stream Greeks + OI + underlying quote
+        greeks_map = {}
+        oi_map = {}
+        current_price = 0.0
+        from tastytrade.dxfeed import Quote
+
+        # Build streamer symbol for underlying futures
+        FUTURES_EXCHANGE = {
+            '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
+            '/CL': ':XNYM', '/NG': ':XNYM',
+            '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
+            '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
+        }
+        t = ticker.upper()
+        suffix = FUTURES_EXCHANGE.get(t, ':XCME')
+        for root, exch in FUTURES_EXCHANGE.items():
+            if t.startswith(root) and len(t) > len(root):
+                suffix = exch
+                break
+        underlying_sym = t + suffix
+
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Greeks, all_symbols)
+            await streamer.subscribe(Summary, all_symbols)
+            await streamer.subscribe(Quote, [underlying_sym])
+
+            # Get underlying quote first (fast)
+            try:
+                import asyncio as _asyncio
+                quote = await _asyncio.wait_for(streamer.get_event(Quote), timeout=5)
+                bid = float(quote.bid_price) if quote.bid_price else 0.0
+                ask = float(quote.ask_price) if quote.ask_price else 0.0
+                current_price = (bid + ask) / 2 if bid and ask else bid or ask
+            except Exception:
+                pass
+
+            # Collect Greeks
+            start = time.time()
+            received = 0
+            async for greek in streamer.listen(Greeks):
+                greeks_map[greek.event_symbol] = {
+                    'gamma': float(greek.gamma) if greek.gamma else 0.0,
+                    'delta': float(greek.delta) if greek.delta else 0.0,
+                }
+                received += 1
+                if received >= len(all_symbols) or time.time() - start > 15:
+                    break
+
+            # Collect OI
+            start = time.time()
+            received = 0
+            async for summary in streamer.listen(Summary):
+                oi_map[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
+                received += 1
+                if received >= len(all_symbols) or time.time() - start > 15:
+                    break
+
+        # Calculate GEX by strike
+        # Futures multiplier
+        multiplier = 50  # ES = $50 per point
+        root = ticker.lstrip('/').upper()
+        multiplier_map = {'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2, 'YM': 5, 'RTY': 50,
+                         'CL': 1000, 'GC': 100, 'SI': 5000, 'ZB': 1000, 'ZN': 1000}
+        multiplier = multiplier_map.get(root, 50)
+
+        gex_by_strike = []
+        total_gex = 0.0
+
+        for strike in sorted(strike_data.keys()):
+            sd = strike_data[strike]
+            call_gamma = greeks_map.get(sd['call_sym'], {}).get('gamma', 0) if sd['call_sym'] else 0
+            put_gamma = greeks_map.get(sd['put_sym'], {}).get('gamma', 0) if sd['put_sym'] else 0
+            call_oi = oi_map.get(sd['call_sym'], 0) if sd['call_sym'] else 0
+            put_oi = oi_map.get(sd['put_sym'], 0) if sd['put_sym'] else 0
+
+            call_gex = call_gamma * call_oi * multiplier
+            put_gex = -put_gamma * put_oi * multiplier
+            net_gex = call_gex + put_gex
+
+            gex_by_strike.append({
+                'strike': strike,
+                'call_gex': round(call_gex, 2),
+                'put_gex': round(put_gex, 2),
+                'net_gex': round(net_gex, 2),
+                'call_oi': call_oi,
+                'put_oi': put_oi,
+            })
+            total_gex += net_gex
+
+        # Find zero-gamma level
+        zero_gamma = 0
+        for i in range(len(gex_by_strike) - 1):
+            if gex_by_strike[i]['net_gex'] * gex_by_strike[i+1]['net_gex'] < 0:
+                zero_gamma = (gex_by_strike[i]['strike'] + gex_by_strike[i+1]['strike']) / 2
+                break
+
+        # Sum total OI
+        total_call_oi = sum(g.get('call_oi', 0) for g in gex_by_strike)
+        total_put_oi = sum(g.get('put_oi', 0) for g in gex_by_strike)
+
+        return {
+            'ticker': ticker,
+            'expiration': target_exp.strftime('%Y-%m-%d'),
+            'current_price': current_price,
+            'total_gex': round(total_gex, 2),
+            'total_call_oi': total_call_oi,
+            'total_put_oi': total_put_oi,
+            'gex_by_strike': gex_by_strike,
+            'zero_gamma_level': zero_gamma,
+            'days_to_expiry': dte,
+            'source': 'tastytrade',
+        }
+
+    except Exception as e:
+        logger.error(f"Error calculating GEX for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {"error": str(e)}
 
 
 def get_futures_front_month_symbol(root_symbol: str) -> str:
