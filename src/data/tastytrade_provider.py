@@ -903,18 +903,18 @@ async def _calculate_gex_tastytrade_impl(ticker: str, expiration: str = None) ->
             })
             total_gex += net_gex
 
-        # Find zero-gamma level (negative-to-positive transition = gamma flip)
-        # Only search near current price (within 10%) to avoid far-OTM noise
+        # Find zero-gamma level (gamma flip): the last negative-to-positive GEX
+        # transition below current price, ignoring empty (zero-OI) strikes.
+        # This represents where dealer positioning flips from amplifying to stabilizing.
         zero_gamma = 0
+        active_strikes = [g for g in gex_by_strike if g['call_oi'] > 0 or g['put_oi'] > 0]
         lower_bound = current_price * 0.90 if current_price > 0 else 0
-        upper_bound = current_price * 1.10 if current_price > 0 else float('inf')
-        for i in range(1, len(gex_by_strike)):
-            strike = gex_by_strike[i]['strike']
-            if strike < lower_bound or strike > upper_bound:
+        for i in range(1, len(active_strikes)):
+            strike = active_strikes[i]['strike']
+            if strike < lower_bound or strike > current_price:
                 continue
-            if gex_by_strike[i-1]['net_gex'] < 0 and gex_by_strike[i]['net_gex'] >= 0:
-                zero_gamma = strike
-                break
+            if active_strikes[i-1]['net_gex'] < 0 and active_strikes[i]['net_gex'] > 0:
+                zero_gamma = strike  # keep searching — want the LAST transition below price
 
         # Sum total OI
         total_call_oi = sum(g.get('call_oi', 0) for g in gex_by_strike)
@@ -1096,13 +1096,13 @@ async def get_gex_regime_tastytrade(ticker: str, expiration: str = None) -> Dict
     call_wall = None
     put_wall = None
     max_call_gex = 0
-    max_put_gex = 0
+    min_put_gex = 0
     for g in gex_by_strike:
         if g['call_gex'] > max_call_gex:
             max_call_gex = g['call_gex']
             call_wall = g['strike']
-        if g['put_gex'] < max_put_gex:
-            max_put_gex = g['put_gex']
+        if g['put_gex'] < min_put_gex:
+            min_put_gex = g['put_gex']
             put_wall = g['strike']
 
     confidence = min(abs(regime_score) / 100, 1.0)

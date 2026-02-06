@@ -917,12 +917,17 @@ def calculate_gex_by_strike(ticker: str, expiration: str = None) -> Dict:
                 'put_oi': put_info['oi']
             })
 
-        # Find zero gamma level (where GEX flips from negative to positive)
+        # Find zero-gamma level (gamma flip): the last negative-to-positive GEX
+        # transition below current price, ignoring empty (zero-OI) strikes.
         zero_gamma = None
-        for i, g in enumerate(gex_by_strike):
-            if i > 0 and gex_by_strike[i-1]['net_gex'] < 0 and g['net_gex'] >= 0:
-                zero_gamma = g['strike']
-                break
+        active_strikes = [g for g in gex_by_strike if g['call_oi'] > 0 or g['put_oi'] > 0]
+        lower_bound = current_price * 0.90 if current_price > 0 else 0
+        for i in range(1, len(active_strikes)):
+            strike = active_strikes[i]['strike']
+            if strike < lower_bound or strike > current_price:
+                continue
+            if active_strikes[i-1]['net_gex'] < 0 and active_strikes[i]['net_gex'] > 0:
+                zero_gamma = strike  # keep searching — want the LAST transition below price
 
         # Filter to +/- 15% of current price
         if current_price > 0:
