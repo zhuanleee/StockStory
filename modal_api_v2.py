@@ -5886,69 +5886,103 @@ Provide brief JSON interpretation:
     # WEBSOCKET LIVE QUOTE STREAMING
     # =============================================================================
 
-    async def _ws_polygon_fallback(websocket: WebSocket, ticker: str):
-        """Poll Polygon every 3s and push via WebSocket."""
+    async def _send_polygon_snapshot(websocket: WebSocket, ticker: str):
+        """Send a single Polygon snapshot. Returns True if data was sent."""
+        # Polygon doesn't support futures — skip for futures tickers
+        if ticker.startswith('/'):
+            return False
         from src.data.polygon_provider import get_snapshot_sync
+        snapshot = get_snapshot_sync(ticker.upper())
+        if snapshot:
+            price = snapshot.get('price', 0)
+            await websocket.send_json({
+                "ok": True,
+                "data": {
+                    "last": price,
+                    "bid": price,
+                    "ask": price,
+                    "volume": snapshot.get('volume'),
+                    "source": "polygon"
+                }
+            })
+            return True
+        return False
+
+    async def _ws_polygon_loop(websocket: WebSocket, ticker: str):
+        """Poll Polygon every 3s and push via WebSocket."""
         while True:
-            snapshot = get_snapshot_sync(ticker.upper())
-            if snapshot:
-                price = snapshot.get('price', 0)
+            await _send_polygon_snapshot(websocket, ticker)
+            await asyncio.sleep(3)
+
+    async def _ws_tastytrade_stream(websocket: WebSocket, ticker: str, session):
+        """Stream real-time quotes from Tastytrade DXLinkStreamer."""
+        from tastytrade import DXLinkStreamer
+        from tastytrade.dxfeed import Quote
+        async with DXLinkStreamer(session) as streamer:
+            await streamer.subscribe(Quote, [ticker.upper()])
+            first = True
+            while True:
+                timeout = 10 if first else 30
+                quote = await asyncio.wait_for(
+                    streamer.get_event(Quote), timeout=timeout
+                )
+                first = False
+                bid = float(quote.bid_price) if quote.bid_price else 0.0
+                ask = float(quote.ask_price) if quote.ask_price else 0.0
+                mid = (bid + ask) / 2 if bid and ask else bid or ask
+                bid_size = float(getattr(quote, 'bid_size', 0) or 0)
+                ask_size = float(getattr(quote, 'ask_size', 0) or 0)
                 await websocket.send_json({
                     "ok": True,
                     "data": {
-                        "last": price,
-                        "bid": price,
-                        "ask": price,
-                        "volume": snapshot.get('volume'),
-                        "source": "polygon"
+                        "last": float(mid),
+                        "bid": float(bid),
+                        "ask": float(ask),
+                        "bid_size": bid_size,
+                        "ask_size": ask_size,
+                        "source": "tastytrade"
                     }
                 })
-            await asyncio.sleep(3)
 
-    @web_app.websocket("/ws/quote/{ticker}")
+    @web_app.websocket("/ws/quote/{ticker:path}")
     async def ws_quote(websocket: WebSocket, ticker: str):
         """
         Real-time quote streaming via WebSocket.
-        - With Tastytrade credentials: sub-second DXLinkStreamer updates
-        - Fallback: Polygon snapshot polling every 3 seconds
+        Strategy: Send Polygon snapshot instantly, try Tastytrade with 10s timeout,
+        fall back to Polygon polling if Tastytrade fails.
         """
+        # Restore leading slash for futures tickers
+        FUTURES = ('ES', 'NQ', 'CL', 'GC', 'YM', 'RTY', 'ZB', 'ZN', 'ZC', 'ZS', 'ZW', 'SI', 'HG', 'NG')
+        if ticker.upper() in FUTURES:
+            ticker = '/' + ticker.upper()
+
         await websocket.accept()
         try:
+            # Send immediate Polygon snapshot so client gets data in <1s
+            await _send_polygon_snapshot(websocket, ticker)
+
             session = get_tastytrade_session()
             if session:
-                print(f"[ws_quote] {ticker}: using Tastytrade DXLinkStreamer")
                 try:
-                    from tastytrade import DXLinkStreamer
-                    from tastytrade.dxfeed import Quote
-                    async with DXLinkStreamer(session) as streamer:
-                        await streamer.subscribe(Quote, [ticker.upper()])
-                        while True:
-                            quote = await asyncio.wait_for(
-                                streamer.get_event(Quote), timeout=30
-                            )
-                            bid = float(quote.bid_price) if quote.bid_price else 0
-                            ask = float(quote.ask_price) if quote.ask_price else 0
-                            mid = (bid + ask) / 2 if bid and ask else bid or ask
-                            await websocket.send_json({
-                                "ok": True,
-                                "data": {
-                                    "last": mid,
-                                    "bid": bid,
-                                    "ask": ask,
-                                    "bid_size": getattr(quote, 'bid_size', 0),
-                                    "ask_size": getattr(quote, 'ask_size', 0),
-                                    "source": "tastytrade"
-                                }
-                            })
+                    await _ws_tastytrade_stream(websocket, ticker, session)
                 except WebSocketDisconnect:
                     raise
                 except Exception as tt_err:
-                    # Tastytrade failed — log reason and fall back to Polygon
-                    print(f"[ws_quote] Tastytrade failed for {ticker}: {type(tt_err).__name__}: {tt_err}")
-                    await _ws_polygon_fallback(websocket, ticker)
+                    import traceback
+                    err_detail = f"{type(tt_err).__name__}: {tt_err}"
+                    # Send error info to client before falling back
+                    try:
+                        await websocket.send_json({
+                            "ok": False,
+                            "tastytrade_error": err_detail,
+                            "traceback": traceback.format_exc(),
+                            "falling_back_to": "polygon"
+                        })
+                    except Exception:
+                        pass
+                    await _ws_polygon_loop(websocket, ticker)
             else:
-                print(f"[ws_quote] {ticker}: no Tastytrade session, using Polygon fallback")
-                await _ws_polygon_fallback(websocket, ticker)
+                await _ws_polygon_loop(websocket, ticker)
         except WebSocketDisconnect:
             pass
         except Exception as e:
@@ -5956,6 +5990,71 @@ Provide brief JSON interpretation:
                 await websocket.send_json({"ok": False, "error": str(e)})
             except Exception:
                 pass
+
+    # =============================================================================
+    # DEBUG: TASTYTRADE CONNECTION CHECK
+    # =============================================================================
+
+    @web_app.get("/debug/tastytrade")
+    def debug_tastytrade():
+        """Check if Tastytrade credentials are configured and session works."""
+        import traceback
+        client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET', '')
+        refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN', '')
+        result = {
+            "client_secret_set": bool(client_secret),
+            "client_secret_len": len(client_secret),
+            "refresh_token_set": bool(refresh_token),
+            "refresh_token_len": len(refresh_token),
+        }
+        if client_secret and refresh_token:
+            try:
+                session = get_tastytrade_session()
+                result["session_created"] = session is not None
+                if session:
+                    result["session_type"] = type(session).__name__
+            except Exception as e:
+                result["session_error"] = f"{type(e).__name__}: {e}"
+                result["traceback"] = traceback.format_exc()
+        return result
+
+    @web_app.get("/debug/stream-test/{ticker}")
+    async def debug_stream_test(ticker: str):
+        """Test DXLinkStreamer connection for a ticker. Returns first quote or error."""
+        import traceback
+        result = {"ticker": ticker, "steps": []}
+        try:
+            session = get_tastytrade_session()
+            if not session:
+                result["error"] = "No Tastytrade session"
+                return result
+            result["steps"].append("session_ok")
+
+            from tastytrade import DXLinkStreamer
+            from tastytrade.dxfeed import Quote
+            async with DXLinkStreamer(session) as streamer:
+                result["steps"].append("streamer_connected")
+                await streamer.subscribe(Quote, [ticker.upper()])
+                result["steps"].append("subscribed")
+                quote = await asyncio.wait_for(
+                    streamer.get_event(Quote), timeout=10
+                )
+                result["steps"].append("got_quote")
+                result["quote"] = {
+                    "bid": float(quote.bid_price) if quote.bid_price else 0,
+                    "ask": float(quote.ask_price) if quote.ask_price else 0,
+                    "bid_size": float(getattr(quote, 'bid_size', 0) or 0),
+                    "ask_size": float(getattr(quote, 'ask_size', 0) or 0),
+                }
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {e}"
+            result["traceback"] = traceback.format_exc()
+        return result
+
+    @web_app.get("/debug/stream-test")
+    async def debug_stream_test_query(ticker: str = Query(...)):
+        """Test DXLinkStreamer with query param (for futures like /ES)."""
+        return await debug_stream_test(ticker)
 
     # =============================================================================
     # REST QUOTE FALLBACK
