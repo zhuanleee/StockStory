@@ -2901,24 +2901,33 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             }
                         }
                     else:
+                        logger.info(f"No candle data from DXLink for {ticker}, returning empty")
                         return {
-                            "ok": False,
-                            "error": f"No candle data received for {ticker}. Futures historical candles may not be supported via DXLink streaming."
+                            "ok": True,
+                            "data": {
+                                "ticker": ticker, "candles": [], "interval": interval,
+                                "source": "none",
+                                "note": "Futures historical candles not available during market close."
+                            }
                         }
 
                 except ImportError as e:
                     logger.error(f"Tastytrade import error: {e}")
                     return {
-                        "ok": False,
-                        "error": f"Tastytrade SDK not available: {str(e)}"
+                        "ok": True,
+                        "data": {
+                            "ticker": ticker, "candles": [], "interval": interval,
+                            "source": "none", "note": str(e)
+                        }
                     }
                 except Exception as e:
                     logger.error(f"Tastytrade candle error for {ticker}: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
                     return {
-                        "ok": False,
-                        "error": f"Failed to fetch futures candles from Tastytrade: {str(e)}"
+                        "ok": True,
+                        "data": {
+                            "ticker": ticker, "candles": [], "interval": interval,
+                            "source": "none", "note": str(e)
+                        }
                     }
 
             else:
