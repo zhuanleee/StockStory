@@ -2664,12 +2664,56 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/sentiment", tags=["Options"])
-    def options_sentiment_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc.")):
+    async def options_sentiment_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc.")):
         """Get options sentiment (supports futures via query param)"""
         try:
-            from src.analysis.options_flow import get_options_sentiment
-            sentiment = get_options_sentiment(ticker)
-            return {"ok": True, "data": sentiment}
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                # Use Tastytrade data for futures (Polygon doesn't support futures options)
+                from src.data.tastytrade_provider import calculate_gex_tastytrade, calculate_max_pain_tastytrade
+                gex_data = await calculate_gex_tastytrade(ticker)
+                mp_data = await calculate_max_pain_tastytrade(ticker)
+
+                total_call_oi = gex_data.get('total_call_oi', 0)
+                total_put_oi = gex_data.get('total_put_oi', 0)
+                pc_ratio = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0
+                total_gex = gex_data.get('total_gex', 0)
+                current_price = gex_data.get('current_price', 0)
+                max_pain = mp_data.get('max_pain_price', 0) if 'error' not in mp_data else 0
+
+                # Compute sentiment score
+                score = 50
+                if pc_ratio < 0.6: score += 30
+                elif pc_ratio < 0.8: score += 15
+                elif pc_ratio > 1.2: score -= 30
+                elif pc_ratio > 1.0: score -= 15
+                if total_gex > 0: score += 10
+                elif total_gex < 0: score -= 10
+                score = max(0, min(100, score))
+
+                if score >= 75: label = 'Bullish'
+                elif score >= 60: label = 'Lean Bullish'
+                elif score >= 40: label = 'Neutral'
+                elif score >= 25: label = 'Lean Bearish'
+                else: label = 'Bearish'
+
+                return {"ok": True, "data": {
+                    'ticker': ticker.upper(),
+                    'put_call_ratio': pc_ratio,
+                    'put_call_trend': 'bearish' if pc_ratio > 1.3 else 'bullish' if pc_ratio < 0.7 else 'neutral',
+                    'iv_rank': 0, 'iv_percentile': 0, 'current_iv': 0,
+                    'gex': round(total_gex, 2),
+                    'max_pain': max_pain,
+                    'current_price': current_price,
+                    'sentiment_score': score,
+                    'sentiment_label': label,
+                    'skew': {'call_iv': 0, 'put_iv': 0, 'skew_ratio': 1.0},
+                    'key_levels': [],
+                }}
+            else:
+                from src.analysis.options_flow import get_options_sentiment
+                sentiment = get_options_sentiment(ticker)
+                return {"ok": True, "data": sentiment}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -2774,7 +2818,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             if is_futures:
                 # Use Tastytrade DXLink Candle streaming for futures (short timeframes only)
                 # DXLink doesn't have reliable historical data > 30 days, skip straight to Yahoo Finance
-                try_dxlink = days <= 30
+                try_dxlink = days <= 30 and interval not in ('1d', '1w', '1M')
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
@@ -2939,7 +2983,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                         if df is not None and not df.empty:
                             candles = []
                             for idx, row in df.iterrows():
-                                ts = int(idx.timestamp())
+                                ts = idx.strftime('%Y-%m-%d') if interval in ('1d', '1w', '1M') else int(idx.timestamp())
                                 o = round(float(row['Open']), 2)
                                 h = round(float(row['High']), 2)
                                 l = round(float(row['Low']), 2)
