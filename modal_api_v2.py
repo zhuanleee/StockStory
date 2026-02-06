@@ -63,10 +63,11 @@ def create_fastapi_app():
         modal.Volume.from_name("scan-results").reload()
 
     # Imports only available in container
-    from fastapi import FastAPI, Query, Request
+    from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
     import sys
+    import asyncio
     sys.path.insert(0, '/root')
 
     # Create FastAPI app with comprehensive documentation
@@ -5856,6 +5857,135 @@ Provide brief JSON interpretation:
                 "/watchlist", "/watch TICKER", "/unwatch TICKER", "/status"
             ]
         }
+
+    # =============================================================================
+    # TASTYTRADE SESSION MANAGEMENT
+    # =============================================================================
+
+    _tt_session = None
+
+    def get_tastytrade_session():
+        """Lazy-init Tastytrade session from env vars. Returns None if not configured."""
+        nonlocal _tt_session
+        client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
+        refresh_token = os.environ.get('TASTYTRADE_REFRESH_TOKEN')
+        if not client_secret or not refresh_token:
+            print(f"[tastytrade] Not configured (secret={'set' if client_secret else 'missing'}, token={'set' if refresh_token else 'missing'})")
+            return None
+        if _tt_session is None:
+            try:
+                from tastytrade import Session
+                _tt_session = Session(client_secret, refresh_token)
+                print("[tastytrade] Session created successfully")
+            except Exception as e:
+                print(f"[tastytrade] Session creation failed: {type(e).__name__}: {e}")
+                return None
+        return _tt_session
+
+    # =============================================================================
+    # WEBSOCKET LIVE QUOTE STREAMING
+    # =============================================================================
+
+    async def _ws_polygon_fallback(websocket: WebSocket, ticker: str):
+        """Poll Polygon every 3s and push via WebSocket."""
+        from src.data.polygon_provider import get_snapshot_sync
+        while True:
+            snapshot = get_snapshot_sync(ticker.upper())
+            if snapshot:
+                price = snapshot.get('price', 0)
+                await websocket.send_json({
+                    "ok": True,
+                    "data": {
+                        "last": price,
+                        "bid": price,
+                        "ask": price,
+                        "volume": snapshot.get('volume'),
+                        "source": "polygon"
+                    }
+                })
+            await asyncio.sleep(3)
+
+    @web_app.websocket("/ws/quote/{ticker}")
+    async def ws_quote(websocket: WebSocket, ticker: str):
+        """
+        Real-time quote streaming via WebSocket.
+        - With Tastytrade credentials: sub-second DXLinkStreamer updates
+        - Fallback: Polygon snapshot polling every 3 seconds
+        """
+        await websocket.accept()
+        try:
+            session = get_tastytrade_session()
+            if session:
+                print(f"[ws_quote] {ticker}: using Tastytrade DXLinkStreamer")
+                try:
+                    from tastytrade import DXLinkStreamer
+                    from tastytrade.dxfeed import Quote
+                    async with DXLinkStreamer(session) as streamer:
+                        await streamer.subscribe(Quote, [ticker.upper()])
+                        while True:
+                            quote = await asyncio.wait_for(
+                                streamer.get_event(Quote), timeout=30
+                            )
+                            bid = float(quote.bid_price) if quote.bid_price else 0
+                            ask = float(quote.ask_price) if quote.ask_price else 0
+                            mid = (bid + ask) / 2 if bid and ask else bid or ask
+                            await websocket.send_json({
+                                "ok": True,
+                                "data": {
+                                    "last": mid,
+                                    "bid": bid,
+                                    "ask": ask,
+                                    "bid_size": getattr(quote, 'bid_size', 0),
+                                    "ask_size": getattr(quote, 'ask_size', 0),
+                                    "source": "tastytrade"
+                                }
+                            })
+                except WebSocketDisconnect:
+                    raise
+                except Exception as tt_err:
+                    # Tastytrade failed — log reason and fall back to Polygon
+                    print(f"[ws_quote] Tastytrade failed for {ticker}: {type(tt_err).__name__}: {tt_err}")
+                    await _ws_polygon_fallback(websocket, ticker)
+            else:
+                print(f"[ws_quote] {ticker}: no Tastytrade session, using Polygon fallback")
+                await _ws_polygon_fallback(websocket, ticker)
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            try:
+                await websocket.send_json({"ok": False, "error": str(e)})
+            except Exception:
+                pass
+
+    # =============================================================================
+    # REST QUOTE FALLBACK
+    # =============================================================================
+
+    @web_app.get("/quote/{ticker}")
+    def rest_quote(ticker: str):
+        """REST fallback for live quote (single snapshot via Polygon)."""
+        from src.data.polygon_provider import get_snapshot_sync
+        snapshot = get_snapshot_sync(ticker.upper())
+        if snapshot:
+            return {
+                "ok": True,
+                "data": {
+                    "last": snapshot.get('price'),
+                    "bid": snapshot.get('price'),
+                    "ask": snapshot.get('price'),
+                    "price": snapshot.get('price'),
+                    "volume": snapshot.get('volume'),
+                    "change": snapshot.get('change'),
+                    "change_percent": snapshot.get('change_percent'),
+                    "source": "polygon"
+                }
+            }
+        return {"ok": False, "error": f"No data for {ticker}"}
+
+    @web_app.get("/quote")
+    def rest_quote_query(ticker: str = Query(..., description="Ticker symbol")):
+        """REST quote via query param (for futures like /ES)."""
+        return rest_quote(ticker)
 
     # =============================================================================
     # CATCH-ALL FOR UNIMPLEMENTED ROUTES
