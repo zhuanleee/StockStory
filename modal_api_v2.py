@@ -2905,15 +2905,51 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             # Scale ETF prices to approximate futures prices
                             # Use the last ETF close and known futures price to compute scale
                             last_etf_close = float(df['Close'].iloc[-1])
-                            # Get current futures price from GEX data or quote
+                            # Get current futures price via async DXLinkStreamer quote
                             futures_price = 0
                             try:
-                                from src.data.tastytrade_provider import get_quote_tastytrade
-                                q = get_quote_tastytrade(ticker)
-                                if q:
-                                    futures_price = q.get('last') or q.get('mid') or q.get('price', 0)
-                            except Exception:
-                                pass
+                                from tastytrade import DXLinkStreamer as DXStreamer
+                                from tastytrade.dxfeed import Quote as DXQuote
+                                session = get_tastytrade_session()
+                                if session:
+                                    FUTURES_EXCHANGE_Q = {
+                                        '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
+                                        '/CL': ':XNYM', '/NG': ':XNYM',
+                                        '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
+                                        '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
+                                    }
+                                    # Use ROOT symbol for Quote (e.g. /ES:XCME), not contract symbol
+                                    # DXLink Quote events only work with root symbols, not /ESH6:XCME
+                                    q_suffix = FUTURES_EXCHANGE_Q.get(ticker.upper(), ':XCME')
+                                    q_symbol = ticker.upper() + q_suffix
+                                    async with DXStreamer(session) as q_streamer:
+                                        await q_streamer.subscribe(DXQuote, [q_symbol])
+                                        import asyncio as _aio
+                                        try:
+                                            quote = await _aio.wait_for(q_streamer.get_event(DXQuote), timeout=10.0)
+                                            bid = float(getattr(quote, 'bid_price', 0) or 0)
+                                            ask = float(getattr(quote, 'ask_price', 0) or 0)
+                                            if bid > 0 and ask > 0:
+                                                futures_price = (bid + ask) / 2
+                                            logger.info(f"ETF proxy: got futures quote {q_symbol} = {futures_price}")
+                                        except _aio.TimeoutError:
+                                            logger.warning(f"ETF proxy: quote timeout for {q_symbol}")
+                            except Exception as qe:
+                                logger.warning(f"ETF proxy: quote fetch error: {qe}")
+
+                            # Fallback: use approximate futures/ETF ratio if live quote unavailable
+                            if futures_price <= 0:
+                                FUTURES_ETF_RATIO = {
+                                    'ES': 10.0, 'MES': 10.0,
+                                    'NQ': 41.0, 'MNQ': 41.0,
+                                    'YM': 100.0,
+                                    'RTY': 10.0,
+                                }
+                                approx_ratio = FUTURES_ETF_RATIO.get(root)
+                                if approx_ratio:
+                                    futures_price = last_etf_close * approx_ratio
+                                    logger.info(f"ETF proxy: using approx ratio {approx_ratio} for {root}, estimated price={futures_price:.2f}")
+
                             scale = futures_price / last_etf_close if last_etf_close > 0 and futures_price > 0 else 1.0
 
                             candles = []
@@ -5948,6 +5984,9 @@ Provide brief JSON interpretation:
         """Convert ticker to dxFeed streamer symbol. Futures need :EXCHANGE suffix."""
         t = ticker.upper()
         if t.startswith('/'):
+            # Already has exchange suffix (e.g., /ESH6:XCME) - return as-is
+            if ':' in t:
+                return t
             # Try exact match first (e.g., /ES → /ES:XCME)
             if t in FUTURES_EXCHANGE:
                 return t + FUTURES_EXCHANGE[t]

@@ -21,6 +21,12 @@ _session = None
 _session_expiry = None
 _tasty_client = None
 
+# GEX calculation cache to prevent concurrent DXLinkStreamer connections
+import time as _time
+_gex_cache = {}  # key: (ticker, expiration) -> {'result': dict, 'ts': float}
+_gex_locks = {}  # key: (ticker, expiration) -> asyncio.Lock
+_GEX_CACHE_TTL = 30  # seconds
+
 def get_tastytrade_session():
     """
     Get or create a Tastytrade session using OAuth2.
@@ -719,7 +725,35 @@ async def calculate_max_pain_tastytrade(ticker: str, expiration: str = None) -> 
 async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
     """
     Calculate GEX for futures using Tastytrade chain data + Greeks/OI from DXLinkStreamer.
+    Uses a TTL cache + async lock to prevent concurrent DXLinkStreamer connections
+    when multiple endpoints (gex, gex-levels, gex-regime, combined-regime) are called in parallel.
     """
+    cache_key = (ticker.upper(), expiration)
+
+    # Check cache
+    cached = _gex_cache.get(cache_key)
+    if cached and (_time.time() - cached['ts']) < _GEX_CACHE_TTL:
+        logger.info(f"GEX cache hit for {cache_key}")
+        return cached['result']
+
+    # Acquire per-key lock to prevent concurrent DXLink streams
+    if cache_key not in _gex_locks:
+        _gex_locks[cache_key] = asyncio.Lock()
+    async with _gex_locks[cache_key]:
+        # Double-check cache after acquiring lock
+        cached = _gex_cache.get(cache_key)
+        if cached and (_time.time() - cached['ts']) < _GEX_CACHE_TTL:
+            logger.info(f"GEX cache hit (post-lock) for {cache_key}")
+            return cached['result']
+
+        result = await _calculate_gex_tastytrade_impl(ticker, expiration)
+        if 'error' not in result:
+            _gex_cache[cache_key] = {'result': result, 'ts': _time.time()}
+        return result
+
+
+async def _calculate_gex_tastytrade_impl(ticker: str, expiration: str = None) -> Dict:
+    """Internal implementation of GEX calculation (not cached)."""
     session = get_tastytrade_session()
     if not session:
         return {"error": "Tastytrade session not available"}
