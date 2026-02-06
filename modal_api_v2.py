@@ -2818,7 +2818,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                     try:
                         async with DXLinkStreamer(session) as streamer:
                             # subscribe_candle(symbols: list[str], interval: str, start_time: datetime)
-                            await streamer.subscribe_candle([streamer_symbol], dxlink_period, from_time)
+                            await streamer.subscribe_candle([streamer_symbol], dxlink_period, from_time, extended_trading_hours=True)
 
                             import time as time_module
                             start_time = time_module.time()
@@ -2884,96 +2884,59 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                     logger.error(f"Tastytrade candle error for {ticker}: {e}")
                     # Fall through to ETF proxy below
 
-                # Fallback: use Polygon ETF proxy scaled to futures price
+                # Fallback: use Yahoo Finance for direct futures OHLC data
                 try:
-                    from src.data.polygon_provider import PolygonProvider
+                    import yfinance as yf
                     root = ticker.lstrip('/').upper()
-                    etf = FUTURES_TO_ETF.get(root)
-                    if etf:
-                        provider = PolygonProvider()
-                        try:
-                            to_date = datetime.now().strftime('%Y-%m-%d')
-                            from_date_str = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-                            df = await provider.get_aggregates(
-                                etf, multiplier=multiplier, timespan=timespan,
-                                from_date=from_date_str, to_date=to_date, limit=5000
-                            )
-                        finally:
-                            await provider.close()
+                    # Yahoo Finance futures symbols: ES=F, NQ=F, CL=F, GC=F
+                    YAHOO_FUTURES = {
+                        'ES': 'ES=F', 'MES': 'ES=F', 'NQ': 'NQ=F', 'MNQ': 'NQ=F',
+                        'YM': 'YM=F', 'RTY': 'RTY=F',
+                        'CL': 'CL=F', 'NG': 'NG=F',
+                        'GC': 'GC=F', 'SI': 'SI=F', 'HG': 'HG=F',
+                        'ZB': 'ZB=F', 'ZN': 'ZN=F', 'ZC': 'ZC=F', 'ZS': 'ZS=F', 'ZW': 'ZW=F',
+                    }
+                    yf_symbol = YAHOO_FUTURES.get(root)
+                    if yf_symbol:
+                        # yfinance period: 1d, 5d, 1mo, 3mo, 6mo, 1y
+                        if days <= 5:
+                            yf_period = '5d'
+                        elif days <= 30:
+                            yf_period = '1mo'
+                        elif days <= 90:
+                            yf_period = '3mo'
+                        else:
+                            yf_period = '6mo'
+
+                        yf_interval = '1d' if timespan == 'day' else '1h' if timespan == 'hour' else '1d'
+
+                        logger.info(f"Yahoo Finance fallback: {yf_symbol} period={yf_period} interval={yf_interval}")
+                        yf_ticker = yf.Ticker(yf_symbol)
+                        df = yf_ticker.history(period=yf_period, interval=yf_interval)
 
                         if df is not None and not df.empty:
-                            # Scale ETF prices to approximate futures prices
-                            # Use the last ETF close and known futures price to compute scale
-                            last_etf_close = float(df['Close'].iloc[-1])
-                            # Get current futures price via async DXLinkStreamer quote
-                            futures_price = 0
-                            try:
-                                from tastytrade import DXLinkStreamer as DXStreamer
-                                from tastytrade.dxfeed import Quote as DXQuote
-                                session = get_tastytrade_session()
-                                if session:
-                                    FUTURES_EXCHANGE_Q = {
-                                        '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
-                                        '/CL': ':XNYM', '/NG': ':XNYM',
-                                        '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
-                                        '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
-                                    }
-                                    # Use ROOT symbol for Quote (e.g. /ES:XCME), not contract symbol
-                                    # DXLink Quote events only work with root symbols, not /ESH6:XCME
-                                    q_suffix = FUTURES_EXCHANGE_Q.get(ticker.upper(), ':XCME')
-                                    q_symbol = ticker.upper() + q_suffix
-                                    async with DXStreamer(session) as q_streamer:
-                                        await q_streamer.subscribe(DXQuote, [q_symbol])
-                                        import asyncio as _aio
-                                        try:
-                                            quote = await _aio.wait_for(q_streamer.get_event(DXQuote), timeout=10.0)
-                                            bid = float(getattr(quote, 'bid_price', 0) or 0)
-                                            ask = float(getattr(quote, 'ask_price', 0) or 0)
-                                            if bid > 0 and ask > 0:
-                                                futures_price = (bid + ask) / 2
-                                            logger.info(f"ETF proxy: got futures quote {q_symbol} = {futures_price}")
-                                        except _aio.TimeoutError:
-                                            logger.warning(f"ETF proxy: quote timeout for {q_symbol}")
-                            except Exception as qe:
-                                logger.warning(f"ETF proxy: quote fetch error: {qe}")
-
-                            # Fallback: use approximate futures/ETF ratio if live quote unavailable
-                            if futures_price <= 0:
-                                FUTURES_ETF_RATIO = {
-                                    'ES': 10.0, 'MES': 10.0,
-                                    'NQ': 41.0, 'MNQ': 41.0,
-                                    'YM': 100.0,
-                                    'RTY': 10.0,
-                                }
-                                approx_ratio = FUTURES_ETF_RATIO.get(root)
-                                if approx_ratio:
-                                    futures_price = last_etf_close * approx_ratio
-                                    logger.info(f"ETF proxy: using approx ratio {approx_ratio} for {root}, estimated price={futures_price:.2f}")
-
-                            scale = futures_price / last_etf_close if last_etf_close > 0 and futures_price > 0 else 1.0
-
                             candles = []
                             for idx, row in df.iterrows():
                                 ts = int(idx.timestamp())
-                                candles.append({
-                                    'time': ts,
-                                    'open': round(float(row['Open']) * scale, 2),
-                                    'high': round(float(row['High']) * scale, 2),
-                                    'low': round(float(row['Low']) * scale, 2),
-                                    'close': round(float(row['Close']) * scale, 2),
-                                    'volume': int(row['Volume']),
-                                })
-                            return {
-                                "ok": True,
-                                "data": {
-                                    "ticker": ticker, "interval": interval, "days": days,
-                                    "source": "polygon_proxy", "etf": etf,
-                                    "scale_factor": round(scale, 4),
-                                    "candles": candles
+                                o = round(float(row['Open']), 2)
+                                h = round(float(row['High']), 2)
+                                l = round(float(row['Low']), 2)
+                                c = round(float(row['Close']), 2)
+                                v = int(row['Volume'])
+                                if o > 0 and h > 0 and c > 0:
+                                    candles.append({'time': ts, 'open': o, 'high': h, 'low': l, 'close': c, 'volume': v})
+
+                            if candles:
+                                return {
+                                    "ok": True,
+                                    "data": {
+                                        "ticker": ticker, "interval": interval, "days": days,
+                                        "source": "yahoo_finance", "yahoo_symbol": yf_symbol,
+                                        "candles": candles
+                                    }
                                 }
-                            }
                 except Exception as e:
-                    logger.error(f"ETF proxy fallback error: {e}")
+                    logger.error(f"Yahoo Finance fallback error: {e}")
 
                 return {
                     "ok": True,
