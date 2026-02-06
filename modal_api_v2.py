@@ -2877,34 +2877,76 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             }
                         }
                     else:
-                        logger.info(f"No candle data from DXLink for {ticker}, returning empty")
-                        return {
-                            "ok": True,
-                            "data": {
-                                "ticker": ticker, "candles": [], "interval": interval,
-                                "source": "none",
-                                "note": "Futures historical candles not available during market close."
-                            }
-                        }
+                        logger.info(f"No DXLink candle data for {ticker}, falling back to ETF proxy")
+                        # Fall through to ETF proxy below
 
-                except ImportError as e:
-                    logger.error(f"Tastytrade import error: {e}")
-                    return {
-                        "ok": True,
-                        "data": {
-                            "ticker": ticker, "candles": [], "interval": interval,
-                            "source": "none", "note": str(e)
-                        }
-                    }
                 except Exception as e:
                     logger.error(f"Tastytrade candle error for {ticker}: {e}")
-                    return {
-                        "ok": True,
-                        "data": {
-                            "ticker": ticker, "candles": [], "interval": interval,
-                            "source": "none", "note": str(e)
-                        }
+                    # Fall through to ETF proxy below
+
+                # Fallback: use Polygon ETF proxy scaled to futures price
+                try:
+                    from src.data.polygon_provider import PolygonProvider
+                    root = ticker.lstrip('/').upper()
+                    etf = FUTURES_TO_ETF.get(root)
+                    if etf:
+                        provider = PolygonProvider()
+                        try:
+                            to_date = datetime.now().strftime('%Y-%m-%d')
+                            from_date_str = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                            df = await provider.get_aggregates(
+                                etf, multiplier=multiplier, timespan=timespan,
+                                from_date=from_date_str, to_date=to_date, limit=5000
+                            )
+                        finally:
+                            await provider.close()
+
+                        if df is not None and not df.empty:
+                            # Scale ETF prices to approximate futures prices
+                            # Use the last ETF close and known futures price to compute scale
+                            last_etf_close = float(df['Close'].iloc[-1])
+                            # Get current futures price from GEX data or quote
+                            futures_price = 0
+                            try:
+                                from src.data.tastytrade_provider import get_quote_tastytrade
+                                q = get_quote_tastytrade(ticker)
+                                if q:
+                                    futures_price = q.get('last') or q.get('mid') or q.get('price', 0)
+                            except Exception:
+                                pass
+                            scale = futures_price / last_etf_close if last_etf_close > 0 and futures_price > 0 else 1.0
+
+                            candles = []
+                            for idx, row in df.iterrows():
+                                ts = int(idx.timestamp())
+                                candles.append({
+                                    'time': ts,
+                                    'open': round(float(row['Open']) * scale, 2),
+                                    'high': round(float(row['High']) * scale, 2),
+                                    'low': round(float(row['Low']) * scale, 2),
+                                    'close': round(float(row['Close']) * scale, 2),
+                                    'volume': int(row['Volume']),
+                                })
+                            return {
+                                "ok": True,
+                                "data": {
+                                    "ticker": ticker, "interval": interval, "days": days,
+                                    "source": "polygon_proxy", "etf": etf,
+                                    "scale_factor": round(scale, 4),
+                                    "candles": candles
+                                }
+                            }
+                except Exception as e:
+                    logger.error(f"ETF proxy fallback error: {e}")
+
+                return {
+                    "ok": True,
+                    "data": {
+                        "ticker": ticker, "candles": [], "interval": interval,
+                        "source": "none",
+                        "note": "No historical data available"
                     }
+                }
 
             else:
                 # Use Polygon for stocks
