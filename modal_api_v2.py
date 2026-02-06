@@ -2772,7 +2772,9 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             }
 
             if is_futures:
-                # Use Tastytrade DXLink Candle streaming for futures
+                # Use Tastytrade DXLink Candle streaming for futures (short timeframes only)
+                # DXLink doesn't have reliable historical data > 30 days, skip straight to Yahoo Finance
+                try_dxlink = days <= 30
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
@@ -2788,6 +2790,10 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             "ok": False,
                             "error": "Tastytrade session not available. Check credentials."
                         }
+
+                    if not try_dxlink:
+                        logger.info(f"Skipping DXLink candles for {ticker} (days={days} > 30), using Yahoo Finance")
+                        raise Exception("Skip to Yahoo Finance for long timeframes")
 
                     # Build streamer symbol directly: /ESH6:XCME
                     FUTURES_EXCHANGE = {
@@ -2898,17 +2904,33 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                     }
                     yf_symbol = YAHOO_FUTURES.get(root)
                     if yf_symbol:
-                        # yfinance period: 1d, 5d, 1mo, 3mo, 6mo, 1y
+                        # yfinance period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, max
                         if days <= 5:
                             yf_period = '5d'
                         elif days <= 30:
                             yf_period = '1mo'
                         elif days <= 90:
                             yf_period = '3mo'
-                        else:
+                        elif days <= 180:
                             yf_period = '6mo'
+                        elif days <= 365:
+                            yf_period = '1y'
+                        elif days <= 730:
+                            yf_period = '2y'
+                        elif days <= 1825:
+                            yf_period = '5y'
+                        else:
+                            yf_period = '10y'
 
-                        yf_interval = '1d' if timespan == 'day' else '1h' if timespan == 'hour' else '1d'
+                        # Use weekly candles for periods > 1 year to keep chart readable
+                        if days > 365:
+                            yf_interval = '1wk'
+                        elif days > 90:
+                            yf_interval = '1d'
+                        elif timespan == 'hour':
+                            yf_interval = '1h'
+                        else:
+                            yf_interval = '1d'
 
                         logger.info(f"Yahoo Finance fallback: {yf_symbol} period={yf_period} interval={yf_interval}")
                         yf_ticker = yf.Ticker(yf_symbol)
