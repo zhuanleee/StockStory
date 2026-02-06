@@ -39,10 +39,31 @@ def _is_tastytrade_available() -> bool:
 
 
 def _get_tastytrade_chain(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
-    """Get options chain from Tastytrade."""
+    """Get options chain from Tastytrade (sync wrapper - runs async in thread)."""
     try:
         from src.data.tastytrade_provider import get_options_chain_sync_tastytrade
-        return get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
+        import asyncio
+        import concurrent.futures
+        # get_options_chain_sync_tastytrade is now async, run it properly
+        async def _run():
+            return await get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
+        try:
+            asyncio.get_running_loop()
+            # Already in event loop - run in thread
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, _run()).result(timeout=30)
+        except RuntimeError:
+            return asyncio.run(_run())
+    except Exception as e:
+        logger.warning(f"Tastytrade chain fetch failed for {ticker}: {e}")
+        return None
+
+
+async def _get_tastytrade_chain_async(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+    """Get options chain from Tastytrade (async)."""
+    try:
+        from src.data.tastytrade_provider import get_options_chain_sync_tastytrade
+        return await get_options_chain_sync_tastytrade(ticker, expiration, target_dte)
     except Exception as e:
         logger.warning(f"Tastytrade chain fetch failed for {ticker}: {e}")
         return None
@@ -1955,7 +1976,7 @@ def calculate_realized_volatility(ticker: str, days: int = 20) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
-def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
+async def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
     """
     Variance Risk Premium (VRP) Analysis.
 
@@ -2013,7 +2034,7 @@ def get_vrp_analysis(ticker: str, expiration: str = None) -> Dict:
             rv_20d = rv_data.get('rv_20d', 0)
 
             # For futures, use Tastytrade for options chain (IV data)
-            chain = _get_tastytrade_chain(ticker, expiration)
+            chain = await _get_tastytrade_chain_async(ticker, expiration)
             if not chain or not chain.get('calls'):
                 return {"error": f"Could not fetch futures options chain from Tastytrade for {ticker}", "ticker": ticker}
 
@@ -2680,7 +2701,7 @@ def get_iv_term_structure(ticker: str) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
-def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
+async def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
     """
     Combined Ratio Spread Scoring System.
 
@@ -2706,7 +2727,7 @@ def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
         total_score = 0
 
         # 1. VRP Analysis
-        vrp = get_vrp_analysis(ticker, expiration)
+        vrp = await get_vrp_analysis(ticker, expiration)
         if 'error' not in vrp:
             vrp_pass = vrp.get('vrp', 0) > 0.02  # At least 2% VRP
             scores['vrp'] = {
@@ -2882,7 +2903,7 @@ def get_ratio_spread_score(ticker: str, expiration: str = None) -> Dict:
         return {"error": str(e), "ticker": ticker}
 
 
-def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
+async def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
     """
     Ratio Spread Score V2 - Uses Tastytrade for accurate 120 DTE analysis.
 
@@ -2926,7 +2947,7 @@ def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
         logger.info(f"Ratio spread score V2 for {ticker} @ {target_dte} DTE (source: {data_source})")
 
         # 1. VRP Analysis (uses price data, not expiration-dependent)
-        vrp = get_vrp_analysis(ticker, None)
+        vrp = await get_vrp_analysis(ticker, None)
         if 'error' not in vrp:
             vrp_pass = vrp.get('vrp', 0) > 0.02  # At least 2% VRP
             scores['vrp'] = {
@@ -2945,7 +2966,7 @@ def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
         # 2. Skew Analysis at target DTE
         skew = None
         if use_tastytrade:
-            skew = get_iv_by_delta_tastytrade(ticker, target_dte=target_dte)
+            skew = await get_iv_by_delta_tastytrade(ticker, target_dte=target_dte)
             if skew:
                 skew_ratio = skew.get('skew_ratio', 1)
                 skew_pass = skew_ratio > 1.05  # At least 5% skew
@@ -2985,7 +3006,7 @@ def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
         # 3. Term Structure (30 DTE vs target DTE)
         term = None
         if use_tastytrade:
-            term = get_term_structure_tastytrade(ticker, front_dte=30, back_dte=target_dte)
+            term = await get_term_structure_tastytrade(ticker, front_dte=30, back_dte=target_dte)
             if term and 'error' not in term:
                 term_pass = term.get('slope', 0) < -0.02  # Backwardated
                 scores['term_structure'] = {
@@ -3065,7 +3086,7 @@ def get_ratio_spread_score_v2(ticker: str, target_dte: int = 120) -> Dict:
         # 6. Expected Move at target DTE
         em = None
         if use_tastytrade:
-            em = get_expected_move_tastytrade(ticker, target_dte=target_dte)
+            em = await get_expected_move_tastytrade(ticker, target_dte=target_dte)
             if em and 'error' not in em:
                 em_pct = em.get('expected_move_pct', 0)
                 em_pass = em_pct > 0

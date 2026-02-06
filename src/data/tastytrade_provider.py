@@ -1364,7 +1364,7 @@ def get_quote_tastytrade(ticker: str) -> Optional[Dict]:
         return None
 
 
-def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: int = 120) -> Optional[Dict]:
+async def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: int = 120) -> Optional[Dict]:
     """
     Get IV at specific delta points for skew analysis.
 
@@ -1378,7 +1378,7 @@ def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: 
             'skew_ratio': float (put_25d_iv / atm_iv)
         }
     """
-    data = get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
+    data = await get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
     if not data or not data.get('options'):
         return None
 
@@ -1453,7 +1453,7 @@ def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target_dte: 
     }
 
 
-def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: int = 120) -> Optional[Dict]:
+async def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: int = 120) -> Optional[Dict]:
     """
     Get IV term structure comparing front and back month ATM IVs.
 
@@ -1473,12 +1473,12 @@ def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: in
         }
     """
     # Get front month IV
-    front_data = get_iv_by_delta_tastytrade(ticker, target_dte=front_dte)
+    front_data = await get_iv_by_delta_tastytrade(ticker, target_dte=front_dte)
     if not front_data or not front_data.get('atm_iv'):
         return None
 
     # Get back month IV
-    back_data = get_iv_by_delta_tastytrade(ticker, target_dte=back_dte)
+    back_data = await get_iv_by_delta_tastytrade(ticker, target_dte=back_dte)
     if not back_data or not back_data.get('atm_iv'):
         return None
 
@@ -1518,13 +1518,13 @@ def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: in
     }
 
 
-def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional[Dict]:
+async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Optional[Dict]:
     """
     Calculate expected move for a specific DTE.
 
     Uses ATM straddle price × 0.85 for expected move.
     """
-    data = get_options_with_greeks_tastytrade(ticker, target_dte=target_dte)
+    data = await get_options_with_greeks_tastytrade(ticker, target_dte=target_dte)
     if not data or not data.get('options'):
         return None
 
@@ -1602,7 +1602,7 @@ def is_tastytrade_available() -> bool:
 # These functions provide a Polygon-like interface for Tastytrade data
 # =============================================================================
 
-def get_options_chain_sync_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
+async def get_options_chain_sync_tastytrade(ticker: str, expiration: str = None, target_dte: int = None) -> Optional[Dict]:
     """
     Get options chain in Polygon-compatible format.
 
@@ -1616,7 +1616,7 @@ def get_options_chain_sync_tastytrade(ticker: str, expiration: str = None, targe
         'source': 'tastytrade'
     }
     """
-    data = get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
+    data = await get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
     if not data:
         return None
 

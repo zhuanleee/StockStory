@@ -2336,7 +2336,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
     # =========================================================================
 
     @web_app.get("/options/vrp/{ticker_symbol}", tags=["Ratio Spread"])
-    def options_vrp(ticker_symbol: str, expiration: str = Query(None)):
+    async def options_vrp(ticker_symbol: str, expiration: str = Query(None)):
         """
         Variance Risk Premium (VRP) Analysis.
 
@@ -2348,7 +2348,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         """
         try:
             from src.data.options import get_vrp_analysis
-            result = get_vrp_analysis(ticker_symbol.upper(), expiration)
+            result = await get_vrp_analysis(ticker_symbol.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2438,7 +2438,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/ratio-spread-score/{ticker_symbol}", tags=["Ratio Spread"])
-    def options_ratio_spread_score(ticker_symbol: str, expiration: str = Query(None)):
+    async def options_ratio_spread_score(ticker_symbol: str, expiration: str = Query(None)):
         """
         Combined Ratio Spread Scoring Dashboard.
 
@@ -2458,7 +2458,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         """
         try:
             from src.data.options import get_ratio_spread_score
-            result = get_ratio_spread_score(ticker_symbol.upper(), expiration)
+            result = await get_ratio_spread_score(ticker_symbol.upper(), expiration)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2466,7 +2466,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/ratio-spread-score-v2/{ticker_symbol}", tags=["Ratio Spread"])
-    def options_ratio_spread_score_v2(
+    async def options_ratio_spread_score_v2(
         ticker_symbol: str,
         target_dte: int = Query(120, description="Target DTE for your trade (default 120)")
     ):
@@ -2494,7 +2494,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         """
         try:
             from src.data.options import get_ratio_spread_score_v2
-            result = get_ratio_spread_score_v2(ticker_symbol.upper(), target_dte)
+            result = await get_ratio_spread_score_v2(ticker_symbol.upper(), target_dte)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2502,14 +2502,14 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/ratio-spread-score-v2", tags=["Ratio Spread"])
-    def options_ratio_spread_score_v2_query(
+    async def options_ratio_spread_score_v2_query(
         ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."),
         target_dte: int = Query(120, description="Target DTE for your trade (default 120)")
     ):
         """Ratio Spread Score V2 (query param version for futures support)"""
         try:
             from src.data.options import get_ratio_spread_score_v2
-            result = get_ratio_spread_score_v2(ticker.upper(), target_dte)
+            result = await get_ratio_spread_score_v2(ticker.upper(), target_dte)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
