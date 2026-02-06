@@ -2811,17 +2811,14 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
                     # Calculate from_time as datetime object
                     from_time = datetime.now() - timedelta(days=days)
-
-                    # Build candle symbol: "SYMBOL{=period}"
-                    candle_symbol = f"{streamer_symbol}{{={dxlink_period}}}"
-                    logger.info(f"Subscribing to candle: {candle_symbol} from {from_time}")
+                    logger.info(f"Subscribing to candle: {streamer_symbol} interval={dxlink_period} from={from_time}")
 
                     candles_data = []
 
                     try:
                         async with DXLinkStreamer(session) as streamer:
-                            # Use subscribe_candle with datetime for historical data
-                            await streamer.subscribe_candle(candle_symbol, from_time, dxlink_period)
+                            # subscribe_candle(symbols: list[str], interval: str, start_time: datetime)
+                            await streamer.subscribe_candle([streamer_symbol], dxlink_period, from_time)
 
                             import time as time_module
                             start_time = time_module.time()
