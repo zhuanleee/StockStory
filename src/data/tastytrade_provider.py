@@ -2477,8 +2477,12 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
 
     trade_ideas = []
 
+    # Fallback levels: use 1SD when support/resistance unavailable
+    eff_support = support_p or lower_1sd
+    eff_resistance = resistance_p or upper_1sd
+
     # 1. Primary Trade (always generated)
-    if composite_score >= 55 and support_p:
+    if composite_score >= 55:
         strike_p = cg_strike if (cg_strike and cg_type == 'call') else current_price
         target_p = resistance_p or upper_1sd or max_pain_price
         rationale_parts = [f'Score {composite_score}']
@@ -2486,16 +2490,23 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
             rationale_parts.append('bullish institutional flow')
         if dealer_flow_score >= 60:
             rationale_parts.append('positive GEX (stabilizing)')
+        if eff_support:
+            cond = f'Price holds above ${_fp(eff_support)} ({"support" if support_p else "-1σ"})'
+            stop = f'Close below ${_fp(eff_support)}'
+        else:
+            cond = f'Bullish bias holds'
+            stop = f'Reversal below ${_fp(current_price)}'
+        target_label = 'resistance' if resistance_p else ('+1σ' if upper_1sd else 'max pain')
         trade_ideas.append({
             'title': 'BULLISH CALL',
             'type': 'bullish',
-            'condition': f'Price holds above ${_fp(support_p)} (support)',
+            'condition': cond,
             'action': f'Buy call near ${_fp(strike_p)}',
-            'target': f'${_fp(target_p)} ({("resistance" if resistance_p else "+1σ") if target_p != max_pain_price else "max pain"})' if target_p else 'Next resistance',
-            'stop': f'Close below ${_fp(support_p)}',
+            'target': f'${_fp(target_p)} ({target_label})' if target_p else 'Next resistance',
+            'stop': stop,
             'rationale': ' + '.join(rationale_parts)
         })
-    elif composite_score < 45 and resistance_p:
+    elif composite_score < 45:
         strike_p = cg_strike if (cg_strike and cg_type == 'put') else current_price
         target_p = support_p or lower_1sd or max_pain_price
         rationale_parts = [f'Score {composite_score}']
@@ -2503,23 +2514,32 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
             rationale_parts.append('bearish institutional flow')
         if dealer_flow_score <= 35:
             rationale_parts.append('negative GEX (amplifying)')
+        if eff_resistance:
+            cond = f'Price stays below ${_fp(eff_resistance)} ({"resistance" if resistance_p else "+1σ"})'
+            stop = f'Close above ${_fp(eff_resistance)}'
+        else:
+            cond = f'Bearish bias holds'
+            stop = f'Reversal above ${_fp(current_price)}'
+        target_label = 'support' if support_p else ('-1σ' if lower_1sd else 'max pain')
         trade_ideas.append({
             'title': 'BEARISH PUT',
             'type': 'bearish',
-            'condition': f'Price stays below ${_fp(resistance_p)} (resistance)',
+            'condition': cond,
             'action': f'Buy put near ${_fp(strike_p)}',
-            'target': f'${_fp(target_p)} ({("support" if support_p else "-1σ") if target_p != max_pain_price else "max pain"})' if target_p else 'Next support',
-            'stop': f'Close above ${_fp(resistance_p)}',
+            'target': f'${_fp(target_p)} ({target_label})' if target_p else 'Next support',
+            'stop': stop,
             'rationale': ' + '.join(rationale_parts)
         })
     else:
         # Neutral — wait for level touch
         rationale_parts = [f'Score {composite_score} (neutral)']
-        if support_p and resistance_p:
+        if eff_support or eff_resistance:
+            sup_txt = f'${_fp(eff_support)} ({"support" if support_p else "-1σ"})' if eff_support else '?'
+            res_txt = f'${_fp(eff_resistance)} ({"resistance" if resistance_p else "+1σ"})' if eff_resistance else '?'
             trade_ideas.append({
                 'title': 'RANGE PLAY',
                 'type': 'neutral',
-                'condition': f'Price reaches ${_fp(support_p)} (support) or ${_fp(resistance_p)} (resistance)',
+                'condition': f'Price reaches {sup_txt} or {res_txt}',
                 'action': f'Buy call at support / Buy put at resistance',
                 'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range',
                 'stop': f'Break beyond the touched level',
