@@ -9,6 +9,7 @@ Authentication: Uses OAuth2 with client_id, client_secret, and refresh_token.
 
 import os
 import re
+import math
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
@@ -2546,16 +2547,41 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                 best = {'strike': strike, 'price': round(price, 2), 'delta': round(d, 2) if d is not None else None}
         return best
 
+    def _bs_price(S, K, T, sigma, opt_type, r=0.045):
+        """Black-Scholes option price. S=spot, K=strike, T=years, sigma=IV, r=risk-free."""
+        if S <= 0 or K <= 0:
+            return 0.0
+        if T <= 0 or sigma <= 0:
+            # At expiry: intrinsic only
+            if opt_type == 'call':
+                return max(0.0, S - K)
+            return max(0.0, K - S)
+        sqrt_T = math.sqrt(T)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+        d2 = d1 - sigma * sqrt_T
+        nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+        nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+        if opt_type == 'call':
+            return S * nd1 - K * math.exp(-r * T) * nd2
+        else:
+            return K * math.exp(-r * T) * (1 - nd2) - S * (1 - nd1)
+
     def _calc_rr(premium, strike, target_p, opt_type):
-        """Risk:Reward for long option. Risk=premium. Reward=intrinsic at target - premium."""
+        """Risk:Reward using Black-Scholes. Estimates option value at target including time value."""
         if not premium or premium <= 0 or not target_p:
             return None
         tp = float(target_p)
-        if opt_type == 'call':
-            intrinsic = max(0, tp - strike)
+        T = max(dte - 1, 0) / 365.0 if dte and dte > 0 else 0
+        iv = atm_iv if atm_iv and atm_iv > 0 else None
+        if iv and T > 0:
+            value_at_target = _bs_price(tp, strike, T, iv, opt_type)
         else:
-            intrinsic = max(0, strike - tp)
-        reward = intrinsic - premium
+            # Fallback to intrinsic-only for 0DTE or missing IV
+            if opt_type == 'call':
+                value_at_target = max(0.0, tp - strike)
+            else:
+                value_at_target = max(0.0, strike - tp)
+        reward = value_at_target - premium
         if reward <= 0:
             return None
         return round(reward / premium, 1)
