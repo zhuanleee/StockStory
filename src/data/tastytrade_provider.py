@@ -2638,166 +2638,249 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
     trade_ideas = []
 
     # =====================================================================
-    # 1. PRIMARY DIRECTIONAL TRADE
+    # 1. PRIMARY DIRECTIONAL TRADE — Position-aware
     # =====================================================================
-    # Delta targets: .35 for standard directional, .50 ATM for short DTE gamma plays
     dir_delta = 0.50 if (dte is not None and dte <= 5) else 0.35
+    NEAR_PCT = 1.0  # within 1% = "near" a level
 
-    if composite_score >= 55:
-        opt = _find_by_delta(dir_delta, 'call', opts)
-        target_p = resistance_p or upper_1sd or max_pain_price
+    # --- Position analysis ---
+    def _abs_pct(level):
+        """Absolute % distance from current price to level."""
+        if not level or not current_price:
+            return None
+        return round(abs((float(level) - current_price) / current_price * 100), 2)
 
-        # Build rationale
+    d_sup = _abs_pct(eff_support)
+    d_res = _abs_pct(eff_resistance)
+    price_above_sup = eff_support and current_price > float(eff_support)
+    price_below_res = eff_resistance and current_price < float(eff_resistance)
+
+    near_sup = price_above_sup and d_sup is not None and d_sup <= NEAR_PCT
+    near_res = price_below_res and d_res is not None and d_res <= NEAR_PCT
+    above_res = eff_resistance and current_price >= float(eff_resistance)
+    below_sup = eff_support and current_price <= float(eff_support)
+
+    pos_gex = dealer_flow_score >= 60
+    neg_gex = dealer_flow_score <= 35
+
+    sup_lbl = 'support' if support_p else '-1σ'
+    res_lbl = 'resistance' if resistance_p else '+1σ'
+
+    # --- Rationale builder ---
+    def _rationale():
         parts = [f'Score {composite_score}']
-        if net_flow == 'bullish':
-            parts.append('bullish flow')
-        if dealer_flow_score >= 60:
-            parts.append('+GEX')
+        if net_flow != 'neutral':
+            parts.append(f'{net_flow} flow')
+        if pos_gex:
+            parts.append('+GEX (stabilizing)')
+        elif neg_gex:
+            parts.append('-GEX (amplifying)')
         if iv_note:
             parts.append(iv_note)
         if dte_note:
             parts.append(dte_note)
+        return ' + '.join(parts)
 
-        # Condition / Stop
-        if eff_support:
-            cond = f'Price holds above ${_fp(eff_support)} ({"support" if support_p else "-1σ"})'
-        else:
-            cond = 'Bullish bias holds'
+    rat = _rationale()
 
-        # Action
-        action = _fmt_action(opt, 'call', exp_label, dte_label) or f'Buy call (~Δ.{int(dir_delta*100)})'
-
-        # R:R and max loss
-        rr = None
-        stop_txt = ''
-        if opt and eff_support:
-            rr = _calc_rr(opt['price'], opt['strike'], target_p, 'call')
-            stop_txt = f'Below ${_fp(eff_support)} — max loss ${opt["price"]:.2f}'
-        elif opt:
-            stop_txt = f'Max loss ${opt["price"]:.2f}'
-        else:
-            stop_txt = f'Close below ${_fp(eff_support)}' if eff_support else f'Below ${_fp(current_price)}'
-
-        target_label = 'resistance' if resistance_p else ('+1σ' if upper_1sd else 'max pain')
-        target_txt = f'${_fp(target_p)} ({target_label})'
+    # --- Helper to build a trade dict with R:R ---
+    def _mk_trade(title, ttype, opt, opt_type, cond, target_p, target_lbl, stop_p, stop_lbl):
+        action = _fmt_action(opt, opt_type, exp_label, dte_label) or f'Buy {opt_type} (~Δ.{int(dir_delta*100)})'
+        rr = _calc_rr(opt['price'], opt['strike'], target_p, opt_type) if opt and target_p else None
+        target_txt = f'${_fp(target_p)} ({target_lbl})' if target_p else f'Next {"resistance" if opt_type == "call" else "support"}'
         if rr:
             target_txt += f' — R:R {rr}:1'
-        elif target_p:
-            pass
-        else:
-            target_txt = 'Next resistance'
-
-        trade_ideas.append({
-            'title': 'BULLISH CALL',
-            'type': 'bullish',
+        stop_txt = f'${_fp(stop_p)} ({stop_lbl})' if stop_p else ''
+        if opt:
+            stop_txt += f' — max loss ${opt["price"]:.2f}' if stop_txt else f'Max loss ${opt["price"]:.2f}'
+        return {
+            'title': title,
+            'type': ttype,
             'confidence': confidence,
             'condition': cond,
             'action': action,
             'target': target_txt,
             'stop': stop_txt,
-            'rationale': ' + '.join(parts)
-        })
+            'rationale': rat
+        }
 
-    elif composite_score < 45:
-        opt = _find_by_delta(dir_delta, 'put', opts)
-        target_p = support_p or lower_1sd or max_pain_price
-
-        parts = [f'Score {composite_score}']
-        if net_flow == 'bearish':
-            parts.append('bearish flow')
-        if dealer_flow_score <= 35:
-            parts.append('-GEX')
-        if iv_note:
-            parts.append(iv_note)
-        if dte_note:
-            parts.append(dte_note)
-
-        if eff_resistance:
-            cond = f'Price stays below ${_fp(eff_resistance)} ({"resistance" if resistance_p else "+1σ"})'
+    # --- Scenario-based primary trade ---
+    if above_res:
+        # EXTENDED ABOVE RESISTANCE
+        cond = f'Price ${_fp(current_price)} above {res_lbl} ${_fp(eff_resistance)} (+{d_res:.1f}%)'
+        if pos_gex or composite_score < 55:
+            # Mean reversion / fade
+            opt = _find_by_delta(dir_delta, 'put', opts)
+            target_p = eff_resistance  # revert back to resistance
+            stop_p = upper_1sd if upper_1sd and float(upper_1sd) > current_price else None
+            trade_ideas.append(_mk_trade(
+                'FADE EXTENSION', 'bearish', opt, 'put',
+                cond + ' — dealers stabilizing, reversion likely' if pos_gex else cond + ' — no bullish conviction',
+                target_p, res_lbl, stop_p, '+1σ' if stop_p else ''
+            ))
         else:
-            cond = 'Bearish bias holds'
+            # Bullish momentum
+            opt = _find_by_delta(dir_delta, 'call', opts)
+            target_p = upper_1sd or None
+            stop_p = eff_resistance  # now acts as support
+            trade_ideas.append(_mk_trade(
+                'MOMENTUM CALL', 'bullish', opt, 'call',
+                cond + f' — {res_lbl} now support, -GEX amplifying' if neg_gex else cond + f' — breakout continuation',
+                target_p, '+1σ', stop_p, f'{res_lbl} (now support)'
+            ))
 
-        action = _fmt_action(opt, 'put', exp_label, dte_label) or f'Buy put (~Δ.{int(dir_delta*100)})'
-
-        rr = None
-        stop_txt = ''
-        if opt and eff_resistance:
-            rr = _calc_rr(opt['price'], opt['strike'], target_p, 'put')
-            stop_txt = f'Above ${_fp(eff_resistance)} — max loss ${opt["price"]:.2f}'
-        elif opt:
-            stop_txt = f'Max loss ${opt["price"]:.2f}'
+    elif below_sup:
+        # EXTENDED BELOW SUPPORT
+        cond = f'Price ${_fp(current_price)} below {sup_lbl} ${_fp(eff_support)} (-{d_sup:.1f}%)'
+        if pos_gex or composite_score >= 45:
+            # Mean reversion / bounce
+            opt = _find_by_delta(dir_delta, 'call', opts)
+            target_p = eff_support  # bounce back to support
+            stop_p = lower_1sd if lower_1sd and float(lower_1sd) < current_price else None
+            trade_ideas.append(_mk_trade(
+                'BOUNCE CALL', 'bullish', opt, 'call',
+                cond + ' — dealers stabilizing, bounce likely' if pos_gex else cond + ' — not bearish, bounce setup',
+                target_p, sup_lbl, stop_p, '-1σ' if stop_p else ''
+            ))
         else:
-            stop_txt = f'Close above ${_fp(eff_resistance)}' if eff_resistance else f'Above ${_fp(current_price)}'
+            # Bearish momentum
+            opt = _find_by_delta(dir_delta, 'put', opts)
+            target_p = lower_1sd or None
+            stop_p = eff_support  # now acts as resistance
+            trade_ideas.append(_mk_trade(
+                'MOMENTUM PUT', 'bearish', opt, 'put',
+                cond + f' — {sup_lbl} now resistance, -GEX amplifying' if neg_gex else cond + f' — breakdown continuation',
+                target_p, '-1σ', stop_p, f'{sup_lbl} (now resistance)'
+            ))
 
-        target_label = 'support' if support_p else ('-1σ' if lower_1sd else 'max pain')
-        target_txt = f'${_fp(target_p)} ({target_label})'
-        if rr:
-            target_txt += f' — R:R {rr}:1'
-        elif not target_p:
-            target_txt = 'Next support'
+    elif near_sup:
+        # AT SUPPORT
+        cond = f'Price ${_fp(current_price)} near {sup_lbl} ${_fp(eff_support)} ({d_sup:.1f}% above)'
+        if composite_score >= 45:
+            # Not bearish → bounce
+            opt = _find_by_delta(dir_delta, 'call', opts)
+            target_p = eff_resistance or max_pain_price
+            t_lbl = res_lbl if eff_resistance else 'max pain'
+            stop_p = eff_support
+            trade_ideas.append(_mk_trade(
+                'SUPPORT BOUNCE', 'bullish', opt, 'call',
+                cond + ' — hold = bounce setup',
+                target_p, t_lbl, stop_p, f'below {sup_lbl}'
+            ))
+        else:
+            # Bearish → break
+            opt = _find_by_delta(dir_delta, 'put', opts)
+            target_p = lower_1sd or None
+            stop_p = eff_support
+            # Adjust stop slightly above support for break trade
+            trade_ideas.append(_mk_trade(
+                'SUPPORT BREAK', 'bearish', opt, 'put',
+                cond + ' — bearish pressure, breakdown setup',
+                target_p, '-1σ', stop_p, f'above {sup_lbl}'
+            ))
 
-        trade_ideas.append({
-            'title': 'BEARISH PUT',
-            'type': 'bearish',
-            'confidence': confidence,
-            'condition': cond,
-            'action': action,
-            'target': target_txt,
-            'stop': stop_txt,
-            'rationale': ' + '.join(parts)
-        })
+    elif near_res:
+        # AT RESISTANCE
+        cond = f'Price ${_fp(current_price)} near {res_lbl} ${_fp(eff_resistance)} ({d_res:.1f}% below)'
+        if composite_score >= 55:
+            # Bullish → breakout
+            opt = _find_by_delta(dir_delta, 'call', opts)
+            target_p = upper_1sd or None
+            stop_p = eff_resistance
+            trade_ideas.append(_mk_trade(
+                'BREAKOUT CALL', 'bullish', opt, 'call',
+                cond + ' — bullish flow targeting breakout',
+                target_p, '+1σ', stop_p, f'below {res_lbl}'
+            ))
+        else:
+            # Not bullish → rejection
+            opt = _find_by_delta(dir_delta, 'put', opts)
+            target_p = eff_support or max_pain_price
+            t_lbl = sup_lbl if eff_support else 'max pain'
+            stop_p = eff_resistance
+            trade_ideas.append(_mk_trade(
+                'RESISTANCE REJECTION', 'bearish', opt, 'put',
+                cond + ' — rejection likely' if composite_score < 45 else cond + ' — no bullish conviction, fade likely',
+                target_p, t_lbl, stop_p, f'above {res_lbl}'
+            ))
 
     else:
-        # Neutral — if confidence is low, recommend NO TRADE
-        parts = [f'Score {composite_score}']
-        if iv_note:
-            parts.append(iv_note)
-        if dte_note:
-            parts.append(dte_note)
+        # MID-RANGE
+        if composite_score >= 55:
+            opt = _find_by_delta(dir_delta, 'call', opts)
+            target_p = eff_resistance or max_pain_price
+            t_lbl = res_lbl if eff_resistance else 'max pain'
+            stop_p = eff_support
+            mid_cond = f'Price ${_fp(current_price)}'
+            if d_res is not None:
+                mid_cond += f', {d_res:.1f}% below {res_lbl} ${_fp(eff_resistance)} — bullish flow targeting breakout'
+            else:
+                mid_cond += ' — bullish bias holds'
+            trade_ideas.append(_mk_trade(
+                'BULLISH CALL', 'bullish', opt, 'call',
+                mid_cond, target_p, t_lbl, stop_p, sup_lbl if eff_support else ''
+            ))
 
-        if confidence == 'low' or (not eff_support and not eff_resistance):
-            trade_ideas.append({
-                'title': 'NO CLEAR EDGE',
-                'type': 'neutral',
-                'confidence': 'low',
-                'condition': 'Signals are mixed — wait for clarity',
-                'action': 'Stay flat or reduce size',
-                'target': '--',
-                'stop': '--',
-                'rationale': ' + '.join(parts)
-            })
+        elif composite_score < 45:
+            opt = _find_by_delta(dir_delta, 'put', opts)
+            target_p = eff_support or max_pain_price
+            t_lbl = sup_lbl if eff_support else 'max pain'
+            stop_p = eff_resistance
+            mid_cond = f'Price ${_fp(current_price)}'
+            if d_sup is not None:
+                mid_cond += f', {d_sup:.1f}% above {sup_lbl} ${_fp(eff_support)} — bearish flow targeting breakdown'
+            else:
+                mid_cond += ' — bearish bias holds'
+            trade_ideas.append(_mk_trade(
+                'BEARISH PUT', 'bearish', opt, 'put',
+                mid_cond, target_p, t_lbl, stop_p, res_lbl if eff_resistance else ''
+            ))
+
         else:
-            # Range play with specific contracts
-            call_opt = _find_by_delta(0.40, 'call', opts) if eff_support else None
-            put_opt = _find_by_delta(0.40, 'put', opts) if eff_resistance else None
-            sup_lbl = 'support' if support_p else '-1σ'
-            res_lbl = 'resistance' if resistance_p else '+1σ'
+            # Neutral mid-range
+            parts = [f'Score {composite_score}']
+            if iv_note:
+                parts.append(iv_note)
+            if dte_note:
+                parts.append(dte_note)
 
-            action_parts = []
-            if call_opt:
-                action_parts.append(f'At {sup_lbl} → ${_fp(call_opt["strike"])} call @ ${call_opt["price"]:.2f}')
-            if put_opt:
-                action_parts.append(f'At {res_lbl} → ${_fp(put_opt["strike"])} put @ ${put_opt["price"]:.2f}')
-            action_txt = ' | '.join(action_parts) if action_parts else 'Buy call at support / put at resistance'
-            if exp_label and action_parts:
-                action_txt += f' ({exp_label}, {dte_label})'
-
-            max_loss_parts = []
-            if call_opt:
-                max_loss_parts.append(f'${call_opt["price"]:.2f}')
-            if put_opt:
-                max_loss_parts.append(f'${put_opt["price"]:.2f}')
-
-            trade_ideas.append({
-                'title': 'RANGE PLAY',
-                'type': 'neutral',
-                'confidence': confidence,
-                'condition': f'Price touches ${_fp(eff_support)} ({sup_lbl}) or ${_fp(eff_resistance)} ({res_lbl})',
-                'action': action_txt,
-                'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range reversion',
-                'stop': f'Break beyond level — max loss {" or ".join(max_loss_parts)}' if max_loss_parts else 'Break beyond level',
-                'rationale': ' + '.join(parts)
-            })
+            if confidence == 'low' or (not eff_support and not eff_resistance):
+                trade_ideas.append({
+                    'title': 'NO CLEAR EDGE',
+                    'type': 'neutral',
+                    'confidence': 'low',
+                    'condition': 'Signals are mixed — wait for clarity',
+                    'action': 'Stay flat or reduce size',
+                    'target': '--',
+                    'stop': '--',
+                    'rationale': ' + '.join(parts)
+                })
+            else:
+                call_opt = _find_by_delta(0.40, 'call', opts) if eff_support else None
+                put_opt = _find_by_delta(0.40, 'put', opts) if eff_resistance else None
+                action_parts = []
+                if call_opt:
+                    action_parts.append(f'At {sup_lbl} → ${_fp(call_opt["strike"])} call @ ${call_opt["price"]:.2f}')
+                if put_opt:
+                    action_parts.append(f'At {res_lbl} → ${_fp(put_opt["strike"])} put @ ${put_opt["price"]:.2f}')
+                action_txt = ' | '.join(action_parts) if action_parts else 'Buy call at support / put at resistance'
+                if exp_label and action_parts:
+                    action_txt += f' ({exp_label}, {dte_label})'
+                max_loss_parts = []
+                if call_opt:
+                    max_loss_parts.append(f'${call_opt["price"]:.2f}')
+                if put_opt:
+                    max_loss_parts.append(f'${put_opt["price"]:.2f}')
+                trade_ideas.append({
+                    'title': 'RANGE PLAY',
+                    'type': 'neutral',
+                    'confidence': confidence,
+                    'condition': f'Price ${_fp(current_price)} mid-range between {sup_lbl} ${_fp(eff_support)} and {res_lbl} ${_fp(eff_resistance)}',
+                    'action': action_txt,
+                    'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range reversion',
+                    'stop': f'Break beyond level — max loss {" or ".join(max_loss_parts)}' if max_loss_parts else 'Break beyond level',
+                    'rationale': ' + '.join(parts)
+                })
 
     # =====================================================================
     # 2. BREAKOUT TRADE (only if squeeze_score >= 60)
