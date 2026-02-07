@@ -6371,6 +6371,34 @@ Provide brief JSON interpretation:
         return results
 
     # =============================================================================
+    # SWING TRADE TRACKER
+    # =============================================================================
+
+    @web_app.post("/options/swing-trade/analyze", tags=["Swing Trade Tracker"])
+    async def swing_trade_analyze(request: dict):
+        """
+        Analyze active swing trades. Returns health scores, P&L, regime changes,
+        and action signals for each tracked position.
+
+        Body: {"trades": [{"ticker": "SPY", "strike": 600, "opt_type": "call",
+                           "entry_premium": 5.20, "expiration": "2025-03-21", ...}]}
+        Max 10 trades per request.
+        """
+        try:
+            from src.data.tastytrade_provider import analyze_swing_trades
+            trades = request.get('trades', [])
+            if not trades:
+                return {"ok": False, "error": "No trades provided"}
+            if len(trades) > 10:
+                return {"ok": False, "error": "Maximum 10 trades per request"}
+            result = await analyze_swing_trades(trades)
+            return {"ok": True, "data": result}
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    # =============================================================================
     # REST QUOTE FALLBACK
     # =============================================================================
 

@@ -2273,6 +2273,25 @@ def _xray_trade_zones(current_price: float, maxpain, gex_levels, gex, iv_delta, 
     }
 
 
+def _bs_price(S, K, T, sigma, opt_type, r=0.045):
+    """Black-Scholes option price. S=spot, K=strike, T=years, sigma=IV, r=risk-free."""
+    if S <= 0 or K <= 0:
+        return 0.0
+    if T <= 0 or sigma <= 0:
+        if opt_type == 'call':
+            return max(0.0, S - K)
+        return max(0.0, K - S)
+    sqrt_T = math.sqrt(T)
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
+    d2 = d1 - sigma * sqrt_T
+    nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
+    nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
+    if opt_type == 'call':
+        return S * nd1 - K * math.exp(-r * T) * nd2
+    else:
+        return K * math.exp(-r * T) * (1 - nd2) - S * (1 - nd1)
+
+
 def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                      current_price: float, maxpain, vol_surface: Dict,
                      term, trade_zones: Dict, dte: int = None,
@@ -2546,25 +2565,6 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                     d = None
                 best = {'strike': strike, 'price': round(price, 2), 'delta': round(d, 2) if d is not None else None}
         return best
-
-    def _bs_price(S, K, T, sigma, opt_type, r=0.045):
-        """Black-Scholes option price. S=spot, K=strike, T=years, sigma=IV, r=risk-free."""
-        if S <= 0 or K <= 0:
-            return 0.0
-        if T <= 0 or sigma <= 0:
-            # At expiry: intrinsic only
-            if opt_type == 'call':
-                return max(0.0, S - K)
-            return max(0.0, K - S)
-        sqrt_T = math.sqrt(T)
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
-        d2 = d1 - sigma * sqrt_T
-        nd1 = 0.5 * (1 + math.erf(d1 / math.sqrt(2)))
-        nd2 = 0.5 * (1 + math.erf(d2 / math.sqrt(2)))
-        if opt_type == 'call':
-            return S * nd1 - K * math.exp(-r * T) * nd2
-        else:
-            return K * math.exp(-r * T) * (1 - nd2) - S * (1 - nd1)
 
     def _calc_rr(premium, strike, target_p, opt_type):
         """Risk:Reward using Black-Scholes. Estimates option value at target including time value."""
@@ -3042,6 +3042,526 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
     }
 
 
+# =============================================================================
+# SWING TRADE TRACKER — Position Health Analysis
+# =============================================================================
+
+def _compute_hold_score(pnl_pct, dte, composite_score, composite_label,
+                        entry_label, opt_type, support_intact, resistance_intact,
+                        support_shifted_pct, resistance_shifted_pct,
+                        iv_helping, iv_change_pct, net_flow, entry_flow,
+                        squeeze_score, entry_squeeze, squeeze_building):
+    """Compute 0-100 hold score from 7 weighted factors."""
+    factors = []
+
+    # 1. P&L Momentum (15%)
+    if pnl_pct >= 100: s = 95
+    elif pnl_pct >= 50: s = 85
+    elif pnl_pct >= 20: s = 75
+    elif pnl_pct >= 0: s = 60
+    elif pnl_pct >= -20: s = 35
+    elif pnl_pct >= -50: s = 15
+    else: s = 5
+    factors.append({'name': 'pnl_momentum', 'score': s, 'weight': 15,
+                    'contribution': round(s * 15 / 100, 2)})
+
+    # 2. Time Decay Risk (15%)
+    if dte is None or dte >= 45: s = 85
+    elif dte >= 30: s = 70
+    elif dte >= 21: s = 55
+    elif dte >= 14: s = 35
+    elif dte >= 7: s = 20
+    else: s = 5
+    factors.append({'name': 'time_decay', 'score': s, 'weight': 15,
+                    'contribution': round(s * 15 / 100, 2)})
+
+    # 3. Regime Alignment (20%)
+    if opt_type == 'call':
+        s = min(100, max(0, composite_score))
+    else:
+        s = min(100, max(0, 100 - composite_score))
+    if entry_label and composite_label and entry_label != composite_label:
+        s = max(0, s - 20)
+    factors.append({'name': 'regime_alignment', 'score': s, 'weight': 20,
+                    'contribution': round(s * 20 / 100, 2)})
+
+    # 4. Level Integrity (15%)
+    s = 50
+    if opt_type == 'call':
+        if support_intact: s += 25
+        if support_shifted_pct and support_shifted_pct > 0: s += 25
+        elif support_shifted_pct and support_shifted_pct < -2: s -= 20
+    else:
+        if resistance_intact: s += 25
+        if resistance_shifted_pct and resistance_shifted_pct < 0: s += 25
+        elif resistance_shifted_pct and resistance_shifted_pct > 2: s -= 20
+    s = min(100, max(0, s))
+    factors.append({'name': 'level_integrity', 'score': s, 'weight': 15,
+                    'contribution': round(s * 15 / 100, 2)})
+
+    # 5. IV Trend (10%)
+    s = 50
+    if iv_helping is True:
+        s = 70
+        if iv_change_pct and abs(iv_change_pct) > 10: s += 15
+    elif iv_helping is False:
+        s = 30
+        if iv_change_pct and abs(iv_change_pct) > 10: s -= 15
+    s = min(100, max(0, s))
+    factors.append({'name': 'iv_trend', 'score': s, 'weight': 10,
+                    'contribution': round(s * 10 / 100, 2)})
+
+    # 6. Smart Money (15%)
+    s = 50
+    flow_match = (opt_type == 'call' and net_flow == 'bullish') or \
+                 (opt_type == 'put' and net_flow == 'bearish')
+    if flow_match: s += 30
+    entry_match = (entry_flow and net_flow == entry_flow)
+    if entry_match: s += 20
+    s = min(100, max(0, s))
+    factors.append({'name': 'smart_money', 'score': s, 'weight': 15,
+                    'contribution': round(s * 15 / 100, 2)})
+
+    # 7. Squeeze/Catalyst (10%)
+    s = 50
+    if squeeze_building: s += 30
+    if squeeze_score and squeeze_score >= 60: s += 20
+    if entry_squeeze and squeeze_score and squeeze_score < entry_squeeze - 20:
+        s -= 25  # fizzled
+    s = min(100, max(0, s))
+    factors.append({'name': 'squeeze_catalyst', 'score': s, 'weight': 10,
+                    'contribution': round(s * 10 / 100, 2)})
+
+    total = sum(f['contribution'] for f in factors)
+    total = min(100, max(0, round(total)))
+
+    if total >= 80: label = 'STRONG HOLD'
+    elif total >= 60: label = 'HOLD'
+    elif total >= 45: label = 'MONITOR'
+    elif total >= 30: label = 'REDUCE'
+    else: label = 'EXIT'
+
+    return {'score': total, 'label': label, 'factors': factors}
+
+
+def _generate_action_signal(hold_label, pnl_pct, pnl_dollar, opt_type, dte,
+                            composite_label, entry_label, support, resistance,
+                            iv_helping, net_flow):
+    """Generate actionable text advice based on hold score and conditions."""
+    parts = []
+
+    if hold_label == 'STRONG HOLD':
+        parts.append(f'Trade profitable +{pnl_pct:.1f}%' if pnl_pct > 0 else 'Position healthy')
+        if composite_label:
+            parts.append(f'regime {composite_label}')
+        if support and opt_type == 'call':
+            parts.append(f'trail stop to ${support:.0f}')
+        elif resistance and opt_type == 'put':
+            parts.append(f'trail stop to ${resistance:.0f}')
+        return '. '.join(parts) + '. Hold and let it run.'
+
+    elif hold_label == 'HOLD':
+        parts.append(f'P&L {pnl_pct:+.1f}%')
+        if dte and dte < 21:
+            parts.append(f'{dte} DTE — watch theta')
+        return '. '.join(parts) + '. Continue holding, set alerts at key levels.'
+
+    elif hold_label == 'MONITOR':
+        if entry_label and composite_label and entry_label != composite_label:
+            parts.append(f'Regime shifted from {entry_label} to {composite_label}')
+        if iv_helping is False:
+            parts.append('IV moving against position')
+        if dte and dte < 14:
+            parts.append(f'Only {dte} DTE remaining')
+        return '. '.join(parts) + '. Consider reducing size or tightening stops.' if parts else 'Mixed signals. Tighten stops and watch closely.'
+
+    elif hold_label == 'REDUCE':
+        if pnl_pct < -20:
+            parts.append(f'Down {pnl_pct:.1f}%')
+        if entry_label and composite_label and entry_label != composite_label:
+            parts.append(f'regime flipped to {composite_label}')
+        if iv_helping is False:
+            parts.append('IV declining')
+        return '. '.join(parts) + '. Consider reducing 50%.' if parts else 'Conditions deteriorating. Consider reducing 50%.'
+
+    else:  # EXIT
+        if dte and dte <= 5 and pnl_pct < -30:
+            return f'Only {dte} DTE, deep loss {pnl_pct:.1f}%. Exit to preserve capital.'
+        if entry_label and composite_label and entry_label != composite_label:
+            return f'Regime flipped from {entry_label} to {composite_label}. P&L {pnl_pct:+.1f}%. Exit now.'
+        return f'P&L {pnl_pct:+.1f}%, conditions unfavorable. Exit position.'
+
+
+def _analyze_single_trade(trade, xray, chain_options):
+    """Analyze a single swing trade against fresh X-Ray and chain data."""
+    try:
+        opt_type = trade.get('opt_type', 'call')
+        strike = float(trade.get('strike', 0))
+        entry_premium = float(trade.get('entry_premium', 0))
+        entry_date = trade.get('entry_date', '')
+        expiration = trade.get('expiration', '')
+
+        current_price = xray.get('current_price', 0)
+        dte = xray.get('dte')
+
+        # --- Look up current option in chain ---
+        current_premium = None
+        greeks = {}
+        for o in (chain_options or []):
+            leg = o.get(opt_type)
+            if not leg:
+                continue
+            s = float(o.get('strike', 0))
+            if abs(s - strike) < 0.01:
+                p = float(leg.get('price', 0) or 0)
+                if p > 0:
+                    current_premium = p
+                greeks = {
+                    'delta': leg.get('delta'),
+                    'gamma': leg.get('gamma'),
+                    'theta': leg.get('theta'),
+                    'vega': leg.get('vega'),
+                    'iv': leg.get('iv'),
+                }
+                break
+
+        # BS fallback for current premium
+        if not current_premium and current_price > 0 and strike > 0 and dte:
+            atm_iv = None
+            iv_delta = xray.get('vol_surface', {})
+            if iv_delta:
+                # Try to get ATM IV from vol surface
+                atm_iv_raw = iv_delta.get('atm_iv')
+                if atm_iv_raw:
+                    try:
+                        atm_iv = float(atm_iv_raw)
+                    except (ValueError, TypeError):
+                        pass
+            if atm_iv and atm_iv > 0:
+                T = max(dte, 0) / 365.0
+                current_premium = round(_bs_price(current_price, strike, T, atm_iv, opt_type), 2)
+
+        if current_premium is None:
+            return {'error': 'Could not determine current premium', 'strike': strike,
+                    'opt_type': opt_type, 'signal': 'MANUAL CHECK'}
+
+        # --- P&L Block ---
+        pnl_dollar = round(current_premium - entry_premium, 2)
+        pnl_pct = round((pnl_dollar / entry_premium) * 100, 2) if entry_premium > 0 else 0
+        pnl_dollar_100 = round(pnl_dollar * 100, 2)
+
+        if opt_type == 'call':
+            intrinsic = max(0, current_price - strike)
+        else:
+            intrinsic = max(0, strike - current_price)
+        extrinsic = max(0, round(current_premium - intrinsic, 2))
+
+        if opt_type == 'call':
+            breakeven = strike + entry_premium
+        else:
+            breakeven = strike - entry_premium
+
+        pnl = {
+            'current_premium': round(current_premium, 2),
+            'entry_premium': round(entry_premium, 2),
+            'pnl_dollar': pnl_dollar,
+            'pnl_percent': pnl_pct,
+            'pnl_dollar_100': pnl_dollar_100,
+            'intrinsic': round(intrinsic, 2),
+            'extrinsic': round(extrinsic, 2),
+            'breakeven': round(breakeven, 2)
+        }
+
+        # --- Greeks Block ---
+        theta_val = None
+        vega_val = None
+        iv_val = None
+        try:
+            if greeks.get('theta'): theta_val = float(greeks['theta'])
+            if greeks.get('vega'): vega_val = float(greeks['vega'])
+            if greeks.get('iv'): iv_val = float(greeks['iv'])
+        except (ValueError, TypeError):
+            pass
+
+        greeks_out = {
+            'delta': greeks.get('delta'),
+            'gamma': greeks.get('gamma'),
+            'theta': greeks.get('theta'),
+            'vega': greeks.get('vega'),
+            'iv': greeks.get('iv'),
+            'theta_dollar': round(abs(theta_val) * 100, 2) if theta_val else None,
+            'vega_dollar': round(abs(vega_val) * 100, 2) if vega_val else None,
+        }
+
+        # --- Theta Burn Block ---
+        daily_decay = abs(theta_val) if theta_val else None
+        total_extrinsic = extrinsic
+        days_of_theta = round(total_extrinsic / daily_decay, 1) if daily_decay and daily_decay > 0 else None
+        breakeven_days = round(pnl_dollar / daily_decay, 1) if daily_decay and daily_decay > 0 and pnl_dollar > 0 else None
+        decay_accelerating = dte is not None and dte < 21
+
+        theta_burn = {
+            'dte': dte,
+            'daily_decay_cost': round(daily_decay * 100, 2) if daily_decay else None,
+            'total_extrinsic': round(total_extrinsic, 2),
+            'days_of_theta': days_of_theta,
+            'breakeven_days': breakeven_days,
+            'decay_accelerating': decay_accelerating
+        }
+
+        # --- Regime Monitor ---
+        composite = xray.get('composite', {})
+        current_score = composite.get('score', 50)
+        current_label = composite.get('label', 'NEUTRAL')
+        entry_score = trade.get('entry_composite_score')
+        entry_label = trade.get('entry_composite_label')
+        entry_flow = trade.get('entry_net_flow')
+        entry_gex = trade.get('entry_gex_regime')
+
+        smart_money = xray.get('smart_money', {})
+        net_flow = smart_money.get('net_flow', 'neutral')
+
+        # GEX regime from dealer flow
+        dealer_flow = xray.get('dealer_flow', {})
+        gex_regime = 'stabilizing'
+        levels = dealer_flow.get('levels', [])
+        if levels:
+            at_price = min(levels, key=lambda l: abs(l.get('price', 0) - current_price), default={})
+            gex_regime = at_price.get('regime', 'stabilizing')
+
+        label_changed = bool(entry_label and current_label != entry_label)
+        flow_aligned = (opt_type == 'call' and net_flow == 'bullish') or \
+                       (opt_type == 'put' and net_flow == 'bearish')
+        gex_aligned = (opt_type == 'call' and gex_regime == 'stabilizing') or \
+                      (opt_type == 'put' and gex_regime == 'amplifying')
+
+        regime = {
+            'current_score': current_score,
+            'current_label': current_label,
+            'entry_score': entry_score,
+            'entry_label': entry_label,
+            'label_changed': label_changed,
+            'net_flow': net_flow,
+            'entry_flow': entry_flow,
+            'flow_aligned': flow_aligned,
+            'gex_regime': gex_regime,
+            'entry_gex': entry_gex,
+            'gex_aligned': gex_aligned
+        }
+
+        # --- Level Proximity ---
+        trade_zones = xray.get('trade_zones', {})
+        support = trade_zones.get('support')
+        resistance = trade_zones.get('resistance')
+        gamma_flip = trade_zones.get('gamma_flip')
+        max_pain = trade_zones.get('max_pain')
+
+        entry_support = trade.get('entry_support')
+        entry_resistance = trade.get('entry_resistance')
+
+        def _dist_pct(level):
+            if not level or not current_price: return None
+            return round((float(level) - current_price) / current_price * 100, 2)
+
+        support_intact = bool(support and entry_support and float(support) >= float(entry_support) * 0.98)
+        resistance_intact = bool(resistance and entry_resistance and float(resistance) <= float(entry_resistance) * 1.02)
+        support_shifted_pct = round((float(support) - float(entry_support)) / float(entry_support) * 100, 2) \
+            if support and entry_support and float(entry_support) > 0 else None
+        resistance_shifted_pct = round((float(resistance) - float(entry_resistance)) / float(entry_resistance) * 100, 2) \
+            if resistance and entry_resistance and float(entry_resistance) > 0 else None
+
+        levels_out = {
+            'support': support, 'resistance': resistance,
+            'gamma_flip': gamma_flip, 'max_pain': max_pain,
+            'dist_to_support': _dist_pct(support),
+            'dist_to_resistance': _dist_pct(resistance),
+            'dist_to_gamma_flip': _dist_pct(gamma_flip),
+            'support_intact': support_intact,
+            'resistance_intact': resistance_intact,
+            'support_shifted_pct': support_shifted_pct,
+            'resistance_shifted_pct': resistance_shifted_pct,
+        }
+
+        # --- IV Monitor ---
+        entry_iv = trade.get('entry_atm_iv')
+        current_atm_iv = None
+        vol_surface = xray.get('vol_surface', {})
+        if vol_surface:
+            raw = vol_surface.get('atm_iv')
+            if raw:
+                try: current_atm_iv = float(raw)
+                except (ValueError, TypeError): pass
+
+        iv_change_pct = None
+        vega_pnl = None
+        iv_helping = None
+        if current_atm_iv and entry_iv:
+            try:
+                entry_iv_f = float(entry_iv)
+                if entry_iv_f > 0:
+                    iv_change_pct = round((current_atm_iv - entry_iv_f) / entry_iv_f * 100, 2)
+                    if vega_val:
+                        iv_diff_abs = current_atm_iv - entry_iv_f
+                        vega_pnl = round(iv_diff_abs * abs(vega_val) * 100, 2)
+                    # Long options: IV up helps, IV down hurts
+                    iv_helping = iv_change_pct > 0
+            except (ValueError, TypeError):
+                pass
+
+        iv_monitor = {
+            'current_atm_iv': current_atm_iv,
+            'entry_iv': entry_iv,
+            'iv_change_pct': iv_change_pct,
+            'vega_pnl': vega_pnl,
+            'iv_helping': iv_helping
+        }
+
+        # --- Squeeze Status ---
+        squeeze = xray.get('squeeze_pin', {})
+        squeeze_score = squeeze.get('squeeze_score', 0)
+        entry_squeeze = trade.get('entry_squeeze_score')
+        catalyst_building = bool(entry_squeeze is not None and squeeze_score > (entry_squeeze or 0))
+        squeeze_triggered = squeeze.get('squeeze_trigger_price') is not None and \
+            ((opt_type == 'call' and current_price >= float(squeeze.get('squeeze_trigger_price', 0))) or
+             (opt_type == 'put' and current_price <= float(squeeze.get('squeeze_trigger_price', 0))))
+
+        squeeze_status = {
+            'current_score': squeeze_score,
+            'entry_score': entry_squeeze,
+            'catalyst_building': catalyst_building,
+            'squeeze_triggered': squeeze_triggered
+        }
+
+        # --- Dynamic Targets ---
+        if opt_type == 'call':
+            new_target = resistance if resistance else None
+            new_stop = support if support else None
+        else:
+            new_target = support if support else None
+            new_stop = resistance if resistance else None
+
+        # Revised R:R
+        revised_rr = None
+        if new_target and current_premium > 0 and dte:
+            T = max(dte - 1, 0) / 365.0
+            iv_for_rr = current_atm_iv or (float(entry_iv) if entry_iv else None)
+            if iv_for_rr and T > 0:
+                val_at_tgt = _bs_price(float(new_target), strike, T, iv_for_rr, opt_type)
+                reward = val_at_tgt - current_premium
+                if reward > 0:
+                    revised_rr = round(reward / current_premium, 1)
+
+        dynamic_targets = {
+            'target': new_target,
+            'stop': new_stop,
+            'revised_rr': revised_rr,
+        }
+
+        # --- Hold Score ---
+        hold = _compute_hold_score(
+            pnl_pct=pnl_pct, dte=dte,
+            composite_score=current_score, composite_label=current_label,
+            entry_label=entry_label, opt_type=opt_type,
+            support_intact=support_intact, resistance_intact=resistance_intact,
+            support_shifted_pct=support_shifted_pct, resistance_shifted_pct=resistance_shifted_pct,
+            iv_helping=iv_helping, iv_change_pct=iv_change_pct,
+            net_flow=net_flow, entry_flow=entry_flow,
+            squeeze_score=squeeze_score, entry_squeeze=entry_squeeze,
+            squeeze_building=catalyst_building
+        )
+
+        # --- Action Signal ---
+        signal = _generate_action_signal(
+            hold_label=hold['label'], pnl_pct=pnl_pct, pnl_dollar=pnl_dollar,
+            opt_type=opt_type, dte=dte, composite_label=current_label,
+            entry_label=entry_label, support=float(support) if support else None,
+            resistance=float(resistance) if resistance else None,
+            iv_helping=iv_helping, net_flow=net_flow
+        )
+
+        return {
+            'ticker': trade.get('ticker'),
+            'strike': strike,
+            'opt_type': opt_type,
+            'expiration': expiration,
+            'current_price': current_price,
+            'pnl': pnl,
+            'greeks': greeks_out,
+            'theta_burn': theta_burn,
+            'regime': regime,
+            'levels': levels_out,
+            'iv_monitor': iv_monitor,
+            'squeeze': squeeze_status,
+            'dynamic_targets': dynamic_targets,
+            'hold': hold,
+            'signal': signal,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error analyzing swing trade {trade.get('ticker')} {trade.get('strike')}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {'error': str(e), 'ticker': trade.get('ticker'),
+                'strike': trade.get('strike'), 'signal': 'MANUAL CHECK'}
+
+
+async def analyze_swing_trades(trades: list) -> Dict:
+    """Analyze multiple swing trades. Groups by ticker to minimize API calls."""
+    if not trades or len(trades) == 0:
+        return {'trades': [], 'batch_meta': {'count': 0}}
+
+    trades = trades[:10]  # Max 10
+
+    # Group trades by ticker
+    from collections import defaultdict
+    by_ticker = defaultdict(list)
+    for t in trades:
+        tk = t.get('ticker', '').upper()
+        if tk:
+            by_ticker[tk].append(t)
+
+    results = []
+
+    for ticker, ticker_trades in by_ticker.items():
+        try:
+            # Fetch X-Ray data (has built-in 120s cache)
+            xray = await compute_market_xray(ticker)
+            if 'error' in xray:
+                for t in ticker_trades:
+                    results.append({'error': xray['error'], 'ticker': ticker,
+                                    'strike': t.get('strike'), 'signal': 'MANUAL CHECK'})
+                continue
+
+            # Get chain options for strike lookup
+            chain_options = []
+            try:
+                chain = await get_options_with_greeks_tastytrade(ticker, xray.get('expiration'))
+                if chain and isinstance(chain, dict):
+                    chain_options = chain.get('options', [])
+            except Exception:
+                pass
+
+            for t in ticker_trades:
+                result = _analyze_single_trade(t, xray, chain_options)
+                results.append(result)
+
+        except Exception as e:
+            logger.error(f"Error analyzing trades for {ticker}: {e}")
+            for t in ticker_trades:
+                results.append({'error': str(e), 'ticker': ticker,
+                                'strike': t.get('strike'), 'signal': 'MANUAL CHECK'})
+
+    return {
+        'trades': results,
+        'batch_meta': {
+            'count': len(results),
+            'tickers': list(by_ticker.keys()),
+            'timestamp': datetime.now().isoformat()
+        }
+    }
+
+
 def is_tastytrade_available() -> bool:
     """Check if Tastytrade OAuth2 credentials are configured."""
     # Unofficial SDK only needs client_secret and refresh_token
@@ -3309,4 +3829,6 @@ __all__ = [
     'is_futures_ticker',
     'get_futures_option_chain_tastytrade',
     'get_futures_front_month_symbol',
+    # Swing trade tracker
+    'analyze_swing_trades',
 ]
