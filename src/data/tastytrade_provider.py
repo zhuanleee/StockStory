@@ -1792,6 +1792,42 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None) -> Dict
         gex_by_strike = gex.get('gex_by_strike', []) if gex and isinstance(gex, dict) else []
         total_gex = gex.get('total_gex', 0) if gex and isinstance(gex, dict) else 0
 
+        # Check if tastytrade GEX data is usable (non-zero)
+        gex_usable = gex_by_strike and any(abs(g.get('net_gex', 0)) > 0 for g in gex_by_strike)
+
+        # Fallback to Polygon for equities when tastytrade GEX is empty/zero
+        if not is_futures and not gex_usable:
+            try:
+                from src.data.options import calculate_gex_by_strike, get_gex_levels
+
+                poly_gex = calculate_gex_by_strike(ticker, expiration_used)
+                if poly_gex and 'error' not in poly_gex:
+                    gex_by_strike = poly_gex.get('gex_by_strike', [])
+                    total_gex = poly_gex.get('total_gex', 0) or 0
+                    logger.info(f"X-Ray: Using Polygon GEX fallback for {ticker} ({len(gex_by_strike)} strikes)")
+
+                poly_levels = get_gex_levels(ticker, expiration_used)
+                if poly_levels and 'error' not in poly_levels:
+                    gex_levels = poly_levels
+                    logger.info(f"X-Ray: Using Polygon GEX levels fallback for {ticker}")
+            except Exception as e:
+                logger.warning(f"Polygon GEX fallback failed for {ticker}: {e}")
+
+        # Check if max pain is usable
+        mp_usable = (maxpain and isinstance(maxpain, dict) and
+                     (maxpain.get('max_pain_price') or maxpain.get('max_pain_strike') or maxpain.get('max_pain')))
+
+        if not is_futures and not mp_usable:
+            try:
+                from src.data.options import calculate_max_pain
+
+                poly_mp = calculate_max_pain(ticker, expiration_used)
+                if poly_mp and 'error' not in poly_mp:
+                    maxpain = poly_mp
+                    logger.info(f"X-Ray: Using Polygon max pain fallback for {ticker}")
+            except Exception as e:
+                logger.warning(f"Polygon max pain fallback failed for {ticker}: {e}")
+
         # =====================================================================
         # MODULE 1 - DEALER HEDGING FLOW MAP
         # =====================================================================
