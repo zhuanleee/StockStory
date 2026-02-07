@@ -8,6 +8,7 @@ Authentication: Uses OAuth2 with client_id, client_secret, and refresh_token.
 """
 
 import os
+import re
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
@@ -25,7 +26,17 @@ _tasty_client = None
 import time as _time
 _gex_cache = {}  # key: (ticker, expiration) -> {'result': dict, 'ts': float}
 _gex_locks = {}  # key: (ticker, expiration) -> asyncio.Lock
-_GEX_CACHE_TTL = 30  # seconds
+_GEX_CACHE_TTL = 120  # seconds (2 min - GEX data doesn't change frequently)
+
+# Max Pain calculation cache (same pattern as GEX)
+_maxpain_cache = {}  # key: (ticker, expiration) -> {'result': dict, 'ts': float}
+_maxpain_locks = {}  # key: (ticker, expiration) -> asyncio.Lock
+_MAXPAIN_CACHE_TTL = 120  # seconds
+
+# X-Ray calculation cache (same pattern as GEX)
+_xray_cache = {}  # key: (ticker, expiration) -> {'result': dict, 'ts': float}
+_xray_locks = {}  # key: (ticker, expiration) -> asyncio.Lock
+_XRAY_CACHE_TTL = 120  # seconds
 
 def get_tastytrade_session():
     """
@@ -78,6 +89,14 @@ def get_tastytrade_session():
         _session = None
         _session_expiry = None
         return None
+
+
+def invalidate_session():
+    """Force the next call to create a fresh Tastytrade session."""
+    global _session, _session_expiry
+    _session = None
+    _session_expiry = None
+    logger.info("Tastytrade session invalidated — will refresh on next call")
 
 
 def is_futures_ticker(ticker: str) -> bool:
@@ -547,7 +566,34 @@ def get_expirations_tastytrade(ticker: str) -> Optional[Dict]:
 async def calculate_max_pain_tastytrade(ticker: str, expiration: str = None) -> Dict:
     """
     Calculate Max Pain for futures using Tastytrade chain data + OI from DXLinkStreamer.
+    Uses a TTL cache + async lock to prevent concurrent DXLinkStreamer connections.
     """
+    cache_key = (ticker.upper(), expiration)
+
+    # Check cache
+    cached = _maxpain_cache.get(cache_key)
+    if cached and (_time.time() - cached['ts']) < _MAXPAIN_CACHE_TTL:
+        logger.info(f"MaxPain cache hit for {cache_key}")
+        return cached['result']
+
+    # Acquire per-key lock to prevent concurrent DXLink streams
+    if cache_key not in _maxpain_locks:
+        _maxpain_locks[cache_key] = asyncio.Lock()
+    async with _maxpain_locks[cache_key]:
+        # Double-check cache after acquiring lock
+        cached = _maxpain_cache.get(cache_key)
+        if cached and (_time.time() - cached['ts']) < _MAXPAIN_CACHE_TTL:
+            logger.info(f"MaxPain cache hit (post-lock) for {cache_key}")
+            return cached['result']
+
+        result = await _calculate_max_pain_tastytrade_impl(ticker, expiration)
+        if 'error' not in result:
+            _maxpain_cache[cache_key] = {'result': result, 'ts': _time.time()}
+        return result
+
+
+async def _calculate_max_pain_tastytrade_impl(ticker: str, expiration: str = None) -> Dict:
+    """Internal implementation of Max Pain calculation (not cached)."""
     session = get_tastytrade_session()
     if not session:
         return {"error": "Tastytrade session not available"}
@@ -642,13 +688,17 @@ async def calculate_max_pain_tastytrade(ticker: str, expiration: str = None) -> 
             except Exception:
                 pass
 
-            # Collect OI
-            start = time.time()
+            # Collect OI (0.5s per-event timeout — events arrive in rapid bursts)
+            import asyncio as _aio
+            summary_iter = streamer.listen(Summary).__aiter__()
             received = 0
-            async for summary in streamer.listen(Summary):
-                oi_data[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
-                received += 1
-                if received >= len(all_symbols) or time.time() - start > 15:
+            start = time.time()
+            while received < len(all_symbols) and time.time() - start < 10:
+                try:
+                    summary = await _aio.wait_for(summary_iter.__anext__(), timeout=0.5)
+                    oi_data[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
+                    received += 1
+                except (_aio.TimeoutError, StopAsyncIteration):
                     break
 
         # Calculate max pain
@@ -849,25 +899,32 @@ async def _calculate_gex_tastytrade_impl(ticker: str, expiration: str = None) ->
             except Exception:
                 pass
 
-            # Collect Greeks
-            start = time.time()
+            # Collect Greeks (0.5s per-event timeout — events arrive in rapid bursts)
+            import asyncio as _aio
+            greeks_iter = streamer.listen(Greeks).__aiter__()
             received = 0
-            async for greek in streamer.listen(Greeks):
-                greeks_map[greek.event_symbol] = {
-                    'gamma': float(greek.gamma) if greek.gamma else 0.0,
-                    'delta': float(greek.delta) if greek.delta else 0.0,
-                }
-                received += 1
-                if received >= len(all_symbols) or time.time() - start > 15:
+            start = time.time()
+            while received < len(all_symbols) and time.time() - start < 10:
+                try:
+                    greek = await _aio.wait_for(greeks_iter.__anext__(), timeout=0.5)
+                    greeks_map[greek.event_symbol] = {
+                        'gamma': float(greek.gamma) if greek.gamma else 0.0,
+                        'delta': float(greek.delta) if greek.delta else 0.0,
+                    }
+                    received += 1
+                except (_aio.TimeoutError, StopAsyncIteration):
                     break
 
-            # Collect OI
-            start = time.time()
+            # Collect OI (0.5s per-event timeout — events arrive in rapid bursts)
+            summary_iter = streamer.listen(Summary).__aiter__()
             received = 0
-            async for summary in streamer.listen(Summary):
-                oi_map[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
-                received += 1
-                if received >= len(all_symbols) or time.time() - start > 15:
+            start = time.time()
+            while received < len(all_symbols) and time.time() - start < 10:
+                try:
+                    summary = await _aio.wait_for(summary_iter.__anext__(), timeout=0.5)
+                    oi_map[summary.event_symbol] = int(getattr(summary, 'open_interest', 0) or 0)
+                    received += 1
+                except (_aio.TimeoutError, StopAsyncIteration):
                     break
 
         # Calculate GEX by strike
@@ -1585,6 +1642,947 @@ async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Op
         'lower_1_5x_em': round(current_price - (expected_move * 1.5), 2),
         'lower_2x_em': round(current_price - (expected_move * 2), 2),
         'source': 'tastytrade'
+    }
+
+
+async def compute_market_xray(ticker: str, expiration: str = None) -> Dict:
+    """Market X-Ray: institutional edge scanner combining 6 derived signal modules."""
+    cache_key = (ticker.upper(), expiration)
+    cached = _xray_cache.get(cache_key)
+    if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
+        return cached['result']
+    if cache_key not in _xray_locks:
+        _xray_locks[cache_key] = asyncio.Lock()
+    async with _xray_locks[cache_key]:
+        cached = _xray_cache.get(cache_key)
+        if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
+            return cached['result']
+        result = await _compute_market_xray_impl(ticker, expiration)
+        if 'error' not in result:
+            _xray_cache[cache_key] = {'result': result, 'ts': _time.time()}
+        return result
+
+
+async def _xray_fetch_quote(ticker: str) -> Optional[float]:
+    """Fetch current price via Tastytrade REST API (no streaming needed)."""
+    try:
+        session = get_tastytrade_session()
+        if not session:
+            return None
+        from tastytrade.market_data import get_market_data
+        from tastytrade.order import InstrumentType
+        if is_futures_ticker(ticker):
+            sym = get_futures_streamer_symbol(session, ticker) or get_futures_front_month_symbol(ticker)
+            md = await get_market_data(session, sym, InstrumentType.FUTURE)
+        else:
+            md = await get_market_data(session, ticker.upper(), InstrumentType.EQUITY)
+        if md:
+            for attr in ('mark', 'last', 'mid', 'close', 'prev_close', 'day_close'):
+                val = getattr(md, attr, None)
+                if val is not None and float(val) > 0:
+                    logger.info(f"X-Ray price for {ticker} from REST ({attr}): {val}")
+                    return float(val)
+    except Exception as e:
+        logger.warning(f"X-Ray REST quote failed for {ticker}: {e}")
+    return None
+
+
+async def _compute_market_xray_impl(ticker: str, expiration: str = None) -> Dict:
+    """Internal implementation of Market X-Ray (not cached)."""
+    try:
+        # Fetch all data in parallel (including live quote)
+        chain, gex, maxpain, gex_levels, iv_delta, term, em, live_price = await asyncio.gather(
+            get_options_with_greeks_tastytrade(ticker, expiration),
+            calculate_gex_tastytrade(ticker, expiration),
+            calculate_max_pain_tastytrade(ticker, expiration),
+            get_gex_levels_tastytrade(ticker, expiration),
+            get_iv_by_delta_tastytrade(ticker, expiration),
+            get_term_structure_tastytrade(ticker),
+            get_expected_move_tastytrade(ticker),
+            _xray_fetch_quote(ticker),
+            return_exceptions=True
+        )
+
+        # Handle exceptions from gather
+        if isinstance(chain, Exception) or chain is None:
+            return {'error': f'Failed to fetch options chain: {chain}', 'ticker': ticker}
+        if isinstance(gex, Exception):
+            gex = None
+        if isinstance(maxpain, Exception):
+            maxpain = None
+        if isinstance(gex_levels, Exception):
+            gex_levels = None
+        if isinstance(iv_delta, Exception):
+            iv_delta = None
+        if isinstance(term, Exception):
+            term = None
+        if isinstance(em, Exception):
+            em = None
+        if isinstance(live_price, Exception):
+            live_price = None
+
+        # Determine current price — try multiple sources
+        current_price = None
+        # 1) Live quote (most reliable)
+        if live_price and live_price > 0:
+            current_price = float(live_price)
+        # 2) GEX current_price
+        if not current_price and gex and isinstance(gex, dict) and gex.get('current_price'):
+            current_price = float(gex['current_price'])
+        # 3) Expected move current_price
+        if not current_price and em and isinstance(em, dict) and em.get('current_price'):
+            current_price = float(em['current_price'])
+        # 4) ATM strike from chain — multiple strategies
+        if not current_price:
+            options_list = chain.get('options', [])
+            # 4a) Put-call parity: strike where |call_price - put_price| is smallest
+            best_atm = None
+            best_diff = float('inf')
+            for o in options_list:
+                call = o.get('call')
+                put = o.get('put')
+                if call and put and call.get('price') and put.get('price'):
+                    cp = float(call['price'])
+                    pp = float(put['price'])
+                    if cp > 0 and pp > 0:
+                        diff = abs(cp - pp)
+                        if diff < best_diff:
+                            best_diff = diff
+                            best_atm = float(o['strike'])
+            if best_atm and best_atm > 0:
+                current_price = best_atm
+                logger.info(f"X-Ray price from put-call parity: {current_price}")
+        if not current_price:
+            # 4b) Delta-based: strike where call delta ≈ 0.5
+            options_list = chain.get('options', [])
+            best_atm = None
+            best_diff = float('inf')
+            for o in options_list:
+                call = o.get('call')
+                if call and call.get('delta') is not None:
+                    diff = abs(abs(float(call['delta'])) - 0.5)
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_atm = float(o['strike'])
+            if best_atm and best_atm > 0:
+                current_price = best_atm
+                logger.info(f"X-Ray price from delta: {current_price}")
+
+        if not current_price or current_price <= 0:
+            return {'error': 'Could not determine current price', 'ticker': ticker}
+
+        # Get expiration and DTE from chain
+        expiration_used = chain.get('expiration')
+        dte = chain.get('dte')
+
+        # Determine futures multiplier
+        is_futures = ticker.startswith('/')
+        if is_futures:
+            root = ticker.lstrip('/').split(':')[0].upper()
+            multiplier_map = {
+                'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2, 'YM': 5, 'RTY': 50,
+                'CL': 1000, 'NG': 10000, 'GC': 100, 'SI': 5000, 'HG': 25000,
+                'ZB': 1000, 'ZN': 1000, 'ZC': 50, 'ZS': 50, 'ZW': 50
+            }
+            multiplier = multiplier_map.get(root, 50)
+        else:
+            multiplier = 100
+
+        options = chain.get('options', [])
+        gex_by_strike = gex.get('gex_by_strike', []) if gex and isinstance(gex, dict) else []
+        total_gex = gex.get('total_gex', 0) if gex and isinstance(gex, dict) else 0
+
+        # =====================================================================
+        # MODULE 1 - DEALER HEDGING FLOW MAP
+        # =====================================================================
+        dealer_flow = _xray_dealer_flow(current_price, gex_by_strike)
+
+        # =====================================================================
+        # MODULE 2 - GAMMA SQUEEZE / PIN RISK
+        # =====================================================================
+        squeeze_pin = _xray_squeeze_pin(current_price, options, gex_by_strike, total_gex, dte)
+
+        # =====================================================================
+        # MODULE 3 - VOLATILITY SURFACE DISTORTION
+        # =====================================================================
+        vol_surface = _xray_vol_surface(options, iv_delta, term)
+
+        # =====================================================================
+        # MODULE 4 - SMART MONEY FOOTPRINT
+        # =====================================================================
+        smart_money = _xray_smart_money(options, multiplier)
+
+        # =====================================================================
+        # MODULE 5 - OPTIMAL TRADE ZONES
+        # =====================================================================
+        trade_zones = _xray_trade_zones(current_price, maxpain, gex_levels, gex, iv_delta, dte)
+
+        # =====================================================================
+        # MODULE 6 - COMPOSITE EDGE SCORE
+        # =====================================================================
+        composite = _xray_composite(
+            total_gex, squeeze_pin, smart_money, current_price,
+            maxpain, vol_surface, term, trade_zones, dte
+        )
+
+        return {
+            'ticker': ticker.upper(),
+            'expiration': expiration_used,
+            'current_price': current_price,
+            'dte': dte,
+            'dealer_flow': dealer_flow,
+            'squeeze_pin': squeeze_pin,
+            'vol_surface': vol_surface,
+            'smart_money': smart_money,
+            'trade_zones': trade_zones,
+            'composite': composite,
+            'source': 'tastytrade',
+            'timestamp': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error computing Market X-Ray for {ticker}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {'error': str(e), 'ticker': ticker}
+
+
+def _xray_dealer_flow(current_price: float, gex_by_strike: list) -> Dict:
+    """MODULE 1: Dealer Hedging Flow Map."""
+    levels = []
+    air_pockets = []
+
+    # Build price grid: 0.95x to 1.05x in 0.5% steps (21 levels)
+    price_levels = [current_price * (0.95 + i * 0.005) for i in range(21)]
+
+    for price in price_levels:
+        # Find closest strike's net_gex
+        closest_gex = 0
+        closest_dist = float('inf')
+        for g in gex_by_strike:
+            dist = abs(float(g['strike']) - price)
+            if dist < closest_dist:
+                closest_dist = dist
+                closest_gex = float(g.get('net_gex', 0))
+
+        regime = 'stabilizing' if closest_gex >= 0 else 'amplifying'
+        levels.append({
+            'price': round(price, 2),
+            'gex_value': round(closest_gex, 2),
+            'regime': regime
+        })
+
+    # Find air pockets: consecutive negative GEX below current price
+    below_levels = [l for l in levels if l['price'] < current_price]
+    pocket_start = None
+    for lv in below_levels:
+        if lv['regime'] == 'amplifying':
+            if pocket_start is None:
+                pocket_start = lv['price']
+        else:
+            if pocket_start is not None:
+                air_pockets.append({
+                    'from_price': round(pocket_start, 2),
+                    'to_price': round(lv['price'], 2)
+                })
+                pocket_start = None
+    # Close any open pocket at the bottom
+    if pocket_start is not None and below_levels:
+        air_pockets.append({
+            'from_price': round(pocket_start, 2),
+            'to_price': round(below_levels[-1]['price'], 2)
+        })
+
+    return {
+        'levels': levels,
+        'air_pockets': air_pockets,
+        'current_price': current_price
+    }
+
+
+def _xray_squeeze_pin(current_price: float, options: list, gex_by_strike: list,
+                       total_gex: float, dte) -> Dict:
+    """MODULE 2: Gamma Squeeze / Pin Risk."""
+    # ATM range: within 2% of current price
+    atm_range = current_price * 0.02
+    atm_options = [o for o in options if abs(float(o['strike']) - current_price) <= atm_range]
+
+    # --- Squeeze Score ---
+    call_gamma_sum = 0
+    put_gamma_sum = 0
+    call_vol_sum = 0
+    put_vol_sum = 0
+    call_oi_sum = 0
+    put_oi_sum = 0
+    max_call_gamma_strike = None
+    max_call_gamma_val = 0
+    max_put_gamma_strike = None
+    max_put_gamma_val = 0
+
+    for o in atm_options:
+        call = o.get('call')
+        put = o.get('put')
+        strike = float(o['strike'])
+
+        if call:
+            cg = float(call.get('gamma', 0) or 0)
+            cv = float(call.get('volume', 0) or 0)
+            co = float(call.get('open_interest', 0) or 0)
+            call_gamma_sum += cg
+            call_vol_sum += cv
+            call_oi_sum += co
+            if cg > max_call_gamma_val:
+                max_call_gamma_val = cg
+                max_call_gamma_strike = strike
+
+        if put:
+            pg = float(put.get('gamma', 0) or 0)
+            pv = float(put.get('volume', 0) or 0)
+            po = float(put.get('open_interest', 0) or 0)
+            put_gamma_sum += pg
+            put_vol_sum += pv
+            put_oi_sum += po
+            if pg > max_put_gamma_val:
+                max_put_gamma_val = pg
+                max_put_gamma_strike = strike
+
+    call_vol_oi_ratio = call_vol_sum / max(call_oi_sum, 1)
+    put_vol_oi_ratio = put_vol_sum / max(put_oi_sum, 1)
+
+    # Check negative GEX below/above current price
+    neg_gex_below = any(
+        float(g.get('net_gex', 0)) < 0 and float(g['strike']) < current_price
+        for g in gex_by_strike
+    )
+    neg_gex_above = any(
+        float(g.get('net_gex', 0)) < 0 and float(g['strike']) > current_price
+        for g in gex_by_strike
+    )
+
+    # Normalize gamma concentration (0-1 scale)
+    call_gamma_conc = min(1.0, call_gamma_sum / max(0.001, call_gamma_sum + put_gamma_sum))
+    put_gamma_conc = min(1.0, put_gamma_sum / max(0.001, call_gamma_sum + put_gamma_sum))
+
+    squeeze_up = min(100, int(
+        call_gamma_conc * 30 +
+        min(1.0, call_vol_oi_ratio) * 40 +
+        (30 if neg_gex_below else 0)
+    ))
+    squeeze_down = min(100, int(
+        put_gamma_conc * 30 +
+        min(1.0, put_vol_oi_ratio) * 40 +
+        (30 if neg_gex_above else 0)
+    ))
+
+    squeeze_score = max(squeeze_up, squeeze_down)
+    squeeze_direction = 'up' if squeeze_up > squeeze_down else 'down'
+    squeeze_trigger = max_call_gamma_strike if squeeze_direction == 'up' else max_put_gamma_strike
+
+    # --- Pin Score ---
+    pin_range = current_price * 0.03
+    nearby_options = [o for o in options if abs(float(o['strike']) - current_price) <= pin_range]
+
+    max_total_oi = 0
+    pin_strike = None
+    oi_values = []
+
+    for o in nearby_options:
+        call_oi = float((o.get('call') or {}).get('open_interest', 0) or 0)
+        put_oi = float((o.get('put') or {}).get('open_interest', 0) or 0)
+        total_oi = call_oi + put_oi
+        oi_values.append(total_oi)
+        if total_oi > max_total_oi:
+            max_total_oi = total_oi
+            pin_strike = float(o['strike'])
+
+    avg_oi = sum(oi_values) / max(len(oi_values), 1)
+    max_oi_concentration = min(1.0, max_total_oi / max(avg_oi, 1))
+
+    dte_val = float(dte) if dte else 0
+    dte_factor = max(0, 1 - dte_val / 7) if dte_val > 0 else 0
+    positive_gex_factor = min(1, max(0, total_gex / 1e8)) if total_gex > 0 else 0
+
+    pin_score = min(100, int(
+        max_oi_concentration * 40 +
+        dte_factor * 40 +
+        positive_gex_factor * 20
+    ))
+
+    # Explanation
+    parts = []
+    if squeeze_score >= 60:
+        parts.append(f"High squeeze potential {squeeze_direction} (score: {squeeze_score})")
+    elif squeeze_score >= 30:
+        parts.append(f"Moderate squeeze risk {squeeze_direction} (score: {squeeze_score})")
+    else:
+        parts.append(f"Low squeeze risk (score: {squeeze_score})")
+    if pin_score >= 60:
+        parts.append(f"Strong pin at {pin_strike} (score: {pin_score})")
+    elif pin_score >= 30:
+        parts.append(f"Moderate pin risk at {pin_strike} (score: {pin_score})")
+    else:
+        parts.append(f"Low pin risk (score: {pin_score})")
+
+    return {
+        'squeeze_score': squeeze_score,
+        'squeeze_direction': squeeze_direction,
+        'squeeze_trigger_price': squeeze_trigger,
+        'pin_score': pin_score,
+        'pin_strike': pin_strike,
+        'dte': dte,
+        'explanation': ' | '.join(parts)
+    }
+
+
+def _xray_vol_surface(options: list, iv_delta, term) -> Dict:
+    """MODULE 3: Volatility Surface Distortion."""
+    # Skew
+    skew_25d = None
+    skew_label = 'unknown'
+    if iv_delta and isinstance(iv_delta, dict):
+        p25 = iv_delta.get('put_25d_iv')
+        c25 = iv_delta.get('call_25d_iv')
+        if p25 is not None and c25 is not None:
+            skew_25d = float(p25) - float(c25)
+            if skew_25d > 0.05:
+                skew_label = 'steep'
+            elif skew_25d < 0.01:
+                skew_label = 'flat'
+            else:
+                skew_label = 'normal'
+
+    # Term structure
+    term_structure = None
+    term_signal = 'unknown'
+    if term and isinstance(term, dict):
+        term_structure = term.get('structure')
+        term_signal = term.get('signal', 'unknown')
+
+    # Cheapest gamma and richest theta from chain
+    gamma_theta_entries = []
+    for o in options:
+        for opt_type in ['call', 'put']:
+            leg = o.get(opt_type)
+            if not leg:
+                continue
+            gamma = float(leg.get('gamma', 0) or 0)
+            theta = float(leg.get('theta', 0) or 0)
+            if gamma > 0 and theta != 0:
+                ratio = abs(theta) / max(gamma, 0.0001)
+                gamma_theta_entries.append({
+                    'strike': float(o['strike']),
+                    'theta': theta,
+                    'gamma': gamma,
+                    'ratio': round(ratio, 4),
+                    'type': opt_type
+                })
+
+    # Sort ascending for cheapest gamma (lowest theta/gamma ratio)
+    sorted_asc = sorted(gamma_theta_entries, key=lambda x: x['ratio'])
+    cheapest_gamma = sorted_asc[:3]
+
+    # Sort descending for richest theta (highest theta/gamma ratio)
+    sorted_desc = sorted(gamma_theta_entries, key=lambda x: x['ratio'], reverse=True)
+    richest_theta = sorted_desc[:3]
+
+    return {
+        'skew_25d': round(skew_25d, 4) if skew_25d is not None else None,
+        'skew_label': skew_label,
+        'term_structure': term_structure,
+        'term_signal': term_signal,
+        'cheapest_gamma': cheapest_gamma,
+        'richest_theta': richest_theta
+    }
+
+
+def _xray_smart_money(options: list, multiplier: int) -> Dict:
+    """MODULE 4: Smart Money Footprint."""
+    fresh_positions = []
+    oi_by_strike = {}
+    call_notionals = {}
+    put_notionals = {}
+    total_call_notional = 0.0
+    total_put_notional = 0.0
+
+    for o in options:
+        strike = float(o['strike'])
+        call = o.get('call')
+        put = o.get('put')
+        call_oi = 0
+        put_oi = 0
+
+        if call:
+            c_vol = float(call.get('volume', 0) or 0)
+            c_oi = float(call.get('open_interest', 0) or 0)
+            c_price = float(call.get('price', 0) or 0)
+            call_oi = c_oi
+            c_notional = c_vol * c_price * multiplier
+            total_call_notional += c_notional
+            call_notionals[strike] = c_notional
+            if c_oi > 0 and c_vol / max(c_oi, 1) > 2.0:
+                fresh_positions.append({
+                    'type': 'call',
+                    'strike': strike,
+                    'volume': c_vol,
+                    'oi': c_oi,
+                    'ratio': round(c_vol / max(c_oi, 1), 2),
+                    'notional': round(c_notional, 2)
+                })
+
+        if put:
+            p_vol = float(put.get('volume', 0) or 0)
+            p_oi = float(put.get('open_interest', 0) or 0)
+            p_price = float(put.get('price', 0) or 0)
+            put_oi = p_oi
+            p_notional = p_vol * p_price * multiplier
+            total_put_notional += p_notional
+            put_notionals[strike] = p_notional
+            if p_oi > 0 and p_vol / max(p_oi, 1) > 2.0:
+                fresh_positions.append({
+                    'type': 'put',
+                    'strike': strike,
+                    'volume': p_vol,
+                    'oi': p_oi,
+                    'ratio': round(p_vol / max(p_oi, 1), 2),
+                    'notional': round(p_notional, 2)
+                })
+
+        oi_by_strike[strike] = call_oi + put_oi
+
+    # OI Walls: strikes where OI > 3x average of 10 neighbors
+    sorted_strikes = sorted(oi_by_strike.keys())
+    oi_walls = []
+    for i, strike in enumerate(sorted_strikes):
+        total_oi = oi_by_strike[strike]
+        if total_oi == 0:
+            continue
+        # Get 5 above and 5 below
+        start = max(0, i - 5)
+        end = min(len(sorted_strikes), i + 6)
+        neighbors = [oi_by_strike[sorted_strikes[j]] for j in range(start, end) if j != i]
+        avg_neighbor_oi = sum(neighbors) / max(len(neighbors), 1)
+        if avg_neighbor_oi > 0 and total_oi > 3 * avg_neighbor_oi:
+            oi_walls.append({
+                'strike': strike,
+                'total_oi': total_oi,
+                'avg_neighbor_oi': round(avg_neighbor_oi, 0)
+            })
+
+    # Sort and limit
+    fresh_positions.sort(key=lambda x: x.get('notional', 0), reverse=True)
+    oi_walls.sort(key=lambda x: x.get('total_oi', 0), reverse=True)
+
+    net_flow = 'bullish' if total_call_notional > total_put_notional else 'bearish'
+
+    return {
+        'net_flow': net_flow,
+        'total_call_notional': round(total_call_notional, 2),
+        'total_put_notional': round(total_put_notional, 2),
+        'fresh_positions': fresh_positions[:5],
+        'oi_walls': oi_walls[:5]
+    }
+
+
+def _xray_trade_zones(current_price: float, maxpain, gex_levels, gex, iv_delta, dte) -> Dict:
+    """MODULE 5: Optimal Trade Zones."""
+    # Max pain
+    max_pain_price = None
+    if maxpain and isinstance(maxpain, dict):
+        max_pain_price = maxpain.get('max_pain_price') or maxpain.get('max_pain_strike') or maxpain.get('max_pain')
+
+    dte_val = float(dte) if dte else 0
+    max_pain_pull = 1 / (1 + dte_val / 7) if dte_val > 0 else 0
+
+    # Support / Resistance from GEX levels
+    support = None
+    resistance = None
+    gamma_flip = None
+    if gex_levels and isinstance(gex_levels, dict):
+        support = gex_levels.get('put_wall') or gex_levels.get('nearest_support')
+        resistance = gex_levels.get('call_wall') or gex_levels.get('nearest_resistance')
+        gamma_flip = gex_levels.get('gamma_flip')
+    if gamma_flip is None and gex and isinstance(gex, dict):
+        gamma_flip = gex.get('zero_gamma_level')
+
+    # Expected move bands using asymmetric IV
+    upper_1sd = None
+    lower_1sd = None
+    upper_2sd = None
+    lower_2sd = None
+    if iv_delta and isinstance(iv_delta, dict) and current_price and dte_val > 0:
+        atm_iv_fallback = float(iv_delta.get('atm_iv', 0.3) or 0.3)
+        put_iv = float(iv_delta.get('put_25d_iv') or atm_iv_fallback)
+        call_iv = float(iv_delta.get('call_25d_iv') or atm_iv_fallback)
+        t = dte_val / 365.0
+        em_down_1sd = current_price * put_iv * (t ** 0.5)
+        em_up_1sd = current_price * call_iv * (t ** 0.5)
+        upper_1sd = round(current_price + em_up_1sd, 2)
+        lower_1sd = round(current_price - em_down_1sd, 2)
+        upper_2sd = round(current_price + 2 * em_up_1sd, 2)
+        lower_2sd = round(current_price - 2 * em_down_1sd, 2)
+
+    return {
+        'current_price': current_price,
+        'max_pain': max_pain_price,
+        'max_pain_pull': round(max_pain_pull, 4),
+        'support': support,
+        'resistance': resistance,
+        'gamma_flip': gamma_flip,
+        'upper_1sd': upper_1sd,
+        'lower_1sd': lower_1sd,
+        'upper_2sd': upper_2sd,
+        'lower_2sd': lower_2sd
+    }
+
+
+def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
+                     current_price: float, maxpain, vol_surface: Dict,
+                     term, trade_zones: Dict, dte: int = None) -> Dict:
+    """MODULE 6: Composite Edge Score (0-100)."""
+    factors = []
+
+    # 1. Dealer flow score (weight=20)
+    dealer_flow_score = 70 if total_gex > 0 else 30
+    factors.append({'name': 'dealer_flow', 'score': dealer_flow_score, 'weight': 20,
+                    'contribution': round(dealer_flow_score * 20 / 100, 2)})
+
+    # 2. Squeeze score (weight=15)
+    sq_dir = squeeze_pin.get('squeeze_direction', 'up')
+    sq_up = squeeze_pin.get('squeeze_score', 50)
+    # Infer squeeze_down vs squeeze_up
+    squeeze_score_adj = 70 if sq_dir == 'up' else 30
+    if sq_up == 0:
+        squeeze_score_adj = 50
+    factors.append({'name': 'squeeze', 'score': squeeze_score_adj, 'weight': 15,
+                    'contribution': round(squeeze_score_adj * 15 / 100, 2)})
+
+    # 3. Smart money score (weight=20)
+    total_call = smart_money.get('total_call_notional', 0)
+    total_put = smart_money.get('total_put_notional', 0)
+    total_flow = total_call + total_put
+    if total_flow > 0 and total_call > total_put:
+        smart_money_score = 50 + 50 * min(1, (total_call - total_put) / total_flow)
+    elif total_flow > 0:
+        smart_money_score = 50 - 50 * min(1, (total_put - total_call) / total_flow)
+    else:
+        smart_money_score = 50
+    smart_money_score = round(smart_money_score)
+    factors.append({'name': 'smart_money', 'score': smart_money_score, 'weight': 20,
+                    'contribution': round(smart_money_score * 20 / 100, 2)})
+
+    # 4. Price vs max pain (weight=10)
+    max_pain_price = None
+    if maxpain and isinstance(maxpain, dict):
+        max_pain_price = maxpain.get('max_pain_price') or maxpain.get('max_pain_strike') or maxpain.get('max_pain')
+    if max_pain_price and current_price:
+        mp = float(max_pain_price)
+        if current_price < mp:
+            # Price below max pain -> pull up -> bullish
+            maxpain_score = 60 + 40 * min(1, (mp - current_price) / (current_price * 0.03))
+        else:
+            # Price above max pain -> pull down -> bearish
+            maxpain_score = 40 - 40 * min(1, (current_price - mp) / (current_price * 0.03))
+            maxpain_score = max(0, maxpain_score)
+    else:
+        maxpain_score = 50
+    maxpain_score = round(maxpain_score)
+    factors.append({'name': 'price_vs_maxpain', 'score': maxpain_score, 'weight': 10,
+                    'contribution': round(maxpain_score * 10 / 100, 2)})
+
+    # 5. Skew score (weight=10)
+    skew_val = vol_surface.get('skew_25d')
+    if skew_val is not None:
+        if 0.01 <= skew_val <= 0.05:
+            skew_score = 70  # normal
+        elif skew_val > 0.05:
+            skew_score = 40  # steep / panic
+        else:
+            skew_score = 50  # flat
+    else:
+        skew_score = 50
+    factors.append({'name': 'skew', 'score': skew_score, 'weight': 10,
+                    'contribution': round(skew_score * 10 / 100, 2)})
+
+    # 6. Term structure score (weight=10)
+    term_struct = None
+    if term and isinstance(term, dict):
+        term_struct = term.get('structure')
+    if term_struct == 'contango':
+        term_score = 75
+    elif term_struct == 'backwardation':
+        term_score = 25
+    else:
+        term_score = 50
+    factors.append({'name': 'term', 'score': term_score, 'weight': 10,
+                    'contribution': round(term_score * 10 / 100, 2)})
+
+    # 7. Wall score (weight=15)
+    support = trade_zones.get('support')
+    resistance = trade_zones.get('resistance')
+    if support and resistance and current_price:
+        dist_support = abs(current_price - float(support))
+        dist_resistance = abs(float(resistance) - current_price)
+        total_dist = dist_support + dist_resistance
+        wall_score = round(dist_support / max(total_dist, 0.01) * 100) if total_dist > 0 else 50
+    else:
+        wall_score = 50
+    factors.append({'name': 'price_vs_walls', 'score': wall_score, 'weight': 15,
+                    'contribution': round(wall_score * 15 / 100, 2)})
+
+    # Composite
+    composite_score = sum(f['contribution'] for f in factors)
+    composite_score = round(min(100, max(0, composite_score)))
+
+    # Label
+    if composite_score >= 75:
+        label = 'STRONG BULLISH'
+    elif composite_score >= 60:
+        label = 'BULLISH'
+    elif composite_score >= 45:
+        label = 'NEUTRAL'
+    elif composite_score >= 30:
+        label = 'BEARISH'
+    else:
+        label = 'STRONG BEARISH'
+
+    interpretation_parts = []
+    if dealer_flow_score >= 50:
+        interpretation_parts.append('Positive dealer gamma (stabilizing)')
+    else:
+        interpretation_parts.append('Negative dealer gamma (amplifying)')
+    if smart_money_score >= 60:
+        interpretation_parts.append('Bullish options flow')
+    elif smart_money_score <= 40:
+        interpretation_parts.append('Bearish options flow')
+    if maxpain_score >= 60:
+        interpretation_parts.append(f'Price pulled toward max pain ({max_pain_price})')
+    interpretation = '. '.join(interpretation_parts) + '.' if interpretation_parts else 'Insufficient data.'
+
+    # === Generate Action Plan ===
+    actions = []
+
+    # 1. Directional bias
+    if composite_score >= 75:
+        actions.append({'type': 'bias', 'icon': 'bull', 'text': f'Strong bullish bias (score {composite_score}/100). Favor long delta strategies — calls, call spreads, or put credit spreads.'})
+    elif composite_score >= 60:
+        actions.append({'type': 'bias', 'icon': 'bull', 'text': f'Moderate bullish bias (score {composite_score}/100). Consider call debit spreads or put credit spreads with defined risk.'})
+    elif composite_score >= 45:
+        actions.append({'type': 'bias', 'icon': 'neutral', 'text': f'Neutral bias (score {composite_score}/100). Range-bound strategies favored — iron condors, strangles, or butterflies.'})
+    elif composite_score >= 30:
+        actions.append({'type': 'bias', 'icon': 'bear', 'text': f'Moderate bearish bias (score {composite_score}/100). Consider put debit spreads or call credit spreads with defined risk.'})
+    else:
+        actions.append({'type': 'bias', 'icon': 'bear', 'text': f'Strong bearish bias (score {composite_score}/100). Favor short delta strategies — puts, put spreads, or call credit spreads.'})
+
+    # 2. Dealer flow regime advice
+    if dealer_flow_score >= 60:
+        actions.append({'type': 'regime', 'icon': 'shield', 'text': 'Positive GEX regime — dealers are stabilizing. Mean reversion likely. Sell premium on extremes; fade moves away from max pain.'})
+    elif dealer_flow_score <= 35:
+        actions.append({'type': 'regime', 'icon': 'warning', 'text': 'Negative GEX regime — dealers amplify moves. Expect trending/volatile action. Avoid selling naked premium; use defined-risk or directional trades.'})
+    else:
+        actions.append({'type': 'regime', 'icon': 'info', 'text': 'Transitional GEX regime — mixed dealer positioning. Smaller size recommended until regime clarifies.'})
+
+    # 3. Squeeze/Pin advice
+    sq_score = squeeze_pin.get('squeeze_score', 0)
+    pin_score_val = squeeze_pin.get('pin_score', 0)
+    sq_dir = squeeze_pin.get('squeeze_direction', 'none')
+    if sq_score >= 70:
+        sq_trigger = squeeze_pin.get('squeeze_trigger_price', '')
+        trigger_txt = f' above ${sq_trigger}' if sq_trigger and sq_dir == 'up' else (f' below ${sq_trigger}' if sq_trigger else '')
+        actions.append({'type': 'squeeze', 'icon': 'rocket', 'text': f'High gamma squeeze potential {sq_dir}{trigger_txt} (score {sq_score}). Breakout{trigger_txt} could accelerate sharply. Consider long options or debit spreads in the squeeze direction.'})
+    if pin_score_val >= 70:
+        pin_strike = squeeze_pin.get('pin_strike', '')
+        actions.append({'type': 'pin', 'icon': 'pin', 'text': f'High pin risk at ${pin_strike} (score {pin_score_val}). Price likely magnetized to this strike into expiry. Consider butterflies centered at ${pin_strike}.'})
+
+    # 4. Vol surface advice
+    skew_label = vol_surface.get('skew_label', '')
+    term_label = vol_surface.get('term_signal', vol_surface.get('term_label', ''))
+    cheapest = vol_surface.get('cheapest_gamma', [])
+    richest = vol_surface.get('richest_theta', [])
+    if skew_label == 'steep':
+        actions.append({'type': 'vol', 'icon': 'chart', 'text': 'Put skew is steep — downside protection is expensive. Consider selling put spreads (high premium) or risk reversals (sell puts, buy calls).'})
+    elif skew_label == 'flat':
+        actions.append({'type': 'vol', 'icon': 'chart', 'text': 'Put skew is flat — downside protection is cheap. Good time to buy protective puts or put debit spreads.'})
+    if term_label == 'inverted' or (term and isinstance(term, dict) and term.get('structure') == 'backwardation'):
+        actions.append({'type': 'vol', 'icon': 'warning', 'text': 'Term structure inverted (backwardation) — near-term fear elevated. Calendar spreads risky. Prefer front-month defined risk or wait for resolution.'})
+    if cheapest and len(cheapest) > 0:
+        cg = cheapest[0]
+        tg = cg.get("ratio", cg.get("tg_ratio", ""))
+        try:
+            tg_str = f'{float(tg):.1f}'
+        except (ValueError, TypeError):
+            tg_str = str(tg)
+        actions.append({'type': 'vol', 'icon': 'target', 'text': f'Cheapest gamma: {cg.get("type","").upper()} ${cg.get("strike","")} (|T|/G ratio {tg_str}). Best bang-for-buck directional bet if expecting a move.'})
+
+    # 5. Smart money insight
+    net_flow = smart_money.get('net_flow', 'neutral')
+    total_call_n = float(smart_money.get('total_call_notional', 0) or 0)
+    total_put_n = float(smart_money.get('total_put_notional', 0) or 0)
+    if net_flow == 'bullish' and total_call_n > 0:
+        actions.append({'type': 'flow', 'icon': 'money', 'text': f'Institutional flow is bullish — ${total_call_n/1e6:.1f}M calls vs ${total_put_n/1e6:.1f}M puts. Smart money positioning supports upside.'})
+    elif net_flow == 'bearish' and total_put_n > 0:
+        actions.append({'type': 'flow', 'icon': 'money', 'text': f'Institutional flow is bearish — ${total_put_n/1e6:.1f}M puts vs ${total_call_n/1e6:.1f}M calls. Smart money positioning favors downside.'})
+
+    # 6. Key levels
+    tz = trade_zones
+    level_parts = []
+    if tz.get('support'):
+        level_parts.append(f"Support: ${tz['support']}")
+    if tz.get('gamma_flip'):
+        level_parts.append(f"Gamma Flip: ${tz['gamma_flip']}")
+    if max_pain_price:
+        level_parts.append(f"Max Pain: ${max_pain_price}")
+    if tz.get('resistance'):
+        level_parts.append(f"Resistance: ${tz['resistance']}")
+    if level_parts:
+        actions.append({'type': 'levels', 'icon': 'levels', 'text': 'Key levels — ' + ' | '.join(level_parts) + '. Set alerts at these prices for entry/exit triggers.'})
+
+    # 7. Risk warning
+    if dte is not None and dte <= 3:
+        actions.append({'type': 'risk', 'icon': 'warning', 'text': f'Expiration in {dte} days — gamma risk extreme. Expect large intraday swings. Reduce position size or close before expiry.'})
+    elif dte is not None and dte <= 7:
+        actions.append({'type': 'risk', 'icon': 'info', 'text': f'Expiration in {dte} days — theta decay accelerating. Time spreads and short premium benefit; long options lose value fast.'})
+
+    # === Generate Trade Ideas (2-3 max) ===
+    def _fp(price):
+        """Format price: 2 decimals <100, 1 decimal <1000, 0 decimals >=1000."""
+        try:
+            p = float(price)
+            if p >= 1000:
+                return f'{p:,.0f}'
+            elif p >= 100:
+                return f'{p:,.1f}'
+            else:
+                return f'{p:,.2f}'
+        except (ValueError, TypeError):
+            return str(price)
+
+    tz = trade_zones
+    support_p = tz.get('support')
+    resistance_p = tz.get('resistance')
+    gamma_flip_p = tz.get('gamma_flip')
+    upper_1sd = tz.get('upper_1sd')
+    lower_1sd = tz.get('lower_1sd')
+
+    # Get cheapest gamma info
+    cg_strike = None
+    cg_type = None
+    if cheapest and len(cheapest) > 0:
+        cg_strike = cheapest[0].get('strike')
+        cg_type = cheapest[0].get('type', '').lower()
+
+    net_flow = smart_money.get('net_flow', 'neutral')
+    sq_score_raw = squeeze_pin.get('squeeze_score', 0)
+    sq_trigger = squeeze_pin.get('squeeze_trigger_price')
+    sq_dir_raw = squeeze_pin.get('squeeze_direction', 'up')
+
+    trade_ideas = []
+
+    # 1. Primary Trade (always generated)
+    if composite_score >= 55 and support_p:
+        strike_p = cg_strike if (cg_strike and cg_type == 'call') else current_price
+        target_p = resistance_p or upper_1sd or max_pain_price
+        rationale_parts = [f'Score {composite_score}']
+        if net_flow == 'bullish':
+            rationale_parts.append('bullish institutional flow')
+        if dealer_flow_score >= 60:
+            rationale_parts.append('positive GEX (stabilizing)')
+        trade_ideas.append({
+            'title': 'BULLISH CALL',
+            'type': 'bullish',
+            'condition': f'Price holds above ${_fp(support_p)} (support)',
+            'action': f'Buy call near ${_fp(strike_p)}',
+            'target': f'${_fp(target_p)} ({("resistance" if resistance_p else "+1σ") if target_p != max_pain_price else "max pain"})' if target_p else 'Next resistance',
+            'stop': f'Close below ${_fp(support_p)}',
+            'rationale': ' + '.join(rationale_parts)
+        })
+    elif composite_score < 45 and resistance_p:
+        strike_p = cg_strike if (cg_strike and cg_type == 'put') else current_price
+        target_p = support_p or lower_1sd or max_pain_price
+        rationale_parts = [f'Score {composite_score}']
+        if net_flow == 'bearish':
+            rationale_parts.append('bearish institutional flow')
+        if dealer_flow_score <= 35:
+            rationale_parts.append('negative GEX (amplifying)')
+        trade_ideas.append({
+            'title': 'BEARISH PUT',
+            'type': 'bearish',
+            'condition': f'Price stays below ${_fp(resistance_p)} (resistance)',
+            'action': f'Buy put near ${_fp(strike_p)}',
+            'target': f'${_fp(target_p)} ({("support" if support_p else "-1σ") if target_p != max_pain_price else "max pain"})' if target_p else 'Next support',
+            'stop': f'Close above ${_fp(resistance_p)}',
+            'rationale': ' + '.join(rationale_parts)
+        })
+    else:
+        # Neutral — wait for level touch
+        rationale_parts = [f'Score {composite_score} (neutral)']
+        if support_p and resistance_p:
+            trade_ideas.append({
+                'title': 'RANGE PLAY',
+                'type': 'neutral',
+                'condition': f'Price reaches ${_fp(support_p)} (support) or ${_fp(resistance_p)} (resistance)',
+                'action': f'Buy call at support / Buy put at resistance',
+                'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range',
+                'stop': f'Break beyond the touched level',
+                'rationale': ' + '.join(rationale_parts)
+            })
+
+    # 2. Breakout Trade (only if squeeze_score >= 60)
+    if sq_score_raw >= 60 and sq_trigger:
+        if sq_dir_raw == 'up':
+            bk_target = upper_1sd or resistance_p
+            trade_ideas.append({
+                'title': 'BREAKOUT CALL',
+                'type': 'breakout',
+                'condition': f'Price breaks above ${_fp(sq_trigger)}',
+                'action': f'Buy call',
+                'target': f'${_fp(bk_target)} (+1σ)' if bk_target else 'Next resistance',
+                'stop': f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Below ${_fp(sq_trigger)}',
+                'rationale': f'Squeeze score {sq_score_raw} — gamma acceleration likely'
+            })
+        else:
+            bk_target = lower_1sd or support_p
+            trade_ideas.append({
+                'title': 'BREAKDOWN PUT',
+                'type': 'breakout',
+                'condition': f'Price breaks below ${_fp(sq_trigger)}',
+                'action': f'Buy put',
+                'target': f'${_fp(bk_target)} (-1σ)' if bk_target else 'Next support',
+                'stop': f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Above ${_fp(sq_trigger)}',
+                'rationale': f'Squeeze score {sq_score_raw} — gamma acceleration likely'
+            })
+
+    # 3. Best Value Pick (only if cheapest_gamma exists and different from primary strike)
+    if cg_strike and len(trade_ideas) > 0:
+        primary_strike = None
+        if trade_ideas[0].get('action'):
+            # Extract strike from primary action text
+            m = re.search(r'\$[\d,]+\.?\d*', trade_ideas[0]['action'])
+            if m:
+                primary_strike = m.group().replace('$', '').replace(',', '')
+        cg_strike_str = str(cg_strike).replace(',', '')
+        if primary_strike != cg_strike_str:
+            val_target = upper_1sd if cg_type == 'call' else lower_1sd
+            val_stop = gamma_flip_p
+            trade_ideas.append({
+                'title': f'VALUE {cg_type.upper()}' if cg_type else 'VALUE PICK',
+                'type': 'value',
+                'condition': f'Best gamma-to-cost ratio available',
+                'action': f'Buy ${_fp(cg_strike)} {cg_type}',
+                'target': f'${_fp(val_target)} ({"+" if cg_type == "call" else "-"}1σ)' if val_target else 'Next level',
+                'stop': f'${_fp(val_stop)} (gamma flip)' if val_stop else 'Manage at entry',
+                'rationale': f'Cheapest gamma — best bang-for-buck directional bet'
+            })
+
+    # Cap at 3 ideas
+    trade_ideas = trade_ideas[:3]
+
+    return {
+        'score': composite_score,
+        'label': label,
+        'factors': factors,
+        'interpretation': interpretation,
+        'action_plan': actions,
+        'trade_ideas': trade_ideas
     }
 
 
