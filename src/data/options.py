@@ -446,9 +446,9 @@ def get_options_expirations(ticker: str) -> Dict:
         logger.info(f"Fetching options expirations for {ticker}")
 
         # Use contracts endpoint to get all available expirations
-        # Search for contracts expiring in the next 90 days
+        # Search for contracts expiring in the next 730 days (covers LEAPs)
         today = datetime.now().strftime('%Y-%m-%d')
-        end_date = (datetime.now() + timedelta(days=90)).strftime('%Y-%m-%d')
+        end_date = (datetime.now() + timedelta(days=730)).strftime('%Y-%m-%d')
 
         contracts = get_options_contracts_sync(
             underlying=ticker,

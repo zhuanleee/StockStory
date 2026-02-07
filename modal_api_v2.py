@@ -1388,13 +1388,77 @@ Get an API key at `/api-keys/request`
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def _format_tastytrade_chain(raw: dict) -> dict:
+        """Transform get_options_with_greeks_tastytrade output to frontend format."""
+        calls = []
+        puts = []
+        total_call_vol = 0
+        total_put_vol = 0
+        total_call_oi = 0
+        total_put_oi = 0
+
+        for opt in raw.get('options', []):
+            c = opt.get('call')
+            p = opt.get('put')
+            if c:
+                vol = c.get('volume') or 0
+                oi = c.get('open_interest') or 0
+                calls.append({
+                    'strike': opt['strike'],
+                    'bid': c.get('price', 0),
+                    'ask': c.get('price', 0),
+                    'last_price': c.get('price', 0),
+                    'volume': vol,
+                    'open_interest': oi,
+                    'implied_volatility': c.get('iv'),
+                    'delta': c.get('delta'),
+                    'gamma': c.get('gamma'),
+                    'theta': c.get('theta'),
+                    'vega': c.get('vega'),
+                })
+                total_call_vol += vol
+                total_call_oi += oi
+            if p:
+                vol = p.get('volume') or 0
+                oi = p.get('open_interest') or 0
+                puts.append({
+                    'strike': opt['strike'],
+                    'bid': p.get('price', 0),
+                    'ask': p.get('price', 0),
+                    'last_price': p.get('price', 0),
+                    'volume': vol,
+                    'open_interest': oi,
+                    'implied_volatility': p.get('iv'),
+                    'delta': p.get('delta'),
+                    'gamma': p.get('gamma'),
+                    'theta': p.get('theta'),
+                    'vega': p.get('vega'),
+                })
+                total_put_vol += vol
+                total_put_oi += oi
+
+        return {
+            'ticker': raw.get('ticker', ''),
+            'expiration': raw.get('expiration', ''),
+            'dte': raw.get('dte', 0),
+            'calls': calls,
+            'puts': puts,
+            'total_call_volume': total_call_vol,
+            'total_put_volume': total_put_vol,
+            'total_call_oi': total_call_oi,
+            'total_put_oi': total_put_oi,
+            'source': 'tastytrade'
+        }
+
     @web_app.get("/options/chain/{ticker_symbol}")
-    def options_chain(ticker_symbol: str, expiration: str = Query(None), target_dte: int = Query(None)):
-        """Get options chain with Greeks for a ticker (equities only, use /options/chain for futures)"""
+    async def options_chain(ticker_symbol: str, expiration: str = Query(None), target_dte: int = Query(None)):
+        """Get options chain with Greeks for a ticker. All data from Tastytrade."""
         try:
-            from src.data.options import get_options_chain_sync
-            chain = get_options_chain_sync(ticker_symbol.upper(), expiration, target_dte)
-            return {"ok": True, "data": chain}
+            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
+            raw = await get_options_with_greeks_tastytrade(ticker_symbol.upper(), expiration, target_dte)
+            if raw:
+                return {"ok": True, "data": _format_tastytrade_chain(raw)}
+            return {"ok": False, "error": f"No options chain found for {ticker_symbol}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1412,19 +1476,11 @@ Get an API key at `/api-keys/request`
         Returns options data with Greeks from Tastytrade.
         """
         try:
-            from src.data.tastytrade_provider import is_futures_ticker, get_futures_option_chain_tastytrade, get_options_with_greeks_tastytrade
-
-            if is_futures_ticker(ticker):
-                # Use futures options chain (async)
-                chain = await get_futures_option_chain_tastytrade(ticker)
-                if chain:
-                    return {"ok": True, "data": chain, "source": "tastytrade_futures"}
-                return {"ok": False, "error": f"No futures options found for {ticker}"}
-            else:
-                # Use equities options chain
-                from src.data.options import get_options_chain_sync
-                chain = get_options_chain_sync(ticker.upper(), expiration, target_dte)
-                return {"ok": True, "data": chain}
+            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
+            raw = await get_options_with_greeks_tastytrade(ticker, expiration, target_dte)
+            if raw:
+                return {"ok": True, "data": _format_tastytrade_chain(raw)}
+            return {"ok": False, "error": f"No options chain found for {ticker}"}
         except Exception as e:
             logger.error(f"Options chain error for {ticker}: {e}")
             return {"ok": False, "error": str(e)}
@@ -1435,13 +1491,22 @@ Get an API key at `/api-keys/request`
         Get all available expirations for a ticker.
 
         Returns all expiration dates with DTE and strike count.
+        All options data sourced from Tastytrade. Retries once with fresh session on failure.
         """
         try:
-            from src.data.tastytrade_provider import get_expirations_tastytrade_async
+            from src.data.tastytrade_provider import get_expirations_tastytrade_async, invalidate_session
             ticker = ticker_symbol.upper()
             expirations = await get_expirations_tastytrade_async(ticker)
             if expirations:
                 return {"ok": True, "data": expirations}
+
+            # Retry once with fresh session
+            logger.warning(f"Expirations failed for {ticker}, retrying with fresh session...")
+            invalidate_session()
+            expirations = await get_expirations_tastytrade_async(ticker)
+            if expirations:
+                return {"ok": True, "data": expirations}
+
             return {"ok": False, "error": f"No expirations found for {ticker}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1454,12 +1519,21 @@ Get an API key at `/api-keys/request`
         For futures, use query param: ?ticker=/ES, ?ticker=/NQ, etc.
 
         Returns all expiration dates with DTE and strike count.
+        All options data sourced from Tastytrade. Retries once with fresh session on failure.
         """
         try:
-            from src.data.tastytrade_provider import get_expirations_tastytrade_async
+            from src.data.tastytrade_provider import get_expirations_tastytrade_async, invalidate_session
             expirations = await get_expirations_tastytrade_async(ticker)
             if expirations:
                 return {"ok": True, "data": expirations}
+
+            # Retry once with fresh session
+            logger.warning(f"Expirations failed for {ticker}, retrying with fresh session...")
+            invalidate_session()
+            expirations = await get_expirations_tastytrade_async(ticker)
+            if expirations:
+                return {"ok": True, "data": expirations}
+
             return {"ok": False, "error": f"No expirations found for {ticker}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -2516,6 +2590,39 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/xray/{ticker_symbol}", tags=["Market X-Ray"])
+    async def options_xray(ticker_symbol: str, expiration: str = Query(None)):
+        """
+        Market X-Ray - Institutional Edge Scanner.
+
+        Reveals hidden market dynamics: dealer hedging flow, gamma squeeze/pin detection,
+        volatility surface distortions, smart money footprints, optimal trade zones,
+        and a composite edge score.
+        """
+        try:
+            from src.data.tastytrade_provider import compute_market_xray
+            result = await compute_market_xray(ticker_symbol.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/xray", tags=["Market X-Ray"])
+    async def options_xray_query(
+        ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."),
+        expiration: str = Query(None, description="Expiration date YYYY-MM-DD")
+    ):
+        """Market X-Ray (query param version for futures support)"""
+        try:
+            from src.data.tastytrade_provider import compute_market_xray
+            result = await compute_market_xray(ticker.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/scan/unusual")
     def options_scan_unusual(limit: int = Query(20)):
         """Scan all tracked stocks for unusual options activity"""
@@ -2762,6 +2869,14 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # In-memory candle cache: {cache_key: (timestamp, response_data)}
+    _candle_cache = {}
+    _CANDLE_CACHE_TTL = {
+        '1m': 30, '5m': 30, '15m': 60, '30m': 60,
+        '1h': 120, '4h': 300,
+        '1d': 300, '1w': 600, '1M': 600,
+    }
+
     @web_app.get("/market/candles", tags=["Options"])
     async def market_candles(
         ticker: str = Query(..., description="Ticker symbol. For futures use /ES, /NQ, /CL, /GC"),
@@ -2786,6 +2901,13 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         - 1w, 1M: Weekly/Monthly
         """
         try:
+            import time as _t
+            cache_key = f"{ticker}:{days}:{interval}"
+            ttl = _CANDLE_CACHE_TTL.get(interval, 300)
+            if cache_key in _candle_cache:
+                cached_ts, cached_data = _candle_cache[cache_key]
+                if _t.time() - cached_ts < ttl:
+                    return cached_data
             from datetime import datetime, timedelta
             import asyncio
 
@@ -2816,9 +2938,9 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             }
 
             if is_futures:
-                # Use Tastytrade DXLink Candle streaming for futures (short timeframes only)
-                # DXLink doesn't have reliable historical data > 30 days, skip straight to Yahoo Finance
-                try_dxlink = days <= 30 and interval not in ('1d', '1w', '1M')
+                # Use Tastytrade DXLink Candle streaming for ALL futures candle requests
+                # DXLink supports daily/weekly/monthly with "all available" history (up to 8000 candles)
+                try_dxlink = True
                 try:
                     from src.data.tastytrade_provider import (
                         get_tastytrade_session,
@@ -2836,69 +2958,91 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                         }
 
                     if not try_dxlink:
-                        logger.info(f"Skipping DXLink candles for {ticker} (days={days} > 30), using Yahoo Finance")
-                        raise Exception("Skip to Yahoo Finance for long timeframes")
+                        logger.info(f"Skipping DXLink candles for {ticker}, using Yahoo Finance")
+                        raise Exception("Skip to Yahoo Finance")
 
-                    # Build streamer symbol directly: /ESH6:XCME
+                    # Build streamer symbol: use product/continuous symbol for candles
+                    # /ES:XCME (no month code) = continuous front-month data across rolls
+                    # /ESH6:XCME (with month code) = specific contract only
                     FUTURES_EXCHANGE = {
                         '/ES': ':XCME', '/NQ': ':XCME', '/YM': ':XCME', '/RTY': ':XCME',
                         '/CL': ':XNYM', '/NG': ':XNYM',
                         '/GC': ':XCEC', '/SI': ':XCEC', '/HG': ':XCEC',
                         '/ZB': ':XCBT', '/ZN': ':XCBT', '/ZC': ':XCBT', '/ZS': ':XCBT', '/ZW': ':XCBT',
                     }
-                    front_month = get_futures_front_month_symbol(ticker)
                     t_upper = ticker.upper()
-                    suffix = FUTURES_EXCHANGE.get(t_upper, ':XCME')
-                    for root, exch in FUTURES_EXCHANGE.items():
-                        if t_upper.startswith(root) and len(t_upper) > len(root):
-                            suffix = exch
+                    # Extract the root symbol (e.g., /ES from /ESH6 or /ES)
+                    root_symbol = t_upper
+                    for root in FUTURES_EXCHANGE:
+                        if t_upper.startswith(root):
+                            root_symbol = root
                             break
-                    streamer_symbol = front_month + suffix
-                    logger.info(f"Built candle streamer symbol: {streamer_symbol} for {ticker}")
+                    suffix = FUTURES_EXCHANGE.get(root_symbol, ':XCME')
+                    # Use product symbol (continuous) for candle data
+                    streamer_symbol = root_symbol + suffix
+                    logger.info(f"Built candle streamer symbol: {streamer_symbol} (continuous) for {ticker}")
 
                     # Map interval to DXLink candle period
-                    dxlink_period = interval if interval in ('1m','5m','15m','30m','1h','4h','1d','1w','1M') else '1d'
+                    DXLINK_PERIOD_MAP = {
+                        '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m',
+                        '1h': '1h', '4h': '4h',
+                        '1d': '1d', '1w': '1w', '1M': '1mo',
+                    }
+                    dxlink_period = DXLINK_PERIOD_MAP.get(interval, '1d')
+                    # Only auto-switch to weekly if daily candles would exceed 8000 limit (~22 years)
+                    if days > 8000 and interval in ('1d', None):
+                        dxlink_period = '1w'
 
                     # Calculate from_time as datetime object
                     from_time = datetime.now() - timedelta(days=days)
                     logger.info(f"Subscribing to candle: {streamer_symbol} interval={dxlink_period} from={from_time}")
 
                     candles_data = []
+                    is_daily_or_longer = dxlink_period in ('1d', '1w', '1mo')
 
                     try:
                         async with DXLinkStreamer(session) as streamer:
-                            # subscribe_candle(symbols: list[str], interval: str, start_time: datetime)
                             await streamer.subscribe_candle([streamer_symbol], dxlink_period, from_time, extended_trading_hours=True)
 
                             import time as time_module
                             start_time = time_module.time()
-                            timeout_sec = 30.0
-                            last_receive_time = start_time
+                            timeout_sec = 60.0 if days > 365 else 30.0
 
                             async for candle in streamer.listen(Candle):
+                                # Check for empty snapshot marker
+                                if getattr(candle, 'remove', False):
+                                    if getattr(candle, 'snapshot_end', False) or getattr(candle, 'snapshot_snip', False):
+                                        break
+                                    continue
+
                                 candle_time = getattr(candle, 'time', None)
                                 if candle_time:
                                     if isinstance(candle_time, (int, float)):
-                                        ts = int(candle_time / 1000) if candle_time > 10000000000 else int(candle_time)
+                                        ts_epoch = int(candle_time / 1000) if candle_time > 10000000000 else int(candle_time)
                                     else:
-                                        ts = int(candle_time.timestamp())
+                                        ts_epoch = int(candle_time.timestamp())
+
+                                    if is_daily_or_longer:
+                                        dt = datetime.utcfromtimestamp(ts_epoch)
+                                        ts = dt.strftime('%Y-%m-%d')
+                                    else:
+                                        ts = ts_epoch
 
                                     o = float(getattr(candle, 'open', 0) or 0)
                                     h = float(getattr(candle, 'high', 0) or 0)
                                     l = float(getattr(candle, 'low', 0) or 0)
                                     c = float(getattr(candle, 'close', 0) or 0)
-                                    # Skip zero-price candles
                                     if o > 0 and h > 0 and c > 0:
                                         candles_data.append({
                                             'time': ts, 'open': o, 'high': h, 'low': l, 'close': c,
                                             'volume': int(getattr(candle, 'volume', 0) or 0),
                                         })
-                                    last_receive_time = time_module.time()
 
-                                current_time = time_module.time()
-                                if current_time - start_time > timeout_sec:
+                                # Break immediately when snapshot is complete (no 3s wait)
+                                if getattr(candle, 'snapshot_end', False) or getattr(candle, 'snapshot_snip', False):
                                     break
-                                if current_time - last_receive_time > 2.0 and len(candles_data) > 0:
+                                # Hard timeout safety net
+                                if time_module.time() - start_time > timeout_sec:
                                     break
 
                     except Exception as e:
@@ -2916,7 +3060,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                 seen_times.add(c['time'])
                                 unique_candles.append(c)
 
-                        return {
+                        result = {
                             "ok": True,
                             "data": {
                                 "ticker": ticker,
@@ -2926,6 +3070,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                 "candles": unique_candles
                             }
                         }
+                        _candle_cache[cache_key] = (_t.time(), result)
+                        return result
                     else:
                         logger.info(f"No DXLink candle data for {ticker}, falling back to ETF proxy")
                         # Fall through to ETF proxy below
@@ -2993,7 +3139,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                     candles.append({'time': ts, 'open': o, 'high': h, 'low': l, 'close': c, 'volume': v})
 
                             if candles:
-                                return {
+                                result = {
                                     "ok": True,
                                     "data": {
                                         "ticker": ticker, "interval": interval, "days": days,
@@ -3001,6 +3147,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                         "candles": candles
                                     }
                                 }
+                                _candle_cache[cache_key] = (_t.time(), result)
+                                return result
                 except Exception as e:
                     logger.error(f"Yahoo Finance fallback error: {e}")
 
@@ -3053,7 +3201,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                 'volume': int(row['Volume']),
                             })
 
-                        return {
+                        result = {
                             "ok": True,
                             "data": {
                                 "ticker": ticker.upper(),
@@ -3063,6 +3211,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                                 "candles": candles
                             }
                         }
+                        _candle_cache[cache_key] = (_t.time(), result)
+                        return result
                     else:
                         return {
                             "ok": False,

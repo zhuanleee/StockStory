@@ -1823,7 +1823,7 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None) -> Dict
         composite = _xray_composite(
             total_gex, squeeze_pin, smart_money, current_price,
             maxpain, vol_surface, term, trade_zones, dte,
-            options=options, expiration=expiration_used
+            options=options, expiration=expiration_used, iv_delta=iv_delta
         )
 
         return {
@@ -2239,7 +2239,8 @@ def _xray_trade_zones(current_price: float, maxpain, gex_levels, gex, iv_delta, 
 def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                      current_price: float, maxpain, vol_surface: Dict,
                      term, trade_zones: Dict, dte: int = None,
-                     options: list = None, expiration: str = None) -> Dict:
+                     options: list = None, expiration: str = None,
+                     iv_delta: Dict = None) -> Dict:
     """MODULE 6: Composite Edge Score (0-100)."""
     factors = []
 
@@ -2458,50 +2459,106 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
         except (ValueError, TypeError):
             return str(price)
 
-    def _find_option(target_price, opt_type, opts):
-        """Find nearest strike to target_price for opt_type ('call'/'put'). Returns (strike, mid_price, delta) or None."""
+    def _find_by_delta(target_delta, opt_type, opts):
+        """Find option closest to target |delta|. Skips zero-priced."""
         if not opts:
             return None
         best = None
         best_dist = float('inf')
         for o in opts:
-            strike = float(o['strike'])
             leg = o.get(opt_type)
             if not leg:
                 continue
             price = float(leg.get('price', 0) or 0)
             if price <= 0:
                 continue
+            raw_delta = leg.get('delta')
+            if raw_delta is None:
+                continue
+            try:
+                d = abs(float(raw_delta))
+            except (ValueError, TypeError):
+                continue
+            dist = abs(d - target_delta)
+            if dist < best_dist:
+                best_dist = dist
+                best = {'strike': float(o['strike']), 'price': round(price, 2), 'delta': round(d, 2)}
+        return best
+
+    def _find_by_strike(target_price, opt_type, opts):
+        """Find option nearest to a target strike price. Skips zero-priced."""
+        if not opts:
+            return None
+        best = None
+        best_dist = float('inf')
+        for o in opts:
+            leg = o.get(opt_type)
+            if not leg:
+                continue
+            price = float(leg.get('price', 0) or 0)
+            if price <= 0:
+                continue
+            strike = float(o['strike'])
             dist = abs(strike - target_price)
             if dist < best_dist:
                 best_dist = dist
-                delta = leg.get('delta')
+                raw_delta = leg.get('delta')
                 try:
-                    delta = abs(round(float(delta), 2)) if delta else None
+                    d = abs(float(raw_delta)) if raw_delta is not None else None
                 except (ValueError, TypeError):
-                    delta = None
-                best = {'strike': strike, 'price': round(price, 2), 'delta': delta}
+                    d = None
+                best = {'strike': strike, 'price': round(price, 2), 'delta': round(d, 2) if d is not None else None}
         return best
 
+    def _calc_rr(premium, strike, target_p, opt_type):
+        """Risk:Reward for long option. Risk=premium. Reward=intrinsic at target - premium."""
+        if not premium or premium <= 0 or not target_p:
+            return None
+        tp = float(target_p)
+        if opt_type == 'call':
+            intrinsic = max(0, tp - strike)
+        else:
+            intrinsic = max(0, strike - tp)
+        reward = intrinsic - premium
+        if reward <= 0:
+            return None
+        return round(reward / premium, 1)
+
+    def _fmt_action(opt, opt_type, exp_l, dte_l):
+        """Format action string from option match."""
+        if not opt:
+            return None
+        delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
+        s = f'Buy ${_fp(opt["strike"])} {opt_type} @ ${opt["price"]:.2f}{delta_txt}'
+        if exp_l:
+            s += f' ({exp_l}, {dte_l})'
+        return s
+
+    # --- Gather all inputs ---
     tz = trade_zones
     support_p = tz.get('support')
     resistance_p = tz.get('resistance')
     gamma_flip_p = tz.get('gamma_flip')
     upper_1sd = tz.get('upper_1sd')
     lower_1sd = tz.get('lower_1sd')
-
-    # Get cheapest gamma info
-    cg_strike = None
-    cg_type = None
-    if cheapest and len(cheapest) > 0:
-        cg_strike = cheapest[0].get('strike')
-        cg_type = cheapest[0].get('type', '').lower()
+    eff_support = support_p or lower_1sd
+    eff_resistance = resistance_p or upper_1sd
 
     net_flow = smart_money.get('net_flow', 'neutral')
     sq_score_raw = squeeze_pin.get('squeeze_score', 0)
     sq_trigger = squeeze_pin.get('squeeze_trigger_price')
     sq_dir_raw = squeeze_pin.get('squeeze_direction', 'up')
     opts = options or []
+
+    # ATM IV for context
+    atm_iv = None
+    if iv_delta and isinstance(iv_delta, dict):
+        atm_iv = iv_delta.get('atm_iv')
+        try:
+            atm_iv = float(atm_iv) if atm_iv else None
+        except (ValueError, TypeError):
+            atm_iv = None
+    iv_pct = round(atm_iv * 100) if atm_iv else None
 
     # Expiry label
     exp_label = ''
@@ -2513,176 +2570,319 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
             exp_label = str(expiration)
     dte_label = f'{dte}d' if dte else ''
 
+    # --- Confidence: count agreeing directional signals ---
+    bullish_signals = 0
+    bearish_signals = 0
+    total_signals = 0
+    # Score direction
+    if composite_score >= 55:
+        bullish_signals += 1
+    elif composite_score < 45:
+        bearish_signals += 1
+    total_signals += 1
+    # Smart money flow
+    if net_flow == 'bullish':
+        bullish_signals += 1
+    elif net_flow == 'bearish':
+        bearish_signals += 1
+    total_signals += 1
+    # GEX regime
+    if dealer_flow_score >= 60:
+        bullish_signals += 1
+    elif dealer_flow_score <= 35:
+        bearish_signals += 1
+    total_signals += 1
+    # Skew signal
+    skew_label = vol_surface.get('skew_label', '')
+    if skew_label == 'flat':
+        bullish_signals += 1  # cheap puts = less fear
+    elif skew_label == 'steep':
+        bearish_signals += 1  # expensive puts = fear
+    total_signals += 1
+    # Term structure
+    term_struct = None
+    if term and isinstance(term, dict):
+        term_struct = term.get('structure')
+    if term_struct == 'contango':
+        bullish_signals += 1
+    elif term_struct == 'backwardation':
+        bearish_signals += 1
+    total_signals += 1
+
+    max_agreement = max(bullish_signals, bearish_signals)
+    if max_agreement >= 4:
+        confidence = 'high'
+    elif max_agreement >= 3:
+        confidence = 'medium'
+    else:
+        confidence = 'low'
+
+    # --- IV context for rationale ---
+    iv_note = ''
+    if iv_pct:
+        if iv_pct > 50:
+            iv_note = f'IV {iv_pct}% (elevated — options expensive)'
+        elif iv_pct > 30:
+            iv_note = f'IV {iv_pct}%'
+        else:
+            iv_note = f'IV {iv_pct}% (low — options cheap)'
+
+    # --- DTE context ---
+    dte_note = ''
+    if dte is not None:
+        if dte <= 3:
+            dte_note = 'Expiring soon — gamma risk extreme'
+        elif dte <= 7:
+            dte_note = 'Theta accelerating'
+
     trade_ideas = []
 
-    # Fallback levels: use 1SD when support/resistance unavailable
-    eff_support = support_p or lower_1sd
-    eff_resistance = resistance_p or upper_1sd
+    # =====================================================================
+    # 1. PRIMARY DIRECTIONAL TRADE
+    # =====================================================================
+    # Delta targets: .35 for standard directional, .50 ATM for short DTE gamma plays
+    dir_delta = 0.50 if (dte is not None and dte <= 5) else 0.35
 
-    # 1. Primary Trade (always generated)
     if composite_score >= 55:
-        # Pick ATM or slightly OTM call
-        target_strike = cg_strike if (cg_strike and cg_type == 'call') else current_price
-        opt = _find_option(target_strike, 'call', opts)
+        opt = _find_by_delta(dir_delta, 'call', opts)
         target_p = resistance_p or upper_1sd or max_pain_price
-        rationale_parts = [f'Score {composite_score}']
+
+        # Build rationale
+        parts = [f'Score {composite_score}']
         if net_flow == 'bullish':
-            rationale_parts.append('bullish flow')
+            parts.append('bullish flow')
         if dealer_flow_score >= 60:
-            rationale_parts.append('+GEX')
+            parts.append('+GEX')
+        if iv_note:
+            parts.append(iv_note)
+        if dte_note:
+            parts.append(dte_note)
+
+        # Condition / Stop
         if eff_support:
             cond = f'Price holds above ${_fp(eff_support)} ({"support" if support_p else "-1σ"})'
-            stop = f'Close below ${_fp(eff_support)}'
         else:
-            cond = f'Bullish bias holds'
-            stop = f'Reversal below ${_fp(current_price)}'
+            cond = 'Bullish bias holds'
+
+        # Action
+        action = _fmt_action(opt, 'call', exp_label, dte_label) or f'Buy call (~Δ.{int(dir_delta*100)})'
+
+        # R:R and max loss
+        rr = None
+        stop_txt = ''
+        if opt and eff_support:
+            rr = _calc_rr(opt['price'], opt['strike'], target_p, 'call')
+            stop_txt = f'Below ${_fp(eff_support)} — max loss ${opt["price"]:.2f}'
+        elif opt:
+            stop_txt = f'Max loss ${opt["price"]:.2f}'
+        else:
+            stop_txt = f'Close below ${_fp(eff_support)}' if eff_support else f'Below ${_fp(current_price)}'
+
         target_label = 'resistance' if resistance_p else ('+1σ' if upper_1sd else 'max pain')
-        if opt:
-            delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-            action = f'Buy ${_fp(opt["strike"])} call @ ${opt["price"]:.2f}{delta_txt}'
-            if exp_label:
-                action += f' ({exp_label}, {dte_label})'
+        target_txt = f'${_fp(target_p)} ({target_label})'
+        if rr:
+            target_txt += f' — R:R {rr}:1'
+        elif target_p:
+            pass
         else:
-            action = f'Buy call near ${_fp(target_strike)}'
+            target_txt = 'Next resistance'
+
         trade_ideas.append({
             'title': 'BULLISH CALL',
             'type': 'bullish',
+            'confidence': confidence,
             'condition': cond,
             'action': action,
-            'target': f'${_fp(target_p)} ({target_label})' if target_p else 'Next resistance',
-            'stop': stop,
-            'rationale': ' + '.join(rationale_parts)
+            'target': target_txt,
+            'stop': stop_txt,
+            'rationale': ' + '.join(parts)
         })
+
     elif composite_score < 45:
-        target_strike = cg_strike if (cg_strike and cg_type == 'put') else current_price
-        opt = _find_option(target_strike, 'put', opts)
+        opt = _find_by_delta(dir_delta, 'put', opts)
         target_p = support_p or lower_1sd or max_pain_price
-        rationale_parts = [f'Score {composite_score}']
+
+        parts = [f'Score {composite_score}']
         if net_flow == 'bearish':
-            rationale_parts.append('bearish flow')
+            parts.append('bearish flow')
         if dealer_flow_score <= 35:
-            rationale_parts.append('-GEX')
+            parts.append('-GEX')
+        if iv_note:
+            parts.append(iv_note)
+        if dte_note:
+            parts.append(dte_note)
+
         if eff_resistance:
             cond = f'Price stays below ${_fp(eff_resistance)} ({"resistance" if resistance_p else "+1σ"})'
-            stop = f'Close above ${_fp(eff_resistance)}'
         else:
-            cond = f'Bearish bias holds'
-            stop = f'Reversal above ${_fp(current_price)}'
+            cond = 'Bearish bias holds'
+
+        action = _fmt_action(opt, 'put', exp_label, dte_label) or f'Buy put (~Δ.{int(dir_delta*100)})'
+
+        rr = None
+        stop_txt = ''
+        if opt and eff_resistance:
+            rr = _calc_rr(opt['price'], opt['strike'], target_p, 'put')
+            stop_txt = f'Above ${_fp(eff_resistance)} — max loss ${opt["price"]:.2f}'
+        elif opt:
+            stop_txt = f'Max loss ${opt["price"]:.2f}'
+        else:
+            stop_txt = f'Close above ${_fp(eff_resistance)}' if eff_resistance else f'Above ${_fp(current_price)}'
+
         target_label = 'support' if support_p else ('-1σ' if lower_1sd else 'max pain')
-        if opt:
-            delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-            action = f'Buy ${_fp(opt["strike"])} put @ ${opt["price"]:.2f}{delta_txt}'
-            if exp_label:
-                action += f' ({exp_label}, {dte_label})'
-        else:
-            action = f'Buy put near ${_fp(target_strike)}'
+        target_txt = f'${_fp(target_p)} ({target_label})'
+        if rr:
+            target_txt += f' — R:R {rr}:1'
+        elif not target_p:
+            target_txt = 'Next support'
+
         trade_ideas.append({
             'title': 'BEARISH PUT',
             'type': 'bearish',
+            'confidence': confidence,
             'condition': cond,
             'action': action,
-            'target': f'${_fp(target_p)} ({target_label})' if target_p else 'Next support',
-            'stop': stop,
-            'rationale': ' + '.join(rationale_parts)
+            'target': target_txt,
+            'stop': stop_txt,
+            'rationale': ' + '.join(parts)
         })
+
     else:
-        # Neutral — give specific call at support AND put at resistance
-        rationale_parts = [f'Score {composite_score} (neutral)']
-        if eff_support or eff_resistance:
-            # Find call near support for bounce play
-            call_opt = _find_option(eff_support, 'call', opts) if eff_support else None
-            put_opt = _find_option(eff_resistance, 'put', opts) if eff_resistance else None
-            sup_txt = f'${_fp(eff_support)} ({"support" if support_p else "-1σ"})' if eff_support else '?'
-            res_txt = f'${_fp(eff_resistance)} ({"resistance" if resistance_p else "+1σ"})' if eff_resistance else '?'
+        # Neutral — if confidence is low, recommend NO TRADE
+        parts = [f'Score {composite_score}']
+        if iv_note:
+            parts.append(iv_note)
+        if dte_note:
+            parts.append(dte_note)
+
+        if confidence == 'low' or (not eff_support and not eff_resistance):
+            trade_ideas.append({
+                'title': 'NO CLEAR EDGE',
+                'type': 'neutral',
+                'confidence': 'low',
+                'condition': 'Signals are mixed — wait for clarity',
+                'action': 'Stay flat or reduce size',
+                'target': '--',
+                'stop': '--',
+                'rationale': ' + '.join(parts)
+            })
+        else:
+            # Range play with specific contracts
+            call_opt = _find_by_delta(0.40, 'call', opts) if eff_support else None
+            put_opt = _find_by_delta(0.40, 'put', opts) if eff_resistance else None
+            sup_lbl = 'support' if support_p else '-1σ'
+            res_lbl = 'resistance' if resistance_p else '+1σ'
+
             action_parts = []
             if call_opt:
-                action_parts.append(f'At support → ${_fp(call_opt["strike"])} call @ ${call_opt["price"]:.2f}')
+                action_parts.append(f'At {sup_lbl} → ${_fp(call_opt["strike"])} call @ ${call_opt["price"]:.2f}')
             if put_opt:
-                action_parts.append(f'At resistance → ${_fp(put_opt["strike"])} put @ ${put_opt["price"]:.2f}')
-            action_txt = ' | '.join(action_parts) if action_parts else 'Buy call at support / Buy put at resistance'
+                action_parts.append(f'At {res_lbl} → ${_fp(put_opt["strike"])} put @ ${put_opt["price"]:.2f}')
+            action_txt = ' | '.join(action_parts) if action_parts else 'Buy call at support / put at resistance'
             if exp_label and action_parts:
                 action_txt += f' ({exp_label}, {dte_label})'
+
+            max_loss_parts = []
+            if call_opt:
+                max_loss_parts.append(f'${call_opt["price"]:.2f}')
+            if put_opt:
+                max_loss_parts.append(f'${put_opt["price"]:.2f}')
+
             trade_ideas.append({
                 'title': 'RANGE PLAY',
                 'type': 'neutral',
-                'condition': f'Price reaches {sup_txt} or {res_txt}',
+                'confidence': confidence,
+                'condition': f'Price touches ${_fp(eff_support)} ({sup_lbl}) or ${_fp(eff_resistance)} ({res_lbl})',
                 'action': action_txt,
-                'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range',
-                'stop': f'Break beyond the touched level',
-                'rationale': ' + '.join(rationale_parts)
+                'target': f'${_fp(max_pain_price)} (max pain)' if max_pain_price else 'Mid-range reversion',
+                'stop': f'Break beyond level — max loss {" or ".join(max_loss_parts)}' if max_loss_parts else 'Break beyond level',
+                'rationale': ' + '.join(parts)
             })
 
-    # 2. Breakout Trade (only if squeeze_score >= 60)
+    # =====================================================================
+    # 2. BREAKOUT TRADE (only if squeeze_score >= 60)
+    # =====================================================================
     if sq_score_raw >= 60 and sq_trigger:
+        # Target ~.30 delta OTM for leveraged breakout
         if sq_dir_raw == 'up':
-            # OTM call just above trigger
-            opt = _find_option(float(sq_trigger) * 1.01, 'call', opts)
+            opt = _find_by_delta(0.30, 'call', opts)
             bk_target = upper_1sd or resistance_p
+            action = _fmt_action(opt, 'call', exp_label, dte_label) or f'Buy OTM call above ${_fp(sq_trigger)}'
+            rr = _calc_rr(opt['price'], opt['strike'], bk_target, 'call') if opt and bk_target else None
+            stop_txt = f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Below ${_fp(sq_trigger)}'
             if opt:
-                delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-                action = f'Buy ${_fp(opt["strike"])} call @ ${opt["price"]:.2f}{delta_txt}'
-                if exp_label:
-                    action += f' ({exp_label}, {dte_label})'
-            else:
-                action = f'Buy call above ${_fp(sq_trigger)}'
-            trade_ideas.append({
-                'title': 'BREAKOUT CALL',
-                'type': 'breakout',
-                'condition': f'Price breaks above ${_fp(sq_trigger)}',
-                'action': action,
-                'target': f'${_fp(bk_target)} (+1σ)' if bk_target else 'Next resistance',
-                'stop': f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Below ${_fp(sq_trigger)}',
-                'rationale': f'Squeeze score {sq_score_raw} — gamma acceleration likely'
-            })
+                stop_txt += f' — max loss ${opt["price"]:.2f}'
+            target_txt = f'${_fp(bk_target)} (+1σ)'
+            if rr:
+                target_txt += f' — R:R {rr}:1'
+            elif not bk_target:
+                target_txt = 'Next resistance'
         else:
-            opt = _find_option(float(sq_trigger) * 0.99, 'put', opts)
+            opt = _find_by_delta(0.30, 'put', opts)
             bk_target = lower_1sd or support_p
+            action = _fmt_action(opt, 'put', exp_label, dte_label) or f'Buy OTM put below ${_fp(sq_trigger)}'
+            rr = _calc_rr(opt['price'], opt['strike'], bk_target, 'put') if opt and bk_target else None
+            stop_txt = f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Above ${_fp(sq_trigger)}'
             if opt:
-                delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-                action = f'Buy ${_fp(opt["strike"])} put @ ${opt["price"]:.2f}{delta_txt}'
-                if exp_label:
-                    action += f' ({exp_label}, {dte_label})'
-            else:
-                action = f'Buy put below ${_fp(sq_trigger)}'
-            trade_ideas.append({
-                'title': 'BREAKDOWN PUT',
-                'type': 'breakout',
-                'condition': f'Price breaks below ${_fp(sq_trigger)}',
-                'action': action,
-                'target': f'${_fp(bk_target)} (-1σ)' if bk_target else 'Next support',
-                'stop': f'${_fp(gamma_flip_p)} (gamma flip)' if gamma_flip_p else f'Above ${_fp(sq_trigger)}',
-                'rationale': f'Squeeze score {sq_score_raw} — gamma acceleration likely'
-            })
+                stop_txt += f' — max loss ${opt["price"]:.2f}'
+            target_txt = f'${_fp(bk_target)} (-1σ)'
+            if rr:
+                target_txt += f' — R:R {rr}:1'
+            elif not bk_target:
+                target_txt = 'Next support'
 
-    # 3. Best Value Pick (only if cheapest_gamma exists and different from #1 strike)
-    if cg_strike and len(trade_ideas) > 0:
-        # Check if cheapest gamma strike differs from the primary idea
-        primary_used_strike = None
-        first_action = trade_ideas[0].get('action', '')
-        m = re.search(r'\$[\d,]+\.?\d*', first_action)
-        if m:
-            primary_used_strike = m.group().replace('$', '').replace(',', '')
-        cg_strike_str = str(cg_strike).replace(',', '')
-        if primary_used_strike != cg_strike_str:
-            opt = _find_option(cg_strike, cg_type or 'call', opts)
-            val_target = upper_1sd if cg_type == 'call' else lower_1sd
-            val_stop = gamma_flip_p
-            if opt:
-                delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-                action = f'Buy ${_fp(opt["strike"])} {cg_type} @ ${opt["price"]:.2f}{delta_txt}'
-                if exp_label:
-                    action += f' ({exp_label}, {dte_label})'
-            else:
-                action = f'Buy ${_fp(cg_strike)} {cg_type}'
-            trade_ideas.append({
-                'title': f'VALUE {cg_type.upper()}' if cg_type else 'VALUE PICK',
-                'type': 'value',
-                'condition': f'Best gamma-to-cost ratio available',
-                'action': action,
-                'target': f'${_fp(val_target)} ({"+" if cg_type == "call" else "-"}1σ)' if val_target else 'Next level',
-                'stop': f'${_fp(val_stop)} (gamma flip)' if val_stop else 'Manage at entry',
-                'rationale': f'Cheapest gamma — best bang-for-buck directional bet'
-            })
+        bk_parts = [f'Squeeze {sq_score_raw}']
+        if iv_note:
+            bk_parts.append(iv_note)
+        trade_ideas.append({
+            'title': f'BREAKOUT {"CALL" if sq_dir_raw == "up" else "PUT"}',
+            'type': 'breakout',
+            'confidence': 'high' if sq_score_raw >= 80 else 'medium',
+            'condition': f'Price breaks {"above" if sq_dir_raw == "up" else "below"} ${_fp(sq_trigger)}',
+            'action': action,
+            'target': target_txt,
+            'stop': stop_txt,
+            'rationale': ' + '.join(bk_parts)
+        })
+
+    # =====================================================================
+    # 3. VALUE PICK — OTM only, reasonable premium, Δ .15-.50
+    # =====================================================================
+    if cheapest and len(cheapest) > 0:
+        cg = cheapest[0]
+        cg_strike = cg.get('strike')
+        cg_type = (cg.get('type') or '').lower()
+        if cg_strike and cg_type:
+            is_otm = (cg_type == 'call' and float(cg_strike) > current_price) or \
+                     (cg_type == 'put' and float(cg_strike) < current_price)
+            opt = _find_by_strike(float(cg_strike), cg_type, opts) if is_otm else None
+            # Filter: must be OTM, premium < 5% of underlying, delta .15-.50
+            if opt and opt['price'] < current_price * 0.05 and opt.get('delta') and 0.15 <= opt['delta'] <= 0.50:
+                # Check it's different from primary idea strike
+                primary_strike = trade_ideas[0].get('_strike') if trade_ideas else None
+                if not primary_strike or abs(opt['strike'] - (primary_strike or 0)) > 1:
+                    val_target = upper_1sd if cg_type == 'call' else lower_1sd
+                    val_stop = gamma_flip_p
+                    action = _fmt_action(opt, cg_type, exp_label, dte_label)
+                    rr = _calc_rr(opt['price'], opt['strike'], val_target, cg_type) if val_target else None
+
+                    target_txt = f'${_fp(val_target)} ({"+" if cg_type == "call" else "-"}1σ)'
+                    if rr:
+                        target_txt += f' — R:R {rr}:1'
+                    elif not val_target:
+                        target_txt = 'Next level'
+                    stop_txt = f'${_fp(val_stop)} (gamma flip) — max loss ${opt["price"]:.2f}' if val_stop else f'Max loss ${opt["price"]:.2f}'
+
+                    trade_ideas.append({
+                        'title': f'VALUE {cg_type.upper()}',
+                        'type': 'value',
+                        'confidence': confidence,
+                        'condition': f'Best gamma/cost ratio — OTM Δ.{int(opt["delta"]*100):02d}',
+                        'action': action,
+                        'target': target_txt,
+                        'stop': stop_txt,
+                        'rationale': f'Cheapest gamma + {"low" if iv_pct and iv_pct < 30 else "fair" if iv_pct and iv_pct <= 50 else "high"} IV' if iv_pct else 'Cheapest gamma'
+                    })
 
     # Cap at 3 ideas
     trade_ideas = trade_ideas[:3]
