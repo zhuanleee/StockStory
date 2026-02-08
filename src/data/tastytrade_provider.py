@@ -1646,9 +1646,9 @@ async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Op
     }
 
 
-async def compute_market_xray(ticker: str, expiration: str = None) -> Dict:
+async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: bool = False) -> Dict:
     """Market X-Ray: institutional edge scanner combining 6 derived signal modules."""
-    cache_key = (ticker.upper(), expiration)
+    cache_key = (ticker.upper(), expiration, swing_mode)
     cached = _xray_cache.get(cache_key)
     if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
         return cached['result']
@@ -1658,7 +1658,7 @@ async def compute_market_xray(ticker: str, expiration: str = None) -> Dict:
         cached = _xray_cache.get(cache_key)
         if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
             return cached['result']
-        result = await _compute_market_xray_impl(ticker, expiration)
+        result = await _compute_market_xray_impl(ticker, expiration, swing_mode=swing_mode)
         if 'error' not in result:
             _xray_cache[cache_key] = {'result': result, 'ts': _time.time()}
         return result
@@ -1688,7 +1688,7 @@ async def _xray_fetch_quote(ticker: str) -> Optional[float]:
     return None
 
 
-async def _compute_market_xray_impl(ticker: str, expiration: str = None) -> Dict:
+async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_mode: bool = False) -> Dict:
     """Internal implementation of Market X-Ray (not cached)."""
     try:
         # Fetch all data in parallel (including live quote)
@@ -1855,12 +1855,58 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None) -> Dict
         trade_zones = _xray_trade_zones(current_price, maxpain, gex_levels, gex, iv_delta, dte)
 
         # =====================================================================
+        # SWING MODE — Fetch additional chains for 30d/45d DTE
+        # =====================================================================
+        swing_chains = None
+        if swing_mode:
+            try:
+                swing_raw = await asyncio.gather(
+                    get_options_with_greeks_tastytrade(ticker, target_dte=30),
+                    get_options_with_greeks_tastytrade(ticker, target_dte=45),
+                    return_exceptions=True
+                )
+                swing_chains = []
+                for sc in swing_raw:
+                    if isinstance(sc, Exception) or sc is None:
+                        continue
+                    sc_dte = sc.get('dte')
+                    sc_exp = sc.get('expiration')
+                    sc_opts = sc.get('options', [])
+                    sc_atm_iv = None
+                    # Estimate ATM IV from the chain
+                    for o in sc_opts:
+                        call = o.get('call')
+                        if call and call.get('delta') is not None:
+                            try:
+                                if abs(abs(float(call['delta'])) - 0.5) < 0.1:
+                                    sc_atm_iv = float(call.get('iv', 0) or 0)
+                                    if sc_atm_iv > 0:
+                                        break
+                            except (ValueError, TypeError):
+                                pass
+                    if sc_opts and sc_dte:
+                        swing_chains.append({
+                            'dte': sc_dte,
+                            'expiration': sc_exp,
+                            'options': sc_opts,
+                            'atm_iv': sc_atm_iv
+                        })
+                if not swing_chains:
+                    swing_chains = None
+                else:
+                    logger.info(f"X-Ray swing chains for {ticker}: {[c['dte'] for c in swing_chains]}")
+            except Exception as e:
+                logger.warning(f"X-Ray swing chain fetch failed for {ticker}: {e}")
+                swing_chains = None
+
+        # =====================================================================
         # MODULE 6 - COMPOSITE EDGE SCORE
         # =====================================================================
         composite = _xray_composite(
             total_gex, squeeze_pin, smart_money, current_price,
             maxpain, vol_surface, term, trade_zones, dte,
-            options=options, expiration=expiration_used, iv_delta=iv_delta
+            options=options, expiration=expiration_used, iv_delta=iv_delta,
+            swing_mode=swing_mode, swing_chains=swing_chains
         )
 
         return {
@@ -2296,7 +2342,8 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                      current_price: float, maxpain, vol_surface: Dict,
                      term, trade_zones: Dict, dte: int = None,
                      options: list = None, expiration: str = None,
-                     iv_delta: Dict = None) -> Dict:
+                     iv_delta: Dict = None,
+                     swing_mode: bool = False, swing_chains: list = None) -> Dict:
     """MODULE 6: Composite Edge Score (0-100)."""
     factors = []
 
@@ -2697,15 +2744,7 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
         elif dte <= 7:
             dte_note = 'Theta accelerating'
 
-    trade_ideas = []
-
-    # =====================================================================
-    # 1. PRIMARY DIRECTIONAL TRADE — Position-aware
-    # =====================================================================
-    dir_delta = 0.50 if (dte is not None and dte <= 5) else 0.35
-    NEAR_PCT = 1.0  # within 1% = "near" a level
-
-    # --- Position analysis ---
+    # --- Position analysis helpers (used by both swing and normal modes) ---
     def _abs_pct(level):
         """Absolute % distance from current price to level."""
         if not level or not current_price:
@@ -2714,6 +2753,202 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
 
     d_sup = _abs_pct(eff_support)
     d_res = _abs_pct(eff_resistance)
+    sup_lbl = 'support' if support_p else '-1σ'
+    res_lbl = 'resistance' if resistance_p else '+1σ'
+
+    trade_ideas = []
+
+    # =====================================================================
+    # SWING MODE — Generate swing-optimized trade ideas (21-45 DTE, Δ.45)
+    # =====================================================================
+    if swing_mode and swing_chains:
+        swing_delta = 0.45
+        # Determine direction from composite score
+        if composite_score >= 55:
+            swing_dir = 'bullish'
+            swing_opt_type = 'call'
+        elif composite_score < 45:
+            swing_dir = 'bearish'
+            swing_opt_type = 'put'
+        else:
+            # Neutral — pick direction from smart money flow
+            if net_flow == 'bullish':
+                swing_dir = 'bullish'
+                swing_opt_type = 'call'
+            elif net_flow == 'bearish':
+                swing_dir = 'bearish'
+                swing_opt_type = 'put'
+            else:
+                swing_dir = 'bullish'
+                swing_opt_type = 'call'
+
+        # ATM IV from current chain for IV rank comparison
+        base_atm_iv = None
+        if iv_delta and isinstance(iv_delta, dict):
+            base_atm_iv = iv_delta.get('atm_iv')
+            try:
+                base_atm_iv = float(base_atm_iv) if base_atm_iv else None
+            except (ValueError, TypeError):
+                base_atm_iv = None
+
+        swing_candidates = []
+        for sc in swing_chains:
+            sc_dte = sc['dte']
+            sc_exp = sc['expiration']
+            sc_opts = sc['options']
+            sc_atm_iv = sc.get('atm_iv')
+
+            # Find option closest to swing_delta
+            opt = _find_by_delta(swing_delta, swing_opt_type, sc_opts)
+            if not opt or opt['price'] <= 0:
+                continue
+
+            # Compute swing metrics
+            theta_val = None
+            # Find theta from the matched strike
+            for o in sc_opts:
+                leg = o.get(swing_opt_type)
+                if leg and abs(float(o['strike']) - opt['strike']) < 0.01:
+                    theta_val = leg.get('theta')
+                    if theta_val is not None:
+                        try:
+                            theta_val = abs(float(theta_val))
+                        except (ValueError, TypeError):
+                            theta_val = None
+                    break
+
+            theta_per_day = round(theta_val, 4) if theta_val else None
+            # Extrinsic value = premium - intrinsic
+            if swing_opt_type == 'call':
+                intrinsic = max(0, current_price - opt['strike'])
+            else:
+                intrinsic = max(0, opt['strike'] - current_price)
+            extrinsic = max(0, opt['price'] - intrinsic)
+            days_of_theta = round(extrinsic / theta_per_day) if theta_per_day and theta_per_day > 0 else None
+            optimal_exit_dte = max(7, sc_dte - 14)
+
+            # IV rank: compare swing chain ATM IV to base chain
+            iv_rank = 'fair'
+            if sc_atm_iv and base_atm_iv and base_atm_iv > 0:
+                ratio = sc_atm_iv / base_atm_iv
+                if ratio < 0.92:
+                    iv_rank = 'cheap'
+                elif ratio > 1.08:
+                    iv_rank = 'expensive'
+
+            # Score this expiration: DTE sweet spot (28-42 best) × 60% + IV cheapness × 40%
+            if 28 <= sc_dte <= 42:
+                dte_score = 100
+            elif 21 <= sc_dte < 28:
+                dte_score = 70
+            elif 42 < sc_dte <= 50:
+                dte_score = 60
+            else:
+                dte_score = 40
+            iv_score = 100 if iv_rank == 'cheap' else (60 if iv_rank == 'fair' else 30)
+            rank_score = dte_score * 0.6 + iv_score * 0.4
+
+            swing_candidates.append({
+                'opt': opt,
+                'dte': sc_dte,
+                'expiration': sc_exp,
+                'theta_per_day': theta_per_day,
+                'days_of_theta': days_of_theta,
+                'optimal_exit_dte': optimal_exit_dte,
+                'iv_rank': iv_rank,
+                'rank_score': rank_score
+            })
+
+        # Sort by rank_score descending and output top 1-2
+        swing_candidates.sort(key=lambda x: x['rank_score'], reverse=True)
+
+        for i, cand in enumerate(swing_candidates[:2]):
+            opt = cand['opt']
+            sc_dte = cand['dte']
+            sc_exp = cand['expiration']
+            exp_l = ''
+            if sc_exp:
+                try:
+                    exp_l = datetime.strptime(str(sc_exp), '%Y-%m-%d').strftime('%b %d')
+                except (ValueError, TypeError):
+                    exp_l = str(sc_exp)
+
+            title = f'SWING {"CALL" if swing_opt_type == "call" else "PUT"}'
+            delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
+            action_txt = f'Buy ${_fp(opt["strike"])} {swing_opt_type} @ ${opt["price"]:.2f}{delta_txt} ({exp_l}, {sc_dte}d)'
+
+            # Target/stop from trade zones
+            if swing_opt_type == 'call':
+                target_p = eff_resistance or upper_1sd
+                t_lbl = (res_lbl if eff_resistance else '+1σ') if (eff_resistance or upper_1sd) else 'next resistance'
+                stop_p = eff_support or lower_1sd
+                s_lbl = (sup_lbl if eff_support else '-1σ') if (eff_support or lower_1sd) else 'support'
+            else:
+                target_p = eff_support or lower_1sd
+                t_lbl = (sup_lbl if eff_support else '-1σ') if (eff_support or lower_1sd) else 'next support'
+                stop_p = eff_resistance or upper_1sd
+                s_lbl = (res_lbl if eff_resistance else '+1σ') if (eff_resistance or upper_1sd) else 'resistance'
+
+            target_txt = f'${_fp(target_p)} ({t_lbl})' if target_p else f'Next {"resistance" if swing_opt_type == "call" else "support"}'
+            stop_txt = f'${_fp(stop_p)} ({s_lbl}) — max loss ${opt["price"]:.2f}' if stop_p else f'Max loss ${opt["price"]:.2f}'
+
+            # Rationale
+            swing_rat_parts = [f'Score {composite_score}']
+            if net_flow != 'neutral':
+                swing_rat_parts.append(f'{net_flow} flow')
+            if cand['iv_rank'] == 'cheap':
+                swing_rat_parts.append('IV cheap vs term structure')
+            elif cand['iv_rank'] == 'expensive':
+                swing_rat_parts.append('IV elevated')
+            if cand['days_of_theta']:
+                swing_rat_parts.append(f'{cand["days_of_theta"]}d of theta runway')
+            cond_parts = [f'Price ${_fp(current_price)}']
+            if swing_dir == 'bullish' and d_res is not None:
+                cond_parts.append(f'{d_res:.1f}% below {res_lbl}')
+            elif swing_dir == 'bearish' and d_sup is not None:
+                cond_parts.append(f'{d_sup:.1f}% above {sup_lbl}')
+            cond_parts.append(f'{swing_dir} bias — swing hold {sc_dte}d')
+
+            trade_ideas.append({
+                'title': title,
+                'type': swing_dir,
+                'swing_mode': True,
+                'confidence': confidence,
+                'condition': ' — '.join(cond_parts),
+                'action': action_txt,
+                'target': target_txt,
+                'stop': stop_txt,
+                'rationale': ' + '.join(swing_rat_parts),
+                'swing_metrics': {
+                    'dte': sc_dte,
+                    'theta_per_day': cand['theta_per_day'],
+                    'days_of_theta': cand['days_of_theta'],
+                    'optimal_exit_dte': cand['optimal_exit_dte'],
+                    'iv_rank': cand['iv_rank'],
+                    'expiration': sc_exp
+                }
+            })
+
+        # If no swing candidates found, fall through to normal logic
+        if trade_ideas:
+            trade_ideas = trade_ideas[:2]
+
+            return {
+                'score': composite_score,
+                'label': label,
+                'factors': factors,
+                'interpretation': interpretation,
+                'action_plan': actions,
+                'trade_ideas': trade_ideas
+            }
+
+    # =====================================================================
+    # 1. PRIMARY DIRECTIONAL TRADE — Position-aware
+    # =====================================================================
+    dir_delta = 0.50 if (dte is not None and dte <= 5) else 0.35
+    NEAR_PCT = 1.0  # within 1% = "near" a level
+
+    # --- Position analysis (continued) ---
     price_above_sup = eff_support and current_price > float(eff_support)
     price_below_res = eff_resistance and current_price < float(eff_resistance)
 
@@ -2724,9 +2959,6 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
 
     pos_gex = dealer_flow_score >= 60
     neg_gex = dealer_flow_score <= 35
-
-    sup_lbl = 'support' if support_p else '-1σ'
-    res_lbl = 'resistance' if resistance_p else '+1σ'
 
     # --- Rationale builder ---
     def _rationale():

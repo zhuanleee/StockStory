@@ -2591,17 +2591,19 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/xray/{ticker_symbol}", tags=["Market X-Ray"])
-    async def options_xray(ticker_symbol: str, expiration: str = Query(None)):
+    async def options_xray(ticker_symbol: str, expiration: str = Query(None), swing_mode: bool = Query(False)):
         """
         Market X-Ray - Institutional Edge Scanner.
 
         Reveals hidden market dynamics: dealer hedging flow, gamma squeeze/pin detection,
         volatility surface distortions, smart money footprints, optimal trade zones,
         and a composite edge score.
+
+        Set swing_mode=true to get trade ideas optimized for 21-45 DTE swing trades.
         """
         try:
             from src.data.tastytrade_provider import compute_market_xray
-            result = await compute_market_xray(ticker_symbol.upper(), expiration)
+            result = await compute_market_xray(ticker_symbol.upper(), expiration, swing_mode=swing_mode)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2611,12 +2613,13 @@ Be specific with price levels and data points. Keep it actionable for traders.""
     @web_app.get("/options/xray", tags=["Market X-Ray"])
     async def options_xray_query(
         ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."),
-        expiration: str = Query(None, description="Expiration date YYYY-MM-DD")
+        expiration: str = Query(None, description="Expiration date YYYY-MM-DD"),
+        swing_mode: bool = Query(False, description="Optimize for 21-45 DTE swing trades")
     ):
         """Market X-Ray (query param version for futures support)"""
         try:
             from src.data.tastytrade_provider import compute_market_xray
-            result = await compute_market_xray(ticker.upper(), expiration)
+            result = await compute_market_xray(ticker.upper(), expiration, swing_mode=swing_mode)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
