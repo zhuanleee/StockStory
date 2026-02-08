@@ -2759,38 +2759,45 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
     trade_ideas = []
 
     # =====================================================================
-    # SWING MODE — Generate swing-optimized trade ideas (21-45 DTE, Δ.45)
+    # SWING MODE — Inefficiency-based trade idea generation
+    # Finds options where pricing doesn't reflect the edge signals reveal.
     # =====================================================================
     if swing_mode and swing_chains:
-        swing_delta = 0.45
-        # Determine direction from composite score
-        if composite_score >= 55:
-            swing_dir = 'bullish'
-            swing_opt_type = 'call'
-        elif composite_score < 45:
-            swing_dir = 'bearish'
-            swing_opt_type = 'put'
-        else:
-            # Neutral — pick direction from smart money flow
-            if net_flow == 'bullish':
-                swing_dir = 'bullish'
-                swing_opt_type = 'call'
-            elif net_flow == 'bearish':
-                swing_dir = 'bearish'
-                swing_opt_type = 'put'
-            else:
-                swing_dir = 'bullish'
-                swing_opt_type = 'call'
-
-        # ATM IV from current chain for IV rank comparison
+        # --- Extract signal context for inefficiency scoring ---
         base_atm_iv = None
         if iv_delta and isinstance(iv_delta, dict):
-            base_atm_iv = iv_delta.get('atm_iv')
             try:
-                base_atm_iv = float(base_atm_iv) if base_atm_iv else None
+                base_atm_iv = float(iv_delta.get('atm_iv') or 0) or None
             except (ValueError, TypeError):
                 base_atm_iv = None
 
+        # Term structure: front_iv and back_iv for interpolation
+        term_front_iv = None
+        term_back_iv = None
+        term_front_dte = None
+        term_back_dte = None
+        if term and isinstance(term, dict):
+            try:
+                term_front_iv = float(term.get('front_iv') or 0) or None
+                term_back_iv = float(term.get('back_iv') or 0) or None
+                term_front_dte = int(term.get('front_dte') or 0) or None
+                term_back_dte = int(term.get('back_dte') or 0) or None
+            except (ValueError, TypeError):
+                pass
+
+        skew_25d = vol_surface.get('skew_25d')
+        skew_lbl = vol_surface.get('skew_label', 'unknown')
+        sq_score_val = squeeze_pin.get('squeeze_score', 0)
+        sq_dir_val = squeeze_pin.get('squeeze_direction', 'up')
+
+        total_call_n = float(smart_money.get('total_call_notional', 0) or 0)
+        total_put_n = float(smart_money.get('total_put_notional', 0) or 0)
+        flow_imbalance = 0.0
+        if (total_call_n + total_put_n) > 0:
+            flow_imbalance = (total_call_n - total_put_n) / (total_call_n + total_put_n)
+
+        # --- Scan BOTH directions across ALL swing chains ---
+        # Don't pre-pick direction: let the inefficiency score decide.
         swing_candidates = []
         for sc in swing_chains:
             sc_dte = sc['dte']
@@ -2798,72 +2805,204 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
             sc_opts = sc['options']
             sc_atm_iv = sc.get('atm_iv')
 
-            # Find option closest to swing_delta
-            opt = _find_by_delta(swing_delta, swing_opt_type, sc_opts)
-            if not opt or opt['price'] <= 0:
-                continue
+            for opt_type in ['call', 'put']:
+                # Scan delta range: .30 to .55 in .05 steps → find best
+                for target_d in [0.30, 0.35, 0.40, 0.45, 0.50, 0.55]:
+                    opt = _find_by_delta(target_d, opt_type, sc_opts)
+                    if not opt or opt['price'] <= 0:
+                        continue
 
-            # Compute swing metrics
-            theta_val = None
-            # Find theta from the matched strike
-            for o in sc_opts:
-                leg = o.get(swing_opt_type)
-                if leg and abs(float(o['strike']) - opt['strike']) < 0.01:
-                    theta_val = leg.get('theta')
-                    if theta_val is not None:
-                        try:
-                            theta_val = abs(float(theta_val))
-                        except (ValueError, TypeError):
-                            theta_val = None
-                    break
+                    # Extract full greeks from matched strike
+                    theta_val = None
+                    gamma_val = None
+                    opt_iv = None
+                    for o in sc_opts:
+                        leg = o.get(opt_type)
+                        if leg and abs(float(o['strike']) - opt['strike']) < 0.01:
+                            try:
+                                theta_val = abs(float(leg.get('theta') or 0)) or None
+                            except (ValueError, TypeError):
+                                theta_val = None
+                            try:
+                                gamma_val = float(leg.get('gamma') or 0) or None
+                            except (ValueError, TypeError):
+                                gamma_val = None
+                            try:
+                                opt_iv = float(leg.get('iv') or 0) or None
+                            except (ValueError, TypeError):
+                                opt_iv = None
+                            break
 
-            theta_per_day = round(theta_val, 4) if theta_val else None
-            # Extrinsic value = premium - intrinsic
-            if swing_opt_type == 'call':
-                intrinsic = max(0, current_price - opt['strike'])
-            else:
-                intrinsic = max(0, opt['strike'] - current_price)
-            extrinsic = max(0, opt['price'] - intrinsic)
-            days_of_theta = round(extrinsic / theta_per_day) if theta_per_day and theta_per_day > 0 else None
-            optimal_exit_dte = max(7, sc_dte - 14)
+                    if not theta_val or not gamma_val:
+                        continue
 
-            # IV rank: compare swing chain ATM IV to base chain
-            iv_rank = 'fair'
-            if sc_atm_iv and base_atm_iv and base_atm_iv > 0:
-                ratio = sc_atm_iv / base_atm_iv
-                if ratio < 0.92:
-                    iv_rank = 'cheap'
-                elif ratio > 1.08:
-                    iv_rank = 'expensive'
+                    # === INEFFICIENCY SCORE (0-100) ===
 
-            # Score this expiration: DTE sweet spot (28-42 best) × 60% + IV cheapness × 40%
-            if 28 <= sc_dte <= 42:
-                dte_score = 100
-            elif 21 <= sc_dte < 28:
-                dte_score = 70
-            elif 42 < sc_dte <= 50:
-                dte_score = 60
-            else:
-                dte_score = 40
-            iv_score = 100 if iv_rank == 'cheap' else (60 if iv_rank == 'fair' else 30)
-            rank_score = dte_score * 0.6 + iv_score * 0.4
+                    # --- 1. IV Discount (30%) ---
+                    # How cheap is this expiry's IV vs term structure interpolation?
+                    iv_discount_score = 50  # neutral default
+                    expected_iv = None
+                    if term_front_iv and term_back_iv and term_front_dte and term_back_dte:
+                        # Linear interpolation on term structure
+                        if term_back_dte != term_front_dte:
+                            t_frac = (sc_dte - term_front_dte) / (term_back_dte - term_front_dte)
+                            t_frac = max(0, min(1, t_frac))
+                            expected_iv = term_front_iv + t_frac * (term_back_iv - term_front_iv)
+                    if not expected_iv and base_atm_iv:
+                        expected_iv = base_atm_iv
 
-            swing_candidates.append({
-                'opt': opt,
-                'dte': sc_dte,
-                'expiration': sc_exp,
-                'theta_per_day': theta_per_day,
-                'days_of_theta': days_of_theta,
-                'optimal_exit_dte': optimal_exit_dte,
-                'iv_rank': iv_rank,
-                'rank_score': rank_score
-            })
+                    if expected_iv and sc_atm_iv and expected_iv > 0:
+                        iv_ratio = sc_atm_iv / expected_iv
+                        # < 1.0 means chain IV is cheaper than term structure predicts
+                        if iv_ratio <= 0.85:
+                            iv_discount_score = 100  # deeply cheap
+                        elif iv_ratio <= 0.92:
+                            iv_discount_score = 85
+                        elif iv_ratio <= 0.97:
+                            iv_discount_score = 70  # slightly cheap
+                        elif iv_ratio <= 1.03:
+                            iv_discount_score = 50  # fair value
+                        elif iv_ratio <= 1.10:
+                            iv_discount_score = 30  # slightly expensive
+                        else:
+                            iv_discount_score = 10  # expensive — negative edge
 
-        # Sort by rank_score descending and output top 1-2
-        swing_candidates.sort(key=lambda x: x['rank_score'], reverse=True)
+                    # --- 2. Signal-to-Price Gap (25%) ---
+                    # Strong directional signals + low IV = market hasn't priced it in
+                    direction_strength = abs(composite_score - 50) / 50  # 0-1
+                    is_call_aligned = (opt_type == 'call' and composite_score >= 55)
+                    is_put_aligned = (opt_type == 'put' and composite_score < 45)
+                    aligned = is_call_aligned or is_put_aligned
 
-        for i, cand in enumerate(swing_candidates[:2]):
+                    if not aligned:
+                        signal_gap_score = 5  # wrong direction = no edge
+                    else:
+                        # Strong signals + cheap IV = big gap
+                        iv_cheapness = max(0, (100 - iv_discount_score)) / 100  # invert: cheaper IV → higher gap
+                        # Wait, iv_discount_score is already "high = cheap". Use it directly.
+                        signal_gap_score = direction_strength * 60 + (iv_discount_score / 100) * 40
+                        signal_gap_score = round(min(100, signal_gap_score))
+
+                    # --- 3. Theta Efficiency (20%) ---
+                    # gamma / |theta| ratio — higher = more bang per dollar of decay
+                    tg_ratio = gamma_val / theta_val if theta_val > 0 else 0
+                    # Typical range: 0.01-0.15 for equity options
+                    if tg_ratio >= 0.12:
+                        theta_eff_score = 95
+                    elif tg_ratio >= 0.08:
+                        theta_eff_score = 80
+                    elif tg_ratio >= 0.05:
+                        theta_eff_score = 65
+                    elif tg_ratio >= 0.03:
+                        theta_eff_score = 50
+                    elif tg_ratio >= 0.01:
+                        theta_eff_score = 30
+                    else:
+                        theta_eff_score = 10
+
+                    # --- 4. Flow Confirmation (15%) ---
+                    # Smart money already loading in this direction
+                    if opt_type == 'call':
+                        # Positive flow_imbalance = bullish confirmation
+                        if flow_imbalance > 0.3:
+                            flow_score = 90
+                        elif flow_imbalance > 0.1:
+                            flow_score = 70
+                        elif flow_imbalance > -0.1:
+                            flow_score = 50
+                        else:
+                            flow_score = 20  # contra-flow
+                    else:
+                        # Negative flow_imbalance = bearish confirmation
+                        if flow_imbalance < -0.3:
+                            flow_score = 90
+                        elif flow_imbalance < -0.1:
+                            flow_score = 70
+                        elif flow_imbalance < 0.1:
+                            flow_score = 50
+                        else:
+                            flow_score = 20  # contra-flow
+
+                    # --- 5. GEX Catalyst (10%) ---
+                    # Dealer positioning will amplify a move for free
+                    gex_catalyst_score = 50  # neutral
+                    if sq_score_val >= 70:
+                        # High squeeze — if direction matches, options are underpriced
+                        squeeze_aligned = (opt_type == 'call' and sq_dir_val == 'up') or \
+                                         (opt_type == 'put' and sq_dir_val == 'down')
+                        gex_catalyst_score = 95 if squeeze_aligned else 20
+                    elif sq_score_val >= 50:
+                        squeeze_aligned = (opt_type == 'call' and sq_dir_val == 'up') or \
+                                         (opt_type == 'put' and sq_dir_val == 'down')
+                        gex_catalyst_score = 70 if squeeze_aligned else 35
+                    # Negative GEX amplifies directional moves
+                    if dealer_flow_score <= 35:
+                        gex_catalyst_score = min(100, gex_catalyst_score + 15)
+
+                    # === COMPOSITE INEFFICIENCY SCORE ===
+                    edge_score = round(
+                        iv_discount_score * 0.30 +
+                        signal_gap_score * 0.25 +
+                        theta_eff_score * 0.20 +
+                        flow_score * 0.15 +
+                        gex_catalyst_score * 0.10
+                    )
+
+                    # Skip low-edge candidates entirely
+                    if edge_score < 40:
+                        continue
+
+                    # Compute swing-specific metrics
+                    theta_per_day = round(theta_val, 4)
+                    if opt_type == 'call':
+                        intrinsic = max(0, current_price - opt['strike'])
+                    else:
+                        intrinsic = max(0, opt['strike'] - current_price)
+                    extrinsic = max(0, opt['price'] - intrinsic)
+                    days_of_theta = round(extrinsic / theta_per_day) if theta_per_day > 0 else None
+                    optimal_exit_dte = max(7, sc_dte - 14)
+
+                    # IV rank label
+                    iv_rank = 'fair'
+                    if iv_discount_score >= 70:
+                        iv_rank = 'cheap'
+                    elif iv_discount_score <= 30:
+                        iv_rank = 'expensive'
+
+                    swing_candidates.append({
+                        'opt': opt,
+                        'opt_type': opt_type,
+                        'dte': sc_dte,
+                        'expiration': sc_exp,
+                        'theta_per_day': theta_per_day,
+                        'days_of_theta': days_of_theta,
+                        'optimal_exit_dte': optimal_exit_dte,
+                        'iv_rank': iv_rank,
+                        'edge_score': edge_score,
+                        'edge_breakdown': {
+                            'iv_discount': iv_discount_score,
+                            'signal_gap': signal_gap_score,
+                            'theta_eff': theta_eff_score,
+                            'flow': flow_score,
+                            'gex_catalyst': gex_catalyst_score
+                        },
+                        'tg_ratio': round(tg_ratio, 4),
+                    })
+
+        # Deduplicate: keep best edge_score per (opt_type, dte) combo
+        seen = {}
+        for c in swing_candidates:
+            key = (c['opt_type'], c['dte'])
+            if key not in seen or c['edge_score'] > seen[key]['edge_score']:
+                seen[key] = c
+        swing_candidates = list(seen.values())
+
+        # Sort by edge_score descending — surface top 1-2
+        swing_candidates.sort(key=lambda x: x['edge_score'], reverse=True)
+
+        for cand in swing_candidates[:2]:
             opt = cand['opt']
+            opt_type = cand['opt_type']
             sc_dte = cand['dte']
             sc_exp = cand['expiration']
             exp_l = ''
@@ -2873,12 +3012,13 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                 except (ValueError, TypeError):
                     exp_l = str(sc_exp)
 
-            title = f'SWING {"CALL" if swing_opt_type == "call" else "PUT"}'
+            swing_dir = 'bullish' if opt_type == 'call' else 'bearish'
+            title = f'SWING {"CALL" if opt_type == "call" else "PUT"}'
             delta_txt = f' | Δ.{int(opt["delta"]*100):02d}' if opt.get('delta') else ''
-            action_txt = f'Buy ${_fp(opt["strike"])} {swing_opt_type} @ ${opt["price"]:.2f}{delta_txt} ({exp_l}, {sc_dte}d)'
+            action_txt = f'Buy ${_fp(opt["strike"])} {opt_type} @ ${opt["price"]:.2f}{delta_txt} ({exp_l}, {sc_dte}d)'
 
             # Target/stop from trade zones
-            if swing_opt_type == 'call':
+            if opt_type == 'call':
                 target_p = eff_resistance or upper_1sd
                 t_lbl = (res_lbl if eff_resistance else '+1σ') if (eff_resistance or upper_1sd) else 'next resistance'
                 stop_p = eff_support or lower_1sd
@@ -2889,43 +3029,59 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                 stop_p = eff_resistance or upper_1sd
                 s_lbl = (res_lbl if eff_resistance else '+1σ') if (eff_resistance or upper_1sd) else 'resistance'
 
-            target_txt = f'${_fp(target_p)} ({t_lbl})' if target_p else f'Next {"resistance" if swing_opt_type == "call" else "support"}'
+            target_txt = f'${_fp(target_p)} ({t_lbl})' if target_p else f'Next {"resistance" if opt_type == "call" else "support"}'
             stop_txt = f'${_fp(stop_p)} ({s_lbl}) — max loss ${opt["price"]:.2f}' if stop_p else f'Max loss ${opt["price"]:.2f}'
 
-            # Rationale
-            swing_rat_parts = [f'Score {composite_score}']
-            if net_flow != 'neutral':
-                swing_rat_parts.append(f'{net_flow} flow')
-            if cand['iv_rank'] == 'cheap':
-                swing_rat_parts.append('IV cheap vs term structure')
-            elif cand['iv_rank'] == 'expensive':
-                swing_rat_parts.append('IV elevated')
-            if cand['days_of_theta']:
-                swing_rat_parts.append(f'{cand["days_of_theta"]}d of theta runway')
-            cond_parts = [f'Price ${_fp(current_price)}']
-            if swing_dir == 'bullish' and d_res is not None:
-                cond_parts.append(f'{d_res:.1f}% below {res_lbl}')
-            elif swing_dir == 'bearish' and d_sup is not None:
-                cond_parts.append(f'{d_sup:.1f}% above {sup_lbl}')
-            cond_parts.append(f'{swing_dir} bias — swing hold {sc_dte}d')
+            # Rationale: explain the inefficiency, not just the score
+            eb = cand['edge_breakdown']
+            rat_parts = []
+            if eb['iv_discount'] >= 70:
+                rat_parts.append('IV cheap vs term structure')
+            elif eb['iv_discount'] <= 30:
+                rat_parts.append('IV elevated (negative edge)')
+            if eb['signal_gap'] >= 65:
+                rat_parts.append(f'strong {swing_dir} signals underpriced')
+            if eb['theta_eff'] >= 65:
+                rat_parts.append(f'efficient leverage (γ/θ {cand["tg_ratio"]:.3f})')
+            if eb['flow'] >= 70:
+                rat_parts.append(f'smart money confirming')
+            if eb['gex_catalyst'] >= 70:
+                rat_parts.append('GEX catalyst aligned')
+            if not rat_parts:
+                rat_parts.append(f'Edge {cand["edge_score"]}')
+            rationale = ' + '.join(rat_parts)
+
+            # Condition: describe what the inefficiency IS
+            cond_parts = [f'Edge {cand["edge_score"]}']
+            if eb['iv_discount'] >= 70:
+                cond_parts.append(f'{sc_dte}d IV underpriced vs curve')
+            if eb['signal_gap'] >= 65 and eb['iv_discount'] >= 50:
+                cond_parts.append(f'score {composite_score} not reflected in premium')
+            elif eb['gex_catalyst'] >= 70:
+                cond_parts.append(f'squeeze ({sq_score_val}) will amplify')
+            if eb['flow'] >= 70:
+                net_flow_dir = 'bullish' if flow_imbalance > 0 else 'bearish'
+                cond_parts.append(f'{net_flow_dir} institutional flow')
 
             trade_ideas.append({
                 'title': title,
                 'type': swing_dir,
                 'swing_mode': True,
-                'confidence': confidence,
+                'confidence': 'high' if cand['edge_score'] >= 70 else ('medium' if cand['edge_score'] >= 55 else 'low'),
                 'condition': ' — '.join(cond_parts),
                 'action': action_txt,
                 'target': target_txt,
                 'stop': stop_txt,
-                'rationale': ' + '.join(swing_rat_parts),
+                'rationale': rationale,
                 'swing_metrics': {
                     'dte': sc_dte,
                     'theta_per_day': cand['theta_per_day'],
                     'days_of_theta': cand['days_of_theta'],
                     'optimal_exit_dte': cand['optimal_exit_dte'],
                     'iv_rank': cand['iv_rank'],
-                    'expiration': sc_exp
+                    'expiration': sc_exp,
+                    'edge_score': cand['edge_score'],
+                    'edge_breakdown': cand['edge_breakdown']
                 }
             })
 
