@@ -2038,13 +2038,38 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
                 # Flow toxicity from chain data already in hand
                 flow_toxicity_result = FlowToxicityAnalyzer.compute_toxicity(options, multiplier)
 
-                # VRP (simplified): (iv_rank - 30) / 10
-                iv_rank = 50  # default
-                if composite and composite.get('factors'):
-                    for f in composite['factors']:
-                        if f.get('name', '').lower().startswith('iv'):
-                            iv_rank = f.get('score', 50)
-                            break
+                # VRP — compute from actual per-ticker ATM IV data
+                # Use iv_delta (already fetched) for ATM IV, and term structure
+                # for front/back IV ratio to estimate IV richness
+                atm_iv = None
+                if iv_delta and isinstance(iv_delta, dict):
+                    atm_iv = iv_delta.get('atm_iv')
+                    if atm_iv is not None:
+                        try:
+                            atm_iv = float(atm_iv)
+                        except (ValueError, TypeError):
+                            atm_iv = None
+
+                # Compute IV rank proxy from ATM IV relative to typical ranges
+                # Low IV (<15%) → rank ~20, Moderate (20-30%) → rank ~50, High (>40%) → rank ~80+
+                iv_rank = 50  # default if no data
+                if atm_iv is not None and atm_iv > 0:
+                    # Map ATM IV (as decimal) to 0-100 rank
+                    # Typical equity IV: 0.10 (low) to 0.60 (high)
+                    iv_rank = max(0, min(100, round((atm_iv - 0.10) / 0.50 * 100)))
+
+                # Enhance with term structure slope — backwardation adds IV richness
+                if term and isinstance(term, dict):
+                    slope = term.get('slope', 0)
+                    if slope is not None:
+                        try:
+                            slope_val = float(slope)
+                            # Backwardation (negative slope) = front IV > back IV = elevated IV
+                            # Adds up to +15 to iv_rank for strong backwardation
+                            iv_rank = max(0, min(100, iv_rank + round(-slope_val * 30)))
+                        except (ValueError, TypeError):
+                            pass
+
                 vrp = round((iv_rank - 30) / 10, 2)
                 vrp_signal = 'high' if vrp > 4 else ('moderate' if vrp > 2 else ('low' if vrp > 0 else 'negative'))
 
@@ -2059,9 +2084,17 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
                     risk_level = regime_data.get('risk_level', 'moderate')
                     position_multiplier = regime_data.get('position_multiplier', 1.0)
 
-                # Term structure signal
+                # Term structure signal — prefer direct term data over vol_surface derivative
                 term_structure_signal = 'contango'
-                if vol_surface and isinstance(vol_surface, dict):
+                if term and isinstance(term, dict):
+                    struct = (term.get('structure') or '').lower()
+                    if struct == 'backwardation':
+                        term_structure_signal = 'inverted'
+                    elif struct == 'contango':
+                        term_structure_signal = 'contango'
+                    elif struct == 'flat':
+                        term_structure_signal = 'flat'
+                elif vol_surface and isinstance(vol_surface, dict):
                     ts = (vol_surface.get('term_signal') or '').lower()
                     if ts in ('contango', 'normal', 'inverted', 'flat'):
                         term_structure_signal = ts
@@ -2126,6 +2159,8 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
                     'position_multiplier': position_multiplier,
                     'vrp': vrp,
                     'vrp_signal': vrp_signal,
+                    'iv_rank': iv_rank,
+                    'atm_iv': round(atm_iv, 4) if atm_iv else None,
                     'flow_toxicity': flow_toxicity_result,
                     'term_structure': term_structure_signal,
                     'skew_ratio': skew_ratio,

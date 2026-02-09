@@ -763,6 +763,32 @@ class StrategySelector:
             'delta_target': 0.18,
             'description': 'Backwardation = elevated front IV. Sell rich front-month premium.',
         },
+        # --- Softer fallbacks for scanner context ---
+        {
+            'name': 'Cash-Secured Put',
+            'conditions': lambda r: (
+                r['vrp'] > 0 and
+                r['combined_regime'] not in ('danger', 'high_risk') and
+                r['flow_toxicity'] < 0.7
+            ),
+            'type': 'short_premium',
+            'direction': 'neutral_bullish',
+            'dte_range': [30, 45],
+            'delta_target': 0.25,
+            'description': 'Slightly rich IV + stable conditions. Sell puts for income.',
+        },
+        {
+            'name': 'Long Call (Cheap IV)',
+            'conditions': lambda r: (
+                r['vrp'] < 0 and
+                r['combined_regime'] not in ('danger', 'high_risk')
+            ),
+            'type': 'long_premium',
+            'direction': 'bullish',
+            'dte_range': [30, 60],
+            'delta_target': 0.40,
+            'description': 'IV below realized — options are cheap. Buy calls for directional exposure.',
+        },
     ]
 
     def select_strategy(self, regime_state: Dict) -> List[Dict]:
