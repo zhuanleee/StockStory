@@ -72,7 +72,7 @@ async def check_signals_cron():
     signal_engine = SignalEngine(VOLUME_PATH)
 
     # Check exit conditions first
-    exits = engine.check_exit_conditions()
+    exits = await engine.check_exit_conditions()
     if exits:
         logger.info(f"Auto-exits: {len(exits)} positions closed")
 
@@ -82,16 +82,17 @@ async def check_signals_cron():
             signals = await signal_engine.evaluate_signals(ticker, config)
             for sig in signals:
                 engine.journal.record_signal(sig)
-                equity = engine.get_account_summary().get('equity', 50000)
+                summary = await engine.get_account_summary()
+                equity = summary.get('equity', 50000)
                 sig['quantity'] = engine.risk_manager.compute_position_size(sig, equity)
-                result = engine.execute_signal(sig)
+                result = await engine.execute_signal(sig)
                 if result.get('ok'):
                     logger.info(f"Auto-trade: {sig['ticker']} {sig['signal_type']} executed")
         except Exception as e:
             logger.warning(f"Cron signal check error for {ticker}: {e}")
 
     # Record equity snapshot
-    engine.get_account_summary()
+    await engine.get_account_summary()
     volume.commit()
 
 
@@ -3704,29 +3705,29 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         return PaperEngine(VOLUME_PATH)
 
     @web_app.get("/paper/status", tags=["Paper Trading"])
-    def paper_status():
+    async def paper_status():
         """System health: cert session alive, config, open trades."""
         try:
             engine = _get_paper_engine()
-            return {"ok": True, "data": engine.get_status()}
+            return {"ok": True, "data": await engine.get_status()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/paper/account", tags=["Paper Trading"])
-    def paper_account():
+    async def paper_account():
         """Account summary: equity, cash, buying power, P&L."""
         try:
             engine = _get_paper_engine()
-            return {"ok": True, "data": engine.get_account_summary()}
+            return {"ok": True, "data": await engine.get_account_summary()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/paper/positions", tags=["Paper Trading"])
-    def paper_positions():
+    async def paper_positions():
         """Open positions with live marks from TT cert."""
         try:
             engine = _get_paper_engine()
-            positions = engine.get_positions()
+            positions = await engine.get_positions()
             journal_trades = engine.journal.get_open_trades()
             return {"ok": True, "data": {
                 "positions": positions,
@@ -3736,11 +3737,11 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/paper/orders", tags=["Paper Trading"])
-    def paper_orders(limit: int = 20):
+    async def paper_orders(limit: int = 20):
         """Recent order history from TT cert."""
         try:
             engine = _get_paper_engine()
-            return {"ok": True, "data": engine.get_orders(limit)}
+            return {"ok": True, "data": await engine.get_orders(limit)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -3867,7 +3868,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.post("/paper/order", tags=["Paper Trading"])
-    def paper_order(request: dict):
+    async def paper_order(request: dict):
         """Manual order placement (bypass signal engine)."""
         try:
             engine = _get_paper_engine()
@@ -3885,7 +3886,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                 'tags': request.get('tags', ['manual']),
                 'notes': request.get('notes', 'Manual order'),
             }
-            result = engine.execute_signal(signal)
+            result = await engine.execute_signal(signal)
             if result.get('ok'):
                 volume.commit()
                 return {"ok": True, "data": result}
@@ -3894,11 +3895,11 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.post("/paper/close/{trade_id}", tags=["Paper Trading"])
-    def paper_close(trade_id: str, reason: str = "manual"):
+    async def paper_close(trade_id: str, reason: str = "manual"):
         """Manually close a specific position."""
         try:
             engine = _get_paper_engine()
-            result = engine.close_position(trade_id, reason)
+            result = await engine.close_position(trade_id, reason)
             volume.commit()
             return {"ok": result.get('ok', False), "data": result}
         except Exception as e:
@@ -3923,15 +3924,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                         all_signals.append(sig)
                         # Auto-execute if enabled
                         if config.get('auto_trade_enabled'):
-                            sig['quantity'] = engine.risk_manager.compute_position_size(sig, engine.get_account_summary().get('equity', 50000))
-                            result = engine.execute_signal(sig)
+                            summary = await engine.get_account_summary()
+                            sig['quantity'] = engine.risk_manager.compute_position_size(sig, summary.get('equity', 50000))
+                            result = await engine.execute_signal(sig)
                             if result.get('ok'):
                                 executed.append(result)
                 except Exception as e:
                     logger.warning(f"Signal check error for {ticker}: {e}")
 
             # Also check exit conditions
-            exits = engine.check_exit_conditions()
+            exits = await engine.check_exit_conditions()
 
             volume.commit()
             return {"ok": True, "data": {
@@ -3956,8 +3958,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
     # Legacy stubs redirect to paper trading
     @web_app.get("/trades/positions")
-    def trades_positions():
-        return paper_positions()
+    async def trades_positions():
+        return await paper_positions()
 
     @web_app.get("/watchlist", tags=["Watchlist"])
     def get_watchlist():

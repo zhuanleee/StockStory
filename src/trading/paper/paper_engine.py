@@ -2,6 +2,7 @@
 Paper Trading Engine — Cert session, order execution, position sync.
 
 Uses Tastytrade certification (sandbox) API with is_test=True.
+All tastytrade SDK v12+ methods are async.
 """
 
 import os
@@ -21,7 +22,7 @@ _cert_session_expiry = None
 _cert_account = None
 
 
-def get_cert_session():
+async def get_cert_session():
     """Get or create Tastytrade cert session for paper trading."""
     global _cert_session, _cert_session_expiry, _cert_account
 
@@ -41,10 +42,13 @@ def get_cert_session():
     _cert_session = Session(client_secret, refresh_token, is_test=True)
     _cert_session_expiry = datetime.now() + timedelta(minutes=14)
 
-    accounts = Account.get(_cert_session)
+    accounts = await Account.get(_cert_session)
     if not accounts:
         raise ValueError("No accounts found on cert session")
-    _cert_account = accounts[0]
+    if isinstance(accounts, list):
+        _cert_account = accounts[0]
+    else:
+        _cert_account = accounts
 
     logger.info(f"Cert session created, account: {_cert_account.account_number}")
     return _cert_session, _cert_account
@@ -83,11 +87,11 @@ class PaperEngine:
     # Account & Positions
     # -------------------------------------------------------------------------
 
-    def get_account_summary(self) -> Dict:
+    async def get_account_summary(self) -> Dict:
         """Get cert account summary: equity, cash, buying power, positions."""
         try:
-            session, account = get_cert_session()
-            balances = account.get_balances(session)
+            session, account = await get_cert_session()
+            balances = await account.get_balances(session)
 
             equity = float(balances.net_liquidating_value)
             cash = float(balances.cash_balance)
@@ -144,11 +148,11 @@ class PaperEngine:
                 'error': str(e),
             }
 
-    def get_positions(self) -> List[Dict]:
+    async def get_positions(self) -> List[Dict]:
         """Get open positions from TT cert with live marks."""
         try:
-            session, account = get_cert_session()
-            positions = account.get_positions(session)
+            session, account = await get_cert_session()
+            positions = await account.get_positions(session)
 
             result = []
             for pos in positions:
@@ -174,11 +178,11 @@ class PaperEngine:
             logger.error(f"Get positions error: {e}")
             return []
 
-    def get_orders(self, limit: int = 20) -> List[Dict]:
+    async def get_orders(self, limit: int = 20) -> List[Dict]:
         """Get recent orders from TT cert."""
         try:
-            session, account = get_cert_session()
-            orders = account.get_live_orders(session)
+            session, account = await get_cert_session()
+            orders = await account.get_live_orders(session)
 
             result = []
             for order in orders[:limit]:
@@ -209,7 +213,7 @@ class PaperEngine:
     # Order Execution
     # -------------------------------------------------------------------------
 
-    def execute_signal(self, signal: dict) -> Dict:
+    async def execute_signal(self, signal: dict) -> Dict:
         """Execute a trading signal via TT cert API."""
         from tastytrade.order import (
             NewOrder, Leg, OrderAction, OrderType,
@@ -218,13 +222,14 @@ class PaperEngine:
 
         # Risk checks
         open_trades = self.journal.get_open_trades()
-        equity = self.get_account_summary().get('equity', 50000)
+        summary = await self.get_account_summary()
+        equity = summary.get('equity', 50000)
         risk_check = self.risk_manager.check_all(signal, open_trades, equity)
         if not risk_check['passed']:
             return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
 
         try:
-            session, account = get_cert_session()
+            session, account = await get_cert_session()
 
             # Build OCC option symbol
             occ_symbol = build_occ_symbol(
@@ -255,7 +260,7 @@ class PaperEngine:
             )
 
             # Execute on cert (dry_run=False = real sandbox execution)
-            response = account.place_order(session, order, dry_run=False)
+            response = await account.place_order(session, order, dry_run=False)
 
             order_id = response.order.id if hasattr(response, 'order') and hasattr(response.order, 'id') else None
             fill_price = 0
@@ -287,7 +292,7 @@ class PaperEngine:
             traceback.print_exc()
             return {'ok': False, 'error': str(e)}
 
-    def close_position(self, trade_id: str, reason: str = 'manual') -> Dict:
+    async def close_position(self, trade_id: str, reason: str = 'manual') -> Dict:
         """Close a position by trade ID."""
         from tastytrade.order import (
             NewOrder, Leg, OrderAction, OrderType,
@@ -300,7 +305,7 @@ class PaperEngine:
             return {'ok': False, 'error': f'Trade {trade_id} not found or not open'}
 
         try:
-            session, account = get_cert_session()
+            session, account = await get_cert_session()
 
             occ_symbol = trade.get('occ_symbol') or build_occ_symbol(
                 trade['ticker'], trade['expiration'],
@@ -326,7 +331,7 @@ class PaperEngine:
                 legs=[leg],
             )
 
-            response = account.place_order(session, order, dry_run=False)
+            response = await account.place_order(session, order, dry_run=False)
             fill_price = 0
             if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
                 fill_price = float(response.order.price)
@@ -344,14 +349,14 @@ class PaperEngine:
     # Exit Management
     # -------------------------------------------------------------------------
 
-    def check_exit_conditions(self) -> List[Dict]:
+    async def check_exit_conditions(self) -> List[Dict]:
         """Check all open positions for exit conditions. Returns list of actions taken."""
         actions = []
         open_trades = self.journal.get_open_trades()
         if not open_trades:
             return actions
 
-        positions = self.get_positions()
+        positions = await self.get_positions()
         position_map = {p['symbol']: p for p in positions}
 
         for trade in open_trades:
@@ -397,7 +402,7 @@ class PaperEngine:
                 exit_reason = 'time_exit'
 
             if exit_reason:
-                result = self.close_position(trade['id'], exit_reason)
+                result = await self.close_position(trade['id'], exit_reason)
                 actions.append({
                     'trade_id': trade['id'],
                     'ticker': trade['ticker'],
@@ -412,12 +417,12 @@ class PaperEngine:
     # System Status
     # -------------------------------------------------------------------------
 
-    def get_status(self) -> Dict:
+    async def get_status(self) -> Dict:
         """System health check."""
         cert_ok = False
         account_num = None
         try:
-            session, account = get_cert_session()
+            session, account = await get_cert_session()
             cert_ok = session is not None
             account_num = account.account_number if account else None
         except Exception as e:
