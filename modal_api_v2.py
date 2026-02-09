@@ -4022,7 +4022,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         vrp: float = 3.0, gex_regime: str = "transitional",
         combined_regime: str = "neutral_transitional",
         flow_toxicity: float = 0.3, term_structure: str = "contango",
-        skew_steep: bool = False, vanna_flow: float = 0.0,
+        skew_steep: bool = False, skew_ratio: float = 1.0,
+        iv_rank: float = 50, vanna_flow: float = 0.0,
         macro_event_days: int = 99,
     ):
         """Phase 3b: Auto-select optimal strategy based on regime state."""
@@ -4034,11 +4035,22 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                 'flow_toxicity': flow_toxicity,
                 'term_structure': term_structure,
                 'skew_steep': skew_steep,
+                'skew_ratio': skew_ratio,
+                'iv_rank': iv_rank,
                 'vanna_flow': vanna_flow,
                 'macro_event_days': macro_event_days,
             }
             strategies = engine.select_strategy(regime_state)
             return {"ok": True, "data": {"strategies": strategies, "regime_state": regime_state}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/strategy-preview/{ticker}", tags=["Paper Trading - Adaptive"])
+    async def paper_strategy_preview(ticker: str):
+        """Preview what multi-leg strategy would be built for current conditions."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": await engine.strategy_preview(ticker)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

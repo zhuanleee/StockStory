@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .risk_manager import RiskManager, load_config, save_config
 from .journal import TradeJournal
+from .strategy_builder import StrategyBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class PaperEngine:
         self.journal = TradeJournal(volume_path)
         self.risk_manager = RiskManager(volume_path)
         self.config = load_config(volume_path)
+        self.strategy_builder = StrategyBuilder()
         # Phase 1a-1c, 3a-3c, 4c: Adaptive systems
         try:
             from .adaptive_engine import (
@@ -254,7 +256,187 @@ class PaperEngine:
     # -------------------------------------------------------------------------
 
     async def execute_signal(self, signal: dict) -> Dict:
-        """Execute a trading signal via TT cert API."""
+        """Execute a trading signal via TT cert API.
+
+        Dispatches to multi-leg execution when multi_leg_enabled and signal
+        has a strategy_recommendation with recognized multi-leg strategy.
+        Checks transition probability for halt/halve sizing.
+        """
+        # Regime transition check: halt or halve position sizes
+        transition = signal.get('transition', {})
+        trans_prob = transition.get('transition_probability', 0)
+        trans_action = transition.get('action', 'normal')
+
+        if trans_action == 'halt_new_entries':
+            logger.warning(f"Halting trade for {signal.get('ticker')}: "
+                           f"transition probability {trans_prob:.1%}")
+            return {
+                'ok': False,
+                'error': f'Regime transition probability {trans_prob:.1%} — halting new entries',
+                'transition': transition,
+            }
+
+        # Check if this should be a multi-leg trade
+        multi_leg_enabled = self.config.get('multi_leg_enabled', False)
+        strategy_rec = signal.get('strategy_recommendation')
+
+        if multi_leg_enabled and strategy_rec:
+            strategy_name = strategy_rec.get('name', '')
+            # Route to multi-leg if strategy is a recognized multi-leg type
+            multi_leg_types = ['credit spread', 'iron condor', 'iron butterfly',
+                               'straddle', 'debit spread', 'ratio spread',
+                               'range bound', 'event vol', 'premium harvest',
+                               'skew harvest', 'vrp harvest', 'melt-up',
+                               'bear put', 'backwardation credit']
+            if any(t in strategy_name.lower() for t in multi_leg_types):
+                return await self._execute_multi_leg(signal, strategy_rec)
+
+        # --- Smart single-leg path ---
+        return await self._execute_smart_single_leg(signal)
+
+    async def _execute_smart_single_leg(self, signal: dict) -> Dict:
+        """Smart single-leg execution with delta targeting, Greek awareness, and quality gating."""
+        ticker = signal['ticker']
+        direction = signal.get('direction', 'long')
+
+        # 1. Block naked shorts — require multi-leg mode for selling premium
+        if direction == 'short':
+            logger.warning(f"Blocked naked short for {ticker}: multi-leg mode required")
+            return {
+                'ok': False,
+                'error': 'Naked short positions require multi-leg mode for defined-risk trades',
+                'blocked_naked_short': True,
+            }
+
+        # Risk checks
+        open_trades = self.journal.get_open_trades()
+        summary = await self.get_account_summary()
+        equity = summary.get('equity', 50000)
+        risk_check = self.risk_manager.check_all(signal, open_trades, equity)
+        if not risk_check['passed']:
+            return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
+
+        # 2. Fetch chain for delta-based strike selection
+        try:
+            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
+            dte_range = signal.get('dte_range', [30, 45])
+            target_dte = (dte_range[0] + dte_range[1]) // 2
+            chain = await get_options_with_greeks_tastytrade(ticker, target_dte=target_dte)
+        except Exception as e:
+            logger.warning(f"Chain fetch failed for {ticker}, falling back to naive: {e}")
+            return await self._execute_naive_single_leg(signal)
+
+        if not isinstance(chain, dict) or not chain.get('options'):
+            logger.warning(f"No chain data for {ticker}, falling back to naive")
+            return await self._execute_naive_single_leg(signal)
+
+        # 3. Delta-based strike selection
+        option_type = signal.get('option_type', 'call')
+        delta_target = signal.get('delta_target', 0.50)
+        opts = self.strategy_builder._extract_options(chain['options'], option_type)
+
+        if not opts:
+            logger.warning(f"No {option_type} options extracted for {ticker}, falling back to naive")
+            return await self._execute_naive_single_leg(signal)
+
+        selected = self.strategy_builder._find_by_delta(opts, delta_target, prefer_liquid=True)
+        if not selected:
+            logger.warning(f"No strike found near {delta_target:.0%}Δ for {ticker}, falling back to naive")
+            return await self._execute_naive_single_leg(signal)
+
+        # 4. Liquidity check (warn but don't reject)
+        if selected['oi'] < 50:
+            logger.warning(
+                f"Low OI ({selected['oi']}) for {ticker} {option_type} ${selected['strike']} "
+                f"— proceeding with best available"
+            )
+
+        # 5. Quality scoring
+        quality = self.strategy_builder._score_for_buying(selected)
+        if quality < 15:
+            logger.warning(f"Quality gate rejected {ticker} {option_type} ${selected['strike']} (score={quality:.1f})")
+            return {
+                'ok': False,
+                'error': f'Quality too low ({quality:.1f}/100) for {option_type} ${selected["strike"]}',
+                'quality_rejected': True,
+            }
+
+        # 6. Record Greeks
+        greeks = self.strategy_builder._leg_greeks(selected, 'BUY', option_type)
+
+        # 7. Override naive signal fields with chain-derived data
+        expiration = chain.get('expiration', signal.get('expiration', ''))
+        signal['strike'] = selected['strike']
+        signal['expiration'] = expiration
+        signal['entry_price'] = selected['price']
+        signal['greeks'] = greeks
+        signal['quality_score'] = round(quality, 1)
+        signal['delta'] = selected['delta']
+        signal['iv'] = selected['iv']
+
+        # 8. Execute order — always BUY_TO_OPEN
+        try:
+            from tastytrade.order import (
+                NewOrder, Leg, OrderAction, OrderType,
+                OrderTimeInForce, InstrumentType
+            )
+
+            session, account = await get_cert_session()
+
+            occ_symbol = build_occ_symbol(
+                ticker, expiration, selected['strike'], option_type
+            )
+
+            quantity = signal.get('quantity', 1)
+
+            leg = Leg(
+                instrument_type=InstrumentType.EQUITY_OPTION,
+                symbol=occ_symbol,
+                quantity=Decimal(str(quantity)),
+                action=OrderAction.BUY_TO_OPEN,
+            )
+
+            order = NewOrder(
+                time_in_force=OrderTimeInForce.DAY,
+                order_type=OrderType.MARKET,
+                legs=[leg],
+            )
+
+            response = await account.place_order(session, order, dry_run=False)
+
+            order_id = response.order.id if hasattr(response, 'order') and hasattr(response.order, 'id') else None
+            fill_price = 0
+            if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
+                fill_price = float(response.order.price)
+
+            signal['entry_price'] = fill_price or selected['price']
+            signal['occ_symbol'] = occ_symbol
+
+            trade = self.journal.record_trade(
+                signal,
+                {'order_id': order_id},
+                self.config,
+            )
+
+            logger.info(
+                f"Smart single-leg: {occ_symbol} x{quantity} @ ${fill_price} "
+                f"(Δ:{selected['delta']:.2f}, IV:{selected['iv']:.1%}, Q:{quality:.0f})"
+            )
+            return {
+                'ok': True,
+                'trade': trade,
+                'order_id': order_id,
+                'occ_symbol': occ_symbol,
+            }
+
+        except Exception as e:
+            logger.error(f"Smart single-leg execute error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'ok': False, 'error': str(e)}
+
+    async def _execute_naive_single_leg(self, signal: dict) -> Dict:
+        """Fallback naive single-leg execution (no chain data, ATM strike)."""
         from tastytrade.order import (
             NewOrder, Leg, OrderAction, OrderType,
             OrderTimeInForce, InstrumentType
@@ -271,13 +453,11 @@ class PaperEngine:
         try:
             session, account = await get_cert_session()
 
-            # Build OCC option symbol
             occ_symbol = build_occ_symbol(
                 signal['ticker'], signal['expiration'],
                 signal['strike'], signal['option_type']
             )
 
-            # Determine action
             direction = signal.get('direction', 'long')
             if direction == 'long':
                 action = OrderAction.BUY_TO_OPEN
@@ -299,7 +479,6 @@ class PaperEngine:
                 legs=[leg],
             )
 
-            # Execute on cert (dry_run=False = real sandbox execution)
             response = await account.place_order(session, order, dry_run=False)
 
             order_id = response.order.id if hasattr(response, 'order') and hasattr(response.order, 'id') else None
@@ -307,18 +486,16 @@ class PaperEngine:
             if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
                 fill_price = float(response.order.price)
 
-            # Update signal with execution details
             signal['entry_price'] = fill_price or signal.get('estimated_premium', 0)
             signal['occ_symbol'] = occ_symbol
 
-            # Record in journal
             trade = self.journal.record_trade(
                 signal,
                 {'order_id': order_id},
                 self.config,
             )
 
-            logger.info(f"Executed: {occ_symbol} x{quantity} @ ${fill_price}")
+            logger.info(f"Naive fallback: {occ_symbol} x{quantity} @ ${fill_price}")
             return {
                 'ok': True,
                 'trade': trade,
@@ -327,22 +504,241 @@ class PaperEngine:
             }
 
         except Exception as e:
-            logger.error(f"Execute signal error: {e}")
+            logger.error(f"Naive single-leg execute error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'ok': False, 'error': str(e)}
+
+    async def _execute_multi_leg(self, signal: dict, strategy_rec: dict) -> Dict:
+        """Execute a multi-leg strategy order via TT cert API.
+
+        Fetches real regime data in parallel, re-validates strategy selection,
+        passes delta_target/iv_rank/dte to StrategyBuilder, and applies quality gate.
+        """
+        from tastytrade.order import (
+            NewOrder, Leg, OrderAction, OrderType,
+            OrderTimeInForce, InstrumentType
+        )
+        import asyncio
+
+        ticker = signal['ticker']
+        strategy_name = strategy_rec.get('name', 'Unknown')
+
+        # Risk checks (multi-leg variant)
+        open_trades = self.journal.get_open_trades()
+        summary = await self.get_account_summary()
+        equity = summary.get('equity', 50000)
+
+        try:
+            # Fetch chain + regime + term structure + skew in parallel
+            from src.data.tastytrade_provider import (
+                get_options_with_greeks_tastytrade,
+                get_gex_regime_tastytrade,
+                get_combined_regime_tastytrade,
+                get_term_structure_tastytrade,
+                get_iv_by_delta_tastytrade,
+            )
+
+            dte_range = strategy_rec.get('dte_range', [30, 45])
+            target_dte = (dte_range[0] + dte_range[1]) // 2  # midpoint DTE
+
+            chain, regime, combined, term_struct, skew_data = await asyncio.gather(
+                get_options_with_greeks_tastytrade(ticker, target_dte=target_dte),
+                get_gex_regime_tastytrade(ticker),
+                get_combined_regime_tastytrade(ticker),
+                get_term_structure_tastytrade(ticker),
+                get_iv_by_delta_tastytrade(ticker),
+                return_exceptions=True,
+            )
+
+            if not isinstance(chain, dict) or not chain.get('options'):
+                return {'ok': False, 'error': f'No options chain available for {ticker}'}
+
+            # Extract real regime data
+            gex_regime = regime.get('regime', 'transitional') if isinstance(regime, dict) else 'transitional'
+            combined_regime = combined.get('combined_regime', 'neutral_transitional') if isinstance(combined, dict) else 'neutral_transitional'
+            underlying_price = signal.get('underlying_price', 0)
+            if not underlying_price and isinstance(regime, dict):
+                underlying_price = regime.get('current_price', 0)
+
+            # Compute real IV rank and VRP from chain
+            iv_rank = chain.get('iv_rank', 50)
+            vrp = (iv_rank - 30) / 10  # Calibrated: IV Rank 70 → VRP 4.0
+
+            # Flow toxicity from chain
+            options = chain.get('options', [])
+            toxicity_data = self.flow_analyzer.compute_toxicity(options) if self.flow_analyzer else {'toxicity': 0.3}
+            flow_toxicity = toxicity_data.get('toxicity', 0.3)
+
+            # Extract real term structure and skew
+            real_structure = 'contango'
+            if isinstance(term_struct, dict) and 'structure' in term_struct:
+                real_structure = term_struct['structure']
+            skew_ratio = 1.0
+            if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
+                skew_ratio = skew_data['skew_ratio']
+
+            # Re-validate strategy with real data
+            real_regime_state = {
+                'vrp': vrp,
+                'gex_regime': gex_regime,
+                'combined_regime': combined_regime,
+                'flow_toxicity': flow_toxicity,
+                'term_structure': real_structure,
+                'skew_steep': skew_ratio > 1.15,
+                'skew_ratio': skew_ratio,
+                'iv_rank': iv_rank,
+                'vanna_flow': 0.0,
+                'macro_event_days': signal.get('event_data', {}).get('days_until', 99),
+            }
+
+            # Re-run strategy selection with real data to verify recommendation still holds
+            if self.strategy_selector:
+                real_strategies = self.strategy_selector.select_strategy(real_regime_state)
+                if real_strategies and real_strategies[0].get('name') != 'Wait / Reduce Size':
+                    strategy_rec = real_strategies[0]
+                    strategy_name = strategy_rec.get('name', strategy_name)
+                else:
+                    return {'ok': False, 'error': 'Strategy no longer valid with real regime data'}
+
+            direction = strategy_rec.get('direction', signal.get('direction', 'long'))
+            delta_target = strategy_rec.get('delta_target', 0.16)
+            actual_dte = chain.get('dte', target_dte)
+
+            # Build the multi-leg structure with full context
+            built = self.strategy_builder.build_legs(
+                strategy_name=strategy_name,
+                ticker=ticker,
+                direction=direction,
+                chain_data=chain,
+                underlying_price=underlying_price,
+                delta_target=delta_target,
+                iv_rank=iv_rank,
+                dte=actual_dte,
+            )
+
+            # Quality gate — reject low-quality builds
+            quality = built.get('quality_score', 0)
+            if quality < 20:
+                logger.warning(f"Quality gate rejected {strategy_name} for {ticker} (score={quality})")
+                return {'ok': False, 'error': f'Quality too low ({quality:.0f}/100) for {strategy_name}'}
+
+            leg_defs = built.get('legs', [])
+            if len(leg_defs) < 2:
+                logger.warning(f"Strategy builder returned <2 legs for {strategy_name}, falling back to single-leg")
+                return await self.execute_signal({**signal, 'strategy_recommendation': None})
+
+            # Risk check with multi-leg awareness
+            risk_signal = {**signal, 'max_loss': built.get('max_loss', 0)}
+            risk_check = self.risk_manager.check_all_multi_leg(risk_signal, open_trades, equity)
+            if not risk_check['passed']:
+                return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
+
+            # Position sizing based on max_loss
+            quantity = self.risk_manager.compute_position_size(
+                signal, equity, max_loss=built.get('max_loss')
+            )
+
+            # Halve position size if transition probability is elevated
+            if signal.get('transition', {}).get('action') == 'halve_position_sizes':
+                quantity = max(1, quantity // 2)
+                logger.info(f"Halved position to {quantity} — elevated transition probability")
+
+            session, account = await get_cert_session()
+
+            # Build Tastytrade Leg objects
+            tt_legs = []
+            occ_symbols = []
+            for leg_def in leg_defs:
+                occ = build_occ_symbol(
+                    ticker, leg_def['expiration'],
+                    leg_def['strike'], leg_def['option_type']
+                )
+                occ_symbols.append(occ)
+
+                if leg_def['action'] == 'BUY':
+                    action = OrderAction.BUY_TO_OPEN
+                else:
+                    action = OrderAction.SELL_TO_OPEN
+
+                leg_qty = leg_def.get('quantity', 1) * quantity
+
+                tt_legs.append(Leg(
+                    instrument_type=InstrumentType.EQUITY_OPTION,
+                    symbol=occ,
+                    quantity=Decimal(str(leg_qty)),
+                    action=action,
+                ))
+
+            order = NewOrder(
+                time_in_force=OrderTimeInForce.DAY,
+                order_type=OrderType.MARKET,
+                legs=tt_legs,
+            )
+
+            response = await account.place_order(session, order, dry_run=False)
+            order_id = response.order.id if hasattr(response, 'order') and hasattr(response.order, 'id') else None
+            fill_price = 0
+            if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
+                fill_price = float(response.order.price)
+
+            # Enrich signal for journal recording
+            signal['is_multi_leg'] = True
+            signal['legs'] = leg_defs
+            signal['strategy_name'] = built['strategy_name']
+            signal['net_premium'] = built['net_premium']
+            signal['max_loss'] = built['max_loss']
+            signal['max_profit'] = built['max_profit']
+            signal['entry_price'] = fill_price or abs(built['net_premium'])
+            signal['quantity'] = quantity
+            signal['occ_symbols'] = occ_symbols
+            signal['expiration'] = leg_defs[0]['expiration']
+            signal['greeks'] = built.get('greeks', {})
+            signal['quality_score'] = built.get('quality_score', 0)
+            signal['regime_at_entry'] = {
+                'gex_regime': gex_regime,
+                'combined_regime': combined_regime,
+                'vrp': round(vrp, 2),
+                'iv_rank': iv_rank,
+                'flow_toxicity': round(flow_toxicity, 3),
+            }
+
+            trade = self.journal.record_trade(
+                signal,
+                {'order_id': order_id},
+                self.config,
+            )
+
+            logger.info(f"Multi-leg executed: {built['strategy_name']} on {ticker} x{quantity} ({len(leg_defs)} legs)")
+            return {
+                'ok': True,
+                'trade': trade,
+                'order_id': order_id,
+                'occ_symbols': occ_symbols,
+                'multi_leg': True,
+            }
+
+        except Exception as e:
+            logger.error(f"Multi-leg execute error: {e}")
             import traceback
             traceback.print_exc()
             return {'ok': False, 'error': str(e)}
 
     async def close_position(self, trade_id: str, reason: str = 'manual') -> Dict:
-        """Close a position by trade ID."""
-        from tastytrade.order import (
-            NewOrder, Leg, OrderAction, OrderType,
-            OrderTimeInForce, InstrumentType
-        )
-
+        """Close a position by trade ID. Routes to multi-leg close if applicable."""
         trades = self.journal.get_all_trades(status='open')
         trade = next((t for t in trades if t['id'] == trade_id), None)
         if not trade:
             return {'ok': False, 'error': f'Trade {trade_id} not found or not open'}
+
+        # Route to multi-leg close if trade has legs
+        if trade.get('is_multi_leg') and trade.get('legs'):
+            return await self._close_multi_leg(trade, reason)
+
+        from tastytrade.order import (
+            NewOrder, Leg, OrderAction, OrderType,
+            OrderTimeInForce, InstrumentType
+        )
 
         try:
             session, account = await get_cert_session()
@@ -386,6 +782,72 @@ class PaperEngine:
         except Exception as e:
             logger.error(f"Close position error: {e}")
             # Still close in journal with estimated price
+            closed = self.journal.close_trade(trade_id, 0, f'{reason}_error')
+            if closed:
+                self._update_adaptive_systems(closed)
+            return {'ok': False, 'error': str(e), 'trade': closed}
+
+    async def _close_multi_leg(self, trade: dict, reason: str) -> Dict:
+        """Close a multi-leg position by building reverse legs atomically."""
+        from tastytrade.order import (
+            NewOrder, Leg, OrderAction, OrderType,
+            OrderTimeInForce, InstrumentType
+        )
+
+        trade_id = trade['id']
+        try:
+            session, account = await get_cert_session()
+
+            tt_legs = []
+            quantity = trade.get('quantity', 1)
+
+            for leg_def in trade['legs']:
+                occ = build_occ_symbol(
+                    trade['ticker'], leg_def['expiration'],
+                    leg_def['strike'], leg_def['option_type']
+                )
+
+                # Reverse the action: BUY→SELL_TO_CLOSE, SELL→BUY_TO_CLOSE
+                if leg_def['action'] == 'BUY':
+                    action = OrderAction.SELL_TO_CLOSE
+                else:
+                    action = OrderAction.BUY_TO_CLOSE
+
+                leg_qty = leg_def.get('quantity', 1) * quantity
+
+                tt_legs.append(Leg(
+                    instrument_type=InstrumentType.EQUITY_OPTION,
+                    symbol=occ,
+                    quantity=Decimal(str(leg_qty)),
+                    action=action,
+                ))
+
+            order = NewOrder(
+                time_in_force=OrderTimeInForce.DAY,
+                order_type=OrderType.MARKET,
+                legs=tt_legs,
+            )
+
+            response = await account.place_order(session, order, dry_run=False)
+            fill_price = 0
+            exit_net_premium = None
+            if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
+                fill_price = float(response.order.price)
+                # For closing orders: negative means debit paid to close
+                exit_net_premium = -fill_price  # closing credit spreads costs money
+
+            closed = self.journal.close_trade(
+                trade_id, fill_price, reason,
+                exit_net_premium=exit_net_premium,
+            )
+
+            self._update_adaptive_systems(closed)
+
+            logger.info(f"Multi-leg closed: {trade.get('strategy_name', '')} on {trade['ticker']}")
+            return {'ok': True, 'trade': closed, 'multi_leg': True}
+
+        except Exception as e:
+            logger.error(f"Multi-leg close error: {e}")
             closed = self.journal.close_trade(trade_id, 0, f'{reason}_error')
             if closed:
                 self._update_adaptive_systems(closed)
@@ -585,14 +1047,17 @@ class PaperEngine:
             from src.data.tastytrade_provider import (
                 get_gex_regime_tastytrade, get_combined_regime_tastytrade,
                 get_options_with_greeks_tastytrade,
+                get_term_structure_tastytrade, get_iv_by_delta_tastytrade,
             )
 
-            # Fetch regime data in parallel
+            # Fetch regime + term structure + skew in parallel
             import asyncio
-            regime, combined, chain = await asyncio.gather(
+            regime, combined, chain, term_struct, skew_data = await asyncio.gather(
                 get_gex_regime_tastytrade(ticker),
                 get_combined_regime_tastytrade(ticker),
                 get_options_with_greeks_tastytrade(ticker),
+                get_term_structure_tastytrade(ticker),
+                get_iv_by_delta_tastytrade(ticker),
                 return_exceptions=True,
             )
 
@@ -607,10 +1072,18 @@ class PaperEngine:
             vrp = 0
             if isinstance(chain, dict):
                 iv_rank = chain.get('iv_rank', 50)
-                vrp = max(-5, (iv_rank - 50) / 10)  # Rough proxy
+                vrp = (iv_rank - 30) / 10  # Calibrated: IV Rank 70 → VRP 4.0
+
+            # Extract term structure and skew
+            real_structure = 'contango'
+            if isinstance(term_struct, dict) and 'structure' in term_struct:
+                real_structure = term_struct['structure']
+            skew_ratio = 1.0
+            if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
+                skew_ratio = skew_data['skew_ratio']
 
             edge = self.edge_engine.compute_edge(
-                composite_score=50,  # Will be replaced by actual composite when called from xray
+                composite_score=50,
                 gex_regime=gex_regime,
                 combined_regime=combined_regime,
                 vrp=vrp,
@@ -618,6 +1091,8 @@ class PaperEngine:
                 dealer_flow_forecast={},
                 signal_performance=self.perf_tracker.get_all_stats() if self.perf_tracker else {},
                 adaptive_weights=self.adaptive_weights.get_weights() if self.adaptive_weights else {},
+                term_structure=real_structure,
+                skew_ratio=skew_ratio,
             )
 
             edge['ticker'] = ticker
@@ -633,6 +1108,99 @@ class PaperEngine:
         if not self.strategy_selector:
             return [{'name': 'Default', 'type': 'none', 'description': 'Strategy selector not initialized'}]
         return self.strategy_selector.select_strategy(regime_state)
+
+    async def strategy_preview(self, ticker: str) -> Dict:
+        """Preview what multi-leg strategy would be built for current conditions."""
+        try:
+            from src.data.tastytrade_provider import (
+                get_gex_regime_tastytrade, get_combined_regime_tastytrade,
+                get_options_with_greeks_tastytrade,
+                get_term_structure_tastytrade, get_iv_by_delta_tastytrade,
+            )
+            import asyncio
+
+            regime, combined, chain, term_struct, skew_data = await asyncio.gather(
+                get_gex_regime_tastytrade(ticker),
+                get_combined_regime_tastytrade(ticker),
+                get_options_with_greeks_tastytrade(ticker),
+                get_term_structure_tastytrade(ticker),
+                get_iv_by_delta_tastytrade(ticker),
+                return_exceptions=True,
+            )
+
+            gex_regime = regime.get('regime', 'transitional') if isinstance(regime, dict) else 'transitional'
+            combined_regime = combined.get('combined_regime', 'neutral_transitional') if isinstance(combined, dict) else 'neutral_transitional'
+            underlying_price = regime.get('current_price', 0) if isinstance(regime, dict) else 0
+
+            # Build regime state for strategy selection
+            iv_rank = chain.get('iv_rank', 50) if isinstance(chain, dict) else 50
+            vrp = (iv_rank - 30) / 10  # Calibrated: IV Rank 70 → VRP 4.0
+
+            # Flow toxicity from chain
+            options = chain.get('options', []) if isinstance(chain, dict) else []
+            toxicity_data = self.flow_analyzer.compute_toxicity(options) if self.flow_analyzer else {'toxicity': 0.3}
+            flow_toxicity = toxicity_data.get('toxicity', 0.3)
+
+            # Real term structure and skew
+            real_structure = 'contango'
+            if isinstance(term_struct, dict) and 'structure' in term_struct:
+                real_structure = term_struct['structure']
+            skew_ratio = 1.0
+            if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
+                skew_ratio = skew_data['skew_ratio']
+
+            regime_state = {
+                'vrp': vrp,
+                'gex_regime': gex_regime,
+                'combined_regime': combined_regime,
+                'flow_toxicity': flow_toxicity,
+                'term_structure': real_structure,
+                'skew_steep': skew_ratio > 1.15,
+                'skew_ratio': skew_ratio,
+                'iv_rank': iv_rank,
+                'vanna_flow': 0.0,
+                'macro_event_days': 99,
+            }
+
+            strategies = self.select_strategy(regime_state)
+            if not strategies or strategies[0].get('name') == 'Wait / Reduce Size':
+                return {
+                    'ticker': ticker,
+                    'strategy': None,
+                    'regime_state': regime_state,
+                    'message': 'No multi-leg strategy recommended for current conditions',
+                }
+
+            best = strategies[0]
+
+            # Build preview legs if chain is available
+            preview = None
+            if isinstance(chain, dict) and chain.get('options'):
+                dte_range = best.get('dte_range', [30, 45])
+                actual_dte = chain.get('dte', (dte_range[0] + dte_range[1]) // 2)
+                preview = self.strategy_builder.build_legs(
+                    strategy_name=best['name'],
+                    ticker=ticker,
+                    direction=best.get('direction', 'neutral'),
+                    chain_data=chain,
+                    underlying_price=underlying_price,
+                    delta_target=best.get('delta_target'),
+                    iv_rank=iv_rank,
+                    dte=actual_dte,
+                )
+
+            return {
+                'ticker': ticker,
+                'strategy': best,
+                'regime_state': regime_state,
+                'preview': preview,
+                'underlying_price': underlying_price,
+                'flow_toxicity': toxicity_data,
+            }
+
+        except Exception as e:
+            logger.error(f"Strategy preview error for {ticker}: {e}")
+            return {'ticker': ticker, 'error': str(e)}
 
     def compute_kelly_size(
         self, equity: float, premium: float,

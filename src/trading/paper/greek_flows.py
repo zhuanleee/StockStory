@@ -132,7 +132,7 @@ def calculate_vanna_exposure(
         #                dealer delta from puts becomes less negative (buy underlying)
         # Net effect depends on aggregate OI imbalance
         call_vanna_exp = -call_vanna * call_oi * multiplier * current_price / 100
-        put_vanna_exp = put_vanna * put_oi * multiplier * current_price / 100  # Puts flip sign
+        put_vanna_exp = -put_vanna * put_oi * multiplier * current_price / 100  # Same dealer-short convention as calls
         net_vanna = call_vanna_exp + put_vanna_exp
 
         vanna_by_strike.append({
@@ -207,7 +207,7 @@ def calculate_charm_exposure(
         # Positive charm on short call = delta decaying → dealer sells underlying
         # Negative charm on short put = put delta strengthening → dealer buys underlying
         call_charm_exp = -call_charm * call_oi * multiplier * current_price / 100
-        put_charm_exp = put_charm * put_oi * multiplier * current_price / 100
+        put_charm_exp = -put_charm * put_oi * multiplier * current_price / 100  # Same dealer-short convention as calls
         net_charm = call_charm_exp + put_charm_exp
 
         charm_by_strike.append({

@@ -10,6 +10,7 @@ from .journal import TradeJournal
 from .paper_engine import PaperEngine
 from .signal_engine import SignalEngine
 from .analytics import PerformanceAnalytics
+from .strategy_builder import StrategyBuilder
 from .adaptive_engine import (
     SignalPerformanceTracker,
     AdaptiveWeights,
@@ -47,6 +48,7 @@ __all__ = [
     'FlowToxicityAnalyzer',
     'LearningTierConnector',
     'ABTestEngine',
+    'StrategyBuilder',
     'calculate_vanna_exposure',
     'calculate_charm_exposure',
     'compute_dealer_flow_forecast',

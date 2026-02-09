@@ -59,11 +59,15 @@ class TradeJournal:
         trades = self._load_journal()
         trade_id = self._next_trade_id(trades)
 
+        # Multi-leg fields
+        is_multi_leg = signal.get('is_multi_leg', False)
+        legs = signal.get('legs', [])
+
         trade = {
             'id': trade_id,
             'signal_id': signal.get('signal_id', ''),
             'signal_type': signal.get('signal_type', 'manual'),
-            'strategy': self._classify_strategy(signal),
+            'strategy': signal.get('strategy_name') if is_multi_leg else self._classify_strategy(signal),
             'ticker': signal.get('ticker', '').upper(),
             'direction': signal.get('direction', 'long'),
             'option_type': signal.get('option_type', 'call'),
@@ -86,15 +90,33 @@ class TradeJournal:
             'tt_order_id': order_response.get('order_id'),
             'tags': signal.get('tags', []),
             'notes': signal.get('notes', ''),
+            # Multi-leg fields
+            'is_multi_leg': is_multi_leg,
+            'legs': legs,
+            'strategy_name': signal.get('strategy_name', ''),
+            'net_premium': signal.get('net_premium', 0),
+            'max_loss': signal.get('max_loss', 0),
+            'max_profit': signal.get('max_profit', 0),
+            'greeks': signal.get('greeks', {}),
+            'quality_score': signal.get('quality_score', 0),
+            'regime_at_entry': signal.get('regime_at_entry', {}),
         }
 
         trades.append(trade)
         self._save_journal(trades)
-        logger.info(f"Recorded trade {trade_id}: {trade['ticker']} {trade['direction']} {trade['option_type']}")
+        if is_multi_leg:
+            logger.info(f"Recorded multi-leg trade {trade_id}: {trade['ticker']} {trade['strategy_name']} ({len(legs)} legs)")
+        else:
+            logger.info(f"Recorded trade {trade_id}: {trade['ticker']} {trade['direction']} {trade['option_type']}")
         return trade
 
-    def close_trade(self, trade_id: str, exit_price: float, exit_reason: str) -> Optional[dict]:
-        """Close an open trade with exit details."""
+    def close_trade(self, trade_id: str, exit_price: float, exit_reason: str,
+                    exit_net_premium: float = None) -> Optional[dict]:
+        """Close an open trade with exit details.
+
+        For multi-leg trades, exit_net_premium is the net premium received/paid
+        when closing all legs atomically. P&L = exit_net_premium - entry net_premium.
+        """
         trades = self._load_journal()
         for trade in trades:
             if trade['id'] == trade_id and trade['status'] == 'open':
@@ -103,18 +125,30 @@ class TradeJournal:
                 trade['exit_reason'] = exit_reason
                 trade['status'] = 'closed'
 
-                # Calculate P&L
-                entry = trade['entry_price'] or 0
-                qty = trade['quantity'] or 1
-                multiplier = 100  # options multiplier
-
-                if trade['direction'] == 'long':
-                    pnl = (exit_price - entry) * qty * multiplier
+                if trade.get('is_multi_leg') and exit_net_premium is not None:
+                    # Multi-leg P&L: difference between exit and entry net premiums
+                    # For credit trades: entry net_premium is positive (credit received)
+                    # P&L = entry credit + exit debit (exit_net_premium is negative for closing debits)
+                    entry_net = trade.get('net_premium', 0)
+                    qty = trade.get('quantity', 1)
+                    multiplier = 100
+                    pnl = (entry_net + exit_net_premium) * qty * multiplier
+                    cost_basis = abs(entry_net) * qty * multiplier if entry_net != 0 else 1
+                    trade['exit_net_premium'] = exit_net_premium
                 else:
-                    pnl = (entry - exit_price) * qty * multiplier
+                    # Single-leg P&L
+                    entry = trade['entry_price'] or 0
+                    qty = trade['quantity'] or 1
+                    multiplier = 100
+
+                    if trade['direction'] == 'long':
+                        pnl = (exit_price - entry) * qty * multiplier
+                    else:
+                        pnl = (entry - exit_price) * qty * multiplier
+                    cost_basis = entry * qty * multiplier if entry > 0 else 1
 
                 trade['pnl_dollars'] = round(pnl, 2)
-                trade['pnl_pct'] = round((pnl / (entry * qty * multiplier)) * 100, 2) if entry > 0 else 0
+                trade['pnl_pct'] = round((pnl / cost_basis) * 100, 2) if cost_basis > 0 else 0
 
                 self._save_journal(trades)
                 logger.info(f"Closed trade {trade_id}: {exit_reason}, P&L ${pnl:.2f}")

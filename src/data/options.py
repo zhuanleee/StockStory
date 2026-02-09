@@ -2459,8 +2459,8 @@ def get_expected_move(ticker: str, expiration: str = None) -> Dict:
         if straddle_price <= 0:
             return {"error": "Could not calculate straddle price", "ticker": ticker}
 
-        # Expected move calculation
-        expected_move = straddle_price * 0.85
+        # Expected move: BSM straddle approximation √(2/π) ≈ 0.7979
+        expected_move = straddle_price * 0.7979
         expected_move_pct = (expected_move / current_price) * 100
 
         # Calculate key levels

@@ -254,14 +254,14 @@ class AdaptiveWeights:
                     factor['alpha'] += 1.0  # Factor was right when it agreed
                     factor['wins_when_high'] += 1
                 else:
-                    factor['beta'] += 0.5  # Factor was wrong when it agreed
+                    factor['beta'] += 1.0  # Factor was wrong when it agreed (symmetric update)
                     factor['losses_when_high'] += 1
             else:
                 if is_win:
-                    factor['beta'] += 0.3  # Factor disagreed but trade won (factor less useful)
+                    factor['beta'] += 0.5  # Factor disagreed but trade won (factor less useful)
                     factor['wins_when_low'] += 1
                 else:
-                    factor['alpha'] += 0.3  # Factor disagreed and trade lost (factor was right to disagree)
+                    factor['alpha'] += 0.5  # Factor disagreed and trade lost (factor was right to disagree)
                     factor['losses_when_low'] += 1
 
             # Recompute current weight from posterior mean
@@ -305,12 +305,16 @@ class GreeksPnLTracker:
         entry_underlying: float, current_underlying: float,
         delta: float, gamma: float, theta: float, vega: float,
         entry_iv: float, current_iv: float,
-        days_held: float, quantity: int = 1, multiplier: int = 100
+        days_held: float, quantity: int = 1, multiplier: int = 100,
+        vanna: float = 0.0, charm: float = 0.0,
     ) -> Dict:
         """
         Decompose option P&L into Greek components.
 
-        Returns dict with delta_pnl, gamma_pnl, theta_pnl, vega_pnl, unexplained
+        Returns dict with delta_pnl, gamma_pnl, theta_pnl, vega_pnl,
+        vanna_pnl, charm_pnl, unexplained.
+        Second-order cross-terms (vanna, charm) explain 5-15% of previously
+        'unexplained' P&L.
         """
         dS = current_underlying - entry_underlying
         d_sigma = current_iv - entry_iv  # IV change
@@ -322,8 +326,13 @@ class GreeksPnLTracker:
         theta_pnl = theta * days_held  # Theta is per-day
         vega_pnl = vega * d_sigma * 100  # Vega is per 1% IV change
 
+        # Second-order cross-terms
+        vanna_pnl = vanna * dS * d_sigma * 100  # dDelta/dVol × ΔS × Δσ
+        charm_pnl = charm * dS * dt              # dDelta/dTime × ΔS × Δt
+
         # Total attributed
-        total_attributed = delta_pnl + gamma_pnl + theta_pnl + vega_pnl
+        total_attributed = (delta_pnl + gamma_pnl + theta_pnl + vega_pnl
+                            + vanna_pnl + charm_pnl)
 
         # Actual P&L
         actual_pnl = (current_price - entry_price)
@@ -336,6 +345,8 @@ class GreeksPnLTracker:
             'gamma_pnl': round(gamma_pnl * quantity * multiplier, 2),
             'theta_pnl': round(theta_pnl * quantity * multiplier, 2),
             'vega_pnl': round(vega_pnl * quantity * multiplier, 2),
+            'vanna_pnl': round(vanna_pnl * quantity * multiplier, 2),
+            'charm_pnl': round(charm_pnl * quantity * multiplier, 2),
             'unexplained': round(unexplained * quantity * multiplier, 2),
             'total_attributed': round(total_attributed * quantity * multiplier, 2),
             'actual_pnl': round(actual_pnl * quantity * multiplier, 2),
@@ -343,6 +354,20 @@ class GreeksPnLTracker:
                 (1 - abs(unexplained) / max(abs(actual_pnl), 0.01)) * 100, 1
             ) if actual_pnl != 0 else 100,
         }
+
+
+def gamma_breakeven_move(theta: float, gamma: float) -> float:
+    """Daily break-even move: the underlying move needed to offset theta decay.
+
+    Derived from: gamma P&L = 0.5 × Γ × ΔS² must equal |θ|
+    ΔS = √(2 × |θ| / Γ)
+
+    Returns the break-even move in price terms (dollars).
+    """
+    if gamma <= 0 or theta >= 0:
+        return 0.0
+    import math
+    return math.sqrt(2 * abs(theta) / gamma)
 
 
 # =============================================================================
@@ -474,9 +499,13 @@ class EdgeScoreEngine:
         dealer_flow_forecast: Dict,  # from Phase 2b
         signal_performance: Dict,  # from Phase 1a
         adaptive_weights: Dict,  # from Phase 1b
+        term_structure: str = 'contango',
+        skew_ratio: float = 1.0,
+        strategy_type: str = 'short_premium',
     ) -> Dict:
         """
         Compute unified edge score (0-100) with confidence and Kelly sizing.
+        Now includes term structure, skew, and boosted VRP weight.
         """
         # Base edge from composite (0-100)
         edge = composite_score
@@ -489,11 +518,13 @@ class EdgeScoreEngine:
         }
         edge += regime_adj.get(combined_regime, 0)
 
-        # VRP adjustment: positive VRP = edge for short premium
+        # VRP adjustment: boosted cap to 15 (research: VRP is strongest edge)
+        vrp_adj = 0
         if vrp > 4:
-            edge += min(10, vrp - 4)  # +1 per point above 4
+            vrp_adj = min(15, vrp - 4)  # +1 per point above 4, cap 15
         elif vrp < 0:
-            edge -= min(10, abs(vrp))  # Negative VRP = headwind
+            vrp_adj = -min(10, abs(vrp))  # Negative VRP = headwind
+        edge += vrp_adj
 
         # Flow toxicity: high toxicity = informed flow = edge boost if aligned
         if flow_toxicity > 0.7:
@@ -503,8 +534,21 @@ class EdgeScoreEngine:
         if dealer_flow_forecast:
             net_flow = dealer_flow_forecast.get('net_flow_billions', 0)
             if abs(net_flow) > 0.5:
-                # Strong dealer flow in one direction is informative
                 edge += min(8, abs(net_flow) * 3)
+
+        # Term structure signal: favorable alignment boosts edge
+        term_adj = 0
+        if strategy_type == 'short_premium' and term_structure == 'contango':
+            term_adj = 5  # Contango favors selling premium (front IV < back)
+        elif strategy_type == 'long_premium' and term_structure == 'backwardation':
+            term_adj = 5  # Backwardation = elevated near-term vol, good for buying
+        edge += term_adj
+
+        # Skew signal: steep skew benefits short premium strategies
+        skew_adj = 0
+        if skew_ratio > 1.15 and strategy_type == 'short_premium':
+            skew_adj = 3  # Steep skew = overpriced tails, edge for selling
+        edge += skew_adj
 
         # Clamp
         edge = max(0, min(100, round(edge)))
@@ -523,16 +567,16 @@ class EdgeScoreEngine:
             combined_regime in ('opportunity', 'melt_up'),
             vrp > 2,
             flow_toxicity > 0.5,
+            term_adj > 0,
         ] if s)
 
         confidence = 'low'
-        if n_factors_agree >= 3:
+        if n_factors_agree >= 4:
             confidence = 'high'
         elif n_factors_agree >= 2:
             confidence = 'medium'
 
         # Kelly fraction from edge score
-        # Approximate: edge maps to win probability, direction to payoff ratio
         win_prob = edge / 100
         avg_payoff = 1.5  # Default R:R assumption
         kelly_raw = (win_prob * avg_payoff - (1 - win_prob)) / avg_payoff
@@ -547,9 +591,13 @@ class EdgeScoreEngine:
             'components': {
                 'composite_base': composite_score,
                 'regime_adj': regime_adj.get(combined_regime, 0),
-                'vrp_adj': round(vrp, 2) if vrp else 0,
+                'vrp_adj': round(vrp_adj, 2),
                 'flow_toxicity': round(flow_toxicity, 3),
                 'dealer_flow': dealer_flow_forecast.get('net_flow_billions', 0) if dealer_flow_forecast else 0,
+                'term_structure_adj': term_adj,
+                'skew_adj': skew_adj,
+                'term_structure': term_structure,
+                'skew_ratio': round(skew_ratio, 3),
             },
         }
 
@@ -644,12 +692,76 @@ class StrategySelector:
         },
         {
             'name': 'Straddle (Event Vol)',
-            'conditions': lambda r: r.get('macro_event_days', 99) <= 3,
+            'conditions': lambda r: (
+                r.get('macro_event_days', 99) <= 3
+                and r.get('iv_rank', 50) < 50  # Don't buy vol when IV already expanded
+            ),
             'type': 'long_premium',
             'direction': 'neutral',
             'dte_range': [7, 21],
             'delta_target': 0.50,
-            'description': 'Major macro event imminent. Buy vol expansion.',
+            'description': 'Major macro event imminent + IV not yet expanded. Buy vol.',
+        },
+        # --- New strategies filling regime gaps ---
+        {
+            'name': 'Melt-Up Debit Spread',
+            'conditions': lambda r: r['combined_regime'] == 'melt_up',
+            'type': 'long_premium',
+            'direction': 'bullish',
+            'dte_range': [14, 30],
+            'delta_target': 0.45,
+            'description': 'Melt-up regime — strong bullish momentum + dealer support. Bull call spread.',
+        },
+        {
+            'name': 'Moderate Credit Spread (VRP Harvest)',
+            'conditions': lambda r: (
+                r['vrp'] > 1.5 and
+                r['flow_toxicity'] < 0.6 and
+                r['combined_regime'] not in ('danger', 'high_risk', 'neutral_volatile')
+            ),
+            'type': 'short_premium',
+            'direction': 'neutral_bullish',
+            'dte_range': [30, 45],
+            'delta_target': 0.20,
+            'description': 'Moderate VRP + calm conditions. Harvest premium with wider delta.',
+        },
+        {
+            'name': 'Iron Butterfly (Pinned)',
+            'conditions': lambda r: (
+                r['gex_regime'] == 'pinned' and
+                r['flow_toxicity'] < 0.5 and
+                r['combined_regime'] not in ('danger', 'high_risk')
+            ),
+            'type': 'short_premium',
+            'direction': 'neutral',
+            'dte_range': [14, 30],
+            'delta_target': 0.50,
+            'description': 'Pinned regime — sell ATM straddle + buy wings. Max decay at pin.',
+        },
+        {
+            'name': 'Bear Put Debit Spread',
+            'conditions': lambda r: (
+                r['combined_regime'] == 'high_risk' and
+                r['flow_toxicity'] > 0.5
+            ),
+            'type': 'long_premium',
+            'direction': 'bearish',
+            'dte_range': [14, 30],
+            'delta_target': 0.35,
+            'description': 'High risk + informed flow. Bearish directional with defined risk.',
+        },
+        {
+            'name': 'Backwardation Credit Spread',
+            'conditions': lambda r: (
+                r['term_structure'] == 'backwardation' and
+                r['vrp'] > 2 and
+                r['combined_regime'] not in ('danger', 'high_risk')
+            ),
+            'type': 'short_premium',
+            'direction': 'neutral_bullish',
+            'dte_range': [21, 35],
+            'delta_target': 0.18,
+            'description': 'Backwardation = elevated front IV. Sell rich front-month premium.',
         },
     ]
 
@@ -700,7 +812,7 @@ class KellyPositionSizer:
 
     # Regime risk multipliers
     REGIME_MULTIPLIERS = {
-        'opportunity': 1.25,   # Max aggression
+        'opportunity': 1.0,    # Max aggression (capped at 1.0 — never overbet Kelly)
         'melt_up': 0.75,
         'neutral_pinned': 1.0,
         'neutral_transitional': 0.5,
@@ -750,8 +862,12 @@ class KellyPositionSizer:
 
         kelly_raw = max(0, kelly_raw)
 
-        # Apply fractional Kelly + regime multiplier
-        kelly_adjusted = kelly_raw * kelly_fraction_override * regime_mult
+        # Fat-tail discount: equity options exhibit kurtosis ~6-10,
+        # standard Kelly overallocates 2-3x. 0.6 discount → effective 30% Kelly.
+        TAIL_RISK_DISCOUNT = 0.6
+
+        # Apply fractional Kelly × tail-risk discount × regime multiplier
+        kelly_adjusted = kelly_raw * kelly_fraction_override * TAIL_RISK_DISCOUNT * regime_mult
 
         # Convert to contracts
         max_cost = equity * kelly_adjusted
@@ -771,6 +887,7 @@ class KellyPositionSizer:
             'max_cost': round(max_cost, 2),
             'rationale': (
                 f'Kelly {kelly_raw:.1%} × {kelly_fraction_override:.0%} fraction '
+                f'× {TAIL_RISK_DISCOUNT:.0%} tail-risk '
                 f'× {regime_mult:.0%} regime = {kelly_adjusted:.1%} of equity'
             ),
         }

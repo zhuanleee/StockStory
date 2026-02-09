@@ -30,6 +30,12 @@ class SignalEngine:
             self.perf_tracker = SignalPerformanceTracker(volume_path)
         except Exception:
             self.perf_tracker = None
+        # Multi-leg: Load strategy selector for attaching recommendations
+        try:
+            from .adaptive_engine import StrategySelector
+            self.strategy_selector = StrategySelector()
+        except Exception:
+            self.strategy_selector = None
 
     def _adjust_confidence(self, raw_confidence: float, signal_type: str) -> int:
         """Phase 1a: Adjust confidence based on historical performance."""
@@ -42,7 +48,9 @@ class SignalEngine:
     async def evaluate_signals(self, ticker: str, config: dict) -> List[dict]:
         """Evaluate all signal sources for a ticker, return actionable signals."""
         signals = []
+        all_raw_signals = []
         min_confidence = config.get('min_confidence', 60)
+        multi_leg_enabled = config.get('multi_leg_enabled', False)
 
         # Run signal evaluators
         gex_sig = await self._check_gex_flip(ticker)
@@ -50,13 +58,112 @@ class SignalEngine:
         macro_sig = await self._check_macro_event(ticker)
         iv_sig = await self._check_iv_reversion(ticker)
 
+        # Collect all non-None signals for transition composite
         for sig in [gex_sig, regime_sig, macro_sig, iv_sig]:
-            if sig and sig.get('confidence', 0) >= min_confidence:
+            if sig:
+                all_raw_signals.append(sig)
+
+        # Compute regime transition probability from all signals
+        transition = self._compute_transition_probability(all_raw_signals)
+
+        for sig in all_raw_signals:
+            if sig.get('confidence', 0) >= min_confidence:
+                # Attach transition info to each signal
+                sig['transition'] = transition
+                # Multi-leg: attach strategy recommendation when enabled
+                if multi_leg_enabled and self.strategy_selector:
+                    try:
+                        strategy_rec = self._attach_strategy_recommendation(sig, ticker)
+                        if strategy_rec:
+                            sig['strategy_recommendation'] = strategy_rec
+                    except Exception as e:
+                        logger.debug(f"Strategy recommendation skipped for {ticker}: {e}")
                 signals.append(sig)
 
         signals.sort(key=lambda s: s.get('confidence', 0), reverse=True)
         max_signals = config.get('max_signals_per_check', 3)
         return signals[:max_signals]
+
+    def _attach_strategy_recommendation(self, signal: dict, ticker: str) -> Optional[dict]:
+        """Build regime state from signal data and get strategy recommendation."""
+        if not self.strategy_selector:
+            return None
+
+        regime_data = signal.get('regime_data', {})
+        iv_data = signal.get('iv_data', {})
+        event_data = signal.get('event_data', {})
+
+        iv_rank = iv_data.get('iv_rank', 50)
+        regime_state = {
+            'vrp': (iv_rank - 30) / 10,  # calibrated: IV Rank 70 → VRP 4.0
+            'gex_regime': regime_data.get('regime', regime_data.get('gex_regime', 'transitional')),
+            'combined_regime': regime_data.get('combined_regime', 'neutral_transitional'),
+            'flow_toxicity': 0.3,  # default; real value computed in paper_engine
+            'term_structure': signal.get('term_structure', 'contango'),
+            'skew_steep': signal.get('skew_steep', False),
+            'skew_ratio': signal.get('skew_ratio', 1.0),
+            'iv_rank': iv_rank,
+            'vanna_flow': 0.0,
+            'macro_event_days': event_data.get('days_until', 99),
+        }
+
+        strategies = self.strategy_selector.select_strategy(regime_state)
+        if strategies and strategies[0].get('name') != 'Wait / Reduce Size':
+            return strategies[0]
+        return None
+
+    # -------------------------------------------------------------------------
+    # Regime Transition Composite
+    # -------------------------------------------------------------------------
+
+    def _compute_transition_probability(self, signals: List[dict]) -> Dict:
+        """Weighted composite of all signal sources to estimate regime transition.
+
+        Signal weights (research-derived):
+          GEX flip: 0.25, regime shift: 0.30, macro event: 0.10,
+          IV reversion: 0.15, term structure: 0.20
+
+        Returns {probability: 0-1, contributing_signals: [...], action: str}
+        """
+        WEIGHTS = {
+            'gex_flip': 0.25,
+            'regime_shift': 0.30,
+            'macro_event': 0.10,
+            'iv_reversion': 0.15,
+            'term_structure': 0.20,
+        }
+
+        weighted_sum = 0.0
+        contributing = []
+
+        for sig in signals:
+            sig_type = sig.get('signal_type', '')
+            conf = sig.get('confidence', 0) / 100.0  # Normalize to 0-1
+
+            weight = WEIGHTS.get(sig_type, 0)
+            if weight > 0:
+                weighted_sum += weight * conf
+                contributing.append({
+                    'signal': sig_type,
+                    'confidence': sig.get('confidence', 0),
+                    'weight': weight,
+                    'contribution': round(weight * conf, 3),
+                })
+
+        probability = min(1.0, weighted_sum)
+
+        if probability > 0.8:
+            action = 'halt_new_entries'
+        elif probability > 0.6:
+            action = 'halve_position_sizes'
+        else:
+            action = 'normal'
+
+        return {
+            'transition_probability': round(probability, 3),
+            'action': action,
+            'contributing_signals': contributing,
+        }
 
     # -------------------------------------------------------------------------
     # Signal 1: GEX Regime Flip
@@ -111,6 +218,8 @@ class SignalEngine:
                 'expiration': self._get_target_expiration(dte_range),
                 'confidence': round(confidence),
                 'underlying_price': current_price,
+                'delta_target': 0.40,
+                'dte_range': dte_range,
                 'tags': ['gex_flip', flip_type],
                 'notes': notes,
                 'regime_data': {
@@ -175,6 +284,8 @@ class SignalEngine:
                 'expiration': self._get_target_expiration([30, 45]),
                 'confidence': round(confidence),
                 'underlying_price': current_price,
+                'delta_target': 0.45,
+                'dte_range': [30, 45],
                 'tags': ['regime_shift', current, f'from_{prev_combined}'],
                 'notes': combined.get('recommendation', ''),
                 'regime_data': {
@@ -232,6 +343,8 @@ class SignalEngine:
                 'expiration': self._get_target_expiration([14, 30]),
                 'confidence': confidence,
                 'underlying_price': current_price,
+                'delta_target': 0.50,
+                'dte_range': [14, 30],
                 'tags': ['macro_event', best_event.get('name', 'unknown')],
                 'notes': f"Macro catalyst: {best_event.get('name', '')} in {best_event.get('days_until', '?')} days. Vol expansion play.",
                 'event_data': best_event,
@@ -266,6 +379,7 @@ class SignalEngine:
                 # High IV - sell premium (credit spread)
                 direction = 'short'
                 option_type = 'call'
+                delta_target = 0.16
                 raw_conf = min(90, 60 + (iv_rank - 80))
                 confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Sell premium - credit spread setup.'
@@ -274,6 +388,7 @@ class SignalEngine:
                 # Low IV - buy premium (debit spread)
                 direction = 'long'
                 option_type = 'call'
+                delta_target = 0.35
                 raw_conf = min(85, 55 + (20 - iv_rank))
                 confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Buy premium - debit spread setup.'
@@ -291,6 +406,8 @@ class SignalEngine:
                 'expiration': self._get_target_expiration([30, 45]),
                 'confidence': round(confidence),
                 'underlying_price': current_price,
+                'delta_target': delta_target,
+                'dte_range': [30, 45],
                 'tags': tags,
                 'notes': notes,
                 'iv_data': {
