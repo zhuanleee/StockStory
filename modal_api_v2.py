@@ -39,6 +39,63 @@ image = (
 
 
 # =============================================================================
+# PAPER TRADING CRON (every 5 min during market hours, weekdays)
+# =============================================================================
+
+@app.function(
+    image=image,
+    volumes={VOLUME_PATH: volume},
+    secrets=[
+        modal.Secret.from_name("Stock_Story"),
+        modal.Secret.from_name("Tastytrade_API"),
+    ],
+    timeout=120,
+    schedule=modal.Cron("*/5 9-16 * * 1-5"),  # Every 5 min, 9am-4pm ET, Mon-Fri
+)
+async def check_signals_cron():
+    """Automated signal check and trade execution for paper trading."""
+    import sys
+    sys.path.insert(0, '/root')
+
+    from src.trading.paper.paper_engine import PaperEngine
+    from src.trading.paper.signal_engine import SignalEngine
+    from src.trading.paper.risk_manager import load_config
+    import logging
+
+    logger = logging.getLogger("paper-cron")
+    config = load_config(VOLUME_PATH)
+
+    if not config.get('auto_trade_enabled'):
+        return
+
+    engine = PaperEngine(VOLUME_PATH)
+    signal_engine = SignalEngine(VOLUME_PATH)
+
+    # Check exit conditions first
+    exits = engine.check_exit_conditions()
+    if exits:
+        logger.info(f"Auto-exits: {len(exits)} positions closed")
+
+    # Check signals for all watched tickers
+    for ticker in config.get('watched_tickers', ['SPY', 'QQQ']):
+        try:
+            signals = await signal_engine.evaluate_signals(ticker, config)
+            for sig in signals:
+                engine.journal.record_signal(sig)
+                equity = engine.get_account_summary().get('equity', 50000)
+                sig['quantity'] = engine.risk_manager.compute_position_size(sig, equity)
+                result = engine.execute_signal(sig)
+                if result.get('ok'):
+                    logger.info(f"Auto-trade: {sig['ticker']} {sig['signal_type']} executed")
+        except Exception as e:
+            logger.warning(f"Cron signal check error for {ticker}: {e}")
+
+    # Record equity snapshot
+    engine.get_account_summary()
+    volume.commit()
+
+
+# =============================================================================
 # MODAL ASGI APP
 # =============================================================================
 
@@ -2382,6 +2439,114 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # =========================================================================
+    # GEX HISTORY & BACKTEST (F5, F11)
+    # =========================================================================
+
+    @web_app.get("/options/gex-history/{ticker_symbol}", tags=["Options"])
+    async def options_gex_history(ticker_symbol: str):
+        """GEX History - returns stored daily GEX snapshots (last 30 days)."""
+        try:
+            ticker = ticker_symbol.upper()
+            safe_name = ticker.replace("/", "_")
+            history_path = Path(VOLUME_PATH) / "gex_history" / f"{safe_name}.json"
+            if not history_path.exists():
+                return {"ok": True, "data": []}
+            raw = json.loads(history_path.read_text())
+            # Return last 30 entries
+            return {"ok": True, "data": raw[-30:]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-history", tags=["Options"])
+    async def options_gex_history_query(ticker: str = Query(...)):
+        """GEX History (query param version for futures)."""
+        try:
+            safe_name = ticker.upper().replace("/", "_")
+            history_path = Path(VOLUME_PATH) / "gex_history" / f"{safe_name}.json"
+            if not history_path.exists():
+                return {"ok": True, "data": []}
+            raw = json.loads(history_path.read_text())
+            return {"ok": True, "data": raw[-30:]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-backtest/{ticker_symbol}", tags=["Options"])
+    async def options_gex_backtest(ticker_symbol: str):
+        """GEX Signal Backtest - computes signal win rate from GEX history + price data."""
+        try:
+            ticker = ticker_symbol.upper()
+            safe_name = ticker.replace("/", "_")
+            history_path = Path(VOLUME_PATH) / "gex_history" / f"{safe_name}.json"
+            if not history_path.exists():
+                return {"ok": True, "data": None}
+            raw = json.loads(history_path.read_text())
+            if len(raw) < 5:
+                return {"ok": True, "data": None}
+            result = _compute_gex_backtest(raw)
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/gex-backtest", tags=["Options"])
+    async def options_gex_backtest_query(ticker: str = Query(...)):
+        """GEX Signal Backtest (query param version for futures)."""
+        try:
+            safe_name = ticker.upper().replace("/", "_")
+            history_path = Path(VOLUME_PATH) / "gex_history" / f"{safe_name}.json"
+            if not history_path.exists():
+                return {"ok": True, "data": None}
+            raw = json.loads(history_path.read_text())
+            if len(raw) < 5:
+                return {"ok": True, "data": None}
+            result = _compute_gex_backtest(raw)
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _compute_gex_backtest(history: list) -> dict:
+        """Compute win rate of GEX flip signals from stored history."""
+        signals = 0
+        wins = 0
+        total_move = 0
+        total_days = 0
+
+        for i in range(1, len(history)):
+            prev_gex = history[i - 1].get("gex", 0)
+            curr_gex = history[i].get("gex", 0)
+            prev_price = history[i - 1].get("price", 0)
+            curr_price = history[i].get("price", 0)
+
+            if prev_price == 0 or curr_price == 0:
+                continue
+
+            # Detect GEX flip (positive→negative or negative→positive)
+            if (prev_gex > 0 and curr_gex < 0) or (prev_gex < 0 and curr_gex > 0):
+                signals += 1
+                # Look ahead for move (next entry or end)
+                look_ahead_idx = min(i + 5, len(history) - 1)
+                future_price = history[look_ahead_idx].get("price", curr_price)
+                move_pct = ((future_price - curr_price) / curr_price) * 100
+
+                # Negative GEX flip = expect downside; positive flip = expect upside
+                if curr_gex < 0 and move_pct < 0:
+                    wins += 1
+                elif curr_gex > 0 and move_pct > 0:
+                    wins += 1
+
+                total_move += abs(move_pct)
+                total_days += (look_ahead_idx - i)
+
+        if signals == 0:
+            return {"win_rate": 0, "avg_move": 0, "signal_count": 0, "avg_days": 0}
+
+        return {
+            "win_rate": round(wins / signals, 2),
+            "avg_move": round(total_move / signals, 2),
+            "signal_count": signals,
+            "avg_days": round(total_days / signals, 1)
+        }
+
     @web_app.get("/options/pc-ratio/{ticker_symbol}", tags=["Options"])
     def options_pc_ratio(ticker_symbol: str = "SPY"):
         """
@@ -2487,6 +2652,25 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/term-structure", tags=["Ratio Spread"])
+    async def options_term_structure_query(ticker: str = Query(...)):
+        """IV Term Structure (query param version for futures)."""
+        try:
+            from src.data.tastytrade_provider import is_futures_ticker, get_term_structure_tastytrade
+            if is_futures_ticker(ticker):
+                result = await get_term_structure_tastytrade(ticker)
+                if result is None:
+                    return {"ok": False, "error": "No term structure data", "ticker": ticker}
+                return {"ok": True, "data": result}
+            else:
+                from src.data.options import get_iv_term_structure
+                result = get_iv_term_structure(ticker.upper())
+                if 'error' in result:
+                    return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+                return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -3512,23 +3696,268 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             }}
 
     # =============================================================================
-    # ROUTES - TRADES (STUBS)
+    # PAPER TRADING ENDPOINTS
     # =============================================================================
 
-    # =============================================================================
-    # TRADING ENDPOINTS (NOT IMPLEMENTED - Analysis-only mode)
-    # =============================================================================
-    # Returns HTTP 501 Not Implemented with roadmap information
+    def _get_paper_engine():
+        from src.trading.paper.paper_engine import PaperEngine
+        return PaperEngine(VOLUME_PATH)
 
-    @web_app.get("/trades/positions", status_code=501)
+    @web_app.get("/paper/status", tags=["Paper Trading"])
+    def paper_status():
+        """System health: cert session alive, config, open trades."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_status()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/account", tags=["Paper Trading"])
+    def paper_account():
+        """Account summary: equity, cash, buying power, P&L."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_account_summary()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/positions", tags=["Paper Trading"])
+    def paper_positions():
+        """Open positions with live marks from TT cert."""
+        try:
+            engine = _get_paper_engine()
+            positions = engine.get_positions()
+            journal_trades = engine.journal.get_open_trades()
+            return {"ok": True, "data": {
+                "positions": positions,
+                "journal_trades": journal_trades,
+            }}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/orders", tags=["Paper Trading"])
+    def paper_orders(limit: int = 20):
+        """Recent order history from TT cert."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_orders(limit)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/signals", tags=["Paper Trading"])
+    async def paper_signals():
+        """Current active signals with scores for all watched tickers."""
+        try:
+            engine = _get_paper_engine()
+            from src.trading.paper.signal_engine import SignalEngine
+            signal_engine = SignalEngine(VOLUME_PATH)
+            config = engine.get_config()
+            all_signals = []
+            for ticker in config.get('watched_tickers', ['SPY', 'QQQ']):
+                try:
+                    signals = await signal_engine.evaluate_signals(ticker, config)
+                    all_signals.extend(signals)
+                except Exception as e:
+                    logger.warning(f"Signal eval error for {ticker}: {e}")
+            all_signals.sort(key=lambda s: s.get('confidence', 0), reverse=True)
+            return {"ok": True, "data": all_signals}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/signals/history", tags=["Paper Trading"])
+    def paper_signals_history(limit: int = 50, signal_type: str = None):
+        """Signal history (recorded signals)."""
+        try:
+            engine = _get_paper_engine()
+            signals = engine.journal.get_signals(limit=limit, signal_type=signal_type)
+            return {"ok": True, "data": signals}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/journal", tags=["Paper Trading"])
+    def paper_journal(status: str = None, signal_type: str = None,
+                      ticker: str = None, strategy: str = None, limit: int = 50):
+        """Trade journal with filters (status, signal_type, ticker, strategy)."""
+        try:
+            engine = _get_paper_engine()
+            trades = engine.journal.get_all_trades(
+                status=status, signal_type=signal_type,
+                ticker=ticker, limit=limit
+            )
+            # Filter by strategy tag if requested
+            if strategy:
+                trades = [t for t in trades if strategy in t.get('tags', [])]
+            return {"ok": True, "data": trades}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/analytics", tags=["Paper Trading"])
+    def paper_analytics(strategy: str = None):
+        """Performance metrics: win rate, Sharpe, drawdown, signal attribution.
+        Optional strategy filter for per-strategy analytics."""
+        try:
+            engine = _get_paper_engine()
+            from src.trading.paper.analytics import PerformanceAnalytics
+            analytics = PerformanceAnalytics(engine.journal)
+            metrics = analytics.compute()
+
+            # If strategy filter, compute per-strategy metrics
+            if strategy:
+                all_closed = engine.journal.get_closed_trades()
+                filtered = [t for t in all_closed if strategy in t.get('tags', [])
+                            or t.get('signal_type') == strategy]
+                if filtered:
+                    # Create a temp journal-like object for filtered computation
+                    metrics['strategy_filter'] = strategy
+                    winners = [t for t in filtered if (t.get('pnl_dollars') or 0) > 0]
+                    losers = [t for t in filtered if (t.get('pnl_dollars') or 0) < 0]
+                    metrics['filtered_count'] = len(filtered)
+                    metrics['filtered_win_rate'] = round(len(winners) / len(filtered) * 100, 1) if filtered else 0
+                    metrics['filtered_total_pnl'] = round(sum(t.get('pnl_dollars', 0) or 0 for t in filtered), 2)
+                    gross_p = sum(t['pnl_dollars'] for t in winners)
+                    gross_l = abs(sum(t['pnl_dollars'] for t in losers))
+                    metrics['filtered_profit_factor'] = round(gross_p / gross_l, 2) if gross_l > 0 else 999
+
+            return {"ok": True, "data": metrics}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/strategies", tags=["Paper Trading"])
+    def paper_strategies():
+        """List all strategies and their performance metrics."""
+        try:
+            engine = _get_paper_engine()
+            from src.trading.paper.analytics import PerformanceAnalytics
+            analytics = PerformanceAnalytics(engine.journal)
+            metrics = analytics.compute()
+            return {"ok": True, "data": {
+                "strategies": engine.journal.get_strategies(),
+                "breakdown": metrics.get('strategy_breakdown', {}),
+            }}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/equity-curve", tags=["Paper Trading"])
+    def paper_equity_curve():
+        """Equity curve data for charting."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.journal.get_equity_curve()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/config", tags=["Paper Trading"])
+    def paper_config():
+        """Current system config (risk params, watched tickers)."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_config()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/config", tags=["Paper Trading"])
+    def paper_config_update(request: dict):
+        """Update config (toggle auto-trade, change risk params)."""
+        try:
+            engine = _get_paper_engine()
+            config = engine.update_config(request)
+            volume.commit()
+            return {"ok": True, "data": config}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/order", tags=["Paper Trading"])
+    def paper_order(request: dict):
+        """Manual order placement (bypass signal engine)."""
+        try:
+            engine = _get_paper_engine()
+            signal = {
+                'signal_id': f'MANUAL-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}',
+                'signal_type': 'manual',
+                'ticker': request.get('ticker', '').upper(),
+                'direction': request.get('direction', 'long'),
+                'option_type': request.get('option_type', 'call'),
+                'strike': request.get('strike', 0),
+                'expiration': request.get('expiration', ''),
+                'quantity': request.get('quantity', 1),
+                'estimated_premium': request.get('premium', 5.0),
+                'estimated_cost': request.get('premium', 5.0) * request.get('quantity', 1) * 100,
+                'tags': request.get('tags', ['manual']),
+                'notes': request.get('notes', 'Manual order'),
+            }
+            result = engine.execute_signal(signal)
+            if result.get('ok'):
+                volume.commit()
+                return {"ok": True, "data": result}
+            return result
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/close/{trade_id}", tags=["Paper Trading"])
+    def paper_close(trade_id: str, reason: str = "manual"):
+        """Manually close a specific position."""
+        try:
+            engine = _get_paper_engine()
+            result = engine.close_position(trade_id, reason)
+            volume.commit()
+            return {"ok": result.get('ok', False), "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/check-signals", tags=["Paper Trading"])
+    async def paper_check_signals():
+        """Manually trigger signal check and optionally execute."""
+        try:
+            engine = _get_paper_engine()
+            from src.trading.paper.signal_engine import SignalEngine
+            signal_engine = SignalEngine(VOLUME_PATH)
+            config = engine.get_config()
+
+            all_signals = []
+            executed = []
+            for ticker in config.get('watched_tickers', ['SPY', 'QQQ']):
+                try:
+                    signals = await signal_engine.evaluate_signals(ticker, config)
+                    for sig in signals:
+                        engine.journal.record_signal(sig)
+                        all_signals.append(sig)
+                        # Auto-execute if enabled
+                        if config.get('auto_trade_enabled'):
+                            sig['quantity'] = engine.risk_manager.compute_position_size(sig, engine.get_account_summary().get('equity', 50000))
+                            result = engine.execute_signal(sig)
+                            if result.get('ok'):
+                                executed.append(result)
+                except Exception as e:
+                    logger.warning(f"Signal check error for {ticker}: {e}")
+
+            # Also check exit conditions
+            exits = engine.check_exit_conditions()
+
+            volume.commit()
+            return {"ok": True, "data": {
+                "signals": all_signals,
+                "executed": executed,
+                "exits": exits,
+                "checked_tickers": config.get('watched_tickers', []),
+            }}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/reset", tags=["Paper Trading"])
+    def paper_reset():
+        """Reset paper account (clear journal, reset equity)."""
+        try:
+            engine = _get_paper_engine()
+            result = engine.reset()
+            volume.commit()
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # Legacy stubs redirect to paper trading
+    @web_app.get("/trades/positions")
     def trades_positions():
-        return {
-            "ok": False,
-            "error": "Trading execution not implemented",
-            "message": "This endpoint is planned for future release. Currently in read-only analysis mode.",
-            "roadmap": ["Paper trading", "Alpaca integration", "Risk management"],
-            "alternatives": ["Use /scan for analysis", "Use /conviction/alerts for setups"]
-        }
+        return paper_positions()
 
     @web_app.get("/watchlist", tags=["Watchlist"])
     def get_watchlist():
@@ -3653,58 +4082,41 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    @web_app.get("/trades/risk", status_code=501)
+    @web_app.get("/trades/risk")
     def trades_risk():
-        return {
-            "ok": False,
-            "error": "Risk analysis not implemented",
-            "planned_metrics": ["Beta", "VaR", "Sharpe ratio", "Max drawdown"]
-        }
+        return paper_analytics()
 
-    @web_app.get("/trades/journal", status_code=501)
+    @web_app.get("/trades/journal")
     def trades_journal():
-        return {
-            "ok": False,
-            "error": "Trade journal not implemented"
-        }
+        return paper_journal()
 
-    @web_app.get("/trades/daily-report", status_code=501)
+    @web_app.get("/trades/daily-report")
     def trades_daily_report():
-        return {
-            "ok": False,
-            "error": "Daily report not implemented"
-        }
+        return paper_analytics()
 
-    @web_app.get("/trades/scan", status_code=501)
-    def trades_scan():
-        return {
-            "ok": False,
-            "error": "Trade scanning not implemented",
-            "alternative": "Use /scan endpoint instead"
-        }
+    @web_app.get("/trades/scan")
+    async def trades_scan():
+        return await paper_check_signals()
 
-    @web_app.post("/trades/create", status_code=501)
-    def trades_create():
-        return {
-            "ok": False,
-            "error": "Trade execution not implemented",
-            "message": "Live trading disabled. Analysis-only system.",
-            "reason": "No broker integration. Paper trading planned for Q2 2026."
-        }
+    @web_app.post("/trades/create")
+    def trades_create(request: dict = {}):
+        return paper_order(request)
 
-    @web_app.get("/trades/{trade_id}", status_code=501)
+    @web_app.get("/trades/{trade_id}")
     def trades_detail(trade_id: str):
-        return {
-            "ok": False,
-            "error": "Trade lookup not implemented"
-        }
+        try:
+            engine = _get_paper_engine()
+            trades = engine.journal.get_all_trades()
+            trade = next((t for t in trades if t['id'] == trade_id), None)
+            if trade:
+                return {"ok": True, "data": trade}
+            return {"ok": False, "error": "Trade not found"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
-    @web_app.post("/trades/{trade_id}/sell", status_code=501)
+    @web_app.post("/trades/{trade_id}/sell")
     def trades_sell(trade_id: str):
-        return {
-            "ok": False,
-            "error": "Trade execution not implemented"
-        }
+        return paper_close(trade_id, "manual")
 
     @web_app.post("/sec/deals/add", status_code=501)
     def sec_deals_add():
