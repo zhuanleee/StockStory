@@ -2778,7 +2778,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.get("/options/xray/{ticker_symbol}", tags=["Market X-Ray"])
-    async def options_xray(ticker_symbol: str, expiration: str = Query(None), swing_mode: bool = Query(False)):
+    async def options_xray(ticker_symbol: str, expiration: str = Query(None), swing_mode: bool = Query(False), intel: bool = Query(False)):
         """
         Market X-Ray - Institutional Edge Scanner.
 
@@ -2787,6 +2787,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         and a composite edge score.
 
         Set swing_mode=true to get trade ideas optimized for 21-45 DTE swing trades.
+        Set intel=true to include PhD-level intelligence (edge score, regime, VRP, flow toxicity, strategy).
         """
         try:
             from src.data.tastytrade_provider import compute_market_xray
@@ -2799,7 +2800,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             except Exception:
                 pass
             result = await compute_market_xray(ticker_symbol.upper(), expiration,
-                                               swing_mode=swing_mode, adaptive_weights=aw)
+                                               swing_mode=swing_mode, adaptive_weights=aw,
+                                               intel_mode=intel)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2810,7 +2812,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
     async def options_xray_query(
         ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."),
         expiration: str = Query(None, description="Expiration date YYYY-MM-DD"),
-        swing_mode: bool = Query(False, description="Optimize for 21-45 DTE swing trades")
+        swing_mode: bool = Query(False, description="Optimize for 21-45 DTE swing trades"),
+        intel: bool = Query(False, description="Include PhD-level intelligence (edge score, regime, VRP, flow toxicity, strategy)")
     ):
         """Market X-Ray (query param version for futures support)"""
         try:
@@ -2823,7 +2826,8 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             except Exception:
                 pass
             result = await compute_market_xray(ticker.upper(), expiration,
-                                               swing_mode=swing_mode, adaptive_weights=aw)
+                                               swing_mode=swing_mode, adaptive_weights=aw,
+                                               intel_mode=intel)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}

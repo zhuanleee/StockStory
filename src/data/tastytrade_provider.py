@@ -1692,9 +1692,9 @@ async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Op
 
 
 async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: bool = False,
-                              adaptive_weights: Dict = None) -> Dict:
+                              adaptive_weights: Dict = None, intel_mode: bool = False) -> Dict:
     """Market X-Ray: institutional edge scanner combining 6 derived signal modules."""
-    cache_key = (ticker.upper(), expiration, swing_mode)
+    cache_key = (ticker.upper(), expiration, swing_mode, intel_mode)
     cached = _xray_cache.get(cache_key)
     if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
         return cached['result']
@@ -1706,7 +1706,7 @@ async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: b
             return cached['result']
         result = await _compute_market_xray_impl(
             ticker, expiration, swing_mode=swing_mode,
-            adaptive_weights=adaptive_weights
+            adaptive_weights=adaptive_weights, intel_mode=intel_mode
         )
         if 'error' not in result:
             _xray_cache[cache_key] = {'result': result, 'ts': _time.time()}
@@ -1738,11 +1738,11 @@ async def _xray_fetch_quote(ticker: str) -> Optional[float]:
 
 
 async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_mode: bool = False,
-                                     adaptive_weights: Dict = None) -> Dict:
+                                     adaptive_weights: Dict = None, intel_mode: bool = False) -> Dict:
     """Internal implementation of Market X-Ray (not cached)."""
     try:
-        # Fetch all data in parallel (including live quote)
-        chain, gex, maxpain, gex_levels, iv_delta, term, em, live_price = await asyncio.gather(
+        # Build parallel tasks
+        gather_tasks = [
             get_options_with_greeks_tastytrade(ticker, expiration),
             calculate_gex_tastytrade(ticker, expiration),
             calculate_max_pain_tastytrade(ticker, expiration),
@@ -1751,8 +1751,17 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
             get_term_structure_tastytrade(ticker),
             get_expected_move_tastytrade(ticker),
             _xray_fetch_quote(ticker),
-            return_exceptions=True
-        )
+        ]
+        if intel_mode:
+            gather_tasks.append(get_combined_regime_tastytrade(ticker, expiration))
+
+        gathered = await asyncio.gather(*gather_tasks, return_exceptions=True)
+
+        # Unpack base results
+        chain, gex, maxpain, gex_levels, iv_delta, term, em, live_price = gathered[:8]
+        regime_data = gathered[8] if intel_mode and len(gathered) > 8 else None
+        if isinstance(regime_data, Exception):
+            regime_data = None
 
         # Handle exceptions from gather
         if isinstance(chain, Exception) or chain is None:
@@ -2004,7 +2013,7 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
         if deltas:
             composite['deltas'] = deltas
 
-        return {
+        result = {
             'ticker': ticker.upper(),
             'expiration': expiration_used,
             'current_price': current_price,
@@ -2018,6 +2027,118 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
             'source': 'tastytrade',
             'timestamp': datetime.now().isoformat()
         }
+
+        # =====================================================================
+        # PhD INTELLIGENCE MODULE (when intel_mode=True)
+        # =====================================================================
+        if intel_mode:
+            try:
+                from src.trading.paper.adaptive_engine import EdgeScoreEngine, StrategySelector, FlowToxicityAnalyzer
+
+                # Flow toxicity from chain data already in hand
+                flow_toxicity_result = FlowToxicityAnalyzer.compute_toxicity(options, multiplier)
+
+                # VRP (simplified): (iv_rank - 30) / 10
+                iv_rank = 50  # default
+                if composite and composite.get('factors'):
+                    for f in composite['factors']:
+                        if f.get('name', '').lower().startswith('iv'):
+                            iv_rank = f.get('score', 50)
+                            break
+                vrp = round((iv_rank - 30) / 10, 2)
+                vrp_signal = 'high' if vrp > 4 else ('moderate' if vrp > 2 else ('low' if vrp > 0 else 'negative'))
+
+                # Regime from parallel gather
+                combined_regime = 'neutral'
+                gex_regime = 'transitional'
+                risk_level = 'moderate'
+                position_multiplier = 1.0
+                if regime_data and isinstance(regime_data, dict) and 'error' not in regime_data:
+                    combined_regime = regime_data.get('combined_regime', 'neutral')
+                    gex_regime = regime_data.get('gex_regime', 'transitional')
+                    risk_level = regime_data.get('risk_level', 'moderate')
+                    position_multiplier = regime_data.get('position_multiplier', 1.0)
+
+                # Term structure signal
+                term_structure_signal = 'contango'
+                if vol_surface and isinstance(vol_surface, dict):
+                    ts = (vol_surface.get('term_signal') or '').lower()
+                    if ts in ('contango', 'normal', 'inverted', 'flat'):
+                        term_structure_signal = ts
+
+                # Skew ratio
+                skew_ratio = 1.0
+                if vol_surface and isinstance(vol_surface, dict):
+                    sk = vol_surface.get('skew_25d')
+                    if sk is not None:
+                        try:
+                            skew_ratio = round(float(sk), 4)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Determine strategy type based on vrp
+                strategy_type = 'short_premium' if vrp > 0 else 'long_premium'
+
+                # Edge score
+                edge_engine = EdgeScoreEngine()
+                edge_result = edge_engine.compute_edge(
+                    composite_score=composite.get('score', 50),
+                    gex_regime=gex_regime,
+                    combined_regime=combined_regime,
+                    vrp=vrp,
+                    flow_toxicity=flow_toxicity_result.get('toxicity', 0.5),
+                    dealer_flow_forecast={},
+                    signal_performance={},
+                    adaptive_weights=adaptive_weights or {},
+                    term_structure=term_structure_signal,
+                    skew_ratio=skew_ratio,
+                    strategy_type=strategy_type,
+                )
+
+                # Strategy selection
+                selector = StrategySelector()
+                regime_state = {
+                    'vrp': vrp,
+                    'gex_regime': gex_regime,
+                    'combined_regime': combined_regime,
+                    'flow_toxicity': flow_toxicity_result.get('toxicity', 0.5),
+                    'term_structure': term_structure_signal,
+                    'skew_steep': (vol_surface.get('skew_label', '') == 'steep') if vol_surface else False,
+                    'vanna_flow': 0,
+                    'macro_event_days': 0,
+                }
+                strategies = selector.select_strategy(regime_state)
+                best_strategy = strategies[0] if strategies else {
+                    'name': 'No Strategy', 'type': 'none', 'direction': 'neutral',
+                    'description': 'Insufficient data', 'dte_range': [0, 0], 'delta_target': 0
+                }
+
+                result['intelligence'] = {
+                    'edge_score': edge_result.get('edge_score', 50),
+                    'edge_direction': edge_result.get('direction', 'neutral'),
+                    'edge_confidence': edge_result.get('confidence', 'low'),
+                    'edge_components': edge_result.get('components', {}),
+                    'kelly_fraction': edge_result.get('kelly_fraction', 0),
+                    'n_factors_agree': edge_result.get('n_factors_agree', 0),
+                    'combined_regime': combined_regime,
+                    'gex_regime': gex_regime,
+                    'risk_level': risk_level,
+                    'position_multiplier': position_multiplier,
+                    'vrp': vrp,
+                    'vrp_signal': vrp_signal,
+                    'flow_toxicity': flow_toxicity_result,
+                    'term_structure': term_structure_signal,
+                    'skew_ratio': skew_ratio,
+                    'strategy': best_strategy,
+                }
+                logger.info(f"X-Ray intel for {ticker}: edge={edge_result.get('edge_score')}, "
+                           f"regime={combined_regime}, vrp={vrp}, strategy={best_strategy.get('name')}")
+            except Exception as e:
+                logger.warning(f"X-Ray intel computation failed for {ticker}: {e}")
+                import traceback
+                logger.warning(traceback.format_exc())
+
+        return result
 
     except Exception as e:
         logger.error(f"Error computing Market X-Ray for {ticker}: {e}")
