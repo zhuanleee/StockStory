@@ -6,6 +6,9 @@ Four signal types:
 2. Combined Regime Shift: Combined GEX+P/C regime changes
 3. Macro Event Catalyst: Major event within 3 days
 4. IV Mean Reversion: IV Rank extremes (>80 sell, <20 buy)
+
+Phase 1a: Confidence adjusted by historical win rates (adaptive_engine.py)
+Phase 3b: Strategy auto-selection based on regime
 """
 
 import logging
@@ -21,6 +24,20 @@ _prev_regimes = {}  # ticker -> {'gex_regime': str, 'combined_regime': str, 'ts'
 class SignalEngine:
     def __init__(self, volume_path: str):
         self.volume_path = volume_path
+        # Phase 1a: Load signal performance tracker for adaptive confidence
+        try:
+            from .adaptive_engine import SignalPerformanceTracker
+            self.perf_tracker = SignalPerformanceTracker(volume_path)
+        except Exception:
+            self.perf_tracker = None
+
+    def _adjust_confidence(self, raw_confidence: float, signal_type: str) -> int:
+        """Phase 1a: Adjust confidence based on historical performance."""
+        if not self.perf_tracker:
+            return round(raw_confidence)
+        multiplier = self.perf_tracker.get_confidence_adjustment(signal_type)
+        adjusted = raw_confidence * multiplier
+        return round(max(10, min(99, adjusted)))
 
     async def evaluate_signals(self, ticker: str, config: dict) -> List[dict]:
         """Evaluate all signal sources for a ticker, return actionable signals."""
@@ -66,7 +83,8 @@ class SignalEngine:
                 return None
 
             flip_type = f'{prev_regime}_to_{current_regime}'
-            confidence = regime_data.get('confidence', 0) * 100
+            raw_confidence = regime_data.get('confidence', 0) * 100
+            confidence = self._adjust_confidence(raw_confidence, 'gex_flip')
 
             # Determine trade direction
             if current_regime == 'volatile':
@@ -144,7 +162,8 @@ class SignalEngine:
             direction, option_type, base_confidence = actionable[current]
             # Scale by position_multiplier
             multiplier = combined.get('position_multiplier', 0.5)
-            confidence = base_confidence * max(multiplier, 0.3)
+            raw_confidence = base_confidence * max(multiplier, 0.3)
+            confidence = self._adjust_confidence(raw_confidence, 'regime_shift')
 
             return {
                 'signal_id': f'SIG-{date.today().strftime("%Y%m%d")}-REGIME-{ticker}',
@@ -200,7 +219,8 @@ class SignalEngine:
                 return None
 
             # Vol expansion play - buy straddle before event
-            confidence = min(90, 50 + best_severity * 8)
+            raw_confidence = min(90, 50 + best_severity * 8)
+            confidence = self._adjust_confidence(raw_confidence, 'macro_event')
 
             return {
                 'signal_id': f'SIG-{date.today().strftime("%Y%m%d")}-MACRO-{ticker}',
@@ -246,14 +266,16 @@ class SignalEngine:
                 # High IV - sell premium (credit spread)
                 direction = 'short'
                 option_type = 'call'
-                confidence = min(90, 60 + (iv_rank - 80))
+                raw_conf = min(90, 60 + (iv_rank - 80))
+                confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Sell premium - credit spread setup.'
                 tags = ['iv_reversion', 'high_iv', 'sell_premium']
             elif iv_rank < 20:
                 # Low IV - buy premium (debit spread)
                 direction = 'long'
                 option_type = 'call'
-                confidence = min(85, 55 + (20 - iv_rank))
+                raw_conf = min(85, 55 + (20 - iv_rank))
+                confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Buy premium - debit spread setup.'
                 tags = ['iv_reversion', 'low_iv', 'buy_premium']
             else:

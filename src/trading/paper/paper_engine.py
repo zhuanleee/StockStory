@@ -78,6 +78,35 @@ class PaperEngine:
         self.journal = TradeJournal(volume_path)
         self.risk_manager = RiskManager(volume_path)
         self.config = load_config(volume_path)
+        # Phase 1a-1c, 3a-3c, 4c: Adaptive systems
+        try:
+            from .adaptive_engine import (
+                SignalPerformanceTracker, AdaptiveWeights,
+                AdaptiveExitEngine, EdgeScoreEngine,
+                StrategySelector, KellyPositionSizer,
+                FlowToxicityAnalyzer, LearningTierConnector,
+                ABTestEngine,
+            )
+            self.perf_tracker = SignalPerformanceTracker(volume_path)
+            self.adaptive_weights = AdaptiveWeights(volume_path)
+            self.adaptive_exits = AdaptiveExitEngine(volume_path)
+            self.edge_engine = EdgeScoreEngine()
+            self.strategy_selector = StrategySelector()
+            self.kelly_sizer = KellyPositionSizer()
+            self.flow_analyzer = FlowToxicityAnalyzer()
+            self.tier_connector = LearningTierConnector(volume_path)
+            self.ab_engine = ABTestEngine(volume_path)
+        except Exception as e:
+            logger.warning(f"Adaptive systems init failed: {e}")
+            self.perf_tracker = None
+            self.adaptive_weights = None
+            self.adaptive_exits = None
+            self.edge_engine = None
+            self.strategy_selector = None
+            self.kelly_sizer = None
+            self.flow_analyzer = None
+            self.tier_connector = None
+            self.ab_engine = None
 
     def reload_config(self):
         self.config = load_config(self.volume_path)
@@ -348,12 +377,18 @@ class PaperEngine:
                 fill_price = float(response.order.price)
 
             closed = self.journal.close_trade(trade_id, fill_price, reason)
+
+            # Phase 1a-1c: Update all adaptive systems on trade close
+            self._update_adaptive_systems(closed)
+
             return {'ok': True, 'trade': closed}
 
         except Exception as e:
             logger.error(f"Close position error: {e}")
             # Still close in journal with estimated price
             closed = self.journal.close_trade(trade_id, 0, f'{reason}_error')
+            if closed:
+                self._update_adaptive_systems(closed)
             return {'ok': False, 'error': str(e), 'trade': closed}
 
     # -------------------------------------------------------------------------
@@ -400,9 +435,19 @@ class PaperEngine:
                 except ValueError:
                     pass
 
-            stop_loss = trade.get('stop_loss_pct', -50)
-            take_profit = trade.get('take_profit_pct', 100)
-            time_exit_dte = self.config.get('time_exit_dte', 7)
+            # Phase 1c: Use adaptive exit parameters if available
+            if self.adaptive_exits:
+                exit_params = self.adaptive_exits.get_exit_params(
+                    strategy=trade.get('strategy'),
+                    signal_type=trade.get('signal_type'),
+                )
+                stop_loss = exit_params.get('stop_loss_pct', trade.get('stop_loss_pct', -50))
+                take_profit = exit_params.get('take_profit_pct', trade.get('take_profit_pct', 100))
+                time_exit_dte = exit_params.get('time_exit_dte', self.config.get('time_exit_dte', 7))
+            else:
+                stop_loss = trade.get('stop_loss_pct', -50)
+                take_profit = trade.get('take_profit_pct', 100)
+                time_exit_dte = self.config.get('time_exit_dte', 7)
 
             exit_reason = None
             if pnl_pct <= stop_loss:
@@ -411,6 +456,24 @@ class PaperEngine:
                 exit_reason = 'take_profit'
             elif dte <= time_exit_dte:
                 exit_reason = 'time_exit'
+
+            # Phase 3c: Edge-deterioration exit
+            # If in profit and edge has collapsed, take profits early
+            if not exit_reason and pnl_pct > 10 and self.edge_engine:
+                try:
+                    edge_data = await self.compute_edge_score(trade['ticker'])
+                    current_edge = edge_data.get('edge_score', 50)
+                    entry_edge = trade.get('entry_edge_score', 50)
+                    # Exit if edge dropped by >25 points from entry
+                    if entry_edge - current_edge > 25:
+                        exit_reason = 'edge_deterioration'
+                    # Exit long if regime flipped to danger
+                    elif (trade['direction'] == 'long' and
+                          edge_data.get('direction') == 'bearish' and
+                          current_edge < 35):
+                        exit_reason = 'regime_reversal'
+                except Exception as e:
+                    logger.debug(f"Edge exit check skipped for {trade['ticker']}: {e}")
 
             if exit_reason:
                 result = await self.close_position(trade['id'], exit_reason)
@@ -423,6 +486,207 @@ class PaperEngine:
                 })
 
         return actions
+
+    # -------------------------------------------------------------------------
+    # Adaptive Systems Feedback Loop
+    # -------------------------------------------------------------------------
+
+    def _update_adaptive_systems(self, closed_trade: dict):
+        """Phase 1a-4b: Update all adaptive systems when a trade closes."""
+        try:
+            closed_trades = self.journal.get_closed_trades()
+
+            # 1a: Update signal performance tracker
+            if self.perf_tracker:
+                self.perf_tracker.update_from_journal(closed_trades)
+                logger.info("Updated signal performance tracker")
+
+            # 1b: Update adaptive composite weights
+            if self.adaptive_weights and closed_trade:
+                factor_scores = closed_trade.get('entry_factor_scores', {})
+                if factor_scores:
+                    self.adaptive_weights.update_from_trade(closed_trade, factor_scores)
+                    logger.info("Updated adaptive weights")
+
+            # 1c: Update adaptive exit parameters
+            if self.adaptive_exits:
+                self.adaptive_exits.learn_from_trades(closed_trades)
+                logger.info("Updated adaptive exit parameters")
+
+            # 4a: Run full learning tier feedback cycle
+            if self.tier_connector:
+                tier_results = self.tier_connector.run_feedback_cycle(
+                    self.perf_tracker, self.adaptive_weights,
+                    self.adaptive_exits, closed_trades,
+                )
+                logger.info(f"Learning tier cycle: {tier_results.get('tier_health', {})}")
+
+            # 4b: Record A/B test outcomes
+            if self.ab_engine and closed_trade:
+                ab_group = closed_trade.get('ab_group')
+                ab_test_id = closed_trade.get('ab_test_id')
+                if ab_group and ab_test_id:
+                    self.ab_engine.record_outcome(ab_test_id, ab_group, closed_trade)
+                    logger.info(f"A/B test {ab_test_id} updated ({ab_group})")
+
+        except Exception as e:
+            logger.error(f"Adaptive systems update error: {e}")
+
+    def rebuild_adaptive_systems(self) -> Dict:
+        """Force rebuild all adaptive systems from journal data."""
+        closed = self.journal.get_closed_trades()
+        results = {}
+
+        if self.perf_tracker:
+            results['signal_performance'] = self.perf_tracker.update_from_journal(closed)
+
+        if self.adaptive_exits:
+            results['adaptive_exits'] = self.adaptive_exits.learn_from_trades(closed)
+
+        # Note: adaptive_weights updates incrementally per trade, not bulk
+        if self.adaptive_weights:
+            results['adaptive_weights'] = self.adaptive_weights.get_stats()
+
+        return results
+
+    def get_adaptive_stats(self) -> Dict:
+        """Get all adaptive system stats for dashboard display."""
+        stats = {}
+
+        if self.perf_tracker:
+            stats['signal_performance'] = self.perf_tracker.get_all_stats()
+
+        if self.adaptive_weights:
+            stats['adaptive_weights'] = self.adaptive_weights.get_stats()
+            stats['current_weights'] = self.adaptive_weights.get_weights()
+
+        if self.adaptive_exits:
+            stats['adaptive_exits'] = {
+                'gex_flip': self.adaptive_exits.get_exit_params(signal_type='gex_flip'),
+                'regime_shift': self.adaptive_exits.get_exit_params(signal_type='regime_shift'),
+                'macro_event': self.adaptive_exits.get_exit_params(signal_type='macro_event'),
+                'iv_reversion': self.adaptive_exits.get_exit_params(signal_type='iv_reversion'),
+            }
+
+        if self.tier_connector:
+            stats['learning_tiers'] = self.tier_connector.get_status()
+
+        if self.ab_engine:
+            stats['ab_tests'] = self.ab_engine.get_all_tests()
+
+        return stats
+
+    async def compute_edge_score(self, ticker: str) -> Dict:
+        """Phase 3a: Compute unified edge score for a ticker."""
+        if not self.edge_engine:
+            return {'error': 'Edge engine not initialized'}
+
+        try:
+            from src.data.tastytrade_provider import (
+                get_gex_regime_tastytrade, get_combined_regime_tastytrade,
+                get_options_with_greeks_tastytrade,
+            )
+
+            # Fetch regime data in parallel
+            import asyncio
+            regime, combined, chain = await asyncio.gather(
+                get_gex_regime_tastytrade(ticker),
+                get_combined_regime_tastytrade(ticker),
+                get_options_with_greeks_tastytrade(ticker),
+                return_exceptions=True,
+            )
+
+            gex_regime = regime.get('regime', 'transitional') if isinstance(regime, dict) else 'transitional'
+            combined_regime = combined.get('combined_regime', 'neutral_transitional') if isinstance(combined, dict) else 'neutral_transitional'
+
+            # Flow toxicity from chain
+            options = chain.get('options', []) if isinstance(chain, dict) else []
+            toxicity_data = self.flow_analyzer.compute_toxicity(options) if self.flow_analyzer else {'toxicity': 0}
+
+            # Simplified VRP (IV - RV estimate)
+            vrp = 0
+            if isinstance(chain, dict):
+                iv_rank = chain.get('iv_rank', 50)
+                vrp = max(-5, (iv_rank - 50) / 10)  # Rough proxy
+
+            edge = self.edge_engine.compute_edge(
+                composite_score=50,  # Will be replaced by actual composite when called from xray
+                gex_regime=gex_regime,
+                combined_regime=combined_regime,
+                vrp=vrp,
+                flow_toxicity=toxicity_data.get('toxicity', 0),
+                dealer_flow_forecast={},
+                signal_performance=self.perf_tracker.get_all_stats() if self.perf_tracker else {},
+                adaptive_weights=self.adaptive_weights.get_weights() if self.adaptive_weights else {},
+            )
+
+            edge['ticker'] = ticker
+            edge['flow_toxicity_detail'] = toxicity_data
+            return edge
+
+        except Exception as e:
+            logger.error(f"Edge score computation error: {e}")
+            return {'error': str(e)}
+
+    def select_strategy(self, regime_state: Dict) -> List[Dict]:
+        """Phase 3b: Auto-select strategy based on regime."""
+        if not self.strategy_selector:
+            return [{'name': 'Default', 'type': 'none', 'description': 'Strategy selector not initialized'}]
+        return self.strategy_selector.select_strategy(regime_state)
+
+    def compute_kelly_size(
+        self, equity: float, premium: float,
+        signal_type: str, combined_regime: str,
+    ) -> Dict:
+        """Phase 4c: Kelly position sizing."""
+        if not self.kelly_sizer:
+            return {'contracts': 1, 'rationale': 'Kelly sizer not initialized'}
+
+        signal_stats = None
+        if self.perf_tracker:
+            signal_stats = self.perf_tracker.get_signal_stats(signal_type)
+
+        return self.kelly_sizer.compute_position_size(
+            equity=equity,
+            premium=premium,
+            signal_type=signal_type,
+            combined_regime=combined_regime,
+            signal_stats=signal_stats,
+        )
+
+    # -------------------------------------------------------------------------
+    # Phase 4a: Learning Tier Status
+    # -------------------------------------------------------------------------
+
+    def get_learning_tier_status(self) -> Dict:
+        """Phase 4a: Get learning tier health and meta adjustments."""
+        if not self.tier_connector:
+            return {'error': 'Learning tier connector not initialized'}
+        return self.tier_connector.get_status()
+
+    def get_meta_adjustments(self) -> Dict:
+        """Phase 4a: Get meta-level adjustments (confidence scale, learning rate)."""
+        if not self.tier_connector:
+            return {'confidence_scale': 1.0, 'learning_rate': 0.1, 'exploration_rate': 0.2}
+        return self.tier_connector.get_meta_adjustments()
+
+    # -------------------------------------------------------------------------
+    # Phase 4b: A/B Testing
+    # -------------------------------------------------------------------------
+
+    def create_ab_test(self, test_id: str, description: str,
+                       control: Dict, variant: Dict,
+                       min_trades: int = 20) -> Dict:
+        """Phase 4b: Create a new A/B test."""
+        if not self.ab_engine:
+            return {'error': 'A/B test engine not initialized'}
+        return self.ab_engine.create_test(test_id, description, control, variant, min_trades)
+
+    def get_ab_tests(self) -> Dict:
+        """Phase 4b: Get all A/B test results."""
+        if not self.ab_engine:
+            return {'tests': {}, 'completed': []}
+        return self.ab_engine.get_all_tests()
 
     # -------------------------------------------------------------------------
     # System Status

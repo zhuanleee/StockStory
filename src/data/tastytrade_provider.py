@@ -38,6 +38,7 @@ _MAXPAIN_CACHE_TTL = 120  # seconds
 _xray_cache = {}  # key: (ticker, expiration) -> {'result': dict, 'ts': float}
 _xray_locks = {}  # key: (ticker, expiration) -> asyncio.Lock
 _XRAY_CACHE_TTL = 120  # seconds
+_xray_prev_metrics = {}  # key: ticker -> {'total_gex': float, 'atm_iv': float, 'flow_imbalance': float, 'ts': float}
 
 def get_tastytrade_session():
     """
@@ -800,7 +801,51 @@ async def calculate_gex_tastytrade(ticker: str, expiration: str = None) -> Dict:
         result = await _calculate_gex_tastytrade_impl(ticker, expiration)
         if 'error' not in result:
             _gex_cache[cache_key] = {'result': result, 'ts': _time.time()}
+            # F5: Save daily GEX snapshot for history tracking
+            _save_gex_snapshot(ticker, result)
         return result
+
+
+def _save_gex_snapshot(ticker: str, gex_data: Dict):
+    """Save daily GEX snapshot to Modal volume for history tracking (F5)."""
+    try:
+        import json
+        from pathlib import Path
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        safe_name = ticker.upper().replace("/", "_")
+        history_dir = Path("/data/gex_history")
+        history_dir.mkdir(parents=True, exist_ok=True)
+        history_path = history_dir / f"{safe_name}.json"
+
+        # Load existing history
+        history = []
+        if history_path.exists():
+            try:
+                history = json.loads(history_path.read_text())
+            except Exception:
+                history = []
+
+        # Don't add duplicate for same date
+        if history and history[-1].get("date") == today_str:
+            return
+
+        snapshot = {
+            "date": today_str,
+            "gex": gex_data.get("total_gex", 0),
+            "call_wall": gex_data.get("call_wall", 0),
+            "put_wall": gex_data.get("put_wall", 0),
+            "price": gex_data.get("current_price", 0),
+            "gamma_flip": gex_data.get("gamma_flip", 0),
+        }
+
+        history.append(snapshot)
+        # Keep last 90 days
+        history = history[-90:]
+        history_path.write_text(json.dumps(history))
+        logger.info(f"GEX snapshot saved for {ticker} on {today_str}")
+    except Exception as e:
+        logger.warning(f"Failed to save GEX snapshot for {ticker}: {e}")
 
 
 async def _calculate_gex_tastytrade_impl(ticker: str, expiration: str = None) -> Dict:
@@ -1646,7 +1691,8 @@ async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Op
     }
 
 
-async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: bool = False) -> Dict:
+async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: bool = False,
+                              adaptive_weights: Dict = None) -> Dict:
     """Market X-Ray: institutional edge scanner combining 6 derived signal modules."""
     cache_key = (ticker.upper(), expiration, swing_mode)
     cached = _xray_cache.get(cache_key)
@@ -1658,7 +1704,10 @@ async def compute_market_xray(ticker: str, expiration: str = None, swing_mode: b
         cached = _xray_cache.get(cache_key)
         if cached and (_time.time() - cached['ts']) < _XRAY_CACHE_TTL:
             return cached['result']
-        result = await _compute_market_xray_impl(ticker, expiration, swing_mode=swing_mode)
+        result = await _compute_market_xray_impl(
+            ticker, expiration, swing_mode=swing_mode,
+            adaptive_weights=adaptive_weights
+        )
         if 'error' not in result:
             _xray_cache[cache_key] = {'result': result, 'ts': _time.time()}
         return result
@@ -1688,7 +1737,8 @@ async def _xray_fetch_quote(ticker: str) -> Optional[float]:
     return None
 
 
-async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_mode: bool = False) -> Dict:
+async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_mode: bool = False,
+                                     adaptive_weights: Dict = None) -> Dict:
     """Internal implementation of Market X-Ray (not cached)."""
     try:
         # Fetch all data in parallel (including live quote)
@@ -1900,14 +1950,59 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
                 swing_chains = None
 
         # =====================================================================
+        # DAY-OVER-DAY DELTA TRACKING
+        # =====================================================================
+        tk = ticker.upper()
+        prev = _xray_prev_metrics.get(tk)
+        deltas = None
+        # Current metrics snapshot
+        cur_atm_iv = None
+        if iv_delta and isinstance(iv_delta, dict):
+            try:
+                cur_atm_iv = float(iv_delta.get('atm_iv') or 0) or None
+            except (ValueError, TypeError):
+                cur_atm_iv = None
+        cur_call_n = float(smart_money.get('total_call_notional', 0) or 0)
+        cur_put_n = float(smart_money.get('total_put_notional', 0) or 0)
+        cur_flow_imb = (cur_call_n - cur_put_n) / max(cur_call_n + cur_put_n, 1)
+
+        if prev:
+            deltas = {}
+            if prev.get('total_gex') is not None:
+                deltas['gex_change'] = round(total_gex - prev['total_gex'], 2)
+                deltas['gex_direction'] = 'increasing' if deltas['gex_change'] > 0 else 'decreasing'
+            if prev.get('atm_iv') and cur_atm_iv:
+                iv_chg = cur_atm_iv - prev['atm_iv']
+                deltas['iv_change'] = round(iv_chg, 4)
+                deltas['iv_direction'] = 'rising' if iv_chg > 0.005 else ('falling' if iv_chg < -0.005 else 'stable')
+            if prev.get('flow_imbalance') is not None:
+                flow_shift = cur_flow_imb - prev['flow_imbalance']
+                deltas['flow_shift'] = round(flow_shift, 4)
+                deltas['flow_direction'] = 'more bullish' if flow_shift > 0.05 else ('more bearish' if flow_shift < -0.05 else 'stable')
+            deltas['prev_ts'] = prev.get('ts')
+
+        # Store current metrics for next scan
+        _xray_prev_metrics[tk] = {
+            'total_gex': total_gex,
+            'atm_iv': cur_atm_iv,
+            'flow_imbalance': cur_flow_imb,
+            'ts': _time.time()
+        }
+
+        # =====================================================================
         # MODULE 6 - COMPOSITE EDGE SCORE
         # =====================================================================
         composite = _xray_composite(
             total_gex, squeeze_pin, smart_money, current_price,
             maxpain, vol_surface, term, trade_zones, dte,
             options=options, expiration=expiration_used, iv_delta=iv_delta,
-            swing_mode=swing_mode, swing_chains=swing_chains
+            swing_mode=swing_mode, swing_chains=swing_chains,
+            adaptive_weights=adaptive_weights
         )
+
+        # Attach deltas to composite output
+        if deltas:
+            composite['deltas'] = deltas
 
         return {
             'ticker': ticker.upper(),
@@ -2343,97 +2438,137 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                      term, trade_zones: Dict, dte: int = None,
                      options: list = None, expiration: str = None,
                      iv_delta: Dict = None,
-                     swing_mode: bool = False, swing_chains: list = None) -> Dict:
-    """MODULE 6: Composite Edge Score (0-100)."""
+                     swing_mode: bool = False, swing_chains: list = None,
+                     adaptive_weights: Dict = None) -> Dict:
+    """MODULE 6: Composite Edge Score (0-100).
+    Uses continuous scoring with asset-adaptive normalization.
+    Phase 1b: Supports adaptive weights from Thompson Sampling."""
     factors = []
 
-    # 1. Dealer flow score (weight=20)
-    dealer_flow_score = 70 if total_gex > 0 else 30
-    factors.append({'name': 'dealer_flow', 'score': dealer_flow_score, 'weight': 20,
-                    'contribution': round(dealer_flow_score * 20 / 100, 2)})
+    # Phase 1b: Use adaptive weights if provided, otherwise defaults
+    _w = adaptive_weights or {}
+    w_dealer = _w.get('dealer_flow', 20)
+    w_squeeze = _w.get('squeeze', 15)
+    w_smart = _w.get('smart_money', 20)
+    w_maxpain = _w.get('price_vs_maxpain', 10)
+    w_skew = _w.get('skew', 10)
+    w_term = _w.get('term', 10)
+    w_walls = _w.get('price_vs_walls', 15)
 
-    # 2. Squeeze score (weight=15)
+    # --- Asset-adaptive normalization ---
+    # Compute total OI from chain for GEX normalization
+    _total_oi = 0
+    for o in (options or []):
+        _total_oi += float((o.get('call') or {}).get('open_interest', 0) or 0)
+        _total_oi += float((o.get('put') or {}).get('open_interest', 0) or 0)
+    # GEX normalization: scales with asset footprint (OI * price * gamma_per_contract)
+    # For SPY ($600, 2M OI): ~1.2e9. For small cap ($20, 10K OI): ~200K.
+    gex_norm = max(1e6, _total_oi * current_price * 0.01) if current_price else 1e8
+
+    # 1. Dealer flow score — CONTINUOUS via tanh
+    # Positive GEX = stabilizing (bullish), negative = amplifying (bearish)
+    gex_ratio = total_gex / gex_norm if gex_norm > 0 else 0
+    dealer_flow_score = round(50 + 50 * max(-1, min(1, math.tanh(gex_ratio * 3))))
+    factors.append({'name': 'dealer_flow', 'score': dealer_flow_score, 'weight': w_dealer,
+                    'contribution': round(dealer_flow_score * w_dealer / 100, 2)})
+
+    # 2. Squeeze score (weight=15) — CONTINUOUS: uses BOTH direction AND magnitude
     sq_dir = squeeze_pin.get('squeeze_direction', 'up')
-    sq_up = squeeze_pin.get('squeeze_score', 50)
-    # Infer squeeze_down vs squeeze_up
-    squeeze_score_adj = 70 if sq_dir == 'up' else 30
-    if sq_up == 0:
-        squeeze_score_adj = 50
-    factors.append({'name': 'squeeze', 'score': squeeze_score_adj, 'weight': 15,
-                    'contribution': round(squeeze_score_adj * 15 / 100, 2)})
+    sq_mag = squeeze_pin.get('squeeze_score', 0)
+    # Magnitude factor: 0-100 squeeze_score → 0-1
+    mag_factor = min(1.0, sq_mag / 100.0)
+    # Direction: up = bullish deviation, down = bearish deviation
+    dir_sign = 1 if sq_dir == 'up' else -1
+    # Score: 50 (neutral) + up to ±40 based on magnitude * direction
+    squeeze_score_adj = round(50 + dir_sign * mag_factor * 40)
+    squeeze_score_adj = max(0, min(100, squeeze_score_adj))
+    factors.append({'name': 'squeeze', 'score': squeeze_score_adj, 'weight': w_squeeze,
+                    'contribution': round(squeeze_score_adj * w_squeeze / 100, 2)})
 
-    # 3. Smart money score (weight=20)
-    total_call = smart_money.get('total_call_notional', 0)
-    total_put = smart_money.get('total_put_notional', 0)
+    # 3. Smart money score (weight=20) — already continuous, kept
+    total_call = float(smart_money.get('total_call_notional', 0) or 0)
+    total_put = float(smart_money.get('total_put_notional', 0) or 0)
     total_flow = total_call + total_put
-    if total_flow > 0 and total_call > total_put:
-        smart_money_score = 50 + 50 * min(1, (total_call - total_put) / total_flow)
-    elif total_flow > 0:
-        smart_money_score = 50 - 50 * min(1, (total_put - total_call) / total_flow)
+    if total_flow > 0:
+        flow_imbalance = (total_call - total_put) / total_flow  # -1 to +1
+        smart_money_score = 50 + 50 * max(-1, min(1, flow_imbalance))
     else:
+        flow_imbalance = 0
         smart_money_score = 50
     smart_money_score = round(smart_money_score)
-    factors.append({'name': 'smart_money', 'score': smart_money_score, 'weight': 20,
-                    'contribution': round(smart_money_score * 20 / 100, 2)})
+    factors.append({'name': 'smart_money', 'score': smart_money_score, 'weight': w_smart,
+                    'contribution': round(smart_money_score * w_smart / 100, 2)})
 
-    # 4. Price vs max pain (weight=10)
+    # 4. Price vs max pain (weight=10) — kept (already continuous)
     max_pain_price = None
     if maxpain and isinstance(maxpain, dict):
         max_pain_price = maxpain.get('max_pain_price') or maxpain.get('max_pain_strike') or maxpain.get('max_pain')
     if max_pain_price and current_price:
         mp = float(max_pain_price)
         if current_price < mp:
-            # Price below max pain -> pull up -> bullish
             maxpain_score = 60 + 40 * min(1, (mp - current_price) / (current_price * 0.03))
         else:
-            # Price above max pain -> pull down -> bearish
             maxpain_score = 40 - 40 * min(1, (current_price - mp) / (current_price * 0.03))
             maxpain_score = max(0, maxpain_score)
     else:
         maxpain_score = 50
     maxpain_score = round(maxpain_score)
-    factors.append({'name': 'price_vs_maxpain', 'score': maxpain_score, 'weight': 10,
-                    'contribution': round(maxpain_score * 10 / 100, 2)})
+    factors.append({'name': 'price_vs_maxpain', 'score': maxpain_score, 'weight': w_maxpain,
+                    'contribution': round(maxpain_score * w_maxpain / 100, 2)})
 
-    # 5. Skew score (weight=10)
+    # 5. Skew score (weight=10) — CONTINUOUS via sigmoid curve
+    # Skew = put_25d_iv - call_25d_iv. Normal ~0.02-0.04. Steep >0.06. Flat <0.01.
     skew_val = vol_surface.get('skew_25d')
     if skew_val is not None:
-        if 0.01 <= skew_val <= 0.05:
-            skew_score = 70  # normal
-        elif skew_val > 0.05:
-            skew_score = 40  # steep / panic
-        else:
-            skew_score = 50  # flat
+        # Adaptive center: high-price assets (>$200) have wider normal skew
+        skew_center = 0.03 if current_price and current_price > 200 else 0.025
+        skew_dev = (skew_val - skew_center) / 0.03  # how many "units" from normal
+        # Steep skew (high deviation) = bearish (fear premium). Score drops.
+        # Flat/negative skew = less fear = mildly bullish. Score rises.
+        skew_score = round(65 - 25 * max(-1, min(1, math.tanh(skew_dev))))
+        skew_score = max(0, min(100, skew_score))
     else:
         skew_score = 50
-    factors.append({'name': 'skew', 'score': skew_score, 'weight': 10,
-                    'contribution': round(skew_score * 10 / 100, 2)})
+    factors.append({'name': 'skew', 'score': skew_score, 'weight': w_skew,
+                    'contribution': round(skew_score * w_skew / 100, 2)})
 
-    # 6. Term structure score (weight=10)
+    # 6. Term structure score (weight=10) — CONTINUOUS via spread magnitude
     term_struct = None
+    term_spread = 0
     if term and isinstance(term, dict):
         term_struct = term.get('structure')
-    if term_struct == 'contango':
-        term_score = 75
+        try:
+            front_iv = float(term.get('front_iv') or 0)
+            back_iv = float(term.get('back_iv') or 0)
+            if front_iv > 0 and back_iv > 0:
+                term_spread = (back_iv - front_iv) / front_iv  # positive = contango
+        except (ValueError, TypeError):
+            pass
+    if term_spread != 0:
+        # Contango (positive spread) = bullish, backwardation (negative) = bearish
+        term_score = round(50 + 50 * max(-1, min(1, math.tanh(term_spread / 0.05))))
+    elif term_struct == 'contango':
+        term_score = 70  # fallback if no raw IVs available
     elif term_struct == 'backwardation':
-        term_score = 25
+        term_score = 30
     else:
         term_score = 50
-    factors.append({'name': 'term', 'score': term_score, 'weight': 10,
-                    'contribution': round(term_score * 10 / 100, 2)})
+    factors.append({'name': 'term', 'score': term_score, 'weight': w_term,
+                    'contribution': round(term_score * w_term / 100, 2)})
 
-    # 7. Wall score (weight=15)
+    # 7. Wall score (weight=15) — FIXED: more upside room = higher (bullish) score
     support = trade_zones.get('support')
     resistance = trade_zones.get('resistance')
     if support and resistance and current_price:
         dist_support = abs(current_price - float(support))
         dist_resistance = abs(float(resistance) - current_price)
         total_dist = dist_support + dist_resistance
-        wall_score = round(dist_support / max(total_dist, 0.01) * 100) if total_dist > 0 else 50
+        # dist_resistance / total = high when price is near support (more room UP = bullish)
+        wall_score = round(dist_resistance / max(total_dist, 0.01) * 100) if total_dist > 0 else 50
     else:
         wall_score = 50
-    factors.append({'name': 'price_vs_walls', 'score': wall_score, 'weight': 15,
-                    'contribution': round(wall_score * 15 / 100, 2)})
+    factors.append({'name': 'price_vs_walls', 'score': wall_score, 'weight': w_walls,
+                    'contribution': round(wall_score * w_walls / 100, 2)})
 
     # Composite
     composite_score = sum(f['contribution'] for f in factors)
@@ -2613,12 +2748,14 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                 best = {'strike': strike, 'price': round(price, 2), 'delta': round(d, 2) if d is not None else None}
         return best
 
-    def _calc_rr(premium, strike, target_p, opt_type):
-        """Risk:Reward using Black-Scholes. Estimates option value at target including time value."""
+    def _calc_rr(premium, strike, target_p, opt_type, exit_dte=None):
+        """Risk:Reward using Black-Scholes. exit_dte overrides default dte-1 for swing trades."""
         if not premium or premium <= 0 or not target_p:
             return None
         tp = float(target_p)
-        T = max(dte - 1, 0) / 365.0 if dte and dte > 0 else 0
+        # Use exit_dte if provided (swing mode), otherwise dte-1
+        remaining = exit_dte if exit_dte is not None else (max(dte - 1, 0) if dte and dte > 0 else 0)
+        T = remaining / 365.0
         iv = atm_iv if atm_iv and atm_iv > 0 else None
         if iv and T > 0:
             value_at_target = _bs_price(tp, strike, T, iv, opt_type)
@@ -2679,49 +2816,46 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
             exp_label = str(expiration)
     dte_label = f'{dte}d' if dte else ''
 
-    # --- Confidence: count agreeing directional signals ---
-    bullish_signals = 0
-    bearish_signals = 0
-    total_signals = 0
-    # Score direction
-    if composite_score >= 55:
-        bullish_signals += 1
-    elif composite_score < 45:
-        bearish_signals += 1
-    total_signals += 1
-    # Smart money flow
-    if net_flow == 'bullish':
-        bullish_signals += 1
-    elif net_flow == 'bearish':
-        bearish_signals += 1
-    total_signals += 1
-    # GEX regime
-    if dealer_flow_score >= 60:
-        bullish_signals += 1
-    elif dealer_flow_score <= 35:
-        bearish_signals += 1
-    total_signals += 1
-    # Skew signal
-    skew_label = vol_surface.get('skew_label', '')
-    if skew_label == 'flat':
-        bullish_signals += 1  # cheap puts = less fear
-    elif skew_label == 'steep':
-        bearish_signals += 1  # expensive puts = fear
-    total_signals += 1
-    # Term structure
-    term_struct = None
-    if term and isinstance(term, dict):
-        term_struct = term.get('structure')
-    if term_struct == 'contango':
-        bullish_signals += 1
-    elif term_struct == 'backwardation':
-        bearish_signals += 1
-    total_signals += 1
+    # --- Weighted Confidence: magnitude-weighted signal agreement ---
+    # Each signal contributes a signed weight: positive=bullish, negative=bearish
+    # Weight reflects conviction, not just direction.
+    weighted_signals = []
 
-    max_agreement = max(bullish_signals, bearish_signals)
-    if max_agreement >= 4:
+    # 1. Composite score direction (weight by distance from neutral)
+    score_conviction = abs(composite_score - 50) / 50  # 0-1
+    score_sign = 1 if composite_score >= 55 else (-1 if composite_score < 45 else 0)
+    weighted_signals.append(score_sign * score_conviction * 2.0)  # max weight 2.0
+
+    # 2. Smart money flow (weight by total notional — $1M flow > $10K flow)
+    flow_weight = min(2.0, math.log10(max(total_flow, 1)) / 6)  # log scale, caps at ~$1B
+    flow_sign = 1 if flow_imbalance > 0.05 else (-1 if flow_imbalance < -0.05 else 0)
+    weighted_signals.append(flow_sign * abs(flow_imbalance) * flow_weight * 3.0)
+
+    # 3. GEX regime (weight by magnitude)
+    gex_sign = 1 if dealer_flow_score >= 55 else (-1 if dealer_flow_score <= 45 else 0)
+    gex_conviction = abs(dealer_flow_score - 50) / 50
+    weighted_signals.append(gex_sign * gex_conviction * 1.5)
+
+    # 4. Skew signal (weight by how extreme)
+    skew_label = vol_surface.get('skew_label', '')
+    skew_sign = 1 if skew_score > 65 else (-1 if skew_score < 40 else 0)
+    skew_conviction = abs(skew_score - 50) / 50
+    weighted_signals.append(skew_sign * skew_conviction * 1.0)
+
+    # 5. Term structure (weight by magnitude)
+    term_sign = 1 if term_score > 60 else (-1 if term_score < 40 else 0)
+    term_conviction = abs(term_score - 50) / 50
+    weighted_signals.append(term_sign * term_conviction * 1.0)
+
+    # Compute agreement: how aligned are the signals?
+    total_weight = sum(abs(s) for s in weighted_signals) or 1
+    net_direction = sum(weighted_signals) / total_weight  # -1 to +1
+    agreement = abs(net_direction)  # 0 (split) to 1 (unanimous)
+    n_active = sum(1 for s in weighted_signals if abs(s) > 0.1)
+
+    if agreement >= 0.6 and n_active >= 3:
         confidence = 'high'
-    elif max_agreement >= 3:
+    elif agreement >= 0.35 and n_active >= 2:
         confidence = 'medium'
     else:
         confidence = 'low'
@@ -3029,7 +3163,11 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                 stop_p = eff_resistance or upper_1sd
                 s_lbl = (res_lbl if eff_resistance else '+1σ') if (eff_resistance or upper_1sd) else 'resistance'
 
+            # R:R using optimal_exit_dte instead of dte-1
+            rr = _calc_rr(opt['price'], opt['strike'], target_p, opt_type, exit_dte=cand['optimal_exit_dte']) if target_p else None
             target_txt = f'${_fp(target_p)} ({t_lbl})' if target_p else f'Next {"resistance" if opt_type == "call" else "support"}'
+            if rr:
+                target_txt += f' — R:R {rr}:1'
             stop_txt = f'${_fp(stop_p)} ({s_lbl}) — max loss ${opt["price"]:.2f}' if stop_p else f'Max loss ${opt["price"]:.2f}'
 
             # Rationale: explain the inefficiency, not just the score
@@ -3417,8 +3555,91 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
                         'rationale': f'Cheapest gamma + {"low" if iv_pct and iv_pct < 30 else "fair" if iv_pct and iv_pct <= 50 else "high"} IV' if iv_pct else 'Cheapest gamma'
                     })
 
-    # Cap at 3 ideas
-    trade_ideas = trade_ideas[:3]
+    # =====================================================================
+    # 4. SPREAD STRATEGY — defined risk when conditions favor it
+    # =====================================================================
+    pin_score_val = squeeze_pin.get('pin_score', 0)
+    pin_strike_val = squeeze_pin.get('pin_strike')
+
+    # 4a. BUTTERFLY — when pin score is high (likely to pin at expiry)
+    if pin_score_val >= 65 and pin_strike_val and dte is not None and dte <= 7:
+        center = float(pin_strike_val)
+        # Find wing width: ~2% of price or nearest available strikes
+        wing_w = max(1, round(current_price * 0.02))
+        low_strike = center - wing_w
+        high_strike = center + wing_w
+        # Find the 3 legs
+        center_call = _find_by_strike(center, 'call', opts)
+        low_call = _find_by_strike(low_strike, 'call', opts)
+        high_call = _find_by_strike(high_strike, 'call', opts)
+        if center_call and low_call and high_call and center_call['price'] > 0:
+            net_debit = round(low_call['price'] - 2 * center_call['price'] + high_call['price'], 2)
+            if net_debit > 0:
+                max_profit = round(wing_w - net_debit, 2)
+                rr_fly = round(max_profit / net_debit, 1) if net_debit > 0 else None
+                target_txt = f'${_fp(center)} (pin strike) — max profit ${max_profit:.2f}'
+                if rr_fly:
+                    target_txt += f' — R:R {rr_fly}:1'
+                trade_ideas.append({
+                    'title': 'PIN BUTTERFLY',
+                    'type': 'neutral',
+                    'confidence': 'high' if pin_score_val >= 80 else 'medium',
+                    'condition': f'Pin score {pin_score_val} at ${_fp(center)}, {dte}d to expiry',
+                    'action': f'Buy ${_fp(low_call["strike"])}/${_fp(center_call["strike"])}/${_fp(high_call["strike"])} call butterfly @ ${net_debit:.2f} ({exp_label}, {dte_label})',
+                    'target': target_txt,
+                    'stop': f'Max loss ${net_debit:.2f} (defined risk)',
+                    'rationale': f'Pin {pin_score_val} + {dte}d expiry — price magnetized to ${_fp(center)}'
+                })
+
+    # 4b. VERTICAL SPREAD — strong directional + steep skew (collect rich premium)
+    skew_label_val = vol_surface.get('skew_label', '')
+    if skew_label_val == 'steep' and composite_score >= 55 and not any(t.get('title', '').startswith('PIN') for t in trade_ideas):
+        # Put credit spread: sell higher put, buy lower put (bullish + expensive puts)
+        sell_delta = 0.30
+        buy_delta = 0.15
+        sell_put = _find_by_delta(sell_delta, 'put', opts)
+        buy_put = _find_by_delta(buy_delta, 'put', opts)
+        if sell_put and buy_put and sell_put['strike'] > buy_put['strike']:
+            credit = round(sell_put['price'] - buy_put['price'], 2)
+            spread_w = sell_put['strike'] - buy_put['strike']
+            max_loss = round(spread_w - credit, 2)
+            if credit > 0 and max_loss > 0:
+                rr_spread = round(credit / max_loss, 1)
+                trade_ideas.append({
+                    'title': 'CREDIT SPREAD',
+                    'type': 'bullish',
+                    'confidence': confidence,
+                    'condition': f'Steep skew — puts overpriced, collect premium',
+                    'action': f'Sell ${_fp(sell_put["strike"])}/${_fp(buy_put["strike"])} put spread for ${credit:.2f} credit ({exp_label}, {dte_label})',
+                    'target': f'Keep ${credit:.2f} if above ${_fp(sell_put["strike"])} at expiry — R:R {rr_spread}:1',
+                    'stop': f'Max loss ${max_loss:.2f} below ${_fp(buy_put["strike"])}',
+                    'rationale': f'Steep skew (puts expensive) + bullish score {composite_score}'
+                })
+    elif skew_label_val == 'steep' and composite_score < 45 and not any(t.get('title', '').startswith('PIN') for t in trade_ideas):
+        # Call credit spread: sell lower call, buy higher call (bearish + can exploit skew cheapness)
+        sell_delta = 0.30
+        buy_delta = 0.15
+        sell_call = _find_by_delta(sell_delta, 'call', opts)
+        buy_call = _find_by_delta(buy_delta, 'call', opts)
+        if sell_call and buy_call and buy_call['strike'] > sell_call['strike']:
+            credit = round(sell_call['price'] - buy_call['price'], 2)
+            spread_w = buy_call['strike'] - sell_call['strike']
+            max_loss = round(spread_w - credit, 2)
+            if credit > 0 and max_loss > 0:
+                rr_spread = round(credit / max_loss, 1)
+                trade_ideas.append({
+                    'title': 'CREDIT SPREAD',
+                    'type': 'bearish',
+                    'confidence': confidence,
+                    'condition': f'Bearish bias + defined risk',
+                    'action': f'Sell ${_fp(sell_call["strike"])}/${_fp(buy_call["strike"])} call spread for ${credit:.2f} credit ({exp_label}, {dte_label})',
+                    'target': f'Keep ${credit:.2f} if below ${_fp(sell_call["strike"])} at expiry — R:R {rr_spread}:1',
+                    'stop': f'Max loss ${max_loss:.2f} above ${_fp(buy_call["strike"])}',
+                    'rationale': f'Bearish score {composite_score} + defined risk credit spread'
+                })
+
+    # Cap at 4 ideas (primary + breakout + value/spread)
+    trade_ideas = trade_ideas[:4]
 
     return {
         'score': composite_score,

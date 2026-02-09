@@ -2790,7 +2790,16 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         """
         try:
             from src.data.tastytrade_provider import compute_market_xray
-            result = await compute_market_xray(ticker_symbol.upper(), expiration, swing_mode=swing_mode)
+            # Phase 1b: Pass adaptive weights if paper engine is available
+            aw = None
+            try:
+                engine = _get_paper_engine()
+                if engine.adaptive_weights:
+                    aw = engine.adaptive_weights.get_weights()
+            except Exception:
+                pass
+            result = await compute_market_xray(ticker_symbol.upper(), expiration,
+                                               swing_mode=swing_mode, adaptive_weights=aw)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
@@ -2806,7 +2815,15 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         """Market X-Ray (query param version for futures support)"""
         try:
             from src.data.tastytrade_provider import compute_market_xray
-            result = await compute_market_xray(ticker.upper(), expiration, swing_mode=swing_mode)
+            aw = None
+            try:
+                engine = _get_paper_engine()
+                if engine.adaptive_weights:
+                    aw = engine.adaptive_weights.get_weights()
+            except Exception:
+                pass
+            result = await compute_market_xray(ticker.upper(), expiration,
+                                               swing_mode=swing_mode, adaptive_weights=aw)
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
             return {"ok": True, "data": result}
@@ -3957,6 +3974,240 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    # =========================================================================
+    # ADAPTIVE INTELLIGENCE ENDPOINTS (Phase 1-4)
+    # =========================================================================
+
+    @web_app.get("/paper/adaptive/stats", tags=["Paper Trading - Adaptive"])
+    def paper_adaptive_stats():
+        """Get all adaptive system stats: signal performance, weights, exits."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_adaptive_stats()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/adaptive/rebuild", tags=["Paper Trading - Adaptive"])
+    def paper_adaptive_rebuild():
+        """Force rebuild all adaptive systems from journal history."""
+        try:
+            engine = _get_paper_engine()
+            result = engine.rebuild_adaptive_systems()
+            volume.commit()
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/edge-score/{ticker}", tags=["Paper Trading - Adaptive"])
+    async def paper_edge_score(ticker: str):
+        """Phase 3a: Unified edge score for a ticker."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": await engine.compute_edge_score(ticker)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/edge-score", tags=["Paper Trading - Adaptive"])
+    async def paper_edge_score_query(ticker: str = "SPY"):
+        """Phase 3a: Edge score (query param version for futures)."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": await engine.compute_edge_score(ticker)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/strategy-select", tags=["Paper Trading - Adaptive"])
+    def paper_strategy_select(
+        vrp: float = 3.0, gex_regime: str = "transitional",
+        combined_regime: str = "neutral_transitional",
+        flow_toxicity: float = 0.3, term_structure: str = "contango",
+        skew_steep: bool = False, vanna_flow: float = 0.0,
+        macro_event_days: int = 99,
+    ):
+        """Phase 3b: Auto-select optimal strategy based on regime state."""
+        try:
+            engine = _get_paper_engine()
+            regime_state = {
+                'vrp': vrp, 'gex_regime': gex_regime,
+                'combined_regime': combined_regime,
+                'flow_toxicity': flow_toxicity,
+                'term_structure': term_structure,
+                'skew_steep': skew_steep,
+                'vanna_flow': vanna_flow,
+                'macro_event_days': macro_event_days,
+            }
+            strategies = engine.select_strategy(regime_state)
+            return {"ok": True, "data": {"strategies": strategies, "regime_state": regime_state}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/kelly-size", tags=["Paper Trading - Adaptive"])
+    async def paper_kelly_size(
+        ticker: str = "SPY", premium: float = 5.0,
+        signal_type: str = "gex_flip",
+    ):
+        """Phase 4c: Kelly-optimal position size."""
+        try:
+            engine = _get_paper_engine()
+            summary = await engine.get_account_summary()
+            equity = summary.get('equity', 50000)
+
+            # Get current regime
+            from src.data.tastytrade_provider import get_combined_regime_tastytrade
+            combined = await get_combined_regime_tastytrade(ticker)
+            combined_regime = combined.get('combined_regime', 'neutral_transitional') if isinstance(combined, dict) else 'neutral_transitional'
+
+            result = engine.compute_kelly_size(equity, premium, signal_type, combined_regime)
+            result['equity'] = equity
+            result['ticker'] = ticker
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =========================================================================
+    # LEARNING TIER + A/B TESTING ENDPOINTS (Phase 4a-4b)
+    # =========================================================================
+
+    @web_app.get("/paper/learning-tiers", tags=["Paper Trading - Adaptive"])
+    async def paper_learning_tiers():
+        """Phase 4a: Get learning tier health and meta adjustments."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_learning_tier_status()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/meta-adjustments", tags=["Paper Trading - Adaptive"])
+    async def paper_meta_adjustments():
+        """Phase 4a: Get current meta-level adjustments."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_meta_adjustments()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/ab-test/create", tags=["Paper Trading - Adaptive"])
+    async def paper_ab_test_create(request: Request):
+        """Phase 4b: Create a new A/B test."""
+        try:
+            body = await request.json()
+            engine = _get_paper_engine()
+            result = engine.create_ab_test(
+                test_id=body.get('test_id', f'test_{datetime.utcnow().strftime("%Y%m%d%H%M%S")}'),
+                description=body.get('description', ''),
+                control=body.get('control', {'name': 'default'}),
+                variant=body.get('variant', {'name': 'variant'}),
+                min_trades=body.get('min_trades', 20),
+            )
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/paper/ab-test/results", tags=["Paper Trading - Adaptive"])
+    async def paper_ab_test_results():
+        """Phase 4b: Get all A/B test results."""
+        try:
+            engine = _get_paper_engine()
+            return {"ok": True, "data": engine.get_ab_tests()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # =========================================================================
+    # GREEK FLOWS ENDPOINTS (Phase 2a-2c)
+    # =========================================================================
+
+    @web_app.get("/options/vanna-charm/{ticker}", tags=["Greek Flows"])
+    async def options_vanna_charm(ticker: str, expiration: str = None):
+        """Phase 2a-2b: Vanna + Charm exposure + combined dealer flow forecast."""
+        try:
+            from src.trading.paper.greek_flows import (
+                calculate_vanna_exposure, calculate_charm_exposure,
+                compute_dealer_flow_forecast,
+            )
+            from src.data.tastytrade_provider import (
+                get_options_with_greeks_tastytrade, calculate_gex_tastytrade,
+            )
+
+            chain, gex = await asyncio.gather(
+                get_options_with_greeks_tastytrade(ticker, expiration),
+                calculate_gex_tastytrade(ticker, expiration),
+                return_exceptions=True,
+            )
+
+            if isinstance(chain, Exception) or not chain:
+                return {"ok": False, "error": f"Failed to fetch chain: {chain}"}
+
+            options = chain.get('options', [])
+            current_price = chain.get('current_price', 0) or (
+                gex.get('current_price', 0) if isinstance(gex, dict) else 0
+            )
+            dte = chain.get('dte', 30)
+
+            # Determine multiplier
+            is_futures = ticker.startswith('/')
+            if is_futures:
+                root = ticker.lstrip('/').split(':')[0].upper()
+                mult_map = {'ES': 50, 'NQ': 20, 'CL': 1000, 'GC': 100, 'SI': 5000}
+                multiplier = mult_map.get(root, 50)
+            else:
+                multiplier = 100
+
+            vanna_data = calculate_vanna_exposure(current_price, options, dte, multiplier)
+            charm_data = calculate_charm_exposure(current_price, options, dte, multiplier)
+
+            # Combined dealer flow forecast
+            gex_data = gex if isinstance(gex, dict) and 'error' not in gex else {'total_gex': 0}
+            forecast = compute_dealer_flow_forecast(gex_data, vanna_data, charm_data, dte)
+
+            # Flow toxicity
+            from src.trading.paper.adaptive_engine import FlowToxicityAnalyzer
+            toxicity = FlowToxicityAnalyzer.compute_toxicity(options, multiplier)
+
+            return {"ok": True, "data": {
+                "vanna": vanna_data,
+                "charm": charm_data,
+                "dealer_flow_forecast": forecast,
+                "flow_toxicity": toxicity,
+                "ticker": ticker,
+                "current_price": current_price,
+                "dte": dte,
+            }}
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/vanna-charm", tags=["Greek Flows"])
+    async def options_vanna_charm_query(ticker: str = "/ES", expiration: str = None):
+        """Phase 2a-2b: Vanna + Charm (query param version for futures)."""
+        return await options_vanna_charm(ticker, expiration)
+
+    @web_app.get("/options/flow-toxicity/{ticker}", tags=["Greek Flows"])
+    async def options_flow_toxicity(ticker: str, expiration: str = None):
+        """Phase 2c: VPIN flow toxicity proxy."""
+        try:
+            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
+            from src.trading.paper.adaptive_engine import FlowToxicityAnalyzer
+
+            chain = await get_options_with_greeks_tastytrade(ticker, expiration)
+            if not chain:
+                return {"ok": False, "error": "Failed to fetch chain"}
+
+            options = chain.get('options', [])
+            is_futures = ticker.startswith('/')
+            multiplier = 50 if is_futures else 100
+
+            toxicity = FlowToxicityAnalyzer.compute_toxicity(options, multiplier)
+            toxicity['ticker'] = ticker
+            return {"ok": True, "data": toxicity}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/flow-toxicity", tags=["Greek Flows"])
+    async def options_flow_toxicity_query(ticker: str = "/ES", expiration: str = None):
+        """Phase 2c: Flow toxicity (query param version for futures)."""
+        return await options_flow_toxicity(ticker, expiration)
 
     # Legacy stubs redirect to paper trading
     @web_app.get("/trades/positions")
