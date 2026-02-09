@@ -31,27 +31,38 @@ async def get_cert_session():
 
     from tastytrade import Session, Account
 
-    client_secret = os.environ.get('TASTYTRADE_CLIENT_SECRET')
-    # Use cert-specific token if available, else fall back to production token
+    # Cert environment needs its own OAuth credentials (separate from production)
+    client_secret = os.environ.get('TASTYTRADE_CERT_CLIENT_SECRET',
+                                    os.environ.get('TASTYTRADE_CLIENT_SECRET'))
     refresh_token = os.environ.get('TASTYTRADE_CERT_REFRESH_TOKEN',
                                     os.environ.get('TASTYTRADE_REFRESH_TOKEN'))
 
     if not client_secret or not refresh_token:
         raise ValueError("Tastytrade credentials not configured")
 
-    _cert_session = Session(client_secret, refresh_token, is_test=True)
-    _cert_session_expiry = datetime.now() + timedelta(minutes=14)
+    try:
+        session = Session(client_secret, refresh_token, is_test=True)
+        accounts = await Account.get(session)
+        if not accounts:
+            raise ValueError("No accounts found on cert session")
+        if isinstance(accounts, list):
+            account = accounts[0]
+        else:
+            account = accounts
 
-    accounts = await Account.get(_cert_session)
-    if not accounts:
-        raise ValueError("No accounts found on cert session")
-    if isinstance(accounts, list):
-        _cert_account = accounts[0]
-    else:
-        _cert_account = accounts
+        # Only cache after successful account fetch
+        _cert_session = session
+        _cert_session_expiry = datetime.now() + timedelta(minutes=14)
+        _cert_account = account
 
-    logger.info(f"Cert session created, account: {_cert_account.account_number}")
-    return _cert_session, _cert_account
+        logger.info(f"Cert session created, account: {_cert_account.account_number}")
+        return _cert_session, _cert_account
+    except Exception as e:
+        # Don't cache failed sessions
+        _cert_session = None
+        _cert_session_expiry = None
+        _cert_account = None
+        raise
 
 
 def invalidate_cert_session():

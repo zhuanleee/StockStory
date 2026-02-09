@@ -48,6 +48,7 @@ image = (
     secrets=[
         modal.Secret.from_name("Stock_Story"),
         modal.Secret.from_name("Tastytrade_API"),
+        modal.Secret.from_name("Tastytrade_Cert"),
     ],
     timeout=120,
     schedule=modal.Cron("*/5 9-16 * * 1-5"),  # Every 5 min, 9am-4pm ET, Mon-Fri
@@ -106,6 +107,7 @@ async def check_signals_cron():
     secrets=[
         modal.Secret.from_name("Stock_Story"),
         modal.Secret.from_name("Tastytrade_API"),
+        modal.Secret.from_name("Tastytrade_Cert"),
     ],
     min_containers=1,
     timeout=600
