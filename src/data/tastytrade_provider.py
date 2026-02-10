@@ -2168,6 +2168,19 @@ async def _compute_market_xray_impl(ticker: str, expiration: str = None, swing_m
                 }
                 logger.info(f"X-Ray intel for {ticker}: edge={edge_result.get('edge_score')}, "
                            f"regime={combined_regime}, vrp={vrp}, strategy={best_strategy.get('name')}")
+
+                # Generate PhD-informed trade ideas to replace heuristic ones
+                try:
+                    phd_ideas = _generate_phd_trade_ideas(
+                        strategies, options, current_price, dte, expiration_used,
+                        edge_result, iv_delta or {}, trade_zones
+                    )
+                    if phd_ideas:
+                        result['composite']['trade_ideas'] = phd_ideas
+                        logger.info(f"PhD trade ideas for {ticker}: {len(phd_ideas)} ideas generated")
+                except Exception as e:
+                    logger.warning(f"PhD trade idea generation failed for {ticker}: {e}")
+
             except Exception as e:
                 logger.warning(f"X-Ray intel computation failed for {ticker}: {e}")
                 import traceback
@@ -3805,6 +3818,361 @@ def _xray_composite(total_gex: float, squeeze_pin: Dict, smart_money: Dict,
         'action_plan': actions,
         'trade_ideas': trade_ideas
     }
+
+
+# =============================================================================
+# PhD-INFORMED TRADE IDEAS — Strategy-Driven Entries with Full Greeks
+# =============================================================================
+
+def _find_by_delta_full(target_delta, opt_type, opts):
+    """Find option closest to target |delta| with full Greeks."""
+    if not opts:
+        return None
+    best = None
+    best_dist = float('inf')
+    for o in opts:
+        leg = o.get(opt_type)
+        if not leg:
+            continue
+        price = float(leg.get('price', 0) or 0)
+        if price <= 0:
+            continue
+        raw_delta = leg.get('delta')
+        if raw_delta is None:
+            continue
+        try:
+            d = abs(float(raw_delta))
+        except (ValueError, TypeError):
+            continue
+        dist = abs(d - target_delta)
+        if dist < best_dist:
+            best_dist = dist
+            bid = float(leg.get('bid', 0) or 0)
+            ask = float(leg.get('ask', 0) or 0)
+            best = {
+                'strike': float(o['strike']),
+                'price': round(price, 2),
+                'delta': round(d, 4),
+                'gamma': round(float(leg.get('gamma', 0) or 0), 5),
+                'theta': round(float(leg.get('theta', 0) or 0), 4),
+                'vega': round(float(leg.get('vega', 0) or 0), 4),
+                'iv': round(float(leg.get('iv', 0) or 0), 4),
+                'oi': int(leg.get('open_interest', 0) or leg.get('oi', 0) or 0),
+                'bid': round(bid, 2),
+                'ask': round(ask, 2),
+            }
+    return best
+
+
+def _find_nearest_strike(target_strike, opt_type, opts):
+    """Find option nearest to a target strike with full Greeks."""
+    if not opts:
+        return None
+    best = None
+    best_dist = float('inf')
+    for o in opts:
+        leg = o.get(opt_type)
+        if not leg:
+            continue
+        price = float(leg.get('price', 0) or 0)
+        if price <= 0:
+            continue
+        strike = float(o['strike'])
+        dist = abs(strike - target_strike)
+        if dist < best_dist:
+            best_dist = dist
+            bid = float(leg.get('bid', 0) or 0)
+            ask = float(leg.get('ask', 0) or 0)
+            best = {
+                'strike': strike,
+                'price': round(price, 2),
+                'delta': round(abs(float(leg.get('delta', 0) or 0)), 4),
+                'gamma': round(float(leg.get('gamma', 0) or 0), 5),
+                'theta': round(float(leg.get('theta', 0) or 0), 4),
+                'vega': round(float(leg.get('vega', 0) or 0), 4),
+                'iv': round(float(leg.get('iv', 0) or 0), 4),
+                'oi': int(leg.get('open_interest', 0) or leg.get('oi', 0) or 0),
+                'bid': round(bid, 2),
+                'ask': round(ask, 2),
+            }
+    return best
+
+
+def _build_phd_idea(strategy, opts, current_price, dte, expiration, edge_result, iv_delta, trade_zones):
+    """Build a single PhD-informed trade idea from a strategy recommendation."""
+    name = strategy.get('name', 'Unknown')
+    stype = strategy.get('type', 'none')
+    direction = strategy.get('direction', 'neutral')
+    delta_target = strategy.get('delta_target', 0.30)
+    dte_range = strategy.get('dte_range', [0, 0])
+    description = strategy.get('description', '')
+
+    # Determine construction pattern from strategy name
+    name_lower = name.lower()
+    legs = []
+    wing_width = round(current_price * 0.015)  # ~1.5% of underlying
+    if wing_width < 1:
+        wing_width = 1
+
+    try:
+        if 'iron condor' in name_lower:
+            # SELL put + BUY put wing + SELL call + BUY call wing
+            short_put = _find_by_delta_full(delta_target, 'put', opts)
+            short_call = _find_by_delta_full(delta_target, 'call', opts)
+            if short_put and short_call:
+                long_put = _find_nearest_strike(short_put['strike'] - wing_width, 'put', opts)
+                long_call = _find_nearest_strike(short_call['strike'] + wing_width, 'call', opts)
+                if long_put and long_call:
+                    legs = [
+                        {**short_put, 'action': 'SELL', 'option_type': 'put'},
+                        {**long_put, 'action': 'BUY', 'option_type': 'put'},
+                        {**short_call, 'action': 'SELL', 'option_type': 'call'},
+                        {**long_call, 'action': 'BUY', 'option_type': 'call'},
+                    ]
+
+        elif 'iron butterfly' in name_lower:
+            # SELL ATM call + SELL ATM put + BUY call wing + BUY put wing
+            atm_call = _find_by_delta_full(0.50, 'call', opts)
+            atm_put = _find_by_delta_full(0.50, 'put', opts)
+            if atm_call and atm_put:
+                long_call = _find_nearest_strike(atm_call['strike'] + wing_width, 'call', opts)
+                long_put = _find_nearest_strike(atm_put['strike'] - wing_width, 'put', opts)
+                if long_call and long_put:
+                    legs = [
+                        {**atm_put, 'action': 'SELL', 'option_type': 'put'},
+                        {**long_put, 'action': 'BUY', 'option_type': 'put'},
+                        {**atm_call, 'action': 'SELL', 'option_type': 'call'},
+                        {**long_call, 'action': 'BUY', 'option_type': 'call'},
+                    ]
+
+        elif 'straddle' in name_lower:
+            # BUY ATM call + BUY ATM put
+            atm_call = _find_by_delta_full(0.50, 'call', opts)
+            atm_put = _find_by_delta_full(0.50, 'put', opts)
+            if atm_call and atm_put:
+                legs = [
+                    {**atm_call, 'action': 'BUY', 'option_type': 'call'},
+                    {**atm_put, 'action': 'BUY', 'option_type': 'put'},
+                ]
+
+        elif 'credit spread' in name_lower or ('backwardation' in name_lower and 'credit' in name_lower):
+            # SELL put at delta_target + BUY put at wing (put credit spread)
+            if direction in ('bearish',):
+                # Bear call credit spread
+                short_leg = _find_by_delta_full(delta_target, 'call', opts)
+                if short_leg:
+                    long_leg = _find_nearest_strike(short_leg['strike'] + wing_width, 'call', opts)
+                    if long_leg:
+                        legs = [
+                            {**short_leg, 'action': 'SELL', 'option_type': 'call'},
+                            {**long_leg, 'action': 'BUY', 'option_type': 'call'},
+                        ]
+            else:
+                # Bull put credit spread (default)
+                short_leg = _find_by_delta_full(delta_target, 'put', opts)
+                if short_leg:
+                    long_leg = _find_nearest_strike(short_leg['strike'] - wing_width, 'put', opts)
+                    if long_leg:
+                        legs = [
+                            {**short_leg, 'action': 'SELL', 'option_type': 'put'},
+                            {**long_leg, 'action': 'BUY', 'option_type': 'put'},
+                        ]
+
+        elif 'debit spread' in name_lower or 'ratio spread' in name_lower:
+            if 'bear' in name_lower or direction == 'bearish':
+                # Bear put debit spread: BUY put at delta_target, SELL put at wing
+                buy_leg = _find_by_delta_full(delta_target, 'put', opts)
+                if buy_leg:
+                    sell_leg = _find_nearest_strike(buy_leg['strike'] - wing_width, 'put', opts)
+                    if sell_leg:
+                        legs = [
+                            {**buy_leg, 'action': 'BUY', 'option_type': 'put'},
+                            {**sell_leg, 'action': 'SELL', 'option_type': 'put'},
+                        ]
+            else:
+                # Bull call debit spread: BUY call at delta_target, SELL call at wing
+                buy_leg = _find_by_delta_full(delta_target, 'call', opts)
+                if buy_leg:
+                    sell_leg = _find_nearest_strike(buy_leg['strike'] + wing_width, 'call', opts)
+                    if sell_leg:
+                        legs = [
+                            {**buy_leg, 'action': 'BUY', 'option_type': 'call'},
+                            {**sell_leg, 'action': 'SELL', 'option_type': 'call'},
+                        ]
+
+        elif 'cash-secured put' in name_lower or 'cash secured' in name_lower:
+            # SELL put at delta_target
+            short_put = _find_by_delta_full(delta_target, 'put', opts)
+            if short_put:
+                legs = [{**short_put, 'action': 'SELL', 'option_type': 'put'}]
+
+        elif 'protective put' in name_lower:
+            # BUY put at delta_target
+            long_put = _find_by_delta_full(delta_target, 'put', opts)
+            if long_put:
+                legs = [{**long_put, 'action': 'BUY', 'option_type': 'put'}]
+
+        else:
+            # Single long: Long Call, Directional Call, Long Gamma, etc.
+            if direction == 'bearish':
+                opt = _find_by_delta_full(delta_target, 'put', opts)
+                if opt:
+                    legs = [{**opt, 'action': 'BUY', 'option_type': 'put'}]
+            else:
+                opt = _find_by_delta_full(delta_target, 'call', opts)
+                if opt:
+                    legs = [{**opt, 'action': 'BUY', 'option_type': 'call'}]
+
+    except Exception as e:
+        logger.warning(f"PhD idea leg construction failed for {name}: {e}")
+        return None
+
+    if not legs:
+        return None
+
+    # Calculate position-level metrics
+    net_premium = 0.0
+    pos_delta = 0.0
+    pos_gamma = 0.0
+    pos_theta = 0.0
+    pos_vega = 0.0
+    total_buy_cost = 0.0
+    total_sell_credit = 0.0
+
+    for leg in legs:
+        sign = -1 if leg['action'] == 'SELL' else 1
+        net_premium += leg['price'] * sign * -1  # selling = +credit, buying = -debit
+        pos_delta += leg['delta'] * sign
+        pos_gamma += leg['gamma'] * sign
+        pos_theta += leg['theta'] * sign * -1  # theta is negative for longs, flip sign convention
+        pos_vega += leg['vega'] * sign
+        if leg['action'] == 'BUY':
+            total_buy_cost += leg['price']
+        else:
+            total_sell_credit += leg['price']
+
+    net_premium = round(total_sell_credit - total_buy_cost, 2)
+
+    # Max loss / max profit calculation
+    is_credit = net_premium > 0
+    strikes = [l['strike'] for l in legs]
+    if len(legs) == 1:
+        if legs[0]['action'] == 'BUY':
+            max_loss = round(legs[0]['price'] * 100, 0)
+            max_profit = 'Unlimited'
+        else:
+            # Short single: max loss = strike * 100 - premium (theoretical)
+            max_loss = round(legs[0]['strike'] * 100 - net_premium * 100, 0)
+            max_profit = round(net_premium * 100, 0)
+    elif len(legs) == 2:
+        width = abs(strikes[0] - strikes[1])
+        if is_credit:
+            max_profit = round(net_premium * 100, 0)
+            max_loss = round((width - net_premium) * 100, 0)
+        else:
+            max_loss = round(abs(net_premium) * 100, 0)
+            max_profit = round((width - abs(net_premium)) * 100, 0)
+    elif len(legs) == 4:
+        # Iron condor/butterfly: two spreads
+        put_strikes = sorted([l['strike'] for l in legs if l['option_type'] == 'put'])
+        call_strikes = sorted([l['strike'] for l in legs if l['option_type'] == 'call'])
+        put_width = (put_strikes[-1] - put_strikes[0]) if len(put_strikes) == 2 else 0
+        call_width = (call_strikes[-1] - call_strikes[0]) if len(call_strikes) == 2 else 0
+        max_width = max(put_width, call_width)
+        max_profit = round(net_premium * 100, 0)
+        max_loss = round((max_width - net_premium) * 100, 0)
+    else:
+        max_profit = round(abs(net_premium) * 100, 0)
+        max_loss = round(abs(net_premium) * 100, 0)
+
+    # Risk/reward
+    if isinstance(max_profit, (int, float)) and isinstance(max_loss, (int, float)) and max_loss > 0:
+        risk_reward = round(max_loss / max_profit, 1) if max_profit > 0 else 99.9
+    else:
+        risk_reward = 0
+
+    # Quality score
+    quality = 50
+    for leg in legs:
+        if leg['action'] == 'SELL':
+            quality += min(20, leg['theta'] * 100 * 10)  # theta contribution
+            quality += min(10, leg['oi'] / 500)  # liquidity
+            quality += max(0, 10 - abs(leg['iv'] - 0.25) * 40)  # IV sweet spot
+        else:
+            quality += min(10, leg['oi'] / 500)
+            quality += max(0, 5 - abs(leg['delta'] - delta_target) * 20)
+    quality = max(0, min(100, round(quality)))
+
+    # Build context strings
+    edge_score = edge_result.get('edge_score', 50)
+    confidence = edge_result.get('confidence', 'low')
+    kelly = round(edge_result.get('kelly_fraction', 0) * 100)
+    vrp = iv_delta.get('vrp', 0) if isinstance(iv_delta, dict) else 0
+    regime = edge_result.get('regime', 'neutral')
+
+    # Action string
+    action_parts = []
+    for leg in legs:
+        action_parts.append(f"{leg['action']} ${leg['strike']:.0f} {leg['option_type']} @ ${leg['price']:.2f}")
+    action_str = ' / '.join(action_parts)
+    if is_credit:
+        action_str += f" — net credit ${net_premium:.2f}"
+    else:
+        action_str += f" — net debit ${abs(net_premium):.2f}"
+
+    # Target/stop
+    if is_credit:
+        target = f"All legs expire OTM — keep ${round(net_premium * 100)} ({100}%)"
+        stop = f"Short leg ITM — max loss ${max_loss}"
+    else:
+        mp_str = f"${max_profit}" if isinstance(max_profit, (int, float)) else max_profit
+        target = f"Target move reached — max profit {mp_str}"
+        stop = f"Premium decay — max loss ${max_loss}"
+
+    return {
+        'title': name,
+        'type': direction,
+        'confidence': confidence,
+        'phd_strategy': True,
+        'strategy_type': stype,
+        'direction': direction,
+        'legs': [{k: v for k, v in leg.items() if k != 'bid' and k != 'ask'} for leg in legs],
+        'position_greeks': {
+            'delta': round(pos_delta, 4),
+            'gamma': round(pos_gamma, 5),
+            'theta': round(pos_theta, 4),
+            'vega': round(pos_vega, 4),
+        },
+        'net_premium': net_premium,
+        'max_loss': max_loss,
+        'max_profit': max_profit,
+        'risk_reward': risk_reward,
+        'quality_score': quality,
+        'kelly_pct': kelly,
+        'dte': dte,
+        'recommended_dte': dte_range,
+        'condition': description,
+        'action': action_str,
+        'target': target,
+        'stop': stop,
+        'rationale': f"Edge {edge_score} + {stype.replace('_', ' ')} + {confidence} confidence + Kelly {kelly}%",
+    }
+
+
+def _generate_phd_trade_ideas(strategies, opts, current_price, dte, expiration, edge_result, iv_delta, trade_zones):
+    """Generate PhD-informed trade ideas from top strategy recommendations."""
+    if not strategies or not opts:
+        return []
+
+    ideas = []
+    for strat in strategies[:2]:  # Top 2 strategies
+        try:
+            idea = _build_phd_idea(strat, opts, current_price, dte, expiration, edge_result, iv_delta, trade_zones)
+            if idea:
+                ideas.append(idea)
+        except Exception as e:
+            logger.warning(f"PhD trade idea generation failed for {strat.get('name', '?')}: {e}")
+    return ideas
 
 
 # =============================================================================
