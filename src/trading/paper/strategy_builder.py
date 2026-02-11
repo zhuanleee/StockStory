@@ -72,7 +72,7 @@ class StrategyBuilder:
 
         name_lower = strategy_name.lower()
 
-        if 'credit spread' in name_lower or 'premium harvest' in name_lower or 'vrp harvest' in name_lower or 'backwardation credit' in name_lower:
+        if 'credit spread' in name_lower or 'premium harvest' in name_lower or 'vrp harvest' in name_lower or 'backwardation credit' in name_lower or 'cash-secured' in name_lower:
             return self._build_credit_spread(
                 ticker, direction, calls, puts, underlying_price, expiration,
                 delta_target or 0.16, wing_width, iv_rank, dte,
@@ -87,7 +87,7 @@ class StrategyBuilder:
                 ticker, calls, puts, underlying_price, expiration,
                 delta_target or 0.16, wing_width, iv_rank, dte,
             )
-        elif 'straddle' in name_lower or 'event vol' in name_lower:
+        elif 'straddle' in name_lower or 'event vol' in name_lower or 'long gamma' in name_lower:
             return self._build_straddle(
                 ticker, calls, puts, underlying_price, expiration, iv_rank, dte,
             )

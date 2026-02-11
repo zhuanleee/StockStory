@@ -507,11 +507,13 @@ class PaperEngine:
         if multi_leg_enabled and strategy_rec:
             strategy_name = strategy_rec.get('name', '')
             # Route to multi-leg if strategy is a recognized multi-leg type
+            # Cash-secured put routes here too (built as wide credit spread for defined risk)
             multi_leg_types = ['credit spread', 'iron condor', 'iron butterfly',
                                'straddle', 'debit spread', 'ratio spread',
                                'range bound', 'event vol', 'premium harvest',
                                'skew harvest', 'vrp harvest', 'melt-up',
-                               'bear put', 'backwardation credit']
+                               'bear put', 'backwardation credit', 'cash-secured',
+                               'long gamma']
             if any(t in strategy_name.lower() for t in multi_leg_types):
                 return await self._execute_multi_leg(signal, strategy_rec)
 
@@ -817,6 +819,14 @@ class PaperEngine:
                 if p25 and c25:
                     risk_reversal = round(float(p25) - float(c25), 4)
 
+            # Compute vanna_flow from risk reversal + regime
+            vanna_flow = 0.0
+            if risk_reversal:
+                vanna_flow = -risk_reversal * 10  # Scale: 0.05 RR → 0.5 vanna_flow
+                vanna_flow = max(-1.0, min(1.0, vanna_flow))
+            if combined_regime == 'opportunity':
+                vanna_flow = max(vanna_flow, 0.5)
+
             # Re-validate strategy with real data
             real_regime_state = {
                 'vrp': vrp,
@@ -827,7 +837,7 @@ class PaperEngine:
                 'skew_steep': skew_ratio > 1.15,
                 'skew_ratio': skew_ratio,
                 'iv_rank': iv_rank,
-                'vanna_flow': 0.0,
+                'vanna_flow': round(vanna_flow, 2),
                 'macro_event_days': signal.get('event_data', {}).get('days_until', 99),
                 'risk_reversal': risk_reversal,
             }
@@ -835,11 +845,26 @@ class PaperEngine:
             # Re-run strategy selection with real data to verify recommendation still holds
             if self.strategy_selector:
                 real_strategies = self.strategy_selector.select_strategy(real_regime_state)
-                if real_strategies and real_strategies[0].get('name') != 'Wait / Reduce Size':
-                    strategy_rec = real_strategies[0]
-                    strategy_name = strategy_rec.get('name', strategy_name)
-                else:
+                valid = [s for s in real_strategies if s.get('name') != 'Wait / Reduce Size']
+                if not valid:
                     return {'ok': False, 'error': 'Strategy no longer valid with real regime data'}
+
+                # Strategy diversification: prefer strategies not already in open positions
+                open_trades = self.journal.get_open_trades()
+                used_strategies = {t.get('strategy_name', '').lower() for t in open_trades}
+
+                # Pick first strategy not already used; fall back to first valid if all used
+                selected = valid[0]
+                for s in valid:
+                    if s['name'].lower() not in used_strategies:
+                        selected = s
+                        break
+
+                strategy_rec = selected
+                strategy_name = strategy_rec.get('name', strategy_name)
+                if len(valid) > 1:
+                    logger.info(f"Strategy diversification: {len(valid)} candidates, "
+                                f"selected '{strategy_name}' (used: {used_strategies & {s['name'].lower() for s in valid}} )")
 
             direction = strategy_rec.get('direction', signal.get('direction', 'long'))
             delta_target = strategy_rec.get('delta_target', 0.16)

@@ -124,7 +124,7 @@ class SignalEngine:
                 sig['transition'] = transition
                 if multi_leg_enabled and self.strategy_selector:
                     try:
-                        strategy_rec = self._attach_strategy_recommendation(sig, ticker)
+                        strategy_rec = await self._attach_strategy_recommendation(sig, ticker)
                         if strategy_rec:
                             sig['strategy_recommendation'] = strategy_rec
                     except Exception as e:
@@ -173,11 +173,12 @@ class SignalEngine:
             pass
         return 0
 
-    def _attach_strategy_recommendation(self, signal: dict, ticker: str) -> Optional[dict]:
-        """Build regime state from signal data and get strategy recommendation.
+    async def _attach_strategy_recommendation(self, signal: dict, ticker: str) -> Optional[dict]:
+        """Build regime state from REAL market data and get strategy recommendation.
 
+        Fetches term structure, skew, IV, and regime data to ensure all 14
+        strategies can trigger based on actual conditions — not defaults.
         Returns dict with 'primary' strategy and 'alternatives' list (top 3).
-        Computes real flow_toxicity from regime data instead of hardcoding.
         """
         if not self.strategy_selector:
             return None
@@ -186,23 +187,114 @@ class SignalEngine:
         iv_data = signal.get('iv_data', {})
         event_data = signal.get('event_data', {})
 
+        # --- Fetch missing market data that the triggering signal didn't carry ---
+        import asyncio
+        fetch_tasks = {}
+
+        # Need GEX regime if signal is macro_event or iv_reversion (no regime_data)
+        if not regime_data.get('regime') and not regime_data.get('gex_regime'):
+            try:
+                from src.data.tastytrade_provider import get_gex_regime_tastytrade
+                fetch_tasks['gex'] = get_gex_regime_tastytrade(ticker)
+            except ImportError:
+                pass
+
+        # Need combined regime if missing
+        if not regime_data.get('combined_regime') or regime_data.get('combined_regime') == 'neutral_transitional':
+            try:
+                from src.data.tastytrade_provider import get_combined_regime_tastytrade
+                fetch_tasks['combined'] = get_combined_regime_tastytrade(ticker)
+            except ImportError:
+                pass
+
+        # Need IV data if signal is gex_flip or regime_shift (no iv_data)
+        if not iv_data.get('iv_rank'):
+            try:
+                from src.data.tastytrade_provider import get_iv_rank_tastytrade
+                fetch_tasks['iv'] = get_iv_rank_tastytrade(ticker, volume_path=self.volume_path)
+            except ImportError:
+                pass
+
+        # Always fetch term structure and skew — no signal carries these
+        try:
+            from src.data.tastytrade_provider import (
+                get_term_structure_tastytrade,
+                get_iv_by_delta_tastytrade,
+            )
+            fetch_tasks['term'] = get_term_structure_tastytrade(ticker)
+            fetch_tasks['skew'] = get_iv_by_delta_tastytrade(ticker)
+        except ImportError:
+            pass
+
+        # Execute all fetches in parallel
+        fetched = {}
+        if fetch_tasks:
+            try:
+                keys = list(fetch_tasks.keys())
+                results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+                for k, v in zip(keys, results):
+                    if isinstance(v, dict) and 'error' not in v:
+                        fetched[k] = v
+            except Exception as e:
+                logger.debug(f"Strategy data fetch partial failure for {ticker}: {e}")
+
+        # --- Merge fetched data into regime_data / iv_data ---
+        if 'gex' in fetched:
+            gex = fetched['gex']
+            regime_data = {**regime_data,
+                          'regime': regime_data.get('regime') or gex.get('regime', 'transitional'),
+                          'gex_regime': regime_data.get('gex_regime') or gex.get('regime', 'transitional')}
+        if 'combined' in fetched:
+            comb = fetched['combined']
+            regime_data = {**regime_data,
+                          'combined_regime': regime_data.get('combined_regime', 'neutral_transitional')
+                          if regime_data.get('combined_regime') not in (None, 'neutral_transitional')
+                          else comb.get('combined_regime', 'neutral_transitional'),
+                          'pc_ratio': regime_data.get('pc_ratio') or comb.get('pc_ratio', 1.0)}
+        if 'iv' in fetched:
+            iv = fetched['iv']
+            if not iv_data.get('iv_rank'):
+                iv_data = {**iv_data,
+                           'iv_rank': iv.get('iv_rank', 50),
+                           'atm_iv': iv.get('atm_iv'),
+                           'put_25d_iv': iv_data.get('put_25d_iv') or iv.get('put_25d_iv'),
+                           'call_25d_iv': iv_data.get('call_25d_iv') or iv.get('call_25d_iv'),
+                           'risk_reversal': iv_data.get('risk_reversal') or iv.get('risk_reversal'),
+                           'skew_ratio': iv_data.get('skew_ratio') or iv.get('skew_ratio')}
+
+        # Extract term structure (unlocks Ratio Spread, Backwardation Credit Spread)
+        term_structure = 'contango'
+        if 'term' in fetched:
+            term_structure = fetched['term'].get('structure', 'contango')
+
+        # Extract skew data (unlocks Ratio Spread via skew_steep)
+        skew_ratio = iv_data.get('skew_ratio', 1.0) or 1.0
+        if 'skew' in fetched and fetched['skew'].get('skew_ratio'):
+            skew_ratio = fetched['skew']['skew_ratio']
+        skew_steep = skew_ratio > 1.15  # 25d put/call IV ratio > 1.15 = steep skew
+
+        # --- Build enriched regime_state ---
         iv_rank = iv_data.get('iv_rank', 50)
-        # Compute risk reversal from iv_data if available
+
         risk_reversal = iv_data.get('risk_reversal', 0)
         if not risk_reversal:
             p25 = iv_data.get('put_25d_iv')
             c25 = iv_data.get('call_25d_iv')
             if p25 and c25:
-                risk_reversal = round(p25 - c25, 4)
+                risk_reversal = round(float(p25) - float(c25), 4)
+        # Also try skew data
+        if not risk_reversal and 'skew' in fetched:
+            p25 = fetched['skew'].get('put_25d_iv')
+            c25 = fetched['skew'].get('call_25d_iv')
+            if p25 and c25:
+                risk_reversal = round(float(p25) - float(c25), 4)
 
-        # --- Compute real flow_toxicity from available data ---
-        # Base: P/C ratio signals informed flow (high ratio = bearish informed flow)
+        # --- Compute real flow_toxicity ---
         pc_ratio = regime_data.get('pc_ratio', 1.0) or 1.0
         gex_regime = regime_data.get('regime', regime_data.get('gex_regime', 'transitional'))
         combined_regime = regime_data.get('combined_regime', 'neutral_transitional')
 
-        flow_toxicity = 0.3  # neutral baseline
-        # P/C ratio contribution: >1.2 = elevated toxicity, <0.8 = low
+        flow_toxicity = 0.3
         if pc_ratio > 1.5:
             flow_toxicity = 0.7
         elif pc_ratio > 1.2:
@@ -211,32 +303,27 @@ class SignalEngine:
             flow_toxicity = 0.15
         elif pc_ratio < 0.9:
             flow_toxicity = 0.25
-        # Volatile GEX regime adds toxicity
         if gex_regime == 'volatile':
             flow_toxicity = min(1.0, flow_toxicity + 0.15)
-        # Danger/high_risk regimes indicate informed flow
         if combined_regime in ('danger', 'high_risk'):
             flow_toxicity = min(1.0, flow_toxicity + 0.2)
 
-        # --- Compute real vanna_flow from risk reversal + regime ---
+        # --- Compute real vanna_flow ---
         vanna_flow = 0.0
         if risk_reversal:
-            # Positive risk_reversal = puts > calls = dealers short puts = negative vanna
-            # Negative risk_reversal = calls > puts = dealers short calls = positive vanna
-            vanna_flow = -risk_reversal * 10  # Scale: 0.05 RR → 0.5 vanna_flow
+            vanna_flow = -risk_reversal * 10
             vanna_flow = max(-1.0, min(1.0, vanna_flow))
-        # Opportunity regime implies positive vanna flow (dealer buying)
         if combined_regime == 'opportunity':
             vanna_flow = max(vanna_flow, 0.5)
 
         regime_state = {
-            'vrp': (iv_rank - 30) / 10,  # calibrated: IV Rank 70 → VRP 4.0
+            'vrp': (iv_rank - 30) / 10,
             'gex_regime': gex_regime,
             'combined_regime': combined_regime,
             'flow_toxicity': round(flow_toxicity, 2),
-            'term_structure': signal.get('term_structure', 'contango'),
-            'skew_steep': signal.get('skew_steep', False),
-            'skew_ratio': signal.get('skew_ratio', 1.0),
+            'term_structure': term_structure,
+            'skew_steep': skew_steep,
+            'skew_ratio': skew_ratio,
             'iv_rank': iv_rank,
             'vanna_flow': round(vanna_flow, 2),
             'macro_event_days': event_data.get('days_until', 99),
@@ -251,6 +338,7 @@ class SignalEngine:
         primary = strategies[0]
         alternatives = [s for s in strategies[1:3] if s.get('name') != 'Wait / Reduce Size']
         result = dict(primary)
+        result['regime_state_used'] = regime_state  # Attach for debugging/logging
         if alternatives:
             result['alternatives'] = alternatives
         return result
