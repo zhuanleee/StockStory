@@ -3723,7 +3723,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                     aligned_vrp = pd.DataFrame({'vix': vix_hist, 'rv': yz_rv}).dropna()
                     if len(aligned_vrp) > 70:
                         vrp_hist = aligned_vrp['vix'] - aligned_vrp['rv']
-                        vrp_val = vix_price - float(yz_rv.iloc[-1]) * 100 if len(yz_rv) > 0 else None
+                        vrp_val = vix_price - float(yz_rv.iloc[-1]) if len(yz_rv) > 0 else None
                 except Exception as e:
                     print(f"VRP calc error: {e}")
 
