@@ -6,9 +6,10 @@ All tastytrade SDK v12+ methods are async.
 """
 
 import os
+import time
 import logging
 from decimal import Decimal
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from .risk_manager import RiskManager, load_config, save_config
@@ -21,6 +22,16 @@ logger = logging.getLogger(__name__)
 _cert_session = None
 _cert_session_expiry = None
 _cert_account = None
+
+# Live marks cache: prod REST API provides real marks when cert returns 0
+_live_marks_cache = {}   # {occ_symbol: mark_price}
+_live_marks_ts = 0       # timestamp of last fetch
+_LIVE_MARKS_TTL = 60     # seconds
+
+# Live betas cache: prod REST API provides real betas for concentration checks
+_live_betas_cache = {}   # {ticker: beta}
+_live_betas_ts = 0       # timestamp of last fetch
+_LIVE_BETAS_TTL = 3600   # 1 hour (betas don't change intraday)
 
 
 async def get_cert_session():
@@ -130,65 +141,194 @@ class PaperEngine:
     # -------------------------------------------------------------------------
 
     async def get_account_summary(self) -> Dict:
-        """Get cert account summary: equity, cash, buying power, positions."""
+        """Get paper account summary computed from journal trades (not sandbox balance)."""
+        starting = self.config.get('starting_capital', 50000)
+
+        # Compute P&L from journal (the source of truth for paper trading)
+        closed_trades = self.journal.get_closed_trades()
+        open_trades = self.journal.get_open_trades()
+
+        # Realized P&L from closed trades
+        realized_pnl = sum(t.get('pnl_dollars', 0) or 0 for t in closed_trades)
+
+        # Unrealized P&L from open trades (requires live marks)
+        unrealized_pnl = 0
+        positions = await self.get_positions()
+        pos_map = {p['symbol']: p for p in positions}
+        for trade in open_trades:
+            entry = trade.get('entry_price', 0)
+            qty = trade.get('quantity', 1)
+            if trade.get('is_multi_leg') and trade.get('legs'):
+                # Multi-leg: compute net mark from all legs
+                net_mark = 0
+                all_found = True
+                for leg in trade['legs']:
+                    occ = build_occ_symbol(trade['ticker'], leg['expiration'],
+                                           leg['strike'], leg['option_type'])
+                    lp = pos_map.get(occ)
+                    if lp:
+                        lm = lp.get('mark', 0) or lp.get('close_price', 0)
+                        if leg['action'] == 'SELL':
+                            net_mark += lm
+                        else:
+                            net_mark -= lm
+                    else:
+                        all_found = False
+                if all_found and entry > 0 and net_mark > 0:
+                    # Credit spread: pnl = (credit - cost_to_close) * qty * 100
+                    unrealized_pnl += (entry - net_mark) * qty * 100
+            else:
+                occ = trade.get('occ_symbol') or build_occ_symbol(
+                    trade['ticker'], trade['expiration'],
+                    trade['strike'], trade['option_type']
+                )
+                pos = pos_map.get(occ)
+                if pos:
+                    mark = pos.get('mark', 0) or pos.get('close_price', 0)
+                    if mark > 0:
+                        if trade.get('direction') == 'long':
+                            unrealized_pnl += (mark - entry) * qty * 100
+                        else:
+                            unrealized_pnl += (entry - mark) * qty * 100
+
+        # Open trade premiums committed (credits received or debits paid)
+        open_premium_committed = sum(
+            (t.get('entry_price', 0) * (t.get('quantity', 1)) * 100)
+            for t in open_trades
+        )
+
+        total_pnl = realized_pnl + unrealized_pnl
+        equity = starting + total_pnl
+        cash = starting + realized_pnl  # Cash = starting + realized (premiums settled)
+        positions_value = unrealized_pnl
+        total_pnl_pct = (total_pnl / starting) * 100 if starting > 0 else 0
+
+        # Record equity snapshot (journal-based, not sandbox)
+        self.journal.record_equity_snapshot(equity, cash, positions_value)
+
+        # Daily P&L from equity curve
+        daily_pnl = 0
+        curve = self.journal.get_equity_curve()
+        if len(curve) >= 2:
+            daily_pnl = equity - curve[-2]['equity']
+        elif len(curve) == 1:
+            daily_pnl = equity - starting
+
+        # Get account number from sandbox (just for display)
+        account_number = 'offline'
         try:
-            session, account = await get_cert_session()
-            balances = await account.get_balances(session)
+            _, account = await get_cert_session()
+            account_number = account.account_number
+        except Exception:
+            pass
 
-            equity = float(balances.net_liquidating_value)
-            cash = float(balances.cash_balance)
-            buying_power = float(balances.derivative_buying_power)
+        return {
+            'equity': round(equity, 2),
+            'cash': round(cash, 2),
+            'buying_power': round(cash, 2),  # Simplified: buying power ≈ cash
+            'positions_value': round(positions_value, 2),
+            'total_pnl': round(total_pnl, 2),
+            'total_pnl_pct': round(total_pnl_pct, 2),
+            'daily_pnl': round(daily_pnl, 2),
+            'starting_capital': starting,
+            'account_number': account_number,
+            'realized_pnl': round(realized_pnl, 2),
+            'unrealized_pnl': round(unrealized_pnl, 2),
+            'open_positions': len(open_trades),
+            'closed_trades': len(closed_trades),
+        }
 
-            # Record equity snapshot
-            positions_value = equity - cash
-            self.journal.record_equity_snapshot(equity, cash, positions_value)
+    async def _fetch_live_marks(self, occ_symbols: List[str]) -> Dict[str, float]:
+        """Fetch live option marks from prod session via REST batch API.
 
-            # Get starting capital for P&L calc
-            starting = self.config.get('starting_capital', 50000)
-            total_pnl = equity - starting
-            total_pnl_pct = (total_pnl / starting) * 100 if starting > 0 else 0
+        Cert (sandbox) returns mark=0 for options. This fetches real marks
+        from the production session so exit logic and P&L display work.
+        Results are cached for _LIVE_MARKS_TTL seconds.
+        """
+        global _live_marks_cache, _live_marks_ts
 
-            # Daily P&L from equity curve
-            daily_pnl = 0
-            curve = self.journal.get_equity_curve()
-            if len(curve) >= 2:
-                daily_pnl = equity - curve[-2]['equity']
-            elif len(curve) == 1:
-                daily_pnl = equity - starting
+        # Return cache if fresh and has all requested symbols
+        if (time.time() - _live_marks_ts < _LIVE_MARKS_TTL
+                and all(s in _live_marks_cache for s in occ_symbols)):
+            return {s: _live_marks_cache[s] for s in occ_symbols}
 
-            return {
-                'equity': round(equity, 2),
-                'cash': round(cash, 2),
-                'buying_power': round(buying_power, 2),
-                'positions_value': round(positions_value, 2),
-                'total_pnl': round(total_pnl, 2),
-                'total_pnl_pct': round(total_pnl_pct, 2),
-                'daily_pnl': round(daily_pnl, 2),
-                'starting_capital': starting,
-                'account_number': account.account_number,
-            }
+        try:
+            from src.data.tastytrade_provider import get_tastytrade_session
+            from tastytrade.market_data import get_market_data_by_type
+
+            session = get_tastytrade_session()
+            if not session:
+                logger.warning("Live marks: no prod session available")
+                return {}
+
+            # Batch limit is 100 symbols
+            data = await get_market_data_by_type(session, options=occ_symbols[:100])
+
+            marks = {}
+            for item in data:
+                symbol = item.symbol
+                mark = float(item.mark) if item.mark else 0
+                if mark <= 0:
+                    # Fallback: mid, then (bid+ask)/2, then last
+                    if item.mid:
+                        mark = float(item.mid)
+                    elif item.bid and item.ask:
+                        mark = (float(item.bid) + float(item.ask)) / 2
+                    elif item.last:
+                        mark = float(item.last)
+                if mark > 0:
+                    marks[symbol] = mark
+                    _live_marks_cache[symbol] = mark
+
+            _live_marks_ts = time.time()
+            logger.info(f"Live marks fetched: {len(marks)}/{len(occ_symbols)} symbols enriched")
+            return marks
+
         except Exception as e:
-            logger.error(f"Account summary error: {e}")
-            # Fallback to journal-based data
-            curve = self.journal.get_equity_curve()
-            starting = self.config.get('starting_capital', 50000)
-            last = curve[-1] if curve else {'equity': starting, 'cash': starting, 'positions_value': 0}
-            daily_pnl = 0
-            if len(curve) >= 2:
-                daily_pnl = round(curve[-1]['equity'] - curve[-2]['equity'], 2)
+            logger.warning(f"Live marks fetch failed: {e}")
+            return {}
 
-            return {
-                'equity': last['equity'],
-                'cash': last['cash'],
-                'buying_power': last['cash'],
-                'positions_value': last['positions_value'],
-                'total_pnl': round(last['equity'] - starting, 2),
-                'total_pnl_pct': round((last['equity'] - starting) / starting * 100, 2) if starting > 0 else 0,
-                'daily_pnl': daily_pnl,
-                'starting_capital': starting,
-                'account_number': 'offline',
-                'error': str(e),
-            }
+    async def _fetch_live_betas(self) -> Dict[str, float]:
+        """Fetch live betas from prod session for all watched tickers.
+
+        Betas are cached for 1 hour since they don't change intraday.
+        Used by the risk manager for beta-weighted concentration checks.
+        """
+        global _live_betas_cache, _live_betas_ts
+
+        if time.time() - _live_betas_ts < _LIVE_BETAS_TTL and _live_betas_cache:
+            return dict(_live_betas_cache)
+
+        try:
+            from src.data.tastytrade_provider import get_tastytrade_session
+            from tastytrade.market_data import get_market_data_by_type
+
+            session = get_tastytrade_session()
+            if not session:
+                logger.warning("Live betas: no prod session available")
+                return dict(_live_betas_cache)
+
+            tickers = self.config.get('watched_tickers', [])
+            if not tickers:
+                return dict(_live_betas_cache)
+
+            data = await get_market_data_by_type(session, equities=tickers[:100])
+
+            betas = {}
+            for item in data:
+                if item.beta is not None:
+                    betas[item.symbol] = float(item.beta)
+
+            if betas:
+                _live_betas_cache.update(betas)
+                _live_betas_ts = time.time()
+                logger.info(f"Live betas fetched: {betas}")
+
+            return dict(_live_betas_cache)
+
+        except Exception as e:
+            logger.warning(f"Live betas fetch failed: {e}")
+            return dict(_live_betas_cache)
 
     async def get_positions(self) -> List[Dict]:
         """Get open positions from TT cert with live marks."""
@@ -214,6 +354,18 @@ class PaperEngine:
                     'realized_day_gain': float(pos.realized_day_gain) if hasattr(pos, 'realized_day_gain') and pos.realized_day_gain else 0,
                     'unrealized_day_gain': float(pos.unrealized_day_gain) if hasattr(pos, 'unrealized_day_gain') and pos.unrealized_day_gain else 0,
                 })
+
+            # Enrich zero-mark option positions with live marks from prod session
+            zero_mark_symbols = [
+                p['symbol'] for p in result
+                if p.get('mark', 0) == 0 and 'EQUITY_OPTION' in p.get('instrument_type', '').upper()
+            ]
+            if zero_mark_symbols:
+                live_marks = await self._fetch_live_marks(zero_mark_symbols)
+                for pos in result:
+                    if pos['symbol'] in live_marks:
+                        pos['mark'] = live_marks[pos['symbol']]
+                        pos['mark_source'] = 'prod_rest'
 
             return result
         except Exception as e:
@@ -262,6 +414,12 @@ class PaperEngine:
         has a strategy_recommendation with recognized multi-leg strategy.
         Checks transition probability for halt/halve sizing.
         """
+        # Reject signals with no valid price data
+        if signal.get('underlying_price', 0) <= 0 or signal.get('strike', 0) <= 0:
+            logger.warning(f"Rejecting signal for {signal.get('ticker')}: "
+                           f"invalid price data (price={signal.get('underlying_price')}, strike={signal.get('strike')})")
+            return {'ok': False, 'error': 'Signal has no valid price data (strike=0 or underlying_price=0)'}
+
         # Regime transition check: halt or halve position sizes
         transition = signal.get('transition', {})
         trans_prob = transition.get('transition_probability', 0)
@@ -311,8 +469,10 @@ class PaperEngine:
         # Risk checks
         open_trades = self.journal.get_open_trades()
         summary = await self.get_account_summary()
-        equity = summary.get('equity', 50000)
-        risk_check = self.risk_manager.check_all(signal, open_trades, equity)
+        starting = self.config.get('starting_capital', 50000)
+        equity = summary.get('equity', starting) or starting  # Fallback if sandbox reset
+        betas = await self._fetch_live_betas()
+        risk_check = self.risk_manager.check_all(signal, open_trades, equity, betas)
         if not risk_check['passed']:
             return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
 
@@ -445,8 +605,10 @@ class PaperEngine:
         # Risk checks
         open_trades = self.journal.get_open_trades()
         summary = await self.get_account_summary()
-        equity = summary.get('equity', 50000)
-        risk_check = self.risk_manager.check_all(signal, open_trades, equity)
+        starting = self.config.get('starting_capital', 50000)
+        equity = summary.get('equity', starting) or starting  # Fallback if sandbox reset
+        betas = await self._fetch_live_betas()
+        risk_check = self.risk_manager.check_all(signal, open_trades, equity, betas)
         if not risk_check['passed']:
             return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
 
@@ -527,7 +689,8 @@ class PaperEngine:
         # Risk checks (multi-leg variant)
         open_trades = self.journal.get_open_trades()
         summary = await self.get_account_summary()
-        equity = summary.get('equity', 50000)
+        starting = self.config.get('starting_capital', 50000)
+        equity = summary.get('equity', starting) or starting  # Fallback if sandbox reset
 
         try:
             # Fetch chain + regime + term structure + skew in parallel
@@ -629,8 +792,9 @@ class PaperEngine:
                 return await self.execute_signal({**signal, 'strategy_recommendation': None})
 
             # Risk check with multi-leg awareness
+            betas = await self._fetch_live_betas()
             risk_signal = {**signal, 'max_loss': built.get('max_loss', 0)}
-            risk_check = self.risk_manager.check_all_multi_leg(risk_signal, open_trades, equity)
+            risk_check = self.risk_manager.check_all_multi_leg(risk_signal, open_trades, equity, betas)
             if not risk_check['passed']:
                 return {'ok': False, 'error': risk_check['reason'], 'risk_rejected': True}
 
@@ -670,9 +834,13 @@ class PaperEngine:
                     action=action,
                 ))
 
+            # Multi-leg orders must be Limit (Tastytrade rejects Market for spreads)
+            net_premium = built.get('net_premium', 0)
+            limit_price = abs(net_premium) if net_premium else 0.01
             order = NewOrder(
                 time_in_force=OrderTimeInForce.DAY,
-                order_type=OrderType.MARKET,
+                order_type=OrderType.LIMIT,
+                price=Decimal(str(round(limit_price, 2))),
                 legs=tt_legs,
             )
 
@@ -693,7 +861,10 @@ class PaperEngine:
             signal['quantity'] = quantity
             signal['occ_symbols'] = occ_symbols
             signal['expiration'] = leg_defs[0]['expiration']
-            signal['greeks'] = built.get('greeks', {})
+            built_greeks = built.get('greeks', {})
+            signal['greeks'] = built_greeks
+            signal['iv'] = built_greeks.get('iv', 0) or built.get('avg_iv', 0)
+            signal['delta'] = built_greeks.get('delta', 0)
             signal['quality_score'] = built.get('quality_score', 0)
             signal['regime_at_entry'] = {
                 'gex_regime': gex_regime,
@@ -701,6 +872,18 @@ class PaperEngine:
                 'vrp': round(vrp, 2),
                 'iv_rank': iv_rank,
                 'flow_toxicity': round(flow_toxicity, 3),
+            }
+
+            # Capture factor scores for bandit learning
+            # Map available regime data to composite factor scores (0-100 scale)
+            signal['entry_factor_scores'] = {
+                'dealer_flow': max(0, min(100, 50 + vrp * 10)),  # VRP proxy
+                'squeeze': max(0, min(100, 80 if gex_regime == 'pinned' else 40 if gex_regime == 'volatile' else 55)),
+                'smart_money': max(0, min(100, round((1 - flow_toxicity) * 80))),
+                'price_vs_maxpain': 50,  # neutral default
+                'skew': max(0, min(100, round(skew_ratio * 50))),
+                'term': max(0, min(100, 70 if real_structure == 'contango' else 30)),
+                'price_vs_walls': 50,  # neutral default
             }
 
             trade = self.journal.record_trade(
@@ -798,6 +981,13 @@ class PaperEngine:
         try:
             session, account = await get_cert_session()
 
+            # Check actual sandbox positions to avoid quantity mismatch
+            positions = await account.get_positions(session)
+            pos_qty_map = {}
+            for pos in positions:
+                if int(pos.quantity) != 0:
+                    pos_qty_map[pos.symbol] = abs(int(pos.quantity))
+
             tt_legs = []
             quantity = trade.get('quantity', 1)
 
@@ -814,6 +1004,15 @@ class PaperEngine:
                     action = OrderAction.BUY_TO_CLOSE
 
                 leg_qty = leg_def.get('quantity', 1) * quantity
+                # Cap at actual sandbox position to avoid "cannot close more than existing"
+                actual_qty = pos_qty_map.get(occ, 0)
+                if actual_qty > 0 and leg_qty > actual_qty:
+                    logger.warning(f"Qty mismatch for {occ}: journal={leg_qty}, sandbox={actual_qty}. Using sandbox qty.")
+                    leg_qty = actual_qty
+
+                if leg_qty <= 0:
+                    logger.warning(f"No position for {occ} in sandbox, skipping close leg")
+                    continue
 
                 tt_legs.append(Leg(
                     instrument_type=InstrumentType.EQUITY_OPTION,
@@ -822,9 +1021,18 @@ class PaperEngine:
                     action=action,
                 ))
 
+            if not tt_legs:
+                # No legs to close — sandbox may have reset
+                closed = self.journal.close_trade(trade_id, 0, f'{reason}_no_position')
+                if closed:
+                    self._update_adaptive_systems(closed)
+                return {'ok': True, 'trade': closed, 'multi_leg': True, 'note': 'no sandbox position'}
+
+            # Multi-leg close orders must be Limit
             order = NewOrder(
                 time_in_force=OrderTimeInForce.DAY,
-                order_type=OrderType.MARKET,
+                order_type=OrderType.LIMIT,
+                price=Decimal('0.01'),  # Closing at minimal price
                 legs=tt_legs,
             )
 
@@ -867,26 +1075,97 @@ class PaperEngine:
         positions = await self.get_positions()
         position_map = {p['symbol']: p for p in positions}
 
+        # Check if marks are available (all 0 = after hours or sandbox stale)
+        has_marks = any(
+            (p.get('mark', 0) or p.get('close_price', 0)) > 0
+            for p in positions
+        )
+
         for trade in open_trades:
-            occ_symbol = trade.get('occ_symbol') or build_occ_symbol(
-                trade['ticker'], trade['expiration'],
-                trade['strike'], trade['option_type']
-            )
-
-            pos = position_map.get(occ_symbol)
-            current_price = 0
-            if pos:
-                current_price = pos.get('mark', 0) or pos.get('close_price', 0)
-
+            is_multi_leg = trade.get('is_multi_leg', False)
             entry_price = trade.get('entry_price', 0)
             if entry_price <= 0:
                 continue
 
-            # Calculate P&L %
-            if trade['direction'] == 'long':
-                pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+            if is_multi_leg and trade.get('legs'):
+                # Multi-leg: calculate net mark from all leg positions
+                # For credit spreads: PnL = credit_received - cost_to_close
+                net_mark = 0
+                all_legs_found = True
+                for leg in trade['legs']:
+                    leg_occ = build_occ_symbol(
+                        trade['ticker'], leg['expiration'],
+                        leg['strike'], leg['option_type']
+                    )
+                    leg_pos = position_map.get(leg_occ)
+                    if leg_pos:
+                        leg_mark = leg_pos.get('mark', 0) or leg_pos.get('close_price', 0)
+                        # SELL legs: we receive premium, so mark adds to cost-to-close
+                        # BUY legs: we paid premium, mark reduces cost-to-close
+                        if leg['action'] == 'SELL':
+                            net_mark += leg_mark  # We'd buy back at this price
+                        else:
+                            net_mark -= leg_mark  # We'd sell at this price
+                    else:
+                        all_legs_found = False
+
+                if not all_legs_found:
+                    # Can't find all leg positions — skip exit check
+                    logger.debug(f"Skipping exit check for {trade['ticker']}: not all legs found in positions")
+                    continue
+
+                # Check if ALL leg marks are zero (sandbox stale/after-hours)
+                all_leg_marks_zero = True
+                for leg in trade['legs']:
+                    leg_occ = build_occ_symbol(
+                        trade['ticker'], leg['expiration'],
+                        leg['strike'], leg['option_type']
+                    )
+                    leg_pos = position_map.get(leg_occ)
+                    if leg_pos and (leg_pos.get('mark', 0) or leg_pos.get('close_price', 0)) > 0:
+                        all_leg_marks_zero = False
+                        break
+
+                # For credit spread: entry_price = net credit received
+                # cost_to_close = net_mark (positive = we pay to close)
+                # PnL = (credit - cost_to_close) / credit * 100
+                # If net_mark is small, we keep most of credit = profit
+                pnl_pct = ((entry_price - net_mark) / entry_price) * 100 if entry_price > 0 else 0
             else:
-                pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+                # Single-leg trade
+                occ_symbol = trade.get('occ_symbol') or build_occ_symbol(
+                    trade['ticker'], trade['expiration'],
+                    trade['strike'], trade['option_type']
+                )
+
+                pos = position_map.get(occ_symbol)
+                current_price = 0
+                if pos:
+                    current_price = pos.get('mark', 0) or pos.get('close_price', 0)
+
+                all_leg_marks_zero = current_price == 0
+
+                # Calculate P&L %
+                if trade['direction'] == 'long':
+                    pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+                else:
+                    pnl_pct = ((entry_price - current_price) / entry_price) * 100 if entry_price > 0 else 0
+
+            # Per-trade mark validity: global has_marks AND this trade's marks are real
+            trade_has_marks = has_marks and not all_leg_marks_zero
+
+            # Minimum hold time: skip price-based exits for young positions
+            min_hold = self.config.get('min_hold_minutes', 30)
+            entry_time = trade.get('entry_time')
+            if entry_time and trade_has_marks:
+                try:
+                    et = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                    age_minutes = (datetime.now(timezone.utc) - et).total_seconds() / 60
+                    if age_minutes < min_hold:
+                        logger.debug(f"Skipping exit for {trade['ticker']}: only {age_minutes:.0f}m old (min {min_hold}m)")
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
             # Check DTE
             dte = 999
@@ -912,16 +1191,19 @@ class PaperEngine:
                 time_exit_dte = self.config.get('time_exit_dte', 7)
 
             exit_reason = None
-            if pnl_pct <= stop_loss:
-                exit_reason = 'stop_loss'
-            elif pnl_pct >= take_profit:
-                exit_reason = 'take_profit'
-            elif dte <= time_exit_dte:
+            # Only check price-based exits if this trade has valid marks
+            # (marks=0 after hours or sandbox stale would trigger false exits)
+            if trade_has_marks:
+                if pnl_pct <= stop_loss:
+                    exit_reason = 'stop_loss'
+                elif pnl_pct >= take_profit:
+                    exit_reason = 'take_profit'
+            if not exit_reason and dte <= time_exit_dte:
                 exit_reason = 'time_exit'
 
             # Phase 3c: Edge-deterioration exit
             # If in profit and edge has collapsed, take profits early
-            if not exit_reason and pnl_pct > 10 and self.edge_engine:
+            if not exit_reason and trade_has_marks and pnl_pct > 10 and self.edge_engine:
                 try:
                     edge_data = await self.compute_edge_score(trade['ticker'])
                     current_edge = edge_data.get('edge_score', 50)
