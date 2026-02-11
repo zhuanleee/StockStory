@@ -502,6 +502,7 @@ class EdgeScoreEngine:
         term_structure: str = 'contango',
         skew_ratio: float = 1.0,
         strategy_type: str = 'short_premium',
+        **kwargs,
     ) -> Dict:
         """
         Compute unified edge score (0-100) with confidence and Kelly sizing.
@@ -550,6 +551,15 @@ class EdgeScoreEngine:
             skew_adj = 3  # Steep skew = overpriced tails, edge for selling
         edge += skew_adj
 
+        # Risk reversal signal: put_25d_iv - call_25d_iv
+        risk_rev = kwargs.get('risk_reversal', 0) or 0
+        risk_rev_adj = 0
+        if risk_rev > 0.03 and strategy_type == 'short_premium':
+            risk_rev_adj = 4  # Puts overpriced relative to calls — edge for selling puts
+        elif risk_rev < -0.02 and strategy_type == 'long_premium':
+            risk_rev_adj = 3  # Calls cheap — edge for buying calls
+        edge += risk_rev_adj
+
         # Clamp
         edge = max(0, min(100, round(edge)))
 
@@ -568,6 +578,7 @@ class EdgeScoreEngine:
             vrp > 2,
             flow_toxicity > 0.5,
             term_adj > 0,
+            risk_rev_adj > 0,
         ] if s)
 
         confidence = 'low'
@@ -596,8 +607,10 @@ class EdgeScoreEngine:
                 'dealer_flow': dealer_flow_forecast.get('net_flow_billions', 0) if dealer_flow_forecast else 0,
                 'term_structure_adj': term_adj,
                 'skew_adj': skew_adj,
+                'risk_reversal_adj': risk_rev_adj,
                 'term_structure': term_structure,
                 'skew_ratio': round(skew_ratio, 3),
+                'risk_reversal': round(risk_rev, 4) if risk_rev else 0,
             },
         }
 
@@ -619,6 +632,10 @@ class StrategySelector:
                 r['vrp'] > 4 and
                 r['gex_regime'] == 'pinned' and
                 r['flow_toxicity'] < 0.5
+            ) or (
+                r['vrp'] > 3 and
+                r['gex_regime'] == 'pinned' and
+                r.get('risk_reversal', 0) > 0.02  # Puts expensive → favor selling puts
             ),
             'type': 'short_premium',
             'direction': 'neutral_bullish',
@@ -632,6 +649,10 @@ class StrategySelector:
                 r['vrp'] < 2 and
                 r['gex_regime'] == 'volatile' and
                 r['flow_toxicity'] > 0.6
+            ) or (
+                r['vrp'] < 2 and
+                r['gex_regime'] == 'volatile' and
+                r.get('risk_reversal', 0) < -0.01  # Calls cheap → favor buying calls
             ),
             'type': 'long_premium',
             'direction': 'directional',

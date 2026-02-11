@@ -3,6 +3,7 @@ Performance Analytics — Compute trading metrics from journal data.
 """
 
 import math
+import re
 import logging
 from typing import Dict, List
 from collections import defaultdict
@@ -67,12 +68,13 @@ class PerformanceAnalytics:
         # Drawdown
         max_dd, current_dd = self._compute_drawdown(equity_curve)
 
-        # Daily P&L (from equity curve)
-        daily_pnl = 0
-        if len(equity_curve) >= 2:
-            daily_pnl = equity_curve[-1]['equity'] - equity_curve[-2]['equity']
-        elif len(equity_curve) == 1:
-            daily_pnl = equity_curve[0].get('equity', 50000) - 50000
+        # Daily P&L (from today's closed trades)
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        daily_pnl = sum(
+            (t.get('pnl_dollars', 0) or 0) for t in closed
+            if t.get('exit_time', '').startswith(today_str)
+        )
 
         # Best / worst trades
         best = max(closed, key=lambda t: t.get('pnl_dollars', 0) or 0)
@@ -162,11 +164,19 @@ class PerformanceAnalytics:
                     pass
         return (sum(days_list) / len(days_list)) if days_list else 0
 
+    @staticmethod
+    def _normalize_strategy_name(name: str) -> str:
+        """Strip strike/expiry info to group by strategy type.
+        'Credit Spread (PUT 295.0/290.0)' → 'Credit Spread'
+        'Iron Condor (CALL 300/305 PUT 280/275)' → 'Iron Condor'
+        """
+        return re.sub(r'\s*\(.*\)\s*$', '', name).strip() or name
+
     def _strategy_breakdown(self, closed: List[dict]) -> Dict:
         """Per-strategy performance breakdown."""
         by_strategy = defaultdict(list)
         for t in closed:
-            strat = t.get('strategy', 'Manual')
+            strat = self._normalize_strategy_name(t.get('strategy', 'Manual'))
             by_strategy[strat].append(t)
 
         result = {}

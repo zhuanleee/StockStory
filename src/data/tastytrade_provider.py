@@ -855,16 +855,21 @@ async def _calculate_gex_tastytrade_impl(ticker: str, expiration: str = None) ->
         return {"error": "Tastytrade session not available"}
 
     try:
-        from tastytrade.instruments import get_future_option_chain
         from tastytrade import DXLinkStreamer
         from tastytrade.dxfeed import Greeks, Summary
         from datetime import date
         import inspect, time
 
-        result = get_future_option_chain(session, ticker)
+        # Route to correct chain function based on ticker type
+        if is_futures_ticker(ticker):
+            from tastytrade.instruments import get_future_option_chain
+            result = get_future_option_chain(session, ticker)
+        else:
+            from tastytrade.instruments import get_option_chain
+            result = get_option_chain(session, ticker)
         chain = await result if inspect.iscoroutine(result) else result
         if not chain:
-            return {"error": f"No futures options chain for {ticker}"}
+            return {"error": f"No options chain for {ticker}"}
 
         today = date.today()
         exp_dates = sorted(chain.keys())
@@ -1556,6 +1561,95 @@ async def get_iv_by_delta_tastytrade(ticker: str, expiration: str = None, target
     }
 
 
+async def get_iv_rank_tastytrade(ticker: str, volume_path: str = "/data") -> Dict:
+    """
+    Per-ticker IV Rank using rolling ATM IV history.
+
+    Stores daily ATM IV snapshots per ticker and computes percentile rank
+    within that ticker's own history (up to 252 trading days / 1 year).
+
+    Returns:
+        {
+            'iv_rank': float (0-100 percentile),
+            'atm_iv': float,
+            'history_length': int,
+            'percentile_method': 'rolling_252d' | 'bootstrap',
+        }
+    """
+    import json as _json
+    from pathlib import Path
+
+    # 1. Get current ATM IV from skew function (reuse existing logic)
+    iv_data = await get_iv_by_delta_tastytrade(ticker)
+    if not iv_data or not iv_data.get('atm_iv'):
+        return {'iv_rank': 50, 'atm_iv': None, 'history_length': 0, 'percentile_method': 'fallback'}
+
+    atm_iv = float(iv_data['atm_iv'])
+    today_str = datetime.now().strftime('%Y-%m-%d')
+
+    # 2. Load history from volume
+    history_dir = Path(volume_path) / "paper_trading" / "iv_history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_file = history_dir / f"{ticker.upper()}.json"
+
+    history = []
+    try:
+        if history_file.exists():
+            history = _json.loads(history_file.read_text())
+    except Exception as e:
+        logger.warning(f"Failed to load IV history for {ticker}: {e}")
+        history = []
+
+    # 3. Append today's ATM IV (dedup by date)
+    existing_dates = {entry['date'] for entry in history}
+    if today_str not in existing_dates:
+        history.append({'date': today_str, 'atm_iv': round(atm_iv, 5)})
+    else:
+        # Update today's entry if it already exists
+        for entry in history:
+            if entry['date'] == today_str:
+                entry['atm_iv'] = round(atm_iv, 5)
+                break
+
+    # 4. Keep last 252 entries (1 year of trading days)
+    history = sorted(history, key=lambda x: x['date'])[-252:]
+
+    # 5. Save updated history
+    try:
+        history_file.write_text(_json.dumps(history))
+    except Exception as e:
+        logger.warning(f"Failed to save IV history for {ticker}: {e}")
+
+    # 6. Compute IV Rank as percentile within history
+    history_length = len(history)
+    if history_length < 5:
+        # Not enough history — use a simple heuristic bootstrap
+        # Map ATM IV to rough percentile based on asset class norms
+        iv_rank = max(0, min(100, round((atm_iv - 0.10) / 0.50 * 100)))
+        method = 'bootstrap'
+    else:
+        # Percentile rank: what % of historical IVs are below current
+        iv_values = [entry['atm_iv'] for entry in history]
+        count_below = sum(1 for v in iv_values if v < atm_iv)
+        count_equal = sum(1 for v in iv_values if v == atm_iv)
+        # Percentile rank formula: (below + 0.5 * equal) / total * 100
+        iv_rank = round((count_below + 0.5 * count_equal) / history_length * 100)
+        iv_rank = max(0, min(100, iv_rank))
+        method = 'rolling_252d'
+
+    logger.info(f"IV Rank {ticker}: ATM IV={atm_iv:.3f}, IV Rank={iv_rank} ({method}, {history_length} days)")
+
+    return {
+        'iv_rank': iv_rank,
+        'atm_iv': atm_iv,
+        'history_length': history_length,
+        'percentile_method': method,
+        'put_25d_iv': iv_data.get('put_25d_iv'),
+        'call_25d_iv': iv_data.get('call_25d_iv'),
+        'skew_ratio': iv_data.get('skew_ratio'),
+    }
+
+
 async def get_term_structure_tastytrade(ticker: str, front_dte: int = 30, back_dte: int = 120) -> Optional[Dict]:
     """
     Get IV term structure comparing front and back month ATM IVs.
@@ -1636,19 +1730,28 @@ async def get_expected_move_tastytrade(ticker: str, target_dte: int = 120) -> Op
     current_price = quote.get('last') if quote else None
 
     if not current_price:
-        # Estimate from options
+        # Estimate from options using put-call parity:
+        # At ATM, call ≈ put, so find strike where |call - put| is minimized
+        best_parity_diff = float('inf')
         for opt in data['options']:
-            if opt.get('call') and opt.get('put'):
-                # Use put-call parity estimate
-                current_price = float(opt['strike'])
-                break
+            call_data = opt.get('call')
+            put_data = opt.get('put')
+            if call_data and put_data and call_data.get('price') and put_data.get('price'):
+                cp = float(call_data['price'])
+                pp = float(put_data['price'])
+                if cp > 0 and pp > 0:
+                    diff = abs(cp - pp)
+                    if diff < best_parity_diff:
+                        best_parity_diff = diff
+                        # Put-call parity: S ≈ strike + call - put
+                        current_price = float(opt['strike']) + cp - pp
 
-    if not current_price:
+    if not current_price or current_price <= 0:
         return None
 
     current_price = float(current_price)
 
-    # Find ATM strike
+    # Find ATM strike (closest to current price)
     atm_strike = None
     atm_call_price = None
     atm_put_price = None

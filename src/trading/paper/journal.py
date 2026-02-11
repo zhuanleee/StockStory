@@ -100,6 +100,7 @@ class TradeJournal:
             'greeks': signal.get('greeks', {}),
             'quality_score': signal.get('quality_score', 0),
             'regime_at_entry': signal.get('regime_at_entry', {}),
+            'entry_factor_scores': signal.get('entry_factor_scores', {}),
         }
 
         trades.append(trade)
@@ -293,6 +294,44 @@ class TradeJournal:
 
     def get_equity_curve(self) -> List[dict]:
         return self._load_equity_curve()
+
+    def backfill_factor_scores(self) -> int:
+        """Backfill entry_factor_scores for trades that are missing them.
+
+        Computes reasonable scores from whatever regime/signal data is stored
+        on each trade. Returns count of trades updated.
+        """
+        trades = self._load_journal()
+        updated = 0
+        for trade in trades:
+            if trade.get('entry_factor_scores'):
+                continue  # already has scores
+
+            regime = trade.get('regime_at_entry', {})
+            iv_rank = regime.get('iv_rank', 50)
+            vrp = regime.get('vrp', (iv_rank - 30) / 10)
+            gex_regime = regime.get('gex_regime', 'transitional')
+            flow_toxicity = regime.get('flow_toxicity', 0.3)
+
+            # Try to get skew/term from regime data, else neutral defaults
+            skew_ratio = 1.0
+            real_structure = 'contango'
+
+            trade['entry_factor_scores'] = {
+                'dealer_flow': max(0, min(100, 50 + vrp * 10)),
+                'squeeze': max(0, min(100, 80 if gex_regime == 'pinned' else 40 if gex_regime == 'volatile' else 55)),
+                'smart_money': max(0, min(100, round((1 - flow_toxicity) * 80))),
+                'price_vs_maxpain': 50,
+                'skew': max(0, min(100, round(skew_ratio * 50))),
+                'term': max(0, min(100, 70 if real_structure == 'contango' else 30)),
+                'price_vs_walls': 50,
+            }
+            updated += 1
+
+        if updated:
+            self._save_journal(trades)
+            logger.info(f"Backfilled entry_factor_scores for {updated} trades")
+        return updated
 
     def reset(self, starting_capital: float = 50000):
         """Reset all paper trading data."""

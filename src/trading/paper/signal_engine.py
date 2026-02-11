@@ -11,19 +11,41 @@ Phase 1a: Confidence adjusted by historical win rates (adaptive_engine.py)
 Phase 3b: Strategy auto-selection based on regime
 """
 
+import json
 import logging
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Previous regime cache for detecting flips
-_prev_regimes = {}  # ticker -> {'gex_regime': str, 'combined_regime': str, 'ts': str}
+
+def _load_prev_regimes(volume_path: str) -> Dict:
+    """Load previous regimes from persistent storage (Modal volume)."""
+    try:
+        regimes_file = Path(volume_path) / "paper_trading" / "prev_regimes.json"
+        if regimes_file.exists():
+            return json.loads(regimes_file.read_text())
+    except Exception as e:
+        logger.warning(f"Failed to load prev_regimes: {e}")
+    return {}
+
+
+def _save_prev_regimes(volume_path: str, regimes: Dict):
+    """Save previous regimes to persistent storage (Modal volume)."""
+    try:
+        pt_dir = Path(volume_path) / "paper_trading"
+        pt_dir.mkdir(parents=True, exist_ok=True)
+        regimes_file = pt_dir / "prev_regimes.json"
+        regimes_file.write_text(json.dumps(regimes))
+    except Exception as e:
+        logger.warning(f"Failed to save prev_regimes: {e}")
 
 
 class SignalEngine:
     def __init__(self, volume_path: str):
         self.volume_path = volume_path
+        self._prev_regimes = _load_prev_regimes(volume_path)
         # Phase 1a: Load signal performance tracker for adaptive confidence
         try:
             from .adaptive_engine import SignalPerformanceTracker
@@ -45,32 +67,61 @@ class SignalEngine:
         adjusted = raw_confidence * multiplier
         return round(max(10, min(99, adjusted)))
 
-    async def evaluate_signals(self, ticker: str, config: dict) -> List[dict]:
+    async def evaluate_signals(self, ticker: str, config: dict, debug: bool = False) -> List[dict]:
         """Evaluate all signal sources for a ticker, return actionable signals."""
         signals = []
         all_raw_signals = []
+        debug_info = {} if debug else None
         min_confidence = config.get('min_confidence', 60)
         multi_leg_enabled = config.get('multi_leg_enabled', False)
 
-        # Run signal evaluators
-        gex_sig = await self._check_gex_flip(ticker)
-        regime_sig = await self._check_regime_shift(ticker)
-        macro_sig = await self._check_macro_event(ticker)
-        iv_sig = await self._check_iv_reversion(ticker)
+        # Run signal evaluators with error capture
+        evaluators = [
+            ('gex_flip', self._check_gex_flip),
+            ('regime_shift', self._check_regime_shift),
+            ('macro_event', self._check_macro_event),
+            ('iv_reversion', self._check_iv_reversion),
+        ]
 
-        # Collect all non-None signals for transition composite
-        for sig in [gex_sig, regime_sig, macro_sig, iv_sig]:
-            if sig:
-                all_raw_signals.append(sig)
+        for name, evaluator in evaluators:
+            try:
+                sig = await evaluator(ticker)
+                if sig:
+                    all_raw_signals.append(sig)
+                    if debug:
+                        debug_info[name] = {
+                            'status': 'signal_generated',
+                            'confidence': sig.get('confidence', 0),
+                            'passed_threshold': sig.get('confidence', 0) >= min_confidence,
+                        }
+                elif debug:
+                    # Provide reason for None
+                    prev = self._prev_regimes.get(ticker, {})
+                    if name == 'gex_flip':
+                        debug_info[name] = {
+                            'status': 'no_trigger',
+                            'prev_regime': prev.get('gex_regime', 'unknown'),
+                            'prev_gex_billions': prev.get('gex_billions', 'N/A'),
+                            'note': 'no regime flip, zero crossing, magnitude shift, or wall proximity detected',
+                        }
+                    elif name == 'regime_shift':
+                        debug_info[name] = {'status': 'no_shift', 'prev_combined': prev.get('combined_regime', 'unknown'), 'note': 'no combined regime change'}
+                    elif name == 'macro_event':
+                        macro_dbg = getattr(self, '_last_macro_debug', {})
+                        debug_info[name] = {'status': 'no_event', **macro_dbg}
+                    elif name == 'iv_reversion':
+                        debug_info[name] = {'status': 'iv_normal', 'note': 'IV rank between 30-70 (no extreme)', 'iv_rank_method': 'per_ticker_rolling'}
+            except Exception as e:
+                logger.error(f"Signal evaluator {name} error for {ticker}: {e}")
+                if debug:
+                    debug_info[name] = {'status': 'error', 'error': str(e)}
 
         # Compute regime transition probability from all signals
         transition = self._compute_transition_probability(all_raw_signals)
 
         for sig in all_raw_signals:
             if sig.get('confidence', 0) >= min_confidence:
-                # Attach transition info to each signal
                 sig['transition'] = transition
-                # Multi-leg: attach strategy recommendation when enabled
                 if multi_leg_enabled and self.strategy_selector:
                     try:
                         strategy_rec = self._attach_strategy_recommendation(sig, ticker)
@@ -80,12 +131,54 @@ class SignalEngine:
                         logger.debug(f"Strategy recommendation skipped for {ticker}: {e}")
                 signals.append(sig)
 
+        # Persist regime state after evaluation
+        _save_prev_regimes(self.volume_path, self._prev_regimes)
+
         signals.sort(key=lambda s: s.get('confidence', 0), reverse=True)
         max_signals = config.get('max_signals_per_check', 3)
-        return signals[:max_signals]
+        result = signals[:max_signals]
+
+        if debug:
+            # Attach debug info to the return (caller checks for it)
+            for sig in result:
+                sig['_debug'] = debug_info
+            if not result:
+                # Return debug info as a special signal-like dict
+                result.append({'_debug_only': True, '_debug': debug_info, 'ticker': ticker})
+
+        return result
+
+    def _get_reliable_price(self, ticker: str, gex_price: float = 0) -> float:
+        """Get reliable current price using multiple fallback sources.
+        Works during market hours and after hours."""
+        if gex_price and gex_price > 0:
+            return gex_price
+        # Fallback 1: Tastytrade quote (fresh session, works after hours)
+        try:
+            from src.data.options import _get_tastytrade_quote
+            quote = _get_tastytrade_quote(ticker)
+            if quote and quote.get('last') and quote['last'] > 0:
+                return quote['last']
+        except Exception:
+            pass
+        # Fallback 2: Polygon snapshot (equities only)
+        try:
+            from src.data.options import get_snapshot_sync
+            snap = get_snapshot_sync(ticker)
+            if snap:
+                price = snap.get('price') or snap.get('last_price') or 0
+                if price > 0:
+                    return price
+        except Exception:
+            pass
+        return 0
 
     def _attach_strategy_recommendation(self, signal: dict, ticker: str) -> Optional[dict]:
-        """Build regime state from signal data and get strategy recommendation."""
+        """Build regime state from signal data and get strategy recommendation.
+
+        Returns dict with 'primary' strategy and 'alternatives' list (top 3).
+        Computes real flow_toxicity from regime data instead of hardcoding.
+        """
         if not self.strategy_selector:
             return None
 
@@ -94,23 +187,73 @@ class SignalEngine:
         event_data = signal.get('event_data', {})
 
         iv_rank = iv_data.get('iv_rank', 50)
+        # Compute risk reversal from iv_data if available
+        risk_reversal = iv_data.get('risk_reversal', 0)
+        if not risk_reversal:
+            p25 = iv_data.get('put_25d_iv')
+            c25 = iv_data.get('call_25d_iv')
+            if p25 and c25:
+                risk_reversal = round(p25 - c25, 4)
+
+        # --- Compute real flow_toxicity from available data ---
+        # Base: P/C ratio signals informed flow (high ratio = bearish informed flow)
+        pc_ratio = regime_data.get('pc_ratio', 1.0) or 1.0
+        gex_regime = regime_data.get('regime', regime_data.get('gex_regime', 'transitional'))
+        combined_regime = regime_data.get('combined_regime', 'neutral_transitional')
+
+        flow_toxicity = 0.3  # neutral baseline
+        # P/C ratio contribution: >1.2 = elevated toxicity, <0.8 = low
+        if pc_ratio > 1.5:
+            flow_toxicity = 0.7
+        elif pc_ratio > 1.2:
+            flow_toxicity = 0.5
+        elif pc_ratio < 0.7:
+            flow_toxicity = 0.15
+        elif pc_ratio < 0.9:
+            flow_toxicity = 0.25
+        # Volatile GEX regime adds toxicity
+        if gex_regime == 'volatile':
+            flow_toxicity = min(1.0, flow_toxicity + 0.15)
+        # Danger/high_risk regimes indicate informed flow
+        if combined_regime in ('danger', 'high_risk'):
+            flow_toxicity = min(1.0, flow_toxicity + 0.2)
+
+        # --- Compute real vanna_flow from risk reversal + regime ---
+        vanna_flow = 0.0
+        if risk_reversal:
+            # Positive risk_reversal = puts > calls = dealers short puts = negative vanna
+            # Negative risk_reversal = calls > puts = dealers short calls = positive vanna
+            vanna_flow = -risk_reversal * 10  # Scale: 0.05 RR → 0.5 vanna_flow
+            vanna_flow = max(-1.0, min(1.0, vanna_flow))
+        # Opportunity regime implies positive vanna flow (dealer buying)
+        if combined_regime == 'opportunity':
+            vanna_flow = max(vanna_flow, 0.5)
+
         regime_state = {
             'vrp': (iv_rank - 30) / 10,  # calibrated: IV Rank 70 → VRP 4.0
-            'gex_regime': regime_data.get('regime', regime_data.get('gex_regime', 'transitional')),
-            'combined_regime': regime_data.get('combined_regime', 'neutral_transitional'),
-            'flow_toxicity': 0.3,  # default; real value computed in paper_engine
+            'gex_regime': gex_regime,
+            'combined_regime': combined_regime,
+            'flow_toxicity': round(flow_toxicity, 2),
             'term_structure': signal.get('term_structure', 'contango'),
             'skew_steep': signal.get('skew_steep', False),
             'skew_ratio': signal.get('skew_ratio', 1.0),
             'iv_rank': iv_rank,
-            'vanna_flow': 0.0,
+            'vanna_flow': round(vanna_flow, 2),
             'macro_event_days': event_data.get('days_until', 99),
+            'risk_reversal': risk_reversal,
         }
 
         strategies = self.strategy_selector.select_strategy(regime_state)
-        if strategies and strategies[0].get('name') != 'Wait / Reduce Size':
-            return strategies[0]
-        return None
+        if not strategies or strategies[0].get('name') == 'Wait / Reduce Size':
+            return None
+
+        # Return primary + up to 2 alternatives for diversification
+        primary = strategies[0]
+        alternatives = [s for s in strategies[1:3] if s.get('name') != 'Wait / Reduce Size']
+        result = dict(primary)
+        if alternatives:
+            result['alternatives'] = alternatives
+        return result
 
     # -------------------------------------------------------------------------
     # Regime Transition Composite
@@ -170,7 +313,7 @@ class SignalEngine:
     # -------------------------------------------------------------------------
 
     async def _check_gex_flip(self, ticker: str) -> Optional[dict]:
-        """Detect GEX flip from positive to negative or vice versa."""
+        """Detect GEX regime flip, magnitude shift, zero crossing, or wall proximity."""
         try:
             from src.data.tastytrade_provider import get_gex_regime_tastytrade
             regime_data = await get_gex_regime_tastytrade(ticker)
@@ -178,35 +321,104 @@ class SignalEngine:
                 return None
 
             current_regime = regime_data.get('regime', 'transitional')
-            prev = _prev_regimes.get(ticker, {})
+            prev = self._prev_regimes.get(ticker, {})
             prev_regime = prev.get('gex_regime', current_regime)
 
-            # Update cache
-            _prev_regimes.setdefault(ticker, {})['gex_regime'] = current_regime
-            _prev_regimes[ticker]['ts'] = datetime.utcnow().isoformat()
+            current_gex = regime_data.get('gex_billions', 0) or 0
+            prev_gex = prev.get('gex_billions', 0) or 0
+            call_wall = regime_data.get('call_wall')
+            put_wall = regime_data.get('put_wall')
+            current_price = self._get_reliable_price(ticker, regime_data.get('current_price', 0))
 
-            # Detect flip
-            if prev_regime == current_regime:
+            # Update persistent cache with GEX magnitude + walls
+            self._prev_regimes.setdefault(ticker, {})['gex_regime'] = current_regime
+            self._prev_regimes[ticker]['ts'] = datetime.utcnow().isoformat()
+            self._prev_regimes[ticker]['gex_billions'] = current_gex
+            self._prev_regimes[ticker]['call_wall'] = call_wall
+            self._prev_regimes[ticker]['put_wall'] = put_wall
+
+            # --- Signal detection: check all triggers ---
+            signal_trigger = None
+            direction = None
+            option_type = None
+            notes = None
+            tags = ['gex_flip']
+            raw_confidence = 0
+
+            # Trigger 1: Regime label flip (original logic)
+            if prev_regime != current_regime:
+                flip_type = f'{prev_regime}_to_{current_regime}'
+                raw_confidence = regime_data.get('confidence', 0) * 100
+                if current_regime == 'volatile':
+                    direction = 'long'
+                    option_type = 'put'
+                    notes = f'GEX flipped negative ({flip_type}). Bearish setup.'
+                elif current_regime == 'pinned':
+                    direction = 'long'
+                    option_type = 'call'
+                    notes = f'GEX flipped positive ({flip_type}). Bullish setup.'
+                if direction:
+                    signal_trigger = 'regime_flip'
+                    tags.append(flip_type)
+
+            # Trigger 2: GEX zero crossing (highest conviction sub-signal)
+            # Only require prev_gex != 0 — current can be 0 (crossed to zero)
+            if not signal_trigger and prev_gex != 0:
+                if prev_gex * current_gex < 0 or (current_gex == 0 and prev_gex != 0):  # sign change or crossed to zero
+                    signal_trigger = 'zero_crossing'
+                    raw_confidence = 80
+                    if current_gex < 0:
+                        direction = 'long'
+                        option_type = 'put'
+                        notes = f'GEX crossed zero → negative ({prev_gex:.2f}B → {current_gex:.2f}B). Dealer selling pressure.'
+                    else:
+                        direction = 'long'
+                        option_type = 'call'
+                        notes = f'GEX crossed zero → positive ({prev_gex:.2f}B → {current_gex:.2f}B). Dealer support emerging.'
+                    tags.append('zero_crossing')
+
+            # Trigger 3: GEX magnitude shift (>50% change)
+            if not signal_trigger and prev_gex != 0:
+                pct_change = abs(current_gex - prev_gex) / abs(prev_gex)
+                if pct_change > 0.50:
+                    signal_trigger = 'magnitude_shift'
+                    raw_confidence = 70
+                    if current_gex < prev_gex:
+                        direction = 'long'
+                        option_type = 'put'
+                        notes = f'GEX dropped {pct_change:.0%} ({prev_gex:.2f}B → {current_gex:.2f}B). Dealer support weakening.'
+                    else:
+                        direction = 'long'
+                        option_type = 'call'
+                        notes = f'GEX surged {pct_change:.0%} ({prev_gex:.2f}B → {current_gex:.2f}B). Dealer support strengthening.'
+                    tags.append('magnitude_shift')
+
+            # Trigger 4: Wall proximity (price within 1.0% of call/put wall)
+            if not signal_trigger and current_price > 0:
+                if call_wall and call_wall > 0:
+                    pct_from_call = abs(current_price - call_wall) / current_price
+                    if pct_from_call < 0.01:
+                        signal_trigger = 'wall_proximity'
+                        raw_confidence = 60
+                        direction = 'short'
+                        option_type = 'call'
+                        notes = f'Price near call wall ${call_wall:.0f} ({pct_from_call:.1%} away). Dealer resistance — fade the move.'
+                        tags.append('call_wall_proximity')
+                if not signal_trigger and put_wall and put_wall > 0:
+                    pct_from_put = abs(current_price - put_wall) / current_price
+                    if pct_from_put < 0.01:
+                        signal_trigger = 'wall_proximity'
+                        raw_confidence = 60
+                        direction = 'long'
+                        option_type = 'call'
+                        notes = f'Price near put wall ${put_wall:.0f} ({pct_from_put:.1%} away). Dealer support — bounce expected.'
+                        tags.append('put_wall_proximity')
+
+            if not signal_trigger or not direction:
                 return None
 
-            flip_type = f'{prev_regime}_to_{current_regime}'
-            raw_confidence = regime_data.get('confidence', 0) * 100
             confidence = self._adjust_confidence(raw_confidence, 'gex_flip')
-
-            # Determine trade direction
-            if current_regime == 'volatile':
-                direction = 'long'
-                option_type = 'put'
-                notes = f'GEX flipped negative ({flip_type}). Bearish setup.'
-            elif current_regime == 'pinned':
-                direction = 'long'
-                option_type = 'call'
-                notes = f'GEX flipped positive ({flip_type}). Bullish setup.'
-            else:
-                return None  # Transitional not actionable
-
             dte_range = [30, 45]
-            current_price = regime_data.get('current_price', 0)
 
             return {
                 'signal_id': f'SIG-{date.today().strftime("%Y%m%d")}-GEX-{ticker}',
@@ -220,13 +432,17 @@ class SignalEngine:
                 'underlying_price': current_price,
                 'delta_target': 0.40,
                 'dte_range': dte_range,
-                'tags': ['gex_flip', flip_type],
+                'tags': tags,
                 'notes': notes,
                 'regime_data': {
                     'regime': current_regime,
                     'prev_regime': prev_regime,
                     'gex_score': regime_data.get('regime_score'),
-                    'gex_billions': regime_data.get('gex_billions'),
+                    'gex_billions': current_gex,
+                    'prev_gex_billions': prev_gex,
+                    'call_wall': call_wall,
+                    'put_wall': put_wall,
+                    'signal_trigger': signal_trigger,
                 },
             }
         except Exception as e:
@@ -246,32 +462,35 @@ class SignalEngine:
                 return None
 
             current = combined.get('combined_regime', 'neutral_transitional')
-            prev = _prev_regimes.get(ticker, {})
+            prev = self._prev_regimes.get(ticker, {})
             prev_combined = prev.get('combined_regime', current)
 
-            _prev_regimes.setdefault(ticker, {})['combined_regime'] = current
+            self._prev_regimes.setdefault(ticker, {})['combined_regime'] = current
 
             if prev_combined == current:
                 return None
 
             risk_level = combined.get('risk_level', 'moderate')
-            current_price = combined.get('current_price', 0)
+            current_price = self._get_reliable_price(ticker, combined.get('current_price', 0))
 
             # Only act on significant regime changes
             actionable = {
                 'opportunity': ('long', 'call', 85),
                 'danger': ('long', 'put', 80),
-                'high_risk': ('long', 'put', 70),
-                'melt_up': ('long', 'call', 65),
+                'high_risk': ('long', 'put', 75),
+                'melt_up': ('long', 'call', 70),
+                'volatile': ('long', 'put', 65),
+                'neutral_volatile': ('long', 'put', 60),
+                'pinned': ('short', 'call', 65),  # Sell premium in pinned regime
             }
 
             if current not in actionable:
                 return None
 
             direction, option_type, base_confidence = actionable[current]
-            # Scale by position_multiplier
+            # Scale by position_multiplier — use min 0.7 so signals can clear min_confidence
             multiplier = combined.get('position_multiplier', 0.5)
-            raw_confidence = base_confidence * max(multiplier, 0.3)
+            raw_confidence = base_confidence * max(multiplier, 0.7)
             confidence = self._adjust_confidence(raw_confidence, 'regime_shift')
 
             return {
@@ -306,14 +525,23 @@ class SignalEngine:
 
     async def _check_macro_event(self, ticker: str) -> Optional[dict]:
         """Check for major macro event within 3 days (straddle play)."""
+        self._last_macro_debug = {}
         try:
             from src.data.tastytrade_provider import get_gex_regime_tastytrade
             regime = await get_gex_regime_tastytrade(ticker)
-            current_price = regime.get('current_price', 0) if regime and 'error' not in regime else 0
+            gex_price = regime.get('current_price', 0) if regime and 'error' not in regime else 0
+            current_price = self._get_reliable_price(ticker, gex_price)
+
+            self._last_macro_debug['price'] = current_price
+            self._last_macro_debug['gex_price'] = gex_price
+            self._last_macro_debug['regime_ok'] = regime is not None and 'error' not in (regime or {})
 
             # Check upcoming events
             events = self._get_upcoming_events()
+            self._last_macro_debug['events_found'] = len(events) if events else 0
+            self._last_macro_debug['events'] = [{'name': e.get('name'), 'days': e.get('days_until'), 'sev': e.get('severity')} for e in (events or [])]
             if not events:
+                self._last_macro_debug['reason'] = 'no_events_generated'
                 return None
 
             # Find most significant event within 3 days
@@ -327,6 +555,13 @@ class SignalEngine:
                     best_severity = severity
 
             if not best_event or best_severity < 3:
+                self._last_macro_debug['reason'] = f'no_event_within_3d_sev3+ (best_sev={best_severity})'
+                return None
+
+            # Require valid price — skip signal if API failed
+            if current_price <= 0:
+                self._last_macro_debug['reason'] = 'no_price'
+                logger.warning(f"Skipping macro_event signal for {ticker}: no valid price data")
                 return None
 
             # Vol expansion play - buy straddle before event
@@ -358,38 +593,49 @@ class SignalEngine:
     # -------------------------------------------------------------------------
 
     async def _check_iv_reversion(self, ticker: str) -> Optional[dict]:
-        """Check IV Rank for mean reversion signals."""
+        """Check IV Rank for mean reversion signals using per-ticker rolling history."""
         try:
             from src.data.tastytrade_provider import get_gex_regime_tastytrade
             regime = await get_gex_regime_tastytrade(ticker)
             if not regime or 'error' in regime:
                 return None
 
-            current_price = regime.get('current_price', 0)
+            current_price = self._get_reliable_price(ticker, regime.get('current_price', 0))
 
-            # Try to get IV data from options analysis
-            from src.data.tastytrade_provider import get_options_with_greeks_tastytrade
-            chain = await get_options_with_greeks_tastytrade(ticker)
-            if not chain:
-                return None
+            # Per-ticker IV Rank using rolling 20-day+ history
+            from src.data.tastytrade_provider import get_iv_rank_tastytrade
+            iv_result = await get_iv_rank_tastytrade(ticker, volume_path=self.volume_path)
+            iv_rank = iv_result.get('iv_rank', 50)
+            atm_iv = iv_result.get('atm_iv')
+            risk_reversal = None
+            put_25d = iv_result.get('put_25d_iv')
+            call_25d = iv_result.get('call_25d_iv')
+            if put_25d and call_25d:
+                risk_reversal = round(put_25d - call_25d, 4)
 
-            iv_rank = chain.get('iv_rank', 50)
-
-            if iv_rank > 80:
+            if iv_rank > 70:
                 # High IV - sell premium (credit spread)
                 direction = 'short'
                 option_type = 'call'
                 delta_target = 0.16
-                raw_conf = min(90, 60 + (iv_rank - 80))
+                # Scale confidence: 70-80 range gets 55-65, >80 gets 65-90
+                if iv_rank > 80:
+                    raw_conf = min(90, 65 + (iv_rank - 80))
+                else:
+                    raw_conf = min(65, 55 + (iv_rank - 70))
                 confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Sell premium - credit spread setup.'
                 tags = ['iv_reversion', 'high_iv', 'sell_premium']
-            elif iv_rank < 20:
+            elif iv_rank < 30:
                 # Low IV - buy premium (debit spread)
                 direction = 'long'
                 option_type = 'call'
                 delta_target = 0.35
-                raw_conf = min(85, 55 + (20 - iv_rank))
+                # Scale confidence: 20-30 range gets 50-60, <20 gets 60-85
+                if iv_rank < 20:
+                    raw_conf = min(85, 60 + (20 - iv_rank))
+                else:
+                    raw_conf = min(60, 50 + (30 - iv_rank))
                 confidence = self._adjust_confidence(raw_conf, 'iv_reversion')
                 notes = f'IV Rank at {iv_rank}%. Buy premium - debit spread setup.'
                 tags = ['iv_reversion', 'low_iv', 'buy_premium']
@@ -412,6 +658,13 @@ class SignalEngine:
                 'notes': notes,
                 'iv_data': {
                     'iv_rank': iv_rank,
+                    'atm_iv': atm_iv,
+                    'history_length': iv_result.get('history_length', 0),
+                    'percentile_method': iv_result.get('percentile_method', 'unknown'),
+                    'risk_reversal': risk_reversal,
+                    'put_25d_iv': put_25d,
+                    'call_25d_iv': call_25d,
+                    'skew_ratio': iv_result.get('skew_ratio'),
                 },
             }
         except Exception as e:

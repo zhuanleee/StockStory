@@ -121,6 +121,14 @@ class PaperEngine:
             self.tier_connector = None
             self.ab_engine = None
 
+        # Auto-backfill factor scores for trades that predate the scoring code
+        try:
+            backfilled = self.journal.backfill_factor_scores()
+            if backfilled:
+                logger.info(f"Auto-backfilled {backfilled} trades with factor scores")
+        except Exception as e:
+            logger.warning(f"Factor score backfill failed: {e}")
+
     def reload_config(self):
         self.config = load_config(self.volume_path)
         self.risk_manager.reload()
@@ -153,8 +161,39 @@ class PaperEngine:
 
         # Unrealized P&L from open trades (requires live marks)
         unrealized_pnl = 0
+
+        # Build OCC symbols from journal trades' leg data
+        all_occ_needed = []
+        for trade in open_trades:
+            if trade.get('is_multi_leg') and trade.get('legs'):
+                for leg in trade['legs']:
+                    occ = build_occ_symbol(trade['ticker'], leg['expiration'],
+                                           leg['strike'], leg['option_type'])
+                    all_occ_needed.append(occ)
+            else:
+                occ = trade.get('occ_symbol') or build_occ_symbol(
+                    trade['ticker'], trade['expiration'],
+                    trade['strike'], trade['option_type'])
+                all_occ_needed.append(occ)
+
+        # Fetch live marks from prod session (works even when cert sandbox is reset)
+        live_marks = {}
+        if all_occ_needed:
+            live_marks = await self._fetch_live_marks(all_occ_needed)
+
+        # Also try cert positions as secondary source
         positions = await self.get_positions()
         pos_map = {p['symbol']: p for p in positions}
+
+        def _get_mark(occ_symbol: str) -> float:
+            """Get mark from live marks (prod) or cert positions, whichever is available."""
+            if occ_symbol in live_marks and live_marks[occ_symbol] > 0:
+                return live_marks[occ_symbol]
+            pos = pos_map.get(occ_symbol)
+            if pos:
+                return pos.get('mark', 0) or pos.get('close_price', 0)
+            return 0
+
         for trade in open_trades:
             entry = trade.get('entry_price', 0)
             qty = trade.get('quantity', 1)
@@ -165,9 +204,8 @@ class PaperEngine:
                 for leg in trade['legs']:
                     occ = build_occ_symbol(trade['ticker'], leg['expiration'],
                                            leg['strike'], leg['option_type'])
-                    lp = pos_map.get(occ)
-                    if lp:
-                        lm = lp.get('mark', 0) or lp.get('close_price', 0)
+                    lm = _get_mark(occ)
+                    if lm > 0:
                         if leg['action'] == 'SELL':
                             net_mark += lm
                         else:
@@ -182,14 +220,12 @@ class PaperEngine:
                     trade['ticker'], trade['expiration'],
                     trade['strike'], trade['option_type']
                 )
-                pos = pos_map.get(occ)
-                if pos:
-                    mark = pos.get('mark', 0) or pos.get('close_price', 0)
-                    if mark > 0:
-                        if trade.get('direction') == 'long':
-                            unrealized_pnl += (mark - entry) * qty * 100
-                        else:
-                            unrealized_pnl += (entry - mark) * qty * 100
+                mark = _get_mark(occ)
+                if mark > 0:
+                    if trade.get('direction') == 'long':
+                        unrealized_pnl += (mark - entry) * qty * 100
+                    else:
+                        unrealized_pnl += (entry - mark) * qty * 100
 
         # Open trade premiums committed (credits received or debits paid)
         open_premium_committed = sum(
@@ -329,6 +365,36 @@ class PaperEngine:
         except Exception as e:
             logger.warning(f"Live betas fetch failed: {e}")
             return dict(_live_betas_cache)
+
+    def _compute_factor_scores(self, signal: dict, regime_overrides: dict = None) -> dict:
+        """Compute entry factor scores from signal data + optional regime overrides.
+
+        Called by all execution paths (smart single-leg, naive single-leg, multi-leg)
+        so Thompson Sampling and adaptive exits always have factor data to learn from.
+        """
+        rd = regime_overrides or {}
+        sig_regime = signal.get('regime_data', {})
+
+        # Extract regime fields: prefer overrides (multi-leg has richer data), fallback to signal
+        iv_data = signal.get('iv_data', {})
+        iv_rank = rd.get('iv_rank', iv_data.get('iv_rank', 50))
+        vrp = rd.get('vrp', (iv_rank - 30) / 10)
+        gex_regime = rd.get('gex_regime',
+                            sig_regime.get('regime',
+                                           sig_regime.get('gex_regime', 'transitional')))
+        flow_toxicity = rd.get('flow_toxicity', 0.3)
+        skew_ratio = rd.get('skew_ratio', 1.0)
+        real_structure = rd.get('term_structure', 'contango')
+
+        return {
+            'dealer_flow': max(0, min(100, 50 + vrp * 10)),
+            'squeeze': max(0, min(100, 80 if gex_regime == 'pinned' else 40 if gex_regime == 'volatile' else 55)),
+            'smart_money': max(0, min(100, round((1 - flow_toxicity) * 80))),
+            'price_vs_maxpain': 50,
+            'skew': max(0, min(100, round(skew_ratio * 50))),
+            'term': max(0, min(100, 70 if real_structure == 'contango' else 30)),
+            'price_vs_walls': 50,
+        }
 
     async def get_positions(self) -> List[Dict]:
         """Get open positions from TT cert with live marks."""
@@ -571,6 +637,7 @@ class PaperEngine:
 
             signal['entry_price'] = fill_price or selected['price']
             signal['occ_symbol'] = occ_symbol
+            signal['entry_factor_scores'] = self._compute_factor_scores(signal)
 
             trade = self.journal.record_trade(
                 signal,
@@ -650,6 +717,7 @@ class PaperEngine:
 
             signal['entry_price'] = fill_price or signal.get('estimated_premium', 0)
             signal['occ_symbol'] = occ_symbol
+            signal['entry_factor_scores'] = self._compute_factor_scores(signal)
 
             trade = self.journal.record_trade(
                 signal,
@@ -741,6 +809,14 @@ class PaperEngine:
             if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
                 skew_ratio = skew_data['skew_ratio']
 
+            # Compute risk reversal from skew data
+            risk_reversal = 0
+            if isinstance(skew_data, dict):
+                p25 = skew_data.get('put_25d_iv')
+                c25 = skew_data.get('call_25d_iv')
+                if p25 and c25:
+                    risk_reversal = round(float(p25) - float(c25), 4)
+
             # Re-validate strategy with real data
             real_regime_state = {
                 'vrp': vrp,
@@ -753,6 +829,7 @@ class PaperEngine:
                 'iv_rank': iv_rank,
                 'vanna_flow': 0.0,
                 'macro_event_days': signal.get('event_data', {}).get('days_until', 99),
+                'risk_reversal': risk_reversal,
             }
 
             # Re-run strategy selection with real data to verify recommendation still holds
@@ -874,17 +951,15 @@ class PaperEngine:
                 'flow_toxicity': round(flow_toxicity, 3),
             }
 
-            # Capture factor scores for bandit learning
-            # Map available regime data to composite factor scores (0-100 scale)
-            signal['entry_factor_scores'] = {
-                'dealer_flow': max(0, min(100, 50 + vrp * 10)),  # VRP proxy
-                'squeeze': max(0, min(100, 80 if gex_regime == 'pinned' else 40 if gex_regime == 'volatile' else 55)),
-                'smart_money': max(0, min(100, round((1 - flow_toxicity) * 80))),
-                'price_vs_maxpain': 50,  # neutral default
-                'skew': max(0, min(100, round(skew_ratio * 50))),
-                'term': max(0, min(100, 70 if real_structure == 'contango' else 30)),
-                'price_vs_walls': 50,  # neutral default
-            }
+            # Capture factor scores for bandit learning (using rich regime data)
+            signal['entry_factor_scores'] = self._compute_factor_scores(signal, {
+                'vrp': vrp,
+                'gex_regime': gex_regime,
+                'iv_rank': iv_rank,
+                'flow_toxicity': flow_toxicity,
+                'skew_ratio': skew_ratio,
+                'term_structure': real_structure,
+            })
 
             trade = self.journal.record_trade(
                 signal,
@@ -954,6 +1029,21 @@ class PaperEngine:
             fill_price = 0
             if hasattr(response, 'order') and hasattr(response.order, 'price') and response.order.price:
                 fill_price = float(response.order.price)
+
+            # Reassess exit_reason based on actual fill P&L
+            if fill_price > 0 and reason in ('stop_loss', 'take_profit'):
+                entry = trade.get('entry_price', 0)
+                if entry > 0:
+                    if trade['direction'] == 'long':
+                        actual_pnl = fill_price - entry
+                    else:
+                        actual_pnl = entry - fill_price
+                    if actual_pnl > 0 and reason == 'stop_loss':
+                        logger.info(f"Exit reassessed: stop_loss → take_profit (fill ${fill_price:.2f})")
+                        reason = 'take_profit'
+                    elif actual_pnl < 0 and reason == 'take_profit':
+                        logger.info(f"Exit reassessed: take_profit → stop_loss (fill ${fill_price:.2f})")
+                        reason = 'stop_loss'
 
             closed = self.journal.close_trade(trade_id, fill_price, reason)
 
@@ -1028,11 +1118,41 @@ class PaperEngine:
                     self._update_adaptive_systems(closed)
                 return {'ok': True, 'trade': closed, 'multi_leg': True, 'note': 'no sandbox position'}
 
+            # Compute limit price from live marks for proper fills
+            close_price = Decimal('0.01')  # minimum fallback
+            try:
+                occ_symbols = []
+                for leg_def in trade['legs']:
+                    occ = build_occ_symbol(
+                        trade['ticker'], leg_def['expiration'],
+                        leg_def['strike'], leg_def['option_type']
+                    )
+                    occ_symbols.append((occ, leg_def['action']))
+                live_marks = await self._fetch_live_marks([s[0] for s in occ_symbols])
+                if live_marks:
+                    # Net debit to close: sum of buy-to-close legs minus sell-to-close legs
+                    net_debit = Decimal('0')
+                    for occ, orig_action in occ_symbols:
+                        mark = Decimal(str(live_marks.get(occ, 0)))
+                        if orig_action == 'SELL':
+                            # We're buying back this leg
+                            net_debit += mark
+                        else:
+                            # We're selling this leg
+                            net_debit -= mark
+                    # Add 20% buffer to ensure fill, minimum $0.01
+                    if net_debit > 0:
+                        close_price = max(Decimal('0.01'), (net_debit * Decimal('1.20')).quantize(Decimal('0.01')))
+                    else:
+                        close_price = Decimal('0.01')
+            except Exception as e:
+                logger.warning(f"Could not compute close price from marks: {e}")
+
             # Multi-leg close orders must be Limit
             order = NewOrder(
                 time_in_force=OrderTimeInForce.DAY,
                 order_type=OrderType.LIMIT,
-                price=Decimal('0.01'),  # Closing at minimal price
+                price=close_price,
                 legs=tt_legs,
             )
 
@@ -1043,6 +1163,19 @@ class PaperEngine:
                 fill_price = float(response.order.price)
                 # For closing orders: negative means debit paid to close
                 exit_net_premium = -fill_price  # closing credit spreads costs money
+
+            # Reassess exit_reason based on actual fill P&L
+            # For credit spreads: P&L = entry_credit + exit_net_premium
+            # If profitable close was labeled 'stop_loss', correct to 'take_profit'
+            if exit_net_premium is not None and reason in ('stop_loss', 'take_profit'):
+                entry_net = trade.get('net_premium', 0)
+                actual_pnl = entry_net + exit_net_premium
+                if actual_pnl > 0 and reason == 'stop_loss':
+                    logger.info(f"Exit reassessed: stop_loss → take_profit (PnL ${actual_pnl:.4f} credit)")
+                    reason = 'take_profit'
+                elif actual_pnl < 0 and reason == 'take_profit':
+                    logger.info(f"Exit reassessed: take_profit → stop_loss (PnL -${abs(actual_pnl):.4f})")
+                    reason = 'stop_loss'
 
             closed = self.journal.close_trade(
                 trade_id, fill_price, reason,
@@ -1056,7 +1189,13 @@ class PaperEngine:
 
         except Exception as e:
             logger.error(f"Multi-leg close error: {e}")
-            closed = self.journal.close_trade(trade_id, 0, f'{reason}_error')
+            # Use computed close_price for P&L instead of 0 when order fails
+            est_price = float(close_price) if close_price > Decimal('0.01') else 0
+            est_net = -est_price if est_price > 0 else None
+            closed = self.journal.close_trade(
+                trade_id, est_price, f'{reason}_error',
+                exit_net_premium=est_net,
+            )
             if closed:
                 self._update_adaptive_systems(closed)
             return {'ok': False, 'error': str(e), 'trade': closed}
@@ -1201,6 +1340,33 @@ class PaperEngine:
             if not exit_reason and dte <= time_exit_dte:
                 exit_reason = 'time_exit'
 
+            # ---- Greeks-based exits ----
+
+            # Exit: 50% Max Profit for credit spreads
+            if not exit_reason and trade_has_marks and is_multi_leg:
+                max_profit = trade.get('max_profit', 0)
+                if max_profit and max_profit > 0:
+                    # For credit spreads: realized profit based on PnL%
+                    # pnl_pct is already (credit - cost_to_close) / credit * 100
+                    # So pnl_pct >= 50 means we've captured 50% of max credit
+                    if pnl_pct >= 50:
+                        exit_reason = 'fifty_pct_max_profit'
+
+            # Exit: Theta Acceleration Zone
+            # Short premium with DTE <= 21 and profit >= 30% — gamma risk spikes
+            if not exit_reason and trade_has_marks and dte <= 21 and pnl_pct >= 30:
+                strategy = trade.get('strategy', '')
+                is_short_premium = (
+                    trade.get('direction') == 'short' or
+                    'credit' in strategy.lower() or
+                    'iron' in strategy.lower() or
+                    'premium harvest' in strategy.lower() or
+                    'condor' in strategy.lower() or
+                    'butterfly' in strategy.lower()
+                )
+                if is_short_premium:
+                    exit_reason = 'theta_acceleration'
+
             # Phase 3c: Edge-deterioration exit
             # If in profit and edge has collapsed, take profits early
             if not exit_reason and trade_has_marks and pnl_pct > 10 and self.edge_engine:
@@ -1287,9 +1453,19 @@ class PaperEngine:
         if self.adaptive_exits:
             results['adaptive_exits'] = self.adaptive_exits.learn_from_trades(closed)
 
-        # Note: adaptive_weights updates incrementally per trade, not bulk
+        # Replay closed trades through Thompson Sampling (reset state first)
         if self.adaptive_weights:
+            self.adaptive_weights._cache = None
+            if self.adaptive_weights.weights_file.exists():
+                self.adaptive_weights.weights_file.unlink()
+            weight_updates = 0
+            for trade in closed:
+                factor_scores = trade.get('entry_factor_scores', {})
+                if factor_scores and trade.get('pnl_dollars') is not None:
+                    self.adaptive_weights.update_from_trade(trade, factor_scores)
+                    weight_updates += 1
             results['adaptive_weights'] = self.adaptive_weights.get_stats()
+            results['adaptive_weights']['trades_replayed'] = weight_updates
 
         return results
 
@@ -1364,6 +1540,14 @@ class PaperEngine:
             if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
                 skew_ratio = skew_data['skew_ratio']
 
+            # Compute risk reversal for edge scoring
+            risk_reversal = 0
+            if isinstance(skew_data, dict):
+                p25 = skew_data.get('put_25d_iv')
+                c25 = skew_data.get('call_25d_iv')
+                if p25 and c25:
+                    risk_reversal = round(float(p25) - float(c25), 4)
+
             edge = self.edge_engine.compute_edge(
                 composite_score=50,
                 gex_regime=gex_regime,
@@ -1375,6 +1559,7 @@ class PaperEngine:
                 adaptive_weights=self.adaptive_weights.get_weights() if self.adaptive_weights else {},
                 term_structure=real_structure,
                 skew_ratio=skew_ratio,
+                risk_reversal=risk_reversal,
             )
 
             edge['ticker'] = ticker
@@ -1431,6 +1616,14 @@ class PaperEngine:
             if isinstance(skew_data, dict) and skew_data.get('skew_ratio'):
                 skew_ratio = skew_data['skew_ratio']
 
+            # Compute risk reversal for strategy preview
+            risk_reversal_preview = 0
+            if isinstance(skew_data, dict):
+                p25 = skew_data.get('put_25d_iv')
+                c25 = skew_data.get('call_25d_iv')
+                if p25 and c25:
+                    risk_reversal_preview = round(float(p25) - float(c25), 4)
+
             regime_state = {
                 'vrp': vrp,
                 'gex_regime': gex_regime,
@@ -1442,6 +1635,7 @@ class PaperEngine:
                 'iv_rank': iv_rank,
                 'vanna_flow': 0.0,
                 'macro_event_days': 99,
+                'risk_reversal': risk_reversal_preview,
             }
 
             strategies = self.select_strategy(regime_state)

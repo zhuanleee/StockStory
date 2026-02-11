@@ -29,7 +29,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
     .pip_install("fastapi[standard]")
-    .run_commands("echo 'Build 2026-02-05-v34 - Provider comparison with error handling'")
+    .run_commands("echo 'Build 2026-02-10-v35 - Paper trade timezone fix + signal validation'")
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("config", remote_path="/root/config")
     .add_local_dir("utils", remote_path="/root/utils")
@@ -51,7 +51,7 @@ image = (
         modal.Secret.from_name("Tastytrade_Cert"),
     ],
     timeout=120,
-    schedule=modal.Cron("*/5 9-16 * * 1-5"),  # Every 5 min, 9am-4pm ET, Mon-Fri
+    schedule=modal.Cron("*/5 9-16 * * 1-5", timezone="America/New_York"),  # Every 5 min, 9am-4pm ET, Mon-Fri
 )
 async def check_signals_cron():
     """Automated signal check and trade execution for paper trading."""
@@ -89,6 +89,8 @@ async def check_signals_cron():
                 result = await engine.execute_signal(sig)
                 if result.get('ok'):
                     logger.info(f"Auto-trade: {sig['ticker']} {sig['signal_type']} executed")
+                else:
+                    logger.warning(f"Auto-trade FAILED: {sig['ticker']} {sig['signal_type']} — {result.get('error', 'unknown')}")
         except Exception as e:
             logger.warning(f"Cron signal check error for {ticker}: {e}")
 
@@ -2597,6 +2599,18 @@ Be specific with price levels and data points. Keep it actionable for traders.""
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @web_app.get("/options/vrp", tags=["Ratio Spread"])
+    async def options_vrp_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """VRP Analysis (query param version for futures support)."""
+        try:
+            from src.data.options import get_vrp_analysis
+            result = await get_vrp_analysis(ticker.upper(), expiration)
+            if 'error' in result:
+                return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+            return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @web_app.get("/options/skew/{ticker_symbol}", tags=["Ratio Spread"])
     def options_skew(ticker_symbol: str, expiration: str = Query(None)):
         """
@@ -2635,6 +2649,26 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             if 'error' in result:
                 return {"ok": False, "error": result['error'], "ticker": ticker_symbol.upper()}
             return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.get("/options/expected-move", tags=["Ratio Spread"])
+    async def options_expected_move_query(ticker: str = Query(..., description="Ticker. For futures use /ES, /NQ, etc."), expiration: str = Query(None)):
+        """Expected Move (query param version for futures support)."""
+        try:
+            from src.data.tastytrade_provider import is_futures_ticker
+            if is_futures_ticker(ticker):
+                from src.data.tastytrade_provider import get_expected_move_tastytrade
+                result = await get_expected_move_tastytrade(ticker)
+                if not result:
+                    return {"ok": False, "error": "Could not calculate expected move for futures", "ticker": ticker.upper()}
+                return {"ok": True, "data": result}
+            else:
+                from src.data.options import get_expected_move
+                result = get_expected_move(ticker.upper(), expiration)
+                if 'error' in result:
+                    return {"ok": False, "error": result['error'], "ticker": ticker.upper()}
+                return {"ok": True, "data": result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -3747,14 +3781,36 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
     @web_app.get("/paper/positions", tags=["Paper Trading"])
     async def paper_positions():
-        """Open positions with live marks from TT cert."""
+        """Open positions with live marks from TT cert + prod fallback."""
         try:
             engine = _get_paper_engine()
             positions = await engine.get_positions()
             journal_trades = engine.journal.get_open_trades()
+
+            # When cert sandbox resets, positions is empty but journal has open trades.
+            # Fetch live marks from prod for all OCC symbols in journal trades.
+            marks = {}
+            if journal_trades:
+                from src.trading.paper.paper_engine import build_occ_symbol
+                occ_symbols = []
+                for trade in journal_trades:
+                    if trade.get('is_multi_leg') and trade.get('legs'):
+                        for leg in trade['legs']:
+                            occ = build_occ_symbol(trade['ticker'], leg['expiration'],
+                                                   leg['strike'], leg['option_type'])
+                            occ_symbols.append(occ)
+                    else:
+                        occ = trade.get('occ_symbol') or build_occ_symbol(
+                            trade['ticker'], trade['expiration'],
+                            trade['strike'], trade['option_type'])
+                        occ_symbols.append(occ)
+                if occ_symbols:
+                    marks = await engine._fetch_live_marks(occ_symbols)
+
             return {"ok": True, "data": {
                 "positions": positions,
                 "journal_trades": journal_trades,
+                "marks": marks,
             }}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -3929,7 +3985,7 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             return {"ok": False, "error": str(e)}
 
     @web_app.post("/paper/check-signals", tags=["Paper Trading"])
-    async def paper_check_signals():
+    async def paper_check_signals(debug: bool = Query(False, description="Include debug info for each signal evaluator")):
         """Manually trigger signal check and optionally execute."""
         try:
             engine = _get_paper_engine()
@@ -3939,10 +3995,22 @@ Be specific with price levels and data points. Keep it actionable for traders.""
 
             all_signals = []
             executed = []
+            failed = []
+            debug_by_ticker = {} if debug else None
             for ticker in config.get('watched_tickers', ['SPY', 'QQQ']):
                 try:
-                    signals = await signal_engine.evaluate_signals(ticker, config)
+                    signals = await signal_engine.evaluate_signals(ticker, config, debug=debug)
+                    # Separate debug-only entries from real signals
+                    real_signals = []
                     for sig in signals:
+                        if sig.get('_debug_only'):
+                            if debug:
+                                debug_by_ticker[ticker] = sig.get('_debug', {})
+                        else:
+                            if debug and '_debug' in sig:
+                                debug_by_ticker[ticker] = sig.pop('_debug', {})
+                            real_signals.append(sig)
+                    for sig in real_signals:
                         engine.journal.record_signal(sig)
                         all_signals.append(sig)
                         # Auto-execute if enabled
@@ -3952,19 +4020,33 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                             result = await engine.execute_signal(sig)
                             if result.get('ok'):
                                 executed.append(result)
+                            else:
+                                failed.append({
+                                    'ticker': sig.get('ticker'),
+                                    'signal_type': sig.get('signal_type'),
+                                    'error': result.get('error', 'unknown'),
+                                    'strike': sig.get('strike'),
+                                    'underlying_price': sig.get('underlying_price'),
+                                })
                 except Exception as e:
                     logger.warning(f"Signal check error for {ticker}: {e}")
+                    if debug:
+                        debug_by_ticker[ticker] = {'error': str(e)}
 
             # Also check exit conditions
             exits = await engine.check_exit_conditions()
 
             volume.commit()
-            return {"ok": True, "data": {
+            result_data = {
                 "signals": all_signals,
                 "executed": executed,
+                "failed": failed,
                 "exits": exits,
                 "checked_tickers": config.get('watched_tickers', []),
-            }}
+            }
+            if debug and debug_by_ticker:
+                result_data["debug"] = debug_by_ticker
+            return {"ok": True, "data": result_data}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -3976,6 +4058,18 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             result = engine.reset()
             volume.commit()
             return {"ok": True, "data": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @web_app.post("/paper/backfill-factor-scores", tags=["Paper Trading"])
+    def paper_backfill_factor_scores():
+        """Backfill entry_factor_scores for trades missing them."""
+        try:
+            engine = _get_paper_engine()
+            count = engine.journal.backfill_factor_scores()
+            if count > 0:
+                volume.commit()
+            return {"ok": True, "data": {"backfilled": count}}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
