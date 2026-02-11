@@ -3479,38 +3479,207 @@ Be specific with price levels and data points. Keep it actionable for traders.""
             logger.error(traceback.format_exc())
             return {"ok": False, "error": str(e)}
 
+    # ===== Institutional Sentiment Engine: Helpers =====
+    import time as _time_mod
+    _sentiment_cache = {}
+
+    def _cache_get(key, ttl=300):
+        entry = _sentiment_cache.get(key)
+        if entry and (_time_mod.time() - entry['ts']) < ttl:
+            return entry['data']
+        return None
+
+    def _cache_set(key, data):
+        _sentiment_cache[key] = {'data': data, 'ts': _time_mod.time()}
+
+    def _rolling_zscore(series, window=63):
+        """Z-score of last value vs rolling window, clipped to +/-3."""
+        import numpy as np
+        s = series.dropna()
+        if len(s) < window + 1:
+            return None
+        recent = s.tail(window + 1)
+        current = float(recent.iloc[-1])
+        historical = recent.iloc[:-1]
+        mu = float(historical.mean())
+        sigma = float(historical.std())
+        if sigma < 1e-8:
+            return 0.0
+        z = (current - mu) / sigma
+        return max(-3.0, min(3.0, z))
+
+    def _zscore_to_signal(z, invert=False):
+        """Map z-score [-3,+3] -> signal [-1,+1] via tanh(z/1.5)."""
+        import math
+        if z is None:
+            return None
+        sig = math.tanh(z / 1.5)
+        return round(-sig if invert else sig, 4)
+
+    def _yang_zhang_rv(ohlc, window=20):
+        """Yang-Zhang realized vol (annualized fraction). Most efficient OHLC estimator."""
+        import numpy as np
+        log_ho = np.log(ohlc['High'] / ohlc['Open'])
+        log_lo = np.log(ohlc['Low'] / ohlc['Open'])
+        log_co = np.log(ohlc['Close'] / ohlc['Open'])
+        log_oc = np.log(ohlc['Open'] / ohlc['Close'].shift(1))
+        rs = log_ho * (log_ho - log_co) + log_lo * (log_lo - log_co)
+        c2o_var = log_oc.rolling(window=window).var()
+        o2c_var = log_co.rolling(window=window).var()
+        rs_var = rs.rolling(window=window).mean()
+        k = 0.34 / (1.34 + (window + 1) / (window - 1))
+        yz_var = c2o_var + k * o2c_var + (1 - k) * rs_var
+        return (yz_var * 252).apply(lambda x: x ** 0.5 if x > 0 else 0).dropna()
+
+    def _confidence_isquared(factors):
+        """
+        I-squared decomposed confidence (meta-analysis approach).
+        Returns {confidence, agreement, strength, directionality}.
+        Additive combination avoids the compression problem of multiplicative.
+        """
+        import math
+        sigs = [f['signal'] for f in factors.values()]
+        wts = [f['weight'] for f in factors.values()]
+        n = len(sigs)
+        if n < 2:
+            return {'confidence': 0, 'agreement': 0, 'strength': 0, 'directionality': 0}
+        W = sum(wts)
+        if W == 0:
+            return {'confidence': 0, 'agreement': 0, 'strength': 0, 'directionality': 0}
+        theta = sum(w * s for w, s in zip(wts, sigs)) / W
+        Q = sum(w * (s - theta) ** 2 for w, s in zip(wts, sigs))
+        df = n - 1
+        I_sq = max(0.0, (Q - df) / Q) if Q > df else 0.0
+        agreement = 1.0 - I_sq
+        strength = sum(w * abs(s) for w, s in zip(wts, sigs)) / W
+        directionality = min(abs(theta), 1.0)
+        ALPHA, BETA, GAMMA = 0.45, 0.30, 0.25
+        raw = ALPHA * agreement + BETA * strength + GAMMA * directionality
+        return {
+            'confidence': round(min(100, raw * 100), 0),
+            'agreement': round(agreement * 100, 1),
+            'strength': round(strength * 100, 1),
+            'directionality': round(directionality * 100, 1),
+        }
+
     @web_app.get("/options/market-sentiment", tags=["Options"])
     def options_market_sentiment():
         """
-        Get overall market options sentiment (SPY, QQQ, VIX options).
+        Institutional-grade 8-factor market sentiment with z-score normalization.
+
+        Z-Score Normalized (63d rolling):
+          VIX Level, VIX Term Structure, VRP (VIX-RV), CBOE SKEW, HY Credit Spread
+        Parameter-Normalized (tanh curves):
+          SPX GEX, SPY P/C Ratio, SPY Put Skew
+
+        Equal weights (12.5% each). I²-based decomposed confidence.
+        Weight redistribution when factors are unavailable.
         """
         try:
+            import math
+            import numpy as np
+            import pandas as pd
+            import yfinance as yf
             from src.analysis.options_flow import get_options_sentiment
-            market_tickers = ['SPY', 'QQQ', 'IWM']
-            sentiment_data = {}
+            from src.data.options import calculate_gex_by_strike, is_index_ticker
 
-            for ticker in market_tickers:
-                try:
-                    sentiment_data[ticker] = get_options_sentiment(ticker)
-                except:
-                    continue
+            # =========================================================
+            # 1. FETCH RAW DATA (with caching for historical series)
+            # =========================================================
 
-            # Calculate aggregate sentiment
-            scores = [s.get('sentiment_score', 50) for s in sentiment_data.values()]
-            avg_score = sum(scores) / len(scores) if scores else 50
-
-            pc_ratios = [s.get('put_call_ratio', 1.0) for s in sentiment_data.values()]
-            avg_pc = sum(pc_ratios) / len(pc_ratios) if pc_ratios else 1.0
-
-            # Get VIX data
+            # --- SPY options data (P/C, skew, IV) ---
+            spy_data = {}
             try:
-                import yfinance as yf
-                vix = yf.Ticker('^VIX')
-                vix_price = vix.info.get('regularMarketPrice', 20)
+                spy_data = get_options_sentiment('SPY')
             except:
+                pass
+
+            # --- SPX institutional GEX ---
+            spx_gex_data = {}
+            spx_gex_value = 0
+            spx_available = False
+            try:
+                spx_result = calculate_gex_by_strike('SPX')
+                if spx_result and not spx_result.get('error'):
+                    spx_gex_value = spx_result.get('total_gex', 0)
+                    spx_available = spx_gex_value != 0
+                    spx_gex_data = {
+                        'total_gex': spx_gex_value,
+                        'current_price': spx_result.get('current_price', 0),
+                        'zero_gamma': spx_result.get('zero_gamma_level'),
+                        'total_call_oi': spx_result.get('total_call_oi', 0),
+                        'total_put_oi': spx_result.get('total_put_oi', 0),
+                    }
+            except Exception as e:
+                print(f"SPX GEX fetch failed: {e}")
+
+            # --- VIX live quote + 1y history (cached 5min) ---
+            vix_price = None
+            vix_hist = _cache_get('vix_hist', ttl=300)
+            try:
+                vix_tk = yf.Ticker('^VIX')
+                vix_price = vix_tk.fast_info.get('lastPrice') or vix_tk.info.get('regularMarketPrice')
+                if vix_hist is None:
+                    vix_hist = vix_tk.history(period='1y')['Close'].dropna()
+                    _cache_set('vix_hist', vix_hist)
+            except Exception as e:
+                print(f"VIX fetch error: {e}")
+            if not vix_price or vix_price <= 0:
                 vix_price = 20
 
-            # Get 0DTE volume (SPY options expiring today)
+            # --- VIX3M live + 1y history (cached 5min) ---
+            vix3m_price = None
+            vix3m_hist = _cache_get('vix3m_hist', ttl=300)
+            try:
+                vix3m_tk = yf.Ticker('^VIX3M')
+                vix3m_price = vix3m_tk.fast_info.get('lastPrice') or vix3m_tk.info.get('regularMarketPrice')
+                if vix3m_hist is None:
+                    vix3m_hist = vix3m_tk.history(period='1y')['Close'].dropna()
+                    _cache_set('vix3m_hist', vix3m_hist)
+            except Exception as e:
+                print(f"VIX3M fetch error: {e}")
+            if vix3m_price and vix3m_price <= 0:
+                vix3m_price = None
+
+            # --- CBOE SKEW Index (cached 5min) ---
+            skew_idx_price = None
+            skew_hist = _cache_get('skew_hist', ttl=300)
+            try:
+                skew_tk = yf.Ticker('^SKEW')
+                skew_idx_price = skew_tk.fast_info.get('lastPrice') or skew_tk.info.get('regularMarketPrice')
+                if skew_hist is None:
+                    skew_hist = skew_tk.history(period='1y')['Close'].dropna()
+                    _cache_set('skew_hist', skew_hist)
+            except Exception as e:
+                print(f"SKEW fetch error: {e}")
+
+            # --- SPY OHLC for Yang-Zhang RV (cached 5min) ---
+            spy_ohlc = _cache_get('spy_ohlc', ttl=300)
+            if spy_ohlc is None:
+                try:
+                    spy_ohlc = yf.Ticker('SPY').history(period='1y', auto_adjust=True)
+                    _cache_set('spy_ohlc', spy_ohlc)
+                except Exception as e:
+                    print(f"SPY OHLC fetch error: {e}")
+
+            # --- HY OAS from FRED (cached 1 hour) ---
+            hy_oas_val = None
+            hy_oas_hist = _cache_get('hy_oas_hist', ttl=3600)
+            try:
+                from utils.data_providers import FREDProvider
+                if FREDProvider.is_configured() and hy_oas_hist is None:
+                    raw = FREDProvider.get_series('BAMLH0A0HYM2', limit=300)
+                    if raw:
+                        dates = [r['date'] for r in raw if r.get('value') and r['value'] != '.']
+                        vals = [float(r['value']) for r in raw if r.get('value') and r['value'] != '.']
+                        hy_oas_hist = pd.Series(vals, index=pd.to_datetime(dates)).sort_index()
+                        _cache_set('hy_oas_hist', hy_oas_hist)
+                if hy_oas_hist is not None and len(hy_oas_hist) > 0:
+                    hy_oas_val = float(hy_oas_hist.iloc[-1])
+            except Exception as e:
+                print(f"HY OAS fetch error: {e}")
+
+            # --- 0DTE volume ---
             zero_dte_volume = 0
             try:
                 from src.data.polygon_provider import get_options_chain_sync
@@ -3518,26 +3687,252 @@ Be specific with price levels and data points. Keep it actionable for traders.""
                 today = datetime.now().strftime('%Y-%m-%d')
                 spy_0dte = get_options_chain_sync('SPY', expiration_date=today)
                 if spy_0dte:
-                    calls = spy_0dte.get('calls', [])
-                    puts = spy_0dte.get('puts', [])
-                    zero_dte_volume = sum(c.get('volume', 0) for c in calls + puts)
+                    zero_dte_volume = sum(c.get('volume', 0) for c in spy_0dte.get('calls', []) + spy_0dte.get('puts', []))
             except Exception as e:
-                log(f"Error fetching 0DTE volume: {e}")
+                print(f"0DTE volume error: {e}")
+
+            # --- Extract SPY P/C and skew from chain ---
+            spy_skew_obj = spy_data.get('skew', {})
+            spy_skew_ratio = spy_skew_obj.get('skew_ratio', 1.0) if isinstance(spy_skew_obj, dict) else 1.0
+            spy_pc = spy_data.get('put_call_ratio', 1.0)
+            if isinstance(spy_pc, dict):
+                spy_pc = spy_pc.get('volume', 1.0)
+
+            # =========================================================
+            # 2. COMPUTE Z-SCORES FOR HISTORICAL SIGNALS
+            # =========================================================
+
+            # VIX Term Structure ratio history (VIX/VIX3M)
+            vix_ts_ratio = None
+            vix_ts_zhist = None
+            if vix3m_price and vix3m_price > 5 and vix_hist is not None and vix3m_hist is not None:
+                try:
+                    aligned = pd.DataFrame({'vix': vix_hist, 'vix3m': vix3m_hist}).dropna()
+                    if len(aligned) > 70:
+                        vix_ts_zhist = aligned['vix'] / aligned['vix3m']
+                        vix_ts_ratio = vix_price / vix3m_price
+                except:
+                    pass
+
+            # VRP history (VIX - Yang-Zhang RV 20d annualized %)
+            vrp_val = None
+            vrp_hist = None
+            if spy_ohlc is not None and len(spy_ohlc) > 30 and vix_hist is not None:
+                try:
+                    yz_rv = _yang_zhang_rv(spy_ohlc, window=20) * 100  # to %
+                    aligned_vrp = pd.DataFrame({'vix': vix_hist, 'rv': yz_rv}).dropna()
+                    if len(aligned_vrp) > 70:
+                        vrp_hist = aligned_vrp['vix'] - aligned_vrp['rv']
+                        vrp_val = vix_price - float(yz_rv.iloc[-1]) * 100 if len(yz_rv) > 0 else None
+                except Exception as e:
+                    print(f"VRP calc error: {e}")
+
+            # =========================================================
+            # 3. BUILD 8-FACTOR SIGNAL ARRAY
+            # =========================================================
+            raw_factors = {}
+            BASE_W = 0.125  # Equal weight: 1/8 = 12.5%
+
+            # --- Factor 1: VIX Level (z-scored, inverted: high VIX = bearish) ---
+            vix_z = _rolling_zscore(vix_hist, 63) if vix_hist is not None and len(vix_hist) > 70 else None
+            vix_signal = _zscore_to_signal(vix_z, invert=True)
+            raw_factors['vix'] = {
+                'signal': vix_signal,
+                'base_weight': BASE_W,
+                'label': 'VIX',
+                'raw': round(vix_price, 2),
+                'available': vix_signal is not None,
+                'zscore': round(vix_z, 2) if vix_z is not None else None,
+            }
+
+            # --- Factor 2: VIX Term Structure (z-scored, inverted: high ratio = bearish) ---
+            vix_ts_z = _rolling_zscore(vix_ts_zhist, 63) if vix_ts_zhist is not None and len(vix_ts_zhist) > 70 else None
+            vix_ts_signal = _zscore_to_signal(vix_ts_z, invert=True)
+            raw_factors['vix_ts'] = {
+                'signal': vix_ts_signal,
+                'base_weight': BASE_W,
+                'label': 'VIX T.S.',
+                'raw': round(vix_ts_ratio, 3) if vix_ts_ratio is not None else None,
+                'available': vix_ts_signal is not None,
+                'zscore': round(vix_ts_z, 2) if vix_ts_z is not None else None,
+            }
+
+            # --- Factor 3: VRP (z-scored, NOT inverted: high VRP = bullish / fear overdone) ---
+            vrp_z = _rolling_zscore(vrp_hist, 63) if vrp_hist is not None and len(vrp_hist) > 70 else None
+            vrp_signal = _zscore_to_signal(vrp_z, invert=False)
+            raw_factors['vrp'] = {
+                'signal': vrp_signal,
+                'base_weight': BASE_W,
+                'label': 'VRP',
+                'raw': round(vrp_val, 1) if vrp_val is not None else None,
+                'available': vrp_signal is not None,
+                'zscore': round(vrp_z, 2) if vrp_z is not None else None,
+            }
+
+            # --- Factor 4: CBOE SKEW (z-scored, inverted: high SKEW = bearish tail risk) ---
+            skew_z = _rolling_zscore(skew_hist, 63) if skew_hist is not None and len(skew_hist) > 70 else None
+            skew_signal = _zscore_to_signal(skew_z, invert=True)
+            raw_factors['skew_idx'] = {
+                'signal': skew_signal,
+                'base_weight': BASE_W,
+                'label': 'SKEW',
+                'raw': round(skew_idx_price, 1) if skew_idx_price is not None else None,
+                'available': skew_signal is not None,
+                'zscore': round(skew_z, 2) if skew_z is not None else None,
+            }
+
+            # --- Factor 5: HY Credit Spread (z-scored, inverted: wide spread = bearish) ---
+            hy_z = _rolling_zscore(hy_oas_hist, 63) if hy_oas_hist is not None and len(hy_oas_hist) > 70 else None
+            hy_signal = _zscore_to_signal(hy_z, invert=True)
+            raw_factors['hy_oas'] = {
+                'signal': hy_signal,
+                'base_weight': BASE_W,
+                'label': 'HY Spread',
+                'raw': round(hy_oas_val * 100, 0) if hy_oas_val is not None else None,  # bps
+                'available': hy_signal is not None,
+                'zscore': round(hy_z, 2) if hy_z is not None else None,
+            }
+
+            # --- Factor 6: SPX GEX (tanh-normalized, positive = stabilizing = bullish) ---
+            spx_signal = math.tanh(spx_gex_value / 2e9) if spx_available else None
+            raw_factors['spx_gex'] = {
+                'signal': round(spx_signal, 4) if spx_signal is not None else None,
+                'base_weight': BASE_W,
+                'label': 'SPX GEX',
+                'raw': spx_gex_value,
+                'available': spx_available,
+            }
+
+            # --- Factor 7: SPY P/C Ratio (tanh-normalized, inverted: high P/C = bearish) ---
+            pc_signal = round(-math.tanh((spy_pc - 0.85) / 0.25), 4)
+            raw_factors['spy_pc'] = {
+                'signal': pc_signal,
+                'base_weight': BASE_W,
+                'label': 'SPY P/C',
+                'raw': round(spy_pc, 3),
+                'available': True,
+            }
+
+            # --- Factor 8: SPY Put Skew (tanh-normalized, inverted: high skew = bearish) ---
+            skew_avail = spy_skew_ratio > 0 and spy_skew_ratio != 1.0
+            put_skew_signal = round(-math.tanh((spy_skew_ratio - 1.10) / 0.15), 4) if skew_avail else None
+            raw_factors['spy_skew'] = {
+                'signal': put_skew_signal,
+                'base_weight': BASE_W,
+                'label': 'Put Skew',
+                'raw': round(spy_skew_ratio, 3),
+                'available': skew_avail and put_skew_signal is not None,
+            }
+
+            # =========================================================
+            # 4. WEIGHT REDISTRIBUTION FOR UNAVAILABLE FACTORS
+            # =========================================================
+            FACTOR_CATEGORIES = {
+                'vix': 'Volatility', 'vix_ts': 'Volatility', 'vrp': 'Volatility', 'skew_idx': 'Volatility',
+                'spx_gex': 'Flow', 'spy_pc': 'Flow', 'spy_skew': 'Flow',
+                'hy_oas': 'Credit',
+            }
+            available_weight = sum(f['base_weight'] for f in raw_factors.values() if f['available'])
+            factors = {}
+            for key, f in raw_factors.items():
+                if f['available'] and f['signal'] is not None:
+                    adj_weight = f['base_weight'] / available_weight if available_weight > 0 else 0
+                    factors[key] = {
+                        'signal': f['signal'],
+                        'weight': round(adj_weight, 4),
+                        'label': f['label'],
+                        'raw': f['raw'],
+                        'zscore': f.get('zscore'),
+                        'category': FACTOR_CATEGORIES.get(key, 'Other'),
+                    }
+
+            # =========================================================
+            # 5. COMPOSITE SCORE + LABEL
+            # =========================================================
+            weighted_sum = sum(f['signal'] * f['weight'] for f in factors.values())
+            composite_score = round(max(0, min(100, 50 + weighted_sum * 50)), 1)
+
+            if composite_score >= 80: market_label = "Extreme Greed"
+            elif composite_score >= 65: market_label = "Bullish"
+            elif composite_score >= 55: market_label = "Lean Bullish"
+            elif composite_score >= 45: market_label = "Neutral"
+            elif composite_score >= 35: market_label = "Lean Bearish"
+            elif composite_score >= 20: market_label = "Bearish"
+            else: market_label = "Extreme Fear"
+
+            # =========================================================
+            # 6. I-SQUARED DECOMPOSED CONFIDENCE
+            # =========================================================
+            conf = _confidence_isquared(factors)
+            confidence = conf['confidence']
+
+            # =========================================================
+            # 7. ENRICHMENT DATA
+            # =========================================================
+            # IV Percentile (better than IV Rank): % of past 252 days VIX was lower
+            spy_iv_pctl = 50
+            spy_iv_rank = 50
+            if vix_hist is not None and len(vix_hist) >= 252:
+                lookback = vix_hist.tail(253).iloc[:-1]
+                spy_iv_pctl = round(float((lookback < vix_price).mean() * 100), 1)
+                h_min, h_max = float(lookback.min()), float(lookback.max())
+                if h_max > h_min:
+                    spy_iv_rank = round(max(0, min(100, (vix_price - h_min) / (h_max - h_min) * 100)), 1)
+
+            # Yang-Zhang RV for display
+            rv_display = None
+            if spy_ohlc is not None and len(spy_ohlc) > 30:
+                try:
+                    yz = _yang_zhang_rv(spy_ohlc, 20)
+                    if len(yz) > 0:
+                        rv_display = round(float(yz.iloc[-1]) * 100, 1)
+                except:
+                    pass
+
+            spy_gex = spy_data.get('gex', 0)
+            if isinstance(spy_gex, dict):
+                spy_gex = spy_gex.get('total', 0)
+
+            n_available = len(factors)
+            n_total = len(raw_factors)
+            print(f"Sentiment: {composite_score} ({market_label}), {n_available}/{n_total} factors, conf={confidence}%")
+            print(f"  Confidence breakdown: agree={conf['agreement']}% str={conf['strength']}% dir={conf['directionality']}%")
 
             return {
                 "ok": True,
                 "data": {
-                    "spy_put_call_ratio": sentiment_data.get('SPY', {}).get('put_call_ratio', {}).get('volume', 1.0) if isinstance(sentiment_data.get('SPY', {}).get('put_call_ratio'), dict) else sentiment_data.get('SPY', {}).get('put_call_ratio', 1.0),
-                    "put_call_ratio": round(avg_pc, 2),
-                    "total_gex": sum(s.get('gex', 0) if isinstance(s.get('gex'), (int, float)) else s.get('gex', {}).get('total', 0) for s in sentiment_data.values()),
-                    "vix": vix_price,
+                    "market_sentiment_score": composite_score,
+                    "market_label": market_label,
+                    "confidence": confidence,
+                    "confidence_agreement": conf['agreement'],
+                    "confidence_strength": conf['strength'],
+                    "confidence_directionality": conf['directionality'],
+
+                    "factors": factors,
+                    "factors_available": n_available,
+                    "factors_total": n_total,
+
+                    "vix": round(vix_price, 2),
+                    "vix3m": round(vix3m_price, 2) if vix3m_price else None,
+                    "put_call_ratio": round(spy_pc, 3),
+                    "spy_put_call_ratio": round(spy_pc, 3),
+                    "spy_iv_rank": round(spy_iv_rank, 1),
+                    "spy_iv_percentile": round(spy_iv_pctl, 1),
+                    "spy_skew_ratio": round(spy_skew_ratio, 3),
+                    "total_gex": spy_gex,
                     "zero_dte_volume": zero_dte_volume,
-                    "market_sentiment_score": round(avg_score, 1),
-                    "market_label": "Bullish" if avg_score >= 60 else ("Bearish" if avg_score <= 40 else "Neutral"),
-                    "tickers": sentiment_data
+                    "vrp": round(vrp_val, 1) if vrp_val is not None else None,
+                    "realized_vol": rv_display,
+                    "skew_index": round(skew_idx_price, 1) if skew_idx_price is not None else None,
+                    "hy_oas_bps": round(hy_oas_val * 100, 0) if hy_oas_val is not None else None,
+
+                    "spx": spx_gex_data,
+                    "tickers": {'SPY': spy_data}
                 }
             }
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
     # =============================================================================
