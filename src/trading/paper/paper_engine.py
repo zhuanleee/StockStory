@@ -99,6 +99,10 @@ class PaperEngine:
                 StrategySelector, KellyPositionSizer,
                 FlowToxicityAnalyzer, LearningTierConnector,
                 ABTestEngine,
+                # New adaptive intelligence enhancements
+                RegimeAwareWeights, TickerClusterLearner,
+                RegimeTransitionPredictor, ParameterAutoTuner,
+                ReinforcementLearner,
             )
             self.perf_tracker = SignalPerformanceTracker(volume_path)
             self.adaptive_weights = AdaptiveWeights(volume_path)
@@ -109,6 +113,12 @@ class PaperEngine:
             self.flow_analyzer = FlowToxicityAnalyzer()
             self.tier_connector = LearningTierConnector(volume_path)
             self.ab_engine = ABTestEngine(volume_path)
+            # Enhanced adaptive intelligence
+            self.regime_weights = RegimeAwareWeights(volume_path)
+            self.ticker_clusters = TickerClusterLearner(volume_path)
+            self.regime_predictor = RegimeTransitionPredictor(volume_path)
+            self.param_tuner = ParameterAutoTuner(volume_path)
+            self.rl_learner = ReinforcementLearner(volume_path)
         except Exception as e:
             logger.warning(f"Adaptive systems init failed: {e}")
             self.perf_tracker = None
@@ -120,6 +130,11 @@ class PaperEngine:
             self.flow_analyzer = None
             self.tier_connector = None
             self.ab_engine = None
+            self.regime_weights = None
+            self.ticker_clusters = None
+            self.regime_predictor = None
+            self.param_tuner = None
+            self.rl_learner = None
 
         # Auto-backfill factor scores for trades that predate the scoring code
         try:
@@ -1465,6 +1480,40 @@ class PaperEngine:
                     self.ab_engine.record_outcome(ab_test_id, ab_group, closed_trade)
                     logger.info(f"A/B test {ab_test_id} updated ({ab_group})")
 
+            # Enhanced: Regime-aware weights
+            if self.regime_weights and closed_trade:
+                factor_scores = closed_trade.get('entry_factor_scores', {})
+                regime = closed_trade.get('entry_regime', '')
+                if factor_scores and regime:
+                    is_win = (closed_trade.get('pnl_dollars', 0) or 0) > 0
+                    self.regime_weights.update(regime, factor_scores, is_win)
+
+            # Enhanced: Ticker cluster learning
+            if self.ticker_clusters:
+                self.ticker_clusters.update_from_trades(closed_trades)
+
+            # Enhanced: Parameter auto-tuning
+            if self.param_tuner:
+                self.param_tuner.learn_from_trades(closed_trades)
+
+            # Enhanced: RL policy update
+            if self.rl_learner and closed_trade:
+                signal_data = closed_trade.get('signal_data', {})
+                pnl = closed_trade.get('pnl_dollars', 0) or 0
+                premium = abs(closed_trade.get('entry_price', 1)) * 100
+                reward = pnl / max(premium, 100)  # Normalized reward
+                reward = max(-2.0, min(2.0, reward))
+                state_dict = {
+                    'regime': closed_trade.get('entry_regime', 'neutral_transitional'),
+                    'vrp': signal_data.get('vrp', 0),
+                    'toxicity': signal_data.get('flow_toxicity', 0),
+                    'iv_rank': signal_data.get('iv_rank', 50),
+                    'edge_score': closed_trade.get('entry_edge_score', 50),
+                    'dwell_ratio': 0.5,
+                }
+                action = 'enter'  # Was an entry that resulted in this close
+                self.rl_learner.record_episode(state_dict, action, reward)
+
         except Exception as e:
             logger.error(f"Adaptive systems update error: {e}")
 
@@ -1493,6 +1542,13 @@ class PaperEngine:
             results['adaptive_weights'] = self.adaptive_weights.get_stats()
             results['adaptive_weights']['trades_replayed'] = weight_updates
 
+        # Rebuild enhanced systems
+        if self.ticker_clusters:
+            results['ticker_clusters'] = self.ticker_clusters.update_from_trades(closed)
+        if self.param_tuner:
+            self.param_tuner.learn_from_trades(closed)
+            results['param_tuner'] = self.param_tuner.get_stats()
+
         return results
 
     def get_adaptive_stats(self) -> Dict:
@@ -1519,6 +1575,18 @@ class PaperEngine:
 
         if self.ab_engine:
             stats['ab_tests'] = self.ab_engine.get_all_tests()
+
+        # Enhanced intelligence stats
+        if self.regime_weights:
+            stats['regime_aware_weights'] = self.regime_weights.get_stats()
+        if self.ticker_clusters:
+            stats['ticker_clusters'] = self.ticker_clusters.get_stats()
+        if self.regime_predictor:
+            stats['regime_predictor'] = self.regime_predictor.get_stats()
+        if self.param_tuner:
+            stats['param_tuner'] = self.param_tuner.get_stats()
+        if self.rl_learner:
+            stats['rl_policy'] = self.rl_learner.get_stats()
 
         return stats
 

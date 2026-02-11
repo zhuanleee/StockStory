@@ -59,6 +59,24 @@ class SignalEngine:
             self.strategy_selector = StrategySelector()
         except Exception:
             self.strategy_selector = None
+        # Enhanced adaptive intelligence
+        try:
+            from .adaptive_engine import (
+                RegimeTransitionPredictor, ParameterAutoTuner,
+                ReinforcementLearner, TickerClusterLearner,
+                RegimeAwareWeights,
+            )
+            self.regime_predictor = RegimeTransitionPredictor(volume_path)
+            self.param_tuner = ParameterAutoTuner(volume_path)
+            self.rl_learner = ReinforcementLearner(volume_path)
+            self.ticker_clusters = TickerClusterLearner(volume_path)
+            self.regime_aware_weights = RegimeAwareWeights(volume_path)
+        except Exception:
+            self.regime_predictor = None
+            self.param_tuner = None
+            self.rl_learner = None
+            self.ticker_clusters = None
+            self.regime_aware_weights = None
 
     def _adjust_confidence(self, raw_confidence: float, signal_type: str) -> int:
         """Phase 1a: Adjust confidence based on historical performance."""
@@ -122,9 +140,41 @@ class SignalEngine:
         # Compute regime transition probability from all signals
         transition = self._compute_transition_probability(all_raw_signals)
 
+        # Enhanced: Record regime observation for Markov chain
+        if self.regime_predictor:
+            try:
+                # Get current combined regime from any signal's data
+                current_regime = None
+                for sig in all_raw_signals:
+                    sd = sig.get('signal_data', {})
+                    if sd.get('combined_regime'):
+                        current_regime = sd['combined_regime']
+                        break
+                if not current_regime:
+                    prev = self._prev_regimes.get(ticker, {})
+                    current_regime = prev.get('combined_regime', 'neutral_transitional')
+                self.regime_predictor.observe(current_regime)
+            except Exception as e:
+                logger.debug(f"Regime prediction observation error: {e}")
+
         for sig in all_raw_signals:
             if sig.get('confidence', 0) >= min_confidence:
                 sig['transition'] = transition
+                # Enhanced: RL action recommendation
+                if self.rl_learner:
+                    try:
+                        sd = sig.get('signal_data', {})
+                        rl_probs = self.rl_learner.get_action_probs(
+                            regime=sd.get('combined_regime', 'neutral_transitional'),
+                            vrp=sd.get('vrp', 0),
+                            toxicity=sd.get('flow_toxicity', 0),
+                            iv_rank=sd.get('iv_rank', 50),
+                            edge_score=sig.get('confidence', 50),
+                            dwell_ratio=0.5,
+                        )
+                        sig['rl_recommendation'] = rl_probs
+                    except Exception:
+                        pass
                 if multi_leg_enabled and self.strategy_selector:
                     try:
                         strategy_rec = await self._attach_strategy_recommendation(sig, ticker)
@@ -401,11 +451,30 @@ class SignalEngine:
         else:
             action = 'normal'
 
-        return {
+        transition_data = {
             'transition_probability': round(probability, 3),
             'action': action,
             'contributing_signals': contributing,
         }
+
+        # Enhanced: Blend with Markov chain prediction if available
+        if hasattr(self, 'regime_predictor') and self.regime_predictor:
+            try:
+                prev = self._prev_regimes.get('__last_ticker__', {})
+                current_regime = prev.get('combined_regime', 'neutral_transitional')
+                prediction = self.regime_predictor.predict(current_regime)
+                if prediction.get('confidence') in ('medium', 'high'):
+                    markov_prob = prediction.get('most_likely_probability', 0)
+                    # Blend: 60% signal-based + 40% Markov
+                    probability = probability * 0.6 + markov_prob * 0.4
+                    transition_data['transition_probability'] = round(probability, 3)
+                    transition_data['markov_prediction'] = prediction.get('most_likely_next')
+                    transition_data['markov_probability'] = markov_prob
+                    transition_data['markov_imminent'] = prediction.get('transition_imminent', False)
+            except Exception:
+                pass
+
+        return transition_data
 
     # -------------------------------------------------------------------------
     # Signal 1: GEX Regime Flip

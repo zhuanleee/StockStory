@@ -1347,3 +1347,874 @@ def _calc_exit_dte(trade: dict) -> Optional[int]:
         return (exp - exit_d).days
     except Exception:
         return None
+
+
+# =============================================================================
+# ENHANCEMENT 1: Regime-Aware Weight Adaptation
+# =============================================================================
+
+class RegimeAwareWeights:
+    """
+    Extends Thompson Sampling to learn SEPARATE factor weights per regime.
+
+    Each regime (opportunity, danger, pinned, volatile, etc.) maintains its own
+    Beta(alpha, beta) distributions per factor. This allows the system to learn
+    that e.g. 'squeeze' matters in volatile regimes but not pinned.
+
+    Falls back to global weights when regime-specific sample size < min_samples.
+    """
+
+    def __init__(self, volume_path: str):
+        self.regime_file = Path(volume_path) / "paper_trading" / "regime_aware_weights.json"
+        self._cache = None
+
+    def _load(self) -> Dict:
+        if self._cache:
+            return self._cache
+        if self.regime_file.exists():
+            try:
+                self._cache = json.loads(self.regime_file.read_text())
+                return self._cache
+            except Exception:
+                pass
+        self._cache = {
+            'regimes': {},  # regime -> {factors: {name: {alpha, beta, wins_high, losses_high}}, total_updates}
+            'global': {     # fallback global distribution
+                'factors': {},
+                'total_updates': 0,
+            },
+            'last_updated': None,
+        }
+        return self._cache
+
+    def _save(self, data: Dict):
+        self.regime_file.parent.mkdir(parents=True, exist_ok=True)
+        data['last_updated'] = datetime.utcnow().isoformat()
+        self.regime_file.write_text(json.dumps(data, indent=2))
+        self._cache = data
+
+    def _ensure_factor(self, factors: dict, name: str, default_weight: float = 12.5):
+        if name not in factors:
+            factors[name] = {
+                'alpha': 2.0 + default_weight / 10,
+                'beta': 2.0,
+                'wins_high': 0, 'losses_high': 0,
+                'wins_low': 0, 'losses_low': 0,
+            }
+
+    def update(self, regime: str, factor_scores: dict, is_win: bool):
+        """Update regime-specific AND global distributions."""
+        data = self._load()
+
+        for target_key in [regime, '__global__']:
+            if target_key == '__global__':
+                bucket = data['global']
+            else:
+                if target_key not in data['regimes']:
+                    data['regimes'][target_key] = {'factors': {}, 'total_updates': 0}
+                bucket = data['regimes'][target_key]
+
+            for name, score in factor_scores.items():
+                self._ensure_factor(bucket['factors'], name)
+                f = bucket['factors'][name]
+                is_high = score >= 60
+
+                if is_high:
+                    if is_win:
+                        f['alpha'] += 1.0
+                        f['wins_high'] += 1
+                    else:
+                        f['beta'] += 1.0
+                        f['losses_high'] += 1
+                else:
+                    if is_win:
+                        f['beta'] += 0.3
+                        f['wins_low'] += 1
+                    else:
+                        f['alpha'] += 0.3
+                        f['losses_low'] += 1
+
+            bucket['total_updates'] = bucket.get('total_updates', 0) + 1
+
+        self._save(data)
+
+    def get_weights(self, regime: str = None, min_samples: int = 10) -> Dict[str, float]:
+        """Get weights for a specific regime, falling back to global if sparse."""
+        data = self._load()
+        DEFAULT = AdaptiveWeights.DEFAULT_WEIGHTS
+
+        # Determine which bucket to sample from
+        bucket = None
+        if regime and regime in data.get('regimes', {}):
+            rb = data['regimes'][regime]
+            if rb.get('total_updates', 0) >= min_samples:
+                bucket = rb
+
+        if not bucket:
+            bucket = data.get('global', {})
+            if bucket.get('total_updates', 0) < 10:
+                return dict(DEFAULT)
+
+        # Thompson Sampling from the selected bucket
+        sampled = {}
+        for name in DEFAULT:
+            f = bucket.get('factors', {}).get(name)
+            if f:
+                alpha = max(1.0, f.get('alpha', 2.0))
+                beta_v = max(1.0, f.get('beta', 2.0))
+                sampled[name] = random.betavariate(alpha, beta_v)
+            else:
+                sampled[name] = DEFAULT.get(name, 10) / 100
+
+        total = sum(sampled.values())
+        if total <= 0:
+            return dict(DEFAULT)
+        return {n: round(v / total * 100, 1) for n, v in sampled.items()}
+
+    def get_stats(self) -> Dict:
+        data = self._load()
+        stats = {'global_updates': data.get('global', {}).get('total_updates', 0)}
+        for regime, bucket in data.get('regimes', {}).items():
+            stats[regime] = {
+                'updates': bucket.get('total_updates', 0),
+                'status': 'warm' if bucket.get('total_updates', 0) >= 20
+                          else 'learning' if bucket.get('total_updates', 0) >= 5 else 'cold',
+            }
+        return stats
+
+
+# =============================================================================
+# ENHANCEMENT 2: Ticker Cluster Transfer Learning
+# =============================================================================
+
+class TickerClusterLearner:
+    """
+    Groups tickers by correlation tier and transfers learning across similar tickers.
+
+    When NVDA has only 2 trades but we have 15 trades across the 'large_cap' cluster,
+    we blend NVDA-specific stats with cluster-level stats using Bayesian shrinkage.
+
+    Clusters match CORRELATION_TIERS from risk_manager.py.
+    """
+
+    CLUSTERS = {
+        'large_cap': ['SPY', 'QQQ', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META'],
+        'high_vol': ['TSLA', 'AMD', 'COIN'],
+        'sector': ['XLE', 'XLF', 'XBI'],
+        'defensive': ['TLT', 'XLU'],
+        'alternatives': ['GLD', 'SLV', 'IBIT'],
+    }
+
+    # Reverse lookup: ticker -> cluster
+    TICKER_TO_CLUSTER = {}
+    for _cluster, _tickers in CLUSTERS.items():
+        for _t in _tickers:
+            TICKER_TO_CLUSTER[_t] = _cluster
+
+    def __init__(self, volume_path: str):
+        self.cluster_file = Path(volume_path) / "paper_trading" / "ticker_clusters.json"
+        self._cache = None
+
+    def _load(self) -> Dict:
+        if self._cache:
+            return self._cache
+        if self.cluster_file.exists():
+            try:
+                self._cache = json.loads(self.cluster_file.read_text())
+                return self._cache
+            except Exception:
+                pass
+        self._cache = {
+            'tickers': {},   # ticker -> {wins, losses, total_pnl, strategies: {name: {wins, losses}}}
+            'clusters': {},  # cluster -> same aggregate
+            'last_updated': None,
+        }
+        return self._cache
+
+    def _save(self, data: Dict):
+        self.cluster_file.parent.mkdir(parents=True, exist_ok=True)
+        data['last_updated'] = datetime.utcnow().isoformat()
+        self.cluster_file.write_text(json.dumps(data, indent=2))
+        self._cache = data
+
+    def update_from_trades(self, closed_trades: List[dict]):
+        """Rebuild ticker and cluster stats from all closed trades."""
+        data = {'tickers': {}, 'clusters': {}, 'last_updated': None}
+
+        for t in closed_trades:
+            ticker = t.get('ticker', 'UNKNOWN').upper()
+            pnl = t.get('pnl_dollars', 0) or 0
+            is_win = pnl > 0
+            strategy = t.get('strategy', 'unknown')
+            signal_type = t.get('signal_type', 'unknown')
+            cluster = self.TICKER_TO_CLUSTER.get(ticker, 'other')
+
+            for key, name in [('tickers', ticker), ('clusters', cluster)]:
+                if name not in data[key]:
+                    data[key][name] = {
+                        'wins': 0, 'losses': 0, 'total': 0, 'total_pnl': 0,
+                        'strategies': {}, 'signal_types': {},
+                    }
+                rec = data[key][name]
+                rec['total'] += 1
+                rec['total_pnl'] += pnl
+                if is_win:
+                    rec['wins'] += 1
+                else:
+                    rec['losses'] += 1
+
+                # Strategy breakdown
+                if strategy not in rec['strategies']:
+                    rec['strategies'][strategy] = {'wins': 0, 'losses': 0, 'total': 0}
+                sr = rec['strategies'][strategy]
+                sr['total'] += 1
+                if is_win:
+                    sr['wins'] += 1
+                else:
+                    sr['losses'] += 1
+
+                # Signal type breakdown
+                if signal_type not in rec['signal_types']:
+                    rec['signal_types'][signal_type] = {'wins': 0, 'losses': 0, 'total': 0}
+                st = rec['signal_types'][signal_type]
+                st['total'] += 1
+                if is_win:
+                    st['wins'] += 1
+                else:
+                    st['losses'] += 1
+
+        self._save(data)
+        return data
+
+    def get_blended_win_rate(self, ticker: str, strategy: str = None,
+                             min_ticker_samples: int = 5) -> Dict:
+        """
+        Get win rate blended between ticker-specific and cluster-level stats.
+
+        Uses Bayesian shrinkage: weight = n_ticker / (n_ticker + shrinkage_factor)
+        When ticker has few trades, leans heavily on cluster stats.
+        """
+        data = self._load()
+        ticker = ticker.upper()
+        cluster = self.TICKER_TO_CLUSTER.get(ticker, 'other')
+        SHRINKAGE = 10  # Higher = more cluster influence
+
+        # Get ticker-level stats
+        ticker_rec = data.get('tickers', {}).get(ticker, {})
+        if strategy and ticker_rec:
+            ticker_rec = ticker_rec.get('strategies', {}).get(strategy, ticker_rec)
+
+        # Get cluster-level stats
+        cluster_rec = data.get('clusters', {}).get(cluster, {})
+        if strategy and cluster_rec:
+            cluster_rec = cluster_rec.get('strategies', {}).get(strategy, cluster_rec)
+
+        n_ticker = ticker_rec.get('total', 0) if ticker_rec else 0
+        n_cluster = cluster_rec.get('total', 0) if cluster_rec else 0
+
+        ticker_wr = (ticker_rec.get('wins', 0) / n_ticker * 100) if n_ticker > 0 else 50
+        cluster_wr = (cluster_rec.get('wins', 0) / n_cluster * 100) if n_cluster > 0 else 50
+
+        # Bayesian shrinkage: blend = w * ticker_wr + (1-w) * cluster_wr
+        w = n_ticker / (n_ticker + SHRINKAGE)
+        blended_wr = w * ticker_wr + (1 - w) * cluster_wr
+
+        return {
+            'ticker': ticker,
+            'cluster': cluster,
+            'ticker_win_rate': round(ticker_wr, 1),
+            'cluster_win_rate': round(cluster_wr, 1),
+            'blended_win_rate': round(blended_wr, 1),
+            'ticker_trades': n_ticker,
+            'cluster_trades': n_cluster,
+            'shrinkage_weight': round(w, 3),
+            'confidence': 'high' if n_ticker >= min_ticker_samples else
+                         'medium' if n_cluster >= 10 else 'low',
+        }
+
+    def get_best_strategy_for_ticker(self, ticker: str) -> Optional[str]:
+        """Return the strategy with highest blended win rate for this ticker."""
+        data = self._load()
+        ticker = ticker.upper()
+        cluster = self.TICKER_TO_CLUSTER.get(ticker, 'other')
+
+        # Collect all strategies seen for this ticker's cluster
+        all_strategies = set()
+        cluster_rec = data.get('clusters', {}).get(cluster, {})
+        all_strategies.update(cluster_rec.get('strategies', {}).keys())
+        ticker_rec = data.get('tickers', {}).get(ticker, {})
+        all_strategies.update(ticker_rec.get('strategies', {}).keys())
+
+        best_strategy = None
+        best_wr = 0
+        for strat in all_strategies:
+            info = self.get_blended_win_rate(ticker, strategy=strat)
+            if info['blended_win_rate'] > best_wr and (info['ticker_trades'] + info['cluster_trades']) >= 3:
+                best_wr = info['blended_win_rate']
+                best_strategy = strat
+
+        return best_strategy
+
+    def get_stats(self) -> Dict:
+        data = self._load()
+        return {
+            'tickers_tracked': len(data.get('tickers', {})),
+            'clusters_tracked': len(data.get('clusters', {})),
+            'cluster_summary': {
+                cluster: {
+                    'total': rec.get('total', 0),
+                    'win_rate': round(rec.get('wins', 0) / max(rec.get('total', 1), 1) * 100, 1),
+                }
+                for cluster, rec in data.get('clusters', {}).items()
+            },
+        }
+
+
+# =============================================================================
+# ENHANCEMENT 3: Regime Transition Predictor (Markov Chain)
+# =============================================================================
+
+class RegimeTransitionPredictor:
+    """
+    Learns regime transition probabilities from observed data using a Markov chain.
+
+    Tracks actual regime transitions and builds a transition matrix:
+      P(next_regime | current_regime)
+
+    Uses Laplace smoothing to handle unseen transitions.
+    Predicts most likely next regime + probability.
+    """
+
+    ALL_REGIMES = [
+        'opportunity', 'melt_up', 'neutral_pinned', 'neutral_transitional',
+        'neutral_volatile', 'high_risk', 'danger',
+    ]
+
+    def __init__(self, volume_path: str):
+        self.transition_file = Path(volume_path) / "paper_trading" / "regime_transitions.json"
+        self._cache = None
+
+    def _load(self) -> Dict:
+        if self._cache:
+            return self._cache
+        if self.transition_file.exists():
+            try:
+                self._cache = json.loads(self.transition_file.read_text())
+                return self._cache
+            except Exception:
+                pass
+        self._cache = {
+            'transitions': {},     # {from_regime: {to_regime: count}}
+            'dwell_times': {},     # {regime: [durations_in_hours]}
+            'regime_history': [],  # [{regime, timestamp}] — last 500 observations
+            'total_observations': 0,
+            'last_updated': None,
+        }
+        return self._cache
+
+    def _save(self, data: Dict):
+        self.transition_file.parent.mkdir(parents=True, exist_ok=True)
+        data['last_updated'] = datetime.utcnow().isoformat()
+        self.transition_file.write_text(json.dumps(data, indent=2))
+        self._cache = data
+
+    def observe(self, current_regime: str, timestamp: str = None):
+        """Record a regime observation. Detects transitions automatically."""
+        data = self._load()
+        ts = timestamp or datetime.utcnow().isoformat()
+
+        history = data['regime_history']
+        if history and history[-1]['regime'] != current_regime:
+            # Transition detected
+            prev_regime = history[-1]['regime']
+            if prev_regime not in data['transitions']:
+                data['transitions'][prev_regime] = {}
+            trans = data['transitions'][prev_regime]
+            trans[current_regime] = trans.get(current_regime, 0) + 1
+
+            # Dwell time calculation
+            try:
+                prev_ts = datetime.fromisoformat(history[-1]['timestamp'].replace('Z', '+00:00'))
+                curr_ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                dwell_hours = (curr_ts - prev_ts).total_seconds() / 3600
+                if prev_regime not in data['dwell_times']:
+                    data['dwell_times'][prev_regime] = []
+                data['dwell_times'][prev_regime].append(round(dwell_hours, 1))
+                # Keep last 50 dwell times per regime
+                data['dwell_times'][prev_regime] = data['dwell_times'][prev_regime][-50:]
+            except Exception:
+                pass
+
+        history.append({'regime': current_regime, 'timestamp': ts})
+        data['regime_history'] = history[-500:]  # Keep last 500
+        data['total_observations'] = data.get('total_observations', 0) + 1
+
+        self._save(data)
+
+    def predict(self, current_regime: str) -> Dict:
+        """
+        Predict next regime transition using learned Markov chain.
+
+        Returns: {
+            predictions: [{regime, probability}...],
+            expected_dwell_hours,
+            transition_imminent (bool),
+            confidence
+        }
+        """
+        data = self._load()
+        LAPLACE = 0.5  # Smoothing constant
+
+        trans = data.get('transitions', {}).get(current_regime, {})
+        total_trans = sum(trans.values())
+
+        n_regimes = len(self.ALL_REGIMES)
+        predictions = []
+        for regime in self.ALL_REGIMES:
+            count = trans.get(regime, 0)
+            # Laplace-smoothed probability
+            prob = (count + LAPLACE) / (total_trans + LAPLACE * n_regimes)
+            predictions.append({'regime': regime, 'probability': round(prob, 3), 'count': count})
+
+        predictions.sort(key=lambda x: x['probability'], reverse=True)
+
+        # Expected dwell time
+        dwell_times = data.get('dwell_times', {}).get(current_regime, [])
+        avg_dwell = sum(dwell_times) / len(dwell_times) if dwell_times else 24.0
+
+        # Check if we've been in this regime longer than average
+        history = data.get('regime_history', [])
+        current_dwell = 0
+        if history:
+            try:
+                last_ts = datetime.fromisoformat(history[-1]['timestamp'].replace('Z', '+00:00'))
+                # Walk backwards to find when this regime started
+                for i in range(len(history) - 2, -1, -1):
+                    if history[i]['regime'] != current_regime:
+                        start_ts = datetime.fromisoformat(history[i + 1]['timestamp'].replace('Z', '+00:00'))
+                        current_dwell = (last_ts - start_ts).total_seconds() / 3600
+                        break
+            except Exception:
+                pass
+
+        transition_imminent = current_dwell > avg_dwell * 1.2 if avg_dwell > 0 else False
+
+        return {
+            'current_regime': current_regime,
+            'predictions': predictions[:5],  # Top 5 most likely next regimes
+            'most_likely_next': predictions[0]['regime'] if predictions else current_regime,
+            'most_likely_probability': predictions[0]['probability'] if predictions else 0,
+            'expected_dwell_hours': round(avg_dwell, 1),
+            'current_dwell_hours': round(current_dwell, 1),
+            'transition_imminent': transition_imminent,
+            'total_transitions_observed': total_trans,
+            'confidence': 'high' if total_trans >= 30 else 'medium' if total_trans >= 10 else 'low',
+        }
+
+    def get_transition_matrix(self) -> Dict:
+        """Return full transition probability matrix for dashboard display."""
+        data = self._load()
+        LAPLACE = 0.5
+        n_regimes = len(self.ALL_REGIMES)
+        matrix = {}
+
+        for from_regime in self.ALL_REGIMES:
+            trans = data.get('transitions', {}).get(from_regime, {})
+            total = sum(trans.values())
+            row = {}
+            for to_regime in self.ALL_REGIMES:
+                count = trans.get(to_regime, 0)
+                prob = (count + LAPLACE) / (total + LAPLACE * n_regimes) if total > 0 else 1.0 / n_regimes
+                row[to_regime] = round(prob, 3)
+            matrix[from_regime] = row
+
+        return matrix
+
+    def get_stats(self) -> Dict:
+        data = self._load()
+        return {
+            'total_observations': data.get('total_observations', 0),
+            'total_transitions': sum(
+                sum(v.values()) for v in data.get('transitions', {}).values()
+            ),
+            'regimes_seen': list(data.get('transitions', {}).keys()),
+            'avg_dwell_hours': {
+                regime: round(sum(times) / len(times), 1) if times else 0
+                for regime, times in data.get('dwell_times', {}).items()
+            },
+        }
+
+
+# =============================================================================
+# ENHANCEMENT 4: Parameter Auto-Tuner
+# =============================================================================
+
+class ParameterAutoTuner:
+    """
+    Learns optimal signal thresholds from trade outcome data instead of hard-coding.
+
+    Tracks which parameter values (IV thresholds, VRP cutoffs, wall proximity, etc.)
+    led to winning vs losing trades. Uses percentile analysis to find optimal ranges.
+
+    Parameters tuned:
+    - iv_reversion_high: IV Rank threshold for 'sell IV' signal (default 70)
+    - iv_reversion_low: IV Rank threshold for 'buy IV' signal (default 30)
+    - vrp_min: Minimum VRP for short premium strategies (default 1.5)
+    - wall_proximity_pct: GEX wall proximity threshold (default 1.0%)
+    - flow_toxicity_high: Threshold for 'informed flow' signal (default 0.7)
+    - min_confidence: Minimum signal confidence to act (default 60)
+    """
+
+    TUNABLE_PARAMS = {
+        'iv_reversion_high': {'default': 70, 'min': 60, 'max': 90, 'step': 5},
+        'iv_reversion_low': {'default': 30, 'min': 10, 'max': 40, 'step': 5},
+        'vrp_min_short_premium': {'default': 1.5, 'min': 0.5, 'max': 5.0, 'step': 0.5},
+        'wall_proximity_pct': {'default': 1.0, 'min': 0.3, 'max': 2.0, 'step': 0.1},
+        'flow_toxicity_high': {'default': 0.7, 'min': 0.4, 'max': 0.9, 'step': 0.05},
+        'min_confidence': {'default': 60, 'min': 40, 'max': 80, 'step': 5},
+    }
+
+    def __init__(self, volume_path: str):
+        self.tuner_file = Path(volume_path) / "paper_trading" / "param_auto_tuner.json"
+        self._cache = None
+
+    def _load(self) -> Dict:
+        if self._cache:
+            return self._cache
+        if self.tuner_file.exists():
+            try:
+                self._cache = json.loads(self.tuner_file.read_text())
+                return self._cache
+            except Exception:
+                pass
+        self._cache = {
+            'observations': {},  # param_name -> [{value, outcome (win/loss), pnl}]
+            'learned_params': {},  # param_name -> {optimal_value, confidence}
+            'total_updates': 0,
+            'last_updated': None,
+        }
+        return self._cache
+
+    def _save(self, data: Dict):
+        self.tuner_file.parent.mkdir(parents=True, exist_ok=True)
+        data['last_updated'] = datetime.utcnow().isoformat()
+        self.tuner_file.write_text(json.dumps(data, indent=2))
+        self._cache = data
+
+    def record_observation(self, param_name: str, param_value: float,
+                           is_win: bool, pnl: float = 0):
+        """Record what parameter value was used and whether the trade won."""
+        if param_name not in self.TUNABLE_PARAMS:
+            return
+        data = self._load()
+        if param_name not in data['observations']:
+            data['observations'][param_name] = []
+        data['observations'][param_name].append({
+            'value': param_value,
+            'win': is_win,
+            'pnl': round(pnl, 2),
+            'ts': datetime.utcnow().isoformat(),
+        })
+        # Keep last 200 observations per param
+        data['observations'][param_name] = data['observations'][param_name][-200:]
+        data['total_updates'] = data.get('total_updates', 0) + 1
+        self._save(data)
+
+    def learn_from_trades(self, closed_trades: List[dict]):
+        """Extract parameter observations from closed trades."""
+        data = self._load()
+
+        for t in closed_trades:
+            pnl = t.get('pnl_dollars', 0) or 0
+            is_win = pnl > 0
+            signal_data = t.get('signal_data', {})
+
+            # Extract parameter values that were in effect at entry
+            iv_rank = signal_data.get('iv_rank')
+            if iv_rank is not None:
+                direction = signal_data.get('direction', t.get('direction', ''))
+                if direction == 'short' or 'credit' in t.get('strategy', '').lower():
+                    self.record_observation('iv_reversion_high', iv_rank, is_win, pnl)
+                elif direction == 'long':
+                    self.record_observation('iv_reversion_low', iv_rank, is_win, pnl)
+
+            vrp = signal_data.get('vrp')
+            if vrp is not None and 'credit' in t.get('strategy', '').lower():
+                self.record_observation('vrp_min_short_premium', vrp, is_win, pnl)
+
+            toxicity = signal_data.get('flow_toxicity')
+            if toxicity is not None:
+                self.record_observation('flow_toxicity_high', toxicity, is_win, pnl)
+
+            confidence = signal_data.get('confidence') or t.get('signal_confidence')
+            if confidence is not None:
+                self.record_observation('min_confidence', confidence, is_win, pnl)
+
+        # Recompute optimal values
+        self._optimize_params(data)
+        self._save(data)
+
+    def _optimize_params(self, data: Dict):
+        """Find optimal parameter values by maximizing win rate at each value."""
+        for param_name, spec in self.TUNABLE_PARAMS.items():
+            obs = data.get('observations', {}).get(param_name, [])
+            if len(obs) < 10:
+                continue
+
+            # Bin observations by parameter value and compute win rate per bin
+            step = spec['step']
+            bins = defaultdict(lambda: {'wins': 0, 'losses': 0, 'total': 0, 'pnl': 0})
+            for o in obs:
+                # Round to nearest step
+                binned = round(o['value'] / step) * step
+                binned = max(spec['min'], min(spec['max'], binned))
+                b = bins[binned]
+                b['total'] += 1
+                b['pnl'] += o.get('pnl', 0)
+                if o['win']:
+                    b['wins'] += 1
+                else:
+                    b['losses'] += 1
+
+            # Find bin with best risk-adjusted performance (win_rate * avg_pnl)
+            best_val = spec['default']
+            best_score = -999
+            for val, b in bins.items():
+                if b['total'] < 3:
+                    continue
+                wr = b['wins'] / b['total']
+                avg_pnl = b['pnl'] / b['total']
+                score = wr * 0.6 + (avg_pnl / max(abs(avg_pnl), 1)) * 0.4
+                if score > best_score:
+                    best_score = score
+                    best_val = val
+
+            n_total = sum(b['total'] for b in bins.values())
+            data['learned_params'][param_name] = {
+                'optimal_value': best_val,
+                'default_value': spec['default'],
+                'changed': abs(best_val - spec['default']) > spec['step'] * 0.5,
+                'sample_size': n_total,
+                'confidence': 'high' if n_total >= 30 else 'medium' if n_total >= 15 else 'low',
+                'score': round(best_score, 3),
+            }
+
+    def get_param(self, param_name: str, min_confidence: str = 'medium') -> float:
+        """Get learned parameter value, falling back to default if not confident."""
+        data = self._load()
+        learned = data.get('learned_params', {}).get(param_name)
+        spec = self.TUNABLE_PARAMS.get(param_name, {})
+
+        if not learned:
+            return spec.get('default', 0)
+
+        confidence_rank = {'low': 0, 'medium': 1, 'high': 2}
+        if confidence_rank.get(learned.get('confidence', 'low'), 0) >= confidence_rank.get(min_confidence, 1):
+            return learned['optimal_value']
+
+        return spec.get('default', 0)
+
+    def get_all_params(self) -> Dict:
+        """Get all parameter values (learned or default)."""
+        result = {}
+        for name, spec in self.TUNABLE_PARAMS.items():
+            learned = self.get_param(name)
+            result[name] = {
+                'value': learned,
+                'default': spec['default'],
+                'tuned': abs(learned - spec['default']) > spec['step'] * 0.5,
+            }
+        return result
+
+    def get_stats(self) -> Dict:
+        data = self._load()
+        return {
+            'total_observations': data.get('total_updates', 0),
+            'params_learned': len(data.get('learned_params', {})),
+            'params': data.get('learned_params', {}),
+        }
+
+
+# =============================================================================
+# ENHANCEMENT 5: Reinforcement Learning Layer (Policy Gradient)
+# =============================================================================
+
+class ReinforcementLearner:
+    """
+    Lightweight policy gradient learner for entry/exit decision refinement.
+
+    State: [regime_idx, vrp_norm, toxicity, iv_rank_norm, edge_score_norm, dwell_norm]
+    Actions: [enter, skip, exit_now, hold]
+    Policy: Linear softmax — lightweight enough for production without GPU.
+
+    Uses REINFORCE algorithm with baseline subtraction.
+    """
+
+    ACTIONS = ['enter', 'skip', 'exit_now', 'hold']
+    STATE_DIM = 6  # regime, vrp, toxicity, iv_rank, edge_score, dwell_ratio
+
+    REGIME_IDX = {
+        'opportunity': 0.0, 'melt_up': 0.15, 'neutral_pinned': 0.35,
+        'neutral_transitional': 0.5, 'neutral_volatile': 0.65,
+        'high_risk': 0.8, 'danger': 1.0,
+    }
+
+    def __init__(self, volume_path: str, learning_rate: float = 0.01):
+        self.rl_file = Path(volume_path) / "paper_trading" / "rl_policy.json"
+        self.lr = learning_rate
+        self._cache = None
+
+    def _load(self) -> Dict:
+        if self._cache:
+            return self._cache
+        if self.rl_file.exists():
+            try:
+                self._cache = json.loads(self.rl_file.read_text())
+                return self._cache
+            except Exception:
+                pass
+        # Initialize weights: (n_actions x state_dim) matrix
+        n_actions = len(self.ACTIONS)
+        self._cache = {
+            'weights': [[0.0] * self.STATE_DIM for _ in range(n_actions)],
+            'bias': [0.0] * n_actions,
+            'baseline_reward': 0.0,  # Running average reward for variance reduction
+            'episodes': [],  # [{state, action_idx, reward}] — last 500
+            'total_updates': 0,
+            'cumulative_reward': 0.0,
+            'last_updated': None,
+        }
+        # Initialize with prior: slight preference for 'enter' when edge is high
+        self._cache['weights'][0][4] = 0.5  # enter weight on edge_score
+        self._cache['weights'][1][4] = -0.3  # skip weight (negative on edge)
+        self._cache['weights'][2][0] = 0.3   # exit_now weight on danger regime
+        self._cache['weights'][3][4] = 0.2   # hold weight on edge_score
+        return self._cache
+
+    def _save(self, data: Dict):
+        self.rl_file.parent.mkdir(parents=True, exist_ok=True)
+        data['last_updated'] = datetime.utcnow().isoformat()
+        self.rl_file.write_text(json.dumps(data, indent=2))
+        self._cache = data
+
+    def _encode_state(self, regime: str, vrp: float, toxicity: float,
+                      iv_rank: float, edge_score: float, dwell_ratio: float) -> List[float]:
+        """Encode market state into normalized feature vector."""
+        return [
+            self.REGIME_IDX.get(regime, 0.5),
+            max(-1, min(1, vrp / 10)),           # VRP normalized to [-1, 1]
+            max(0, min(1, toxicity)),             # Already 0-1
+            max(0, min(1, iv_rank / 100)),        # Normalize to 0-1
+            max(0, min(1, edge_score / 100)),     # Normalize to 0-1
+            max(0, min(2, dwell_ratio)),           # >1 means past average dwell
+        ]
+
+    def _softmax(self, logits: List[float]) -> List[float]:
+        """Compute softmax probabilities from logits."""
+        max_l = max(logits)
+        exp_l = [math.exp(l - max_l) for l in logits]
+        total = sum(exp_l)
+        return [e / total for e in exp_l]
+
+    def _compute_logits(self, state: List[float], data: Dict) -> List[float]:
+        """Compute action logits = W * state + bias."""
+        weights = data['weights']
+        bias = data['bias']
+        logits = []
+        for a in range(len(self.ACTIONS)):
+            logit = bias[a]
+            for i in range(self.STATE_DIM):
+                logit += weights[a][i] * state[i]
+            logits.append(logit)
+        return logits
+
+    def get_action_probs(self, regime: str, vrp: float, toxicity: float,
+                         iv_rank: float, edge_score: float,
+                         dwell_ratio: float = 0.5) -> Dict:
+        """Get action probabilities for current state."""
+        data = self._load()
+        state = self._encode_state(regime, vrp, toxicity, iv_rank, edge_score, dwell_ratio)
+        logits = self._compute_logits(state, data)
+        probs = self._softmax(logits)
+
+        return {
+            'action_probs': {self.ACTIONS[i]: round(probs[i], 4) for i in range(len(self.ACTIONS))},
+            'recommended_action': self.ACTIONS[probs.index(max(probs))],
+            'confidence': round(max(probs), 3),
+            'state': state,
+            'total_episodes': data.get('total_updates', 0),
+        }
+
+    def record_episode(self, state_dict: Dict, action: str, reward: float):
+        """
+        Record an episode (state, action, reward) and update policy.
+
+        reward: Normalized P&L (e.g., pnl_dollars / premium / 100)
+                +1 for good entry that won, -1 for bad entry that lost,
+                +0.5 for correct skip, -0.5 for missed opportunity.
+        """
+        data = self._load()
+        action_idx = self.ACTIONS.index(action) if action in self.ACTIONS else 0
+
+        state = self._encode_state(
+            state_dict.get('regime', 'neutral_transitional'),
+            state_dict.get('vrp', 0),
+            state_dict.get('toxicity', 0),
+            state_dict.get('iv_rank', 50),
+            state_dict.get('edge_score', 50),
+            state_dict.get('dwell_ratio', 0.5),
+        )
+
+        # Store episode
+        data['episodes'].append({
+            'state': state, 'action_idx': action_idx,
+            'reward': round(reward, 4),
+            'ts': datetime.utcnow().isoformat(),
+        })
+        data['episodes'] = data['episodes'][-500:]
+
+        # REINFORCE update with baseline subtraction
+        baseline = data.get('baseline_reward', 0)
+        advantage = reward - baseline
+
+        # Update baseline (exponential moving average)
+        data['baseline_reward'] = baseline * 0.95 + reward * 0.05
+
+        # Policy gradient: Δw = lr * advantage * ∇log π(a|s)
+        logits = self._compute_logits(state, data)
+        probs = self._softmax(logits)
+
+        for a in range(len(self.ACTIONS)):
+            # Gradient of log softmax: 1(a=a_taken) - π(a|s)
+            grad = (1.0 if a == action_idx else 0.0) - probs[a]
+            for i in range(self.STATE_DIM):
+                data['weights'][a][i] += self.lr * advantage * grad * state[i]
+            data['bias'][a] += self.lr * advantage * grad
+
+            # Weight clipping to prevent divergence
+            for i in range(self.STATE_DIM):
+                data['weights'][a][i] = max(-5.0, min(5.0, data['weights'][a][i]))
+            data['bias'][a] = max(-3.0, min(3.0, data['bias'][a]))
+
+        data['total_updates'] = data.get('total_updates', 0) + 1
+        data['cumulative_reward'] = data.get('cumulative_reward', 0) + reward
+
+        self._save(data)
+
+    def get_stats(self) -> Dict:
+        data = self._load()
+        episodes = data.get('episodes', [])
+        recent = episodes[-20:] if episodes else []
+        recent_reward = sum(e.get('reward', 0) for e in recent) / max(len(recent), 1)
+
+        return {
+            'total_episodes': data.get('total_updates', 0),
+            'cumulative_reward': round(data.get('cumulative_reward', 0), 2),
+            'baseline_reward': round(data.get('baseline_reward', 0), 4),
+            'recent_avg_reward': round(recent_reward, 4),
+            'status': 'warm' if data.get('total_updates', 0) >= 50
+                      else 'learning' if data.get('total_updates', 0) >= 10 else 'cold',
+            'policy_weights_norm': round(sum(
+                sum(abs(w) for w in row) for row in data.get('weights', [])
+            ), 2),
+        }
