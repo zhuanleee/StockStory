@@ -624,8 +624,9 @@ class StrategySelector:
     Selects optimal strategy based on current regime + VRP + GEX + term structure.
     """
 
+    # risk_profile: 'limited' = defined max loss (spreads, long options)
+    #               'unlimited' = theoretically unlimited loss (ratio, naked, short straddles)
     STRATEGY_MATRIX = [
-        # (conditions_fn, strategy, description)
         {
             'name': 'Credit Spread (Premium Harvest)',
             'conditions': lambda r: (
@@ -635,9 +636,10 @@ class StrategySelector:
             ) or (
                 r['vrp'] > 3 and
                 r['gex_regime'] == 'pinned' and
-                r.get('risk_reversal', 0) > 0.02  # Puts expensive → favor selling puts
+                r.get('risk_reversal', 0) > 0.02
             ),
             'type': 'short_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral_bullish',
             'dte_range': [30, 45],
             'delta_target': 0.16,
@@ -652,9 +654,10 @@ class StrategySelector:
             ) or (
                 r['vrp'] < 2 and
                 r['gex_regime'] == 'volatile' and
-                r.get('risk_reversal', 0) < -0.01  # Calls cheap → favor buying calls
+                r.get('risk_reversal', 0) < -0.01
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'directional',
             'dte_range': [14, 30],
             'delta_target': 0.40,
@@ -668,6 +671,7 @@ class StrategySelector:
                 r['skew_steep']
             ),
             'type': 'short_premium',
+            'risk_profile': 'unlimited',
             'direction': 'neutral_bearish',
             'dte_range': [30, 60],
             'delta_target': 0.25,
@@ -680,6 +684,7 @@ class StrategySelector:
                 r.get('vanna_flow', 0) > 0.5
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'bullish',
             'dte_range': [14, 30],
             'delta_target': 0.50,
@@ -692,6 +697,7 @@ class StrategySelector:
                 (r['combined_regime'] == 'high_risk' and r['flow_toxicity'] > 0.7)
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'bearish',
             'dte_range': [14, 30],
             'delta_target': 0.30,
@@ -706,6 +712,7 @@ class StrategySelector:
                 r['combined_regime'] not in ('danger', 'high_risk')
             ),
             'type': 'short_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral',
             'dte_range': [30, 45],
             'delta_target': 0.16,
@@ -715,19 +722,20 @@ class StrategySelector:
             'name': 'Straddle (Event Vol)',
             'conditions': lambda r: (
                 r.get('macro_event_days', 99) <= 3
-                and r.get('iv_rank', 50) < 50  # Don't buy vol when IV already expanded
+                and r.get('iv_rank', 50) < 50
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral',
             'dte_range': [7, 21],
             'delta_target': 0.50,
             'description': 'Major macro event imminent + IV not yet expanded. Buy vol.',
         },
-        # --- New strategies filling regime gaps ---
         {
             'name': 'Melt-Up Debit Spread',
             'conditions': lambda r: r['combined_regime'] == 'melt_up',
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'bullish',
             'dte_range': [14, 30],
             'delta_target': 0.45,
@@ -741,6 +749,7 @@ class StrategySelector:
                 r['combined_regime'] not in ('danger', 'high_risk', 'neutral_volatile')
             ),
             'type': 'short_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral_bullish',
             'dte_range': [30, 45],
             'delta_target': 0.20,
@@ -754,6 +763,7 @@ class StrategySelector:
                 r['combined_regime'] not in ('danger', 'high_risk')
             ),
             'type': 'short_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral',
             'dte_range': [14, 30],
             'delta_target': 0.50,
@@ -766,6 +776,7 @@ class StrategySelector:
                 r['flow_toxicity'] > 0.5
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'bearish',
             'dte_range': [14, 30],
             'delta_target': 0.35,
@@ -779,12 +790,12 @@ class StrategySelector:
                 r['combined_regime'] not in ('danger', 'high_risk')
             ),
             'type': 'short_premium',
+            'risk_profile': 'limited',
             'direction': 'neutral_bullish',
             'dte_range': [21, 35],
             'delta_target': 0.18,
             'description': 'Backwardation = elevated front IV. Sell rich front-month premium.',
         },
-        # --- Softer fallbacks for scanner context ---
         {
             'name': 'Cash-Secured Put',
             'conditions': lambda r: (
@@ -793,6 +804,7 @@ class StrategySelector:
                 r['flow_toxicity'] < 0.7
             ),
             'type': 'short_premium',
+            'risk_profile': 'unlimited',
             'direction': 'neutral_bullish',
             'dte_range': [30, 45],
             'delta_target': 0.25,
@@ -805,6 +817,7 @@ class StrategySelector:
                 r['combined_regime'] not in ('danger', 'high_risk')
             ),
             'type': 'long_premium',
+            'risk_profile': 'limited',
             'direction': 'bullish',
             'dte_range': [30, 60],
             'delta_target': 0.40,
@@ -812,19 +825,27 @@ class StrategySelector:
         },
     ]
 
-    def select_strategy(self, regime_state: Dict) -> List[Dict]:
+    def select_strategy(self, regime_state: Dict, risk_mode: str = 'all') -> List[Dict]:
         """
         Returns ranked list of suitable strategies for current conditions.
-        regime_state should contain: vrp, gex_regime, combined_regime,
-        flow_toxicity, term_structure, skew_steep, vanna_flow, macro_event_days
+
+        Args:
+            regime_state: dict with vrp, gex_regime, combined_regime, flow_toxicity,
+                         term_structure, skew_steep, vanna_flow, macro_event_days
+            risk_mode: 'limited' (defined risk only), 'unlimited' (all), or 'all' (default)
         """
         results = []
         for strat in self.STRATEGY_MATRIX:
             try:
+                # Filter by risk_mode
+                if risk_mode == 'limited' and strat.get('risk_profile') == 'unlimited':
+                    continue
+
                 if strat['conditions'](regime_state):
                     results.append({
                         'name': strat['name'],
                         'type': strat['type'],
+                        'risk_profile': strat.get('risk_profile', 'limited'),
                         'direction': strat['direction'],
                         'dte_range': strat['dte_range'],
                         'delta_target': strat['delta_target'],
@@ -833,11 +854,11 @@ class StrategySelector:
             except Exception:
                 continue
 
-        # If nothing matches, suggest neutral strategies
         if not results:
             results.append({
                 'name': 'Wait / Reduce Size',
                 'type': 'none',
+                'risk_profile': 'limited',
                 'direction': 'neutral',
                 'dte_range': [30, 45],
                 'delta_target': 0,

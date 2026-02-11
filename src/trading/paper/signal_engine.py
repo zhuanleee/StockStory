@@ -46,6 +46,7 @@ class SignalEngine:
     def __init__(self, volume_path: str):
         self.volume_path = volume_path
         self._prev_regimes = _load_prev_regimes(volume_path)
+        self._market_data_cache = {}  # ticker -> {data} — cleared each evaluate_signals batch
         # Phase 1a: Load signal performance tracker for adaptive confidence
         try:
             from .adaptive_engine import SignalPerformanceTracker
@@ -73,6 +74,8 @@ class SignalEngine:
         all_raw_signals = []
         debug_info = {} if debug else None
         min_confidence = config.get('min_confidence', 60)
+        self._current_risk_mode = config.get('risk_mode', 'limited')
+        self._market_data_cache = {}  # Clear per-ticker cache for fresh batch
         multi_leg_enabled = config.get('multi_leg_enabled', False)
 
         # Run signal evaluators with error capture
@@ -187,56 +190,62 @@ class SignalEngine:
         iv_data = signal.get('iv_data', {})
         event_data = signal.get('event_data', {})
 
-        # --- Fetch missing market data that the triggering signal didn't carry ---
+        # --- Fetch missing market data (cached per ticker within a batch) ---
         import asyncio
-        fetch_tasks = {}
 
-        # Need GEX regime if signal is macro_event or iv_reversion (no regime_data)
-        if not regime_data.get('regime') and not regime_data.get('gex_regime'):
+        # Use cached data if already fetched for this ticker in current batch
+        if ticker in self._market_data_cache:
+            fetched = self._market_data_cache[ticker]
+        else:
+            fetch_tasks = {}
+
+            # Need GEX regime if signal is macro_event or iv_reversion (no regime_data)
+            if not regime_data.get('regime') and not regime_data.get('gex_regime'):
+                try:
+                    from src.data.tastytrade_provider import get_gex_regime_tastytrade
+                    fetch_tasks['gex'] = get_gex_regime_tastytrade(ticker)
+                except ImportError:
+                    pass
+
+            # Need combined regime if missing
+            if not regime_data.get('combined_regime') or regime_data.get('combined_regime') == 'neutral_transitional':
+                try:
+                    from src.data.tastytrade_provider import get_combined_regime_tastytrade
+                    fetch_tasks['combined'] = get_combined_regime_tastytrade(ticker)
+                except ImportError:
+                    pass
+
+            # Need IV data if signal is gex_flip or regime_shift (no iv_data)
+            if not iv_data.get('iv_rank'):
+                try:
+                    from src.data.tastytrade_provider import get_iv_rank_tastytrade
+                    fetch_tasks['iv'] = get_iv_rank_tastytrade(ticker, volume_path=self.volume_path)
+                except ImportError:
+                    pass
+
+            # Always fetch term structure and skew — no signal carries these
             try:
-                from src.data.tastytrade_provider import get_gex_regime_tastytrade
-                fetch_tasks['gex'] = get_gex_regime_tastytrade(ticker)
+                from src.data.tastytrade_provider import (
+                    get_term_structure_tastytrade,
+                    get_iv_by_delta_tastytrade,
+                )
+                fetch_tasks['term'] = get_term_structure_tastytrade(ticker)
+                fetch_tasks['skew'] = get_iv_by_delta_tastytrade(ticker)
             except ImportError:
                 pass
 
-        # Need combined regime if missing
-        if not regime_data.get('combined_regime') or regime_data.get('combined_regime') == 'neutral_transitional':
-            try:
-                from src.data.tastytrade_provider import get_combined_regime_tastytrade
-                fetch_tasks['combined'] = get_combined_regime_tastytrade(ticker)
-            except ImportError:
-                pass
-
-        # Need IV data if signal is gex_flip or regime_shift (no iv_data)
-        if not iv_data.get('iv_rank'):
-            try:
-                from src.data.tastytrade_provider import get_iv_rank_tastytrade
-                fetch_tasks['iv'] = get_iv_rank_tastytrade(ticker, volume_path=self.volume_path)
-            except ImportError:
-                pass
-
-        # Always fetch term structure and skew — no signal carries these
-        try:
-            from src.data.tastytrade_provider import (
-                get_term_structure_tastytrade,
-                get_iv_by_delta_tastytrade,
-            )
-            fetch_tasks['term'] = get_term_structure_tastytrade(ticker)
-            fetch_tasks['skew'] = get_iv_by_delta_tastytrade(ticker)
-        except ImportError:
-            pass
-
-        # Execute all fetches in parallel
-        fetched = {}
-        if fetch_tasks:
-            try:
-                keys = list(fetch_tasks.keys())
-                results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
-                for k, v in zip(keys, results):
-                    if isinstance(v, dict) and 'error' not in v:
-                        fetched[k] = v
-            except Exception as e:
-                logger.debug(f"Strategy data fetch partial failure for {ticker}: {e}")
+            # Execute all fetches in parallel
+            fetched = {}
+            if fetch_tasks:
+                try:
+                    keys = list(fetch_tasks.keys())
+                    results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+                    for k, v in zip(keys, results):
+                        if isinstance(v, dict) and 'error' not in v:
+                            fetched[k] = v
+                except Exception as e:
+                    logger.debug(f"Strategy data fetch partial failure for {ticker}: {e}")
+            self._market_data_cache[ticker] = fetched
 
         # --- Merge fetched data into regime_data / iv_data ---
         if 'gex' in fetched:
@@ -330,7 +339,9 @@ class SignalEngine:
             'risk_reversal': risk_reversal,
         }
 
-        strategies = self.strategy_selector.select_strategy(regime_state)
+        # Read risk_mode from config (passed through evaluate_signals → _attach_strategy_recommendation)
+        risk_mode = getattr(self, '_current_risk_mode', 'limited')
+        strategies = self.strategy_selector.select_strategy(regime_state, risk_mode=risk_mode)
         if not strategies or strategies[0].get('name') == 'Wait / Reduce Size':
             return None
 

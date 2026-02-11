@@ -842,9 +842,10 @@ class PaperEngine:
                 'risk_reversal': risk_reversal,
             }
 
-            # Re-run strategy selection with real data to verify recommendation still holds
+            # Re-run strategy selection with real data, respecting risk_mode
+            risk_mode = self.config.get('risk_mode', 'limited')
             if self.strategy_selector:
-                real_strategies = self.strategy_selector.select_strategy(real_regime_state)
+                real_strategies = self.strategy_selector.select_strategy(real_regime_state, risk_mode=risk_mode)
                 valid = [s for s in real_strategies if s.get('name') != 'Wait / Reduce Size']
                 if not valid:
                     return {'ok': False, 'error': 'Strategy no longer valid with real regime data'}

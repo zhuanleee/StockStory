@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
     "max_exposure_pct": 30,
     "max_daily_trades": 10,
     "max_daily_loss_pct": 5,
+    "risk_mode": "limited",  # 'limited' = defined risk only, 'all' = includes unlimited risk
     "default_dte_range": [30, 45],
     "stop_loss_pct": -50,
     "take_profit_pct": 100,
